@@ -1,0 +1,1 @@
+[{"name":"","description":"SSR desactivado — la app usa APIs de navegador exclusivamente.\r\nEl cliente monta React directamente con createRoot.","args":[],"returns":{},"access":"public","examples":[],"render":"","properties":[],"static":false,"filePath":"server.app-root.tsx"}]

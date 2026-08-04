@@ -1,0 +1,57 @@
+import type { Cliente } from './types.js';
+
+/**
+ * Genera un identificador único simple.
+ */
+export function generarId(): string {
+  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+}
+
+/**
+ * Datos de ejemplo iniciales para arrancar la app.
+ */
+export const clientesIniciales: Cliente[] = [
+  {
+    id: generarId(),
+    nombre: 'María González',
+    proyecto: 'Cocina a medida en roble',
+    telefono: '600 123 456',
+    email: 'maria.gonzalez@email.com',
+    direccion: 'Calle Mayor 12, Madrid',
+    presupuesto: 8500,
+    tarifaHora: 35,
+    creado: '2024-05-10',
+    estado: 'en_curso',
+    movimientos: [
+      { id: generarId(), fecha: '2024-05-12', concepto: 'Madera de roble', categoria: 'Materiales', tipo: 'gasto', importe: 2200 },
+      { id: generarId(), fecha: '2024-05-15', concepto: 'Herrajes y bisagras', categoria: 'Materiales', tipo: 'gasto', importe: 450 },
+      { id: generarId(), fecha: '2024-05-11', concepto: 'Anticipo cliente 40%', categoria: 'Pago cliente', tipo: 'ingreso', importe: 3400 },
+    ],
+    horas: [
+      { id: generarId(), fecha: '2024-05-13', tarea: 'Corte y preparación de tableros', horas: 8 },
+      { id: generarId(), fecha: '2024-05-14', tarea: 'Montaje de estructura', horas: 6 },
+    ],
+    adjuntos: [],
+    fotos: [],
+  },
+  {
+    id: generarId(),
+    nombre: 'Carlos Ruiz',
+    proyecto: 'Armario empotrado dormitorio',
+    telefono: '655 987 321',
+    email: 'carlos.ruiz@email.com',
+    direccion: 'Av. del Sol 45, Valencia',
+    presupuesto: 3200,
+    tarifaHora: 30,
+    creado: '2024-06-02',
+    estado: 'presupuestado',
+    movimientos: [
+      { id: generarId(), fecha: '2024-06-03', concepto: 'Tablero melamina', categoria: 'Materiales', tipo: 'gasto', importe: 680 },
+    ],
+    horas: [
+      { id: generarId(), fecha: '2024-06-04', tarea: 'Toma de medidas en domicilio', horas: 2 },
+    ],
+    adjuntos: [],
+    fotos: [],
+  },
+];

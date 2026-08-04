@@ -1,0 +1,168 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+}
+
+// ─── Compositions list ──────────────────────────────────────────────────
+.compositionsList {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.compositionItem {
+  padding: 0 6px;
+  margin: 1px 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 34px;
+  border-radius: 6px;
+  font-size: 13px;
+  transition: all 140ms ease;
+  color: var(--on-background-color, #1c2024);
+  position: relative;
+
+  &:hover {
+    background: var(--surface-hover-color, rgba(0, 0, 0, 0.04));
+
+    .panelLink {
+      padding-right: 40px;
+    }
+
+    .itemActions {
+      visibility: visible;
+      opacity: 1;
+    }
+  }
+
+  &.active {
+    background: var(--bit-accent-color, #6c5ce7);
+    color: #ffffff;
+    font-weight: 500;
+
+    &:hover {
+      background: color-mix(in srgb, var(--bit-accent-color, #6c5ce7) 88%, #000);
+    }
+
+    .itemActions {
+      opacity: 1;
+      visibility: visible;
+      color: rgba(255, 255, 255, 0.7);
+
+      .actionIcon:hover {
+        color: #ffffff;
+      }
+    }
+  }
+}
+
+.panelLink {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+  width: 100%;
+  height: 100%;
+  text-decoration: none;
+  color: inherit;
+  min-width: 0;
+  transition: padding-right 140ms ease;
+
+  &:active {
+    color: inherit;
+  }
+}
+
+.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemActions {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 100ms ease;
+}
+
+.actionIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 100ms ease;
+  text-decoration: none;
+  font-size: 12px;
+
+  &:hover {
+    color: var(--bit-text-color-heavy, #1c2024);
+    background: rgba(0, 0, 0, 0.06);
+  }
+}
+
+.iconLink {
+  display: flex;
+  align-items: center;
+  color: inherit;
+  text-decoration: none;
+}
+
+.iconButton {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+}
+
+.actionIconActive {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff !important;
+}
+
+// ─── Legacy compat ──────────────────────────────────────────────────────
+.liveControlsSkeleton {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  opacity: 1;
+  transition:
+    opacity 160ms ease-out,
+    transform 160ms ease-out;
+}
+
+.liveControlsSkeleton--hidden {
+  opacity: 0;
+  transform: translateY(2px);
+}
+
+.liveControlsContent {
+  opacity: 1;
+  transition:
+    opacity 160ms ease-out,
+    transform 160ms ease-out;
+}
+
+.liveControlsContent--hidden {
+  opacity: 0;
+  transform: translateY(2px);
+}
+
+.loader {
+  color: var(--skeleton-color, #e0e0e0);
+}

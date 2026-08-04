@@ -1,0 +1,57 @@
+{
+  "name": "@teambit/evangelist.elements.icon",
+  "version": "1.0.5",
+  "homepage": "https://bit.dev/teambit/evangelist/elements/icon",
+  "main": "dist/index.js",
+  "componentId": {
+    "scope": "teambit.evangelist",
+    "name": "elements/icon",
+    "version": "1.0.5"
+  },
+  "dependencies": {
+    "core-js": "^3.0.0",
+    "@teambit/base-ui.elements.icon": "1.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^17.0.8",
+    "@testing-library/react": "^10.4.7",
+    "@types/testing-library__jest-dom": "5.9.5",
+    "@babel/runtime": "7.12.18",
+    "@types/jest": "^26.0.0",
+    "@types/react-dom": "^17.0.5",
+    "@types/node": "12.20.4",
+    "@teambit/evangelist.theme.evangelist-theme": "1.0.3"
+  },
+  "peerDependencies": {
+    "react-dom": "^16.8.0 || ^17.0.0",
+    "react": "^16.8.0 || ^17.0.0"
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "bit": {
+    "bindingPrefix": "@teambit",
+    "env": {},
+    "overrides": {
+      "dependencies": {
+        "core-js": "^3.0.0",
+        "react-dom": "-",
+        "react": "-"
+      },
+      "devDependencies": {
+        "@types/testing-library__jest-dom": "5.9.5",
+        "@babel/runtime": "7.12.18",
+        "@types/jest": "^26.0.0",
+        "@types/react-dom": "^17.0.5",
+        "@types/react": "^17.0.8",
+        "@types/node": "12.20.4",
+        "@types/mocha": "-",
+        "react-dom": "-",
+        "react": "-"
+      },
+      "peerDependencies": {
+        "react-dom": "^16.8.0 || ^17.0.0",
+        "react": "^16.8.0 || ^17.0.0"
+      }
+    }
+  },
+  "private": false
+}

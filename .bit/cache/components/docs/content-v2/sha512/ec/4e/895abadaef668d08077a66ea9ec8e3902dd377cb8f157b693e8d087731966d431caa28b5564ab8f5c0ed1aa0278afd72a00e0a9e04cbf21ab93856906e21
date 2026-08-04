@@ -1,0 +1,1 @@
+[{"filePath":"panel-admin.tsx","name":"PanelAdmin","description":"Panel de administración de usuarios.\r\nSolo visible para el administrador — permite aprobar, suspender y eliminar usuarios.","properties":[{"name":"onCerrar","description":"","required":true,"type":"signature"}],"access":"public","methods":[],"args":[],"examples":[]}]

@@ -1,0 +1,123 @@
+import { useRef, useState, useEffect } from 'react';
+import styles from './styles.module.css';
+
+/** Formatea un número como string europeo completo: 1234.56 → "1.234,56" */
+export function formatearImporte(n: number): string {
+  return n.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** Parsea string con punto o coma decimal → número */
+export function parsearImporte(s: string): number {
+  // Si tiene punto de miles y coma decimal: "1.234,56" → 1234.56
+  // Si tiene coma de miles y punto decimal: "1,234.56" → 1234.56
+  // Si solo tiene coma: "1234,56" → 1234.56
+  // Si solo tiene punto: "1234.56" → 1234.56
+  if (!s) return 0;
+  const limpio = s.replace(/\s/g, '');
+  // Detectar formato europeo: punto de miles + coma decimal
+  if (/\d{1,3}(\.\d{3})+,\d{0,2}$/.test(limpio)) {
+    return parseFloat(limpio.replace(/\./g, '').replace(',', '.'));
+  }
+  // Detectar formato anglosajón: coma de miles + punto decimal
+  if (/\d{1,3}(,\d{3})+\.\d{0,2}$/.test(limpio)) {
+    return parseFloat(limpio.replace(/,/g, ''));
+  }
+  // Solo coma decimal
+  if (/^\d+,\d{0,2}$/.test(limpio)) {
+    return parseFloat(limpio.replace(',', '.'));
+  }
+  return parseFloat(limpio) || 0;
+}
+
+/** Props del campo de importe. */
+export type ImporteInputProps = {
+  value: string;
+  onChange: (valor: string) => void;
+  placeholder?: string;
+  style?: React.CSSProperties;
+  className?: string;
+  disabled?: boolean;
+};
+
+/**
+ * Input de importe que acepta tanto punto como coma como decimal.
+ * - Muestra el número completo sin abreviaciones (nunca 1,2k → siempre 1.200,00).
+ * - Al enfocar: muestra el valor editable con coma.
+ * - Al perder foco: formatea con puntos de miles y coma decimal.
+ * - inputMode="decimal" para teclado numérico en móvil.
+ */
+export function ImporteInput({
+  value,
+  onChange,
+  placeholder = '0,00',
+  style,
+  className,
+  disabled,
+}: ImporteInputProps) {
+  const isFocused = useRef(false);
+  // display: lo que se muestra al usuario
+  const [display, setDisplay] = useState(() => {
+    const n = parsearImporte(value);
+    return isNaN(n) || n === 0 ? '' : formatearImporte(n);
+  });
+
+  // Sincronizar cuando value cambia desde fuera (ej: OCR)
+  useEffect(() => {
+    if (isFocused.current) return;
+    const n = parsearImporte(value);
+    if (!isNaN(n) && value !== '') {
+      setDisplay(n === 0 ? '' : formatearImporte(n));
+    }
+  }, [value]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let raw = e.target.value.replace(/[^0-9.,]/g, '');
+    // Solo un separador decimal permitido
+    const separadores = raw.match(/[.,]/g) ?? [];
+    if (separadores.length > 1) {
+      const first = raw.search(/[.,]/);
+      raw = raw.slice(0, first + 1) + raw.slice(first + 1).replace(/[.,]/g, '');
+    }
+    setDisplay(raw);
+    // Devolver valor normalizado (punto decimal)
+    onChange(raw.replace(',', '.'));
+  };
+
+  const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    isFocused.current = true;
+    // Al enfocar mostrar número limpio para edición (sin puntos de miles)
+    const n = parsearImporte(value);
+    if (!isNaN(n) && n !== 0) {
+      const editable = n.toFixed(2).replace('.', ',');
+      setDisplay(editable);
+    }
+    setTimeout(() => e.target.select(), 0);
+  };
+
+  const handleBlur = () => {
+    isFocused.current = false;
+    const n = parsearImporte(display);
+    if (!isNaN(n) && display !== '') {
+      const formatted = formatearImporte(n);
+      setDisplay(formatted);
+      onChange(n.toFixed(2));
+    } else if (display === '') {
+      onChange('');
+    }
+  };
+
+  return (
+    <input
+      inputMode="decimal"
+      type="text"
+      className={className ?? styles.input}
+      value={display}
+      onChange={handleChange}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
+      placeholder={placeholder}
+      style={style}
+      disabled={disabled}
+    />
+  );
+}

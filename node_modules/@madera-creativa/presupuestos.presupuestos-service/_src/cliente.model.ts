@@ -1,0 +1,115 @@
+import mongoose, { Schema, model, models, Model } from 'mongoose';
+
+/** Subdocumento de un movimiento económico (gasto o ingreso). */
+const MovimientoSchema = new Schema(
+  {
+    id: { type: String, required: true },
+    fecha: { type: String, required: true },
+    concepto: { type: String, required: true },
+    categoria: { type: String, default: 'General' },
+    tipo: { type: String, enum: ['gasto', 'ingreso'], required: true },
+    importe: { type: Number, required: true },
+  },
+  { _id: false }
+);
+
+/** Subdocumento de un registro de horas trabajadas. */
+const HorasSchema = new Schema(
+  {
+    id: { type: String, required: true },
+    fecha: { type: String, required: true },
+    tarea: { type: String, required: true },
+    horas: { type: Number, required: true },
+  },
+  { _id: false }
+);
+
+/** Subdocumento de una foto del proyecto acabado. */
+const FotoSchema = new Schema(
+  {
+    id: { type: String, required: true },
+    url: { type: String, required: true },
+    descripcion: { type: String, default: '' },
+    fecha: { type: String, required: true },
+  },
+  { _id: false }
+);
+
+/** Subdocumento de un archivo adjunto del proyecto. */
+const AdjuntoSchema = new Schema(
+  {
+    id: { type: String, required: true },
+    nombre: { type: String, required: true },
+    tipo: { type: String, required: true },
+    tamano: { type: Number, required: true },
+    url: { type: String, required: true },
+  },
+  { _id: false }
+);
+
+/** Esquema principal de una ficha de cliente / proyecto. */
+const ClienteSchema = new Schema({
+  id: { type: String, required: true, unique: true, index: true },
+  /** ID del usuario propietario — aísla los datos por cuenta. */
+  usuarioId: { type: String, required: true, index: true, default: 'admin' },
+  nombre: { type: String, required: true },
+  proyecto: { type: String, default: '' },
+  telefono: { type: String, default: '' },
+  email: { type: String, default: '' },
+  direccion: { type: String, default: '' },
+  presupuesto: { type: Number, default: 0 },
+  tarifaHora: { type: Number, default: 0 },
+  creado: { type: String, required: true },
+  estado: {
+    type: String,
+    enum: ['presupuestado', 'en_curso', 'finalizado', 'rechazado'],
+    default: 'presupuestado',
+  },
+  movimientos: { type: [MovimientoSchema], default: [] },
+  horas: { type: [HorasSchema], default: [] },
+  adjuntos: { type: [AdjuntoSchema], default: [] },
+  fotos: { type: [FotoSchema], default: [] },
+});
+
+/** Esquema de configuración de empresa — uno por usuario. */
+const EmpresaSchema = new Schema({
+  /** ID del usuario propietario (reemplaza la clave fija 'empresa'). */
+  usuarioId: { type: String, required: true, unique: true, index: true, default: 'admin' },
+  nombre: { type: String, default: '' },
+  eslogan: { type: String, default: '' },
+  logo: { type: String, default: '' },
+});
+
+/** Modelo Mongoose de Cliente (reutiliza el existente si ya está registrado). */
+export const ClienteModel: Model<any> = models.Cliente || model('Cliente', ClienteSchema);
+
+/** Modelo Mongoose de Empresa. */
+export const EmpresaModel: Model<any> = models.Empresa || model('Empresa', EmpresaSchema);
+
+/** Esquema de una factura (gasto o ingreso). */
+const FacturaSchema = new Schema({
+  id: { type: String, required: true, unique: true, index: true },
+  /** ID del usuario propietario. */
+  usuarioId: { type: String, required: true, index: true, default: 'admin' },
+  tipo: { type: String, enum: ['ingreso', 'gasto'], required: true },
+  fecha: { type: String, required: true },
+  concepto: { type: String, default: '' },
+  importe: { type: Number, required: true },
+  proveedor: { type: String, default: '' },
+  clienteId: { type: String, default: '' },
+  imagen: { type: String, default: '' },
+  creado: { type: String, required: true },
+});
+
+/** Modelo Mongoose de Factura. */
+export const FacturaModel: Model<any> = models.Factura || model('Factura', FacturaSchema);
+
+/**
+ * Conecta a MongoDB usando la variable de entorno MONGO_URL.
+ * Reutiliza la conexión existente si ya está abierta.
+ */
+export async function conectar(): Promise<void> {
+  if (mongoose.connection.readyState === 1) return;
+  const url = process.env.MONGO_URL || 'mongodb://localhost:27017/madera-creativa';
+  await mongoose.connect(url);
+}

@@ -1,0 +1,6 @@
+import { NodeServer } from '@bitdev/node.node-server';
+
+export default NodeServer.from({
+  name: 'presupuestos-service',
+  mainPath: import.meta.resolve('./presupuestos-service.app-root.js'),
+});

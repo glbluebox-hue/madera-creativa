@@ -1,0 +1,1 @@
+[{"name":"","description":"Hook que gestiona las facturas con persistencia en el servidor.","args":[],"returns":{"description":"Estado y operaciones sobre las facturas.","type":null},"access":"public","examples":[],"render":"","properties":[],"static":false,"filePath":"use-facturas.ts"}]

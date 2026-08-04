@@ -1,0 +1,7 @@
+/**
+ * SSR desactivado — la app usa APIs de navegador exclusivamente.
+ * El cliente monta React directamente con createRoot.
+ */
+export const render = async (_props: { path: string }): Promise<string> => {
+  return '';
+};

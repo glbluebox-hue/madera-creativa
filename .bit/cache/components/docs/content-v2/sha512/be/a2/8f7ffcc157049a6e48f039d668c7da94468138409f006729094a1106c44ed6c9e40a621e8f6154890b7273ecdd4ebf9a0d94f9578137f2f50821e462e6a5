@@ -1,0 +1,1 @@
+[{"name":"","description":"Sección de notas globales de la app (página principal).\r\nLas notas se guardan en localStorage y persisten entre sesiones.\r\nIncluye dictado por voz, edición y colores de fondo.","args":[],"returns":{},"access":"public","examples":[],"render":"","properties":[],"static":false,"filePath":"notas-globales.tsx"}]

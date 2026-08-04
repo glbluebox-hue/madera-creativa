@@ -1,0 +1,60 @@
+{
+  "name": "@teambit/design.ui.icon-button",
+  "version": "1.0.16",
+  "homepage": "https://bit.dev/teambit/design/ui/icon-button",
+  "main": "dist/index.js",
+  "componentId": {
+    "scope": "teambit.design",
+    "name": "ui/icon-button",
+    "version": "1.0.16"
+  },
+  "dependencies": {
+    "classnames": "^2.2.6",
+    "core-js": "^3.0.0",
+    "@teambit/base-ui.elements.icon": "1.0.0",
+    "@teambit/base-ui.input.button": "1.0.5"
+  },
+  "devDependencies": {
+    "@types/react": "^17.0.8",
+    "@testing-library/react": "11.2.2",
+    "@types/testing-library__jest-dom": "5.9.5",
+    "@babel/runtime": "7.12.18",
+    "@types/jest": "^26.0.0",
+    "@types/react-dom": "^17.0.5",
+    "@types/node": "12.20.4",
+    "@teambit/base-ui.theme.accent-color": "1.1.0",
+    "@teambit/design.envs.react": "1.0.12"
+  },
+  "peerDependencies": {
+    "react-dom": "^16.8.0 || ^17.0.0",
+    "react": "^16.8.0 || ^17.0.0"
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "bit": {
+    "bindingPrefix": "@teambit",
+    "env": {},
+    "overrides": {
+      "dependencies": {
+        "core-js": "^3.0.0",
+        "react-dom": "-",
+        "react": "-"
+      },
+      "devDependencies": {
+        "@types/testing-library__jest-dom": "5.9.5",
+        "@babel/runtime": "7.12.18",
+        "@types/jest": "^26.0.0",
+        "@types/react-dom": "^17.0.5",
+        "@types/react": "^17.0.8",
+        "@types/node": "12.20.4",
+        "@types/mocha": "-",
+        "react-dom": "-",
+        "react": "-"
+      },
+      "peerDependencies": {
+        "react-dom": "^16.8.0 || ^17.0.0",
+        "react": "^16.8.0 || ^17.0.0"
+      }
+    }
+  },
+  "private": false
+}

@@ -1,0 +1,184 @@
+import React, { useCallback } from 'react';
+import { UIRuntime } from '@teambit/ui';
+import { flatten } from 'lodash';
+import { SubMenu } from '@teambit/design.controls.menu';
+import { useThemePicker, useThemeByName } from '@teambit/base-react.themes.theme-switcher';
+import { Slot } from '@teambit/harmony';
+import type { UserBarItem, UserBarItemSlot, UserBarSection, UserBarSectionSlot } from '@teambit/cloud.ui.user-bar';
+import { UserBar } from '@teambit/cloud.ui.user-bar';
+import type { LanesUI } from '@teambit/lanes';
+import { LanesAspect } from '@teambit/lanes';
+import type { WorkspaceUI } from '@teambit/workspace';
+import { WorkspaceAspect } from '@teambit/workspace';
+import type { ComponentUI } from '@teambit/component';
+import { ComponentAspect } from '@teambit/component';
+import { CloudAspect } from './cloud.aspect';
+
+export class CloudUI {
+  constructor(
+    private userBarSectionSlot: UserBarSectionSlot,
+    private userBarItemSlot: UserBarItemSlot
+  ) {}
+  /**
+   * register a new user bar item.
+   */
+  registerUserBarItem(userBarItem: UserBarItem[]) {
+    this.userBarItemSlot.register(userBarItem);
+    return this;
+  }
+
+  /**
+   * register a new user bar section
+   */
+  registerUserBarSection(sections: UserBarSection[]) {
+    this.userBarSectionSlot.register(sections);
+    return this;
+  }
+
+  /**
+   * list user bar items.
+   */
+  listUserBarItems() {
+    return flatten(this.userBarItemSlot.values());
+  }
+
+  /**
+   * list all user bar sections.
+   */
+  listUserBarSections() {
+    return flatten(this.userBarSectionSlot.values());
+  }
+
+  CloudUserBar = () => {
+    return <UserBar sections={this.listUserBarSections()} items={this.listUserBarItems()} />;
+  };
+
+  static runtime = UIRuntime;
+
+  static dependencies = [WorkspaceAspect, LanesAspect, ComponentAspect];
+
+  static slots = [Slot.withType<UserBarItem[]>(), Slot.withType<UserBarSection[]>()];
+
+  static async provider(
+    [workspace, lanes, component]: [WorkspaceUI, LanesUI, ComponentUI],
+    _,
+    [userBarItemSlot, userBarSectionSlot]: [UserBarItemSlot, UserBarSectionSlot]
+  ) {
+    const cloudUI = new CloudUI(userBarSectionSlot, userBarItemSlot);
+
+    cloudUI.registerUserBarSection([
+      {
+        displayName: 'Scopes & Components',
+        categoryName: 'ScopesAndComponents',
+      },
+      {
+        displayName: 'Docs, Support & Feedback',
+        categoryName: 'DocsSupportAndFeedback',
+      },
+    ]);
+    cloudUI.registerUserBarItem([
+      {
+        icon: 'settings',
+        label: 'Settings',
+        href: 'https://bit.cloud/settings',
+      },
+      {
+        category: 'ScopesAndComponents',
+        icon: 'components',
+        label: 'Your components',
+        href: 'https://bit.cloud/components',
+      },
+      {
+        category: 'ScopesAndComponents',
+        icon: 'collection',
+        label: 'Your scopes',
+        href: 'https://bit.cloud/scopes',
+      },
+      {
+        category: 'DocsSupportAndFeedback',
+        icon: 'book-glossary',
+        label: 'Bit Docs',
+        href: 'https://bit.dev/docs',
+      },
+      {
+        category: 'DocsSupportAndFeedback',
+        component: function Support() {
+          return (
+            <SubMenu
+              item={{
+                label: 'Support',
+                icon: 'users',
+                children: [
+                  {
+                    label: 'Bit Community on bit.cloud',
+                    link: 'https://bit.cloud/bitdev',
+                  },
+                  {
+                    label: 'Ticket Support',
+                    link: 'https://support.bit.cloud',
+                  },
+                  {
+                    label: 'Bit Community Slack',
+                    link: 'https://join.slack.com/t/bit-dev-community/shared_invite/zt-29pmawrp1-ehfEzYbQyuAC3CNA_jYPvA',
+                  },
+                ] as any,
+              }}
+            />
+          );
+        },
+      },
+      {
+        category: 'DocsSupportAndFeedback',
+        component: function ThemePicker() {
+          const theme = useThemePicker();
+          const light = useThemeByName('light');
+          const dark = useThemeByName('dark');
+
+          const setIfDifferent = useCallback(
+            (target) => {
+              if (!theme || !target || theme.current === target) return;
+              theme.setTheme(target);
+            },
+            [theme]
+          );
+
+          const currentName = theme?.current?.themeName;
+
+          return (
+            <SubMenu
+              item={{
+                label: 'Theme',
+                icon: 'lightmode',
+                children: [
+                  {
+                    label: 'Light',
+                    icon: currentName === 'light' ? 'checkmark' : '',
+                    onClick: () => setIfDifferent(light),
+                  },
+                  {
+                    label: 'Dark',
+                    icon: currentName === 'dark' ? 'checkmark' : '',
+                    onClick: () => setIfDifferent(dark),
+                  },
+                ] as any,
+              }}
+            />
+          );
+        },
+      },
+    ]);
+    if (workspace) {
+      workspace.registerMenuWidget([cloudUI.CloudUserBar]);
+      lanes.registerMenuWidget(cloudUI.CloudUserBar);
+      component.registerRightSideMenuItem({
+        item: <cloudUI.CloudUserBar key={'cloud-user-bar-comp-menu'} />,
+        order: 100,
+      });
+    }
+    return cloudUI;
+  }
+}
+
+export default CloudUI;
+
+CloudAspect.addRuntime(CloudUI);

@@ -1,0 +1,251 @@
+import { useState, useCallback, useEffect, useRef } from 'react';
+
+// ── Claves de almacenamiento ──────────────────────────────────────────────────
+const KEY_SESION       = 'mc_sesion';           // usuario activo
+const KEY_ACTIVIDAD    = 'mc_auth_actividad';   // timestamp última actividad
+const KEY_USUARIOS     = 'mc_usuarios';          // array de usuarios registrados
+
+/** Minutos de inactividad antes del cierre automático de sesión. */
+const MINUTOS_INACTIVIDAD = 5;
+const MS_INACTIVIDAD = MINUTOS_INACTIVIDAD * 60 * 1000;
+
+const EVENTOS_ACTIVIDAD = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'] as const;
+
+// ── Tipos ─────────────────────────────────────────────────────────────────────
+
+/** Tipo de almacenamiento elegido por el usuario. */
+export type TipoAlmacenamiento = 'local' | 'supabase';
+
+/** Datos de un usuario registrado en la app. */
+export type UsuarioRegistrado = {
+  id: string;
+  nombre: string;
+  passwordHash: string;
+  almacenamiento: TipoAlmacenamiento;
+  supabaseUrl?: string;
+  supabaseKey?: string;
+  creadoEn: string;
+};
+
+/** Sesión activa. */
+export type SesionActiva = {
+  usuarioId: string;
+  nombre: string;
+  esAdmin?: boolean;
+  almacenamiento: TipoAlmacenamiento;
+  supabaseUrl?: string;
+  supabaseKey?: string;
+};
+
+/** Resultado del hook de autenticación. */
+export type UseAuthResult = {
+  autenticado: boolean;
+  sesion: SesionActiva | null;
+  /** Prefijo único para separar los datos de cada usuario en localStorage. */
+  storagePrefix: string;
+  login: (nombre: string, password: string) => { ok: boolean; error?: string };
+  /** Establece la sesión directamente sin verificar en localStorage (para login validado por servidor). */
+  loginDirecto: (id: string, nombre: string, esAdmin: boolean) => void;
+  registrar: (nombre: string, password: string, almacenamiento: TipoAlmacenamiento, supabaseUrl?: string, supabaseKey?: string) => { ok: boolean; error?: string };
+  logout: () => void;
+  actualizarAlmacenamiento: (tipo: TipoAlmacenamiento, supabaseUrl?: string, supabaseKey?: string) => void;
+};
+
+// ── Utilidades ────────────────────────────────────────────────────────────────
+
+/** Hash simple para contraseñas (no criptográfico — suficiente para uso local). */
+function hashSimple(texto: string): string {
+  let hash = 0;
+  for (let i = 0; i < texto.length; i++) {
+    const c = texto.charCodeAt(i);
+    hash = ((hash << 5) - hash) + c;
+    hash |= 0;
+  }
+  return 'h' + Math.abs(hash).toString(36);
+}
+
+function generarId(): string {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+function cargarUsuarios(): UsuarioRegistrado[] {
+  try { return JSON.parse(localStorage.getItem(KEY_USUARIOS) ?? '[]') as UsuarioRegistrado[]; } catch { return []; }
+}
+
+function guardarUsuarios(us: UsuarioRegistrado[]): void {
+  try { localStorage.setItem(KEY_USUARIOS, JSON.stringify(us)); } catch { /* noop */ }
+}
+
+function cargarSesion(): SesionActiva | null {
+  try {
+    const raw = localStorage.getItem(KEY_SESION);
+    if (!raw) return null;
+    const actividad = parseInt(localStorage.getItem(KEY_ACTIVIDAD) ?? '0', 10);
+    if (Date.now() - actividad > MS_INACTIVIDAD) {
+      localStorage.removeItem(KEY_SESION);
+      localStorage.removeItem(KEY_ACTIVIDAD);
+      return null;
+    }
+    return JSON.parse(raw) as SesionActiva;
+  } catch { return null; }
+}
+
+function guardarSesion(s: SesionActiva): void {
+  try {
+    localStorage.setItem(KEY_SESION, JSON.stringify(s));
+    localStorage.setItem(KEY_ACTIVIDAD, String(Date.now()));
+  } catch { /* noop */ }
+}
+
+function borrarSesion(): void {
+  try {
+    localStorage.removeItem(KEY_SESION);
+    localStorage.removeItem(KEY_ACTIVIDAD);
+    localStorage.removeItem('mc-auth-token'); // limpiar token de servidor al cerrar sesión
+  } catch { /* noop */ }
+}
+
+// ── Compatibilidad con cuenta maestra antigua ─────────────────────────────────
+// Si el usuario ya tenía sesión con el sistema anterior (mc-auth-token) se migra
+function migrarCuentaMaestra(): void {
+  try {
+    const tokenViejo = localStorage.getItem('mc-auth-token');
+    if (!tokenViejo) return;
+    const usuarios = cargarUsuarios();
+    const yaExiste = usuarios.some(u => u.nombre === 'admin');
+    if (!yaExiste) {
+      const admin: UsuarioRegistrado = {
+        id: 'admin',
+        nombre: 'admin',
+        passwordHash: hashSimple('admin'),
+        almacenamiento: 'local',
+        creadoEn: new Date().toISOString(),
+      };
+      guardarUsuarios([admin, ...usuarios]);
+    }
+    localStorage.removeItem('mc-auth-token');
+    localStorage.removeItem('mc-auth-actividad');
+  } catch { /* noop */ }
+}
+
+// ── Hook principal ────────────────────────────────────────────────────────────
+
+/**
+ * Hook de autenticación multi-usuario con soporte para almacenamiento local y Supabase.
+ * Cierra sesión automáticamente tras 5 minutos de inactividad.
+ */
+export function useAuth(): UseAuthResult {
+  migrarCuentaMaestra();
+
+  const [sesion, setSesion] = useState<SesionActiva | null>(cargarSesion);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const logout = useCallback(() => {
+    borrarSesion();
+    setSesion(null);
+  }, []);
+
+  const resetTimer = useCallback(() => {
+    try { localStorage.setItem(KEY_ACTIVIDAD, String(Date.now())); } catch { /* noop */ }
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(logout, MS_INACTIVIDAD);
+  }, [logout]);
+
+  // Temporizador de inactividad
+  useEffect(() => {
+    if (!sesion) { if (timerRef.current) clearTimeout(timerRef.current); return; }
+    resetTimer();
+    const handler = () => resetTimer();
+    EVENTOS_ACTIVIDAD.forEach(ev => window.addEventListener(ev, handler, { passive: true }));
+    return () => {
+      EVENTOS_ACTIVIDAD.forEach(ev => window.removeEventListener(ev, handler));
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [sesion, resetTimer]);
+
+  /** Inicia sesión con usuario y contraseña. */
+  const login = useCallback((nombre: string, password: string): { ok: boolean; error?: string } => {
+    const usuarios = cargarUsuarios();
+    const hash = hashSimple(password);
+    const usuario = usuarios.find(u => u.nombre.toLowerCase() === nombre.toLowerCase() && u.passwordHash === hash);
+    if (!usuario) return { ok: false, error: 'Usuario o contraseña incorrectos.' };
+    const s: SesionActiva = {
+      usuarioId: usuario.id,
+      nombre: usuario.nombre,
+      almacenamiento: usuario.almacenamiento,
+      supabaseUrl: usuario.supabaseUrl,
+      supabaseKey: usuario.supabaseKey,
+    };
+    guardarSesion(s);
+    setSesion(s);
+    return { ok: true };
+  }, []);
+
+  /** Registra un nuevo usuario. */
+  const registrar = useCallback((
+    nombre: string,
+    password: string,
+    almacenamiento: TipoAlmacenamiento,
+    supabaseUrl?: string,
+    supabaseKey?: string,
+  ): { ok: boolean; error?: string } => {
+    if (!nombre.trim() || nombre.length < 3) return { ok: false, error: 'El nombre debe tener al menos 3 caracteres.' };
+    if (!password || password.length < 4) return { ok: false, error: 'La contraseña debe tener al menos 4 caracteres.' };
+    const usuarios = cargarUsuarios();
+    if (usuarios.some(u => u.nombre.toLowerCase() === nombre.toLowerCase())) {
+      return { ok: false, error: 'Ese nombre de usuario ya existe.' };
+    }
+    const nuevo: UsuarioRegistrado = {
+      id: generarId(),
+      nombre: nombre.trim(),
+      passwordHash: hashSimple(password),
+      almacenamiento,
+      supabaseUrl: supabaseUrl?.trim() || undefined,
+      supabaseKey: supabaseKey?.trim() || undefined,
+      creadoEn: new Date().toISOString(),
+    };
+    guardarUsuarios([...usuarios, nuevo]);
+    const s: SesionActiva = {
+      usuarioId: nuevo.id,
+      nombre: nuevo.nombre,
+      almacenamiento: nuevo.almacenamiento,
+      supabaseUrl: nuevo.supabaseUrl,
+      supabaseKey: nuevo.supabaseKey,
+    };
+    guardarSesion(s);
+    setSesion(s);
+    return { ok: true };
+  }, []);
+
+  /** Actualiza el tipo de almacenamiento del usuario activo. */
+  const actualizarAlmacenamiento = useCallback((tipo: TipoAlmacenamiento, supabaseUrl?: string, supabaseKey?: string) => {
+    if (!sesion) return;
+    const usuarios = cargarUsuarios();
+    const actualizados = usuarios.map(u =>
+      u.id === sesion.usuarioId
+        ? { ...u, almacenamiento: tipo, supabaseUrl: supabaseUrl?.trim() || undefined, supabaseKey: supabaseKey?.trim() || undefined }
+        : u
+    );
+    guardarUsuarios(actualizados);
+    const nuevaSesion: SesionActiva = { ...sesion, almacenamiento: tipo, supabaseUrl, supabaseKey };
+    guardarSesion(nuevaSesion);
+    setSesion(nuevaSesion);
+  }, [sesion]);
+
+  /** Establece la sesión directamente desde respuesta del servidor (sin lookup local). */
+  const loginDirecto = useCallback((id: string, nombre: string, esAdmin: boolean) => {
+    const s: SesionActiva = { usuarioId: id, nombre, esAdmin, almacenamiento: 'local' };
+    guardarSesion(s);
+    // Mantener compatibilidad con api.ts que lee mc-auth-token.
+    // Token estándar por usuario — sin credenciales en el código.
+    try {
+      const token = btoa('uid:' + id);
+      localStorage.setItem('mc-auth-token', 'Bearer ' + token);
+    } catch { /* noop */ }
+    setSesion(s);
+  }, []);
+
+  const storagePrefix = sesion ? `mc_${sesion.usuarioId}_` : 'mc_';
+
+  return { autenticado: !!sesion, sesion, storagePrefix, login, loginDirecto, registrar, logout, actualizarAlmacenamiento };
+}
