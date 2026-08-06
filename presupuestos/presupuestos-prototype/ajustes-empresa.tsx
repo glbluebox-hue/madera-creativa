@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import type { Empresa } from './use-empresa.js';
+import { leerArchivoComoBase64 } from './archivos.js';
 import styles from './styles.module.css';
 
 /** Props del modal de ajustes de empresa. */
@@ -25,9 +26,7 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
   const subirLogo = (files: FileList | null) => {
     const file = files?.[0];
     if (!file || !file.type.startsWith('image/')) return;
-    const lector = new FileReader();
-    lector.onload = () => setLogo(String(lector.result));
-    lector.readAsDataURL(file);
+    leerArchivoComoBase64(file).then(setLogo);
   };
 
   const guardar = () => {

@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { ImporteInput } from './importe-input.js';
+import { leerArchivoComoBase64 } from './archivos.js';
 import styles from './styles.module.css';
 
 /** Modo de procesado de la imagen. */
@@ -123,11 +124,7 @@ export function EscanerDocumento({ onConfirmar, onCerrar }: EscanerDocumentoProp
     setProcesando(true);
     const nuevas: { id: string; original: string; procesada: string }[] = [];
     for (const file of Array.from(files)) {
-      const dataUrl = await new Promise<string>(res => {
-        const r = new FileReader();
-        r.onload = e => res(e.target!.result as string);
-        r.readAsDataURL(file);
-      });
+      const dataUrl = await leerArchivoComoBase64(file);
       const procesada = await aplicarFiltro(dataUrl, modo);
       nuevas.push({ id: uid(), original: dataUrl, procesada });
     }

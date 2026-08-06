@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { alPerderSesion, cerrarSesionServidor, refrescarSesion } from './api.js';
 
 // ── Claves de almacenamiento ──────────────────────────────────────────────────
 const KEY_SESION       = 'mc_sesion';           // usuario activo
@@ -101,7 +102,9 @@ function borrarSesion(): void {
   try {
     localStorage.removeItem(KEY_SESION);
     localStorage.removeItem(KEY_ACTIVIDAD);
-    localStorage.removeItem('mc-auth-token'); // limpiar token de servidor al cerrar sesión
+    // Limpieza de una clave de versiones anteriores a la migración a
+    // JWT + Refresh Tokens (el access token ya no vive en localStorage).
+    localStorage.removeItem('mc-auth-token');
   } catch { /* noop */ }
 }
 
@@ -141,6 +144,7 @@ export function useAuth(): UseAuthResult {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const logout = useCallback(() => {
+    cerrarSesionServidor(); // fire-and-forget: revoca el refresh token en servidor
     borrarSesion();
     setSesion(null);
   }, []);
@@ -162,6 +166,22 @@ export function useAuth(): UseAuthResult {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [sesion, resetTimer]);
+
+  // Registra el cierre de sesión como reacción única a "el refresh token ya
+  // no es válido" (lo dispara fetchConAuth en api.ts cuando ni el access
+  // token ni su renovación funcionan).
+  useEffect(() => { alPerderSesion(logout); }, [logout]);
+
+  // Restaura la sesión tras recargar la página: el access token vive solo
+  // en memoria (nunca en localStorage) por seguridad, así que se pierde en
+  // cada carga. Si había una sesión guardada, se renueva en silencio contra
+  // el refresh token (cookie httpOnly); si ya no es válido, se cierra sesión.
+  useEffect(() => {
+    if (!sesion) return;
+    refrescarSesion().then((ok) => { if (!ok) logout(); });
+    // Solo debe ejecutarse una vez, al montar — no en cada cambio de sesión.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** Inicia sesión con usuario y contraseña. */
   const login = useCallback((nombre: string, password: string): { ok: boolean; error?: string } => {
@@ -232,16 +252,15 @@ export function useAuth(): UseAuthResult {
     setSesion(nuevaSesion);
   }, [sesion]);
 
-  /** Establece la sesión directamente desde respuesta del servidor (sin lookup local). */
+  /**
+   * Establece la sesión directamente desde la respuesta del servidor (sin
+   * lookup local). El access token ya se guardó en memoria dentro de
+   * `loginEnServidor()` (ver `use-registro.ts` / `api.ts`) — esta función
+   * solo fija la identidad de sesión para la interfaz.
+   */
   const loginDirecto = useCallback((id: string, nombre: string, esAdmin: boolean) => {
     const s: SesionActiva = { usuarioId: id, nombre, esAdmin, almacenamiento: 'local' };
     guardarSesion(s);
-    // Mantener compatibilidad con api.ts que lee mc-auth-token.
-    // Token estándar por usuario — sin credenciales en el código.
-    try {
-      const token = btoa('uid:' + id);
-      localStorage.setItem('mc-auth-token', 'Bearer ' + token);
-    } catch { /* noop */ }
     setSesion(s);
   }, []);
 

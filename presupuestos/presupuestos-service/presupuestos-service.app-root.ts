@@ -1,9 +1,32 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
+import { cargarVariablesEntornoLocal } from './entorno-local.js';
 import { PresupuestosService } from './presupuestos-service.js';
-import { UsuarioModel, conectarUsuarios } from './usuario.model.js';
+import { UsuarioModel, conectarUsuarios, migrarNombresNormalizados, asegurarIndiceNombreNormalizado } from './usuario.model.js';
 import { configurarVapid, enviarNotificacion } from './push.service.js';
 import type { PushSub } from './push.service.js';
+import { limitadorGeneral, limitadorAuth } from './rate-limit.middleware.js';
+import { validar } from './validacion.middleware.js';
+import { hashPassword, verificarPassword, verificarPasswordLegado } from './password.service.js';
+import { firmarAccessToken, verificarAccessToken } from './token.service.js';
+import { crearRefreshToken, rotarRefreshToken, revocarRefreshToken, revocarTodosDeUsuario } from './refresh-token.model.js';
+import {
+  esquemaLogin,
+  esquemaRegistro,
+  esquemaVerificarSesion,
+  esquemaCambiarEstadoUsuario,
+  esquemaCliente,
+  esquemaFactura,
+  esquemaEmpresa,
+  esquemaPushSubscribe,
+  esquemaAsistente,
+} from './esquemas-validacion.js';
+
+// Debe ejecutarse antes de leer cualquier process.env.* de este módulo —
+// ver entorno-local.ts para la explicación completa (sin efecto en producción).
+cargarVariablesEntornoLocal();
 
 // ── Credenciales del admin maestro ────────────────────────────────────────────
 // Se leen exclusivamente de variables de entorno — nunca se escriben en el código.
@@ -15,58 +38,68 @@ if (!USUARIO || !CONTRASENA) {
   console.warn('[auth] Faltan APP_USER y/o APP_PASSWORD. El admin maestro no podrá iniciar sesión hasta configurarlas.');
 }
 
-/** Token legado del admin, derivado de las credenciales de entorno. */
-const TOKEN_ADMIN = Buffer.from(USUARIO + ':' + CONTRASENA).toString('base64');
+// ── CORS ──────────────────────────────────────────────────────────────────────
+// Lista de orígenes explícitamente permitidos, en vez de reflejar cualquier
+// origen (que es lo que hacía `cors({ origin: true })`). En producción,
+// ALLOWED_ORIGINS es obligatoria: sin ella no se permite ningún origen.
+// En desarrollo, si no está configurada, se permite cualquier puerto de
+// localhost (el rango de puertos 3000-3100 que asigna la plataforma Bit).
+const ORIGENES_PERMITIDOS = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+const LOCALHOST_DEV = /^http:\/\/localhost:\d+$/;
+
+function origenPermitido(origen: string | undefined): boolean {
+  if (!origen) return true; // peticiones sin cabecera Origin (same-origin, curl, health checks)
+  if (ORIGENES_PERMITIDOS.includes(origen)) return true;
+  if (ORIGENES_PERMITIDOS.length === 0 && process.env.NODE_ENV !== 'production' && LOCALHOST_DEV.test(origen)) return true;
+  return false;
+}
 
 // ── Utilidades ────────────────────────────────────────────────────────────────
-
-/** Hash simple para contraseñas — igual que el frontend. */
-function hashSimple(texto: string): string {
-  let hash = 0;
-  for (let i = 0; i < texto.length; i++) {
-    const c = texto.charCodeAt(i);
-    hash = ((hash << 5) - hash) + c;
-    hash |= 0;
-  }
-  return 'h' + Math.abs(hash).toString(36);
-}
 
 function generarId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
-/** Genera un token único por usuario. Formato: base64('uid:' + usuarioId) */
-function tokenParaUsuario(usuarioId: string): string {
-  return Buffer.from('uid:' + usuarioId).toString('base64');
-}
-
-/**
- * Extrae el usuarioId de un token.
- * Soporta el token admin legado y los nuevos tokens 'uid:...'.
- */
-function extraerUsuarioId(token: string): string | null {
-  try {
-    const decoded = Buffer.from(token, 'base64').toString('utf8');
-    if (decoded.startsWith('uid:')) return decoded.slice(4);
-    // Token legado admin — solo válido si las credenciales de entorno están definidas.
-    if (USUARIO && CONTRASENA && decoded === USUARIO + ':' + CONTRASENA) return 'admin';
-    return null;
-  } catch { return null; }
-}
-
-/** Extiende Request con el usuarioId autenticado. */
+/** Extiende Request con el usuarioId (y, si aplica, esAdmin) autenticado. */
 type AuthRequest = express.Request & { usuarioId?: string };
 
 /**
- * Middleware de autenticación: valida el token y adjunta req.usuarioId.
- * Los datos de cada usuario están completamente aislados por usuarioId.
+ * Opciones de la cookie del refresh token. `path: '/'` a propósito: el
+ * navegador solo ve rutas bajo el prefijo `/api/<servicio>/...` (o el que
+ * imponga el proxy de turno), que no coincide con las rutas internas del
+ * servicio (`/auth/...`) — fijar el Path a la ruta interna haría que el
+ * navegador nunca reenviara la cookie. `path: '/'` evita ese desajuste en
+ * cualquier capa de proxy, presente o futura.
+ */
+function opcionesCookieRefresh(maxAgeMs?: number) {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict' as const,
+    path: '/',
+    ...(maxAgeMs !== undefined ? { maxAge: maxAgeMs } : {}),
+  };
+}
+
+const REFRESH_TTL_MS = (Number(process.env.REFRESH_TOKEN_TTL_DIAS) || 30) * 24 * 60 * 60 * 1000;
+
+/**
+ * Middleware de autenticación: valida el access token (JWT firmado) y
+ * adjunta req.usuarioId. Los datos de cada usuario están completamente
+ * aislados por usuarioId.
  */
 async function requireAuth(req: AuthRequest, res: express.Response, next: express.NextFunction) {
   const auth = req.headers['authorization'];
   if (!auth?.startsWith('Bearer ')) { res.status(401).json({ error: 'No autorizado' }); return; }
   const token = auth.slice(7);
-  const usuarioId = extraerUsuarioId(token);
-  if (!usuarioId) { res.status(401).json({ error: 'Token inválido' }); return; }
+
+  const payload = verificarAccessToken(token);
+  if (!payload) { res.status(401).json({ error: 'Token inválido' }); return; }
+  const usuarioId = payload.sub;
   if (usuarioId === 'admin') { req.usuarioId = 'admin'; next(); return; }
   try {
     await conectarUsuarios();
@@ -105,7 +138,9 @@ async function asegurarAdmin(): Promise<void> {
     await UsuarioModel.create({
       id: 'admin',
       nombre: USUARIO,
-      passwordHash: hashSimple(CONTRASENA),
+      nombreNormalizado: USUARIO.toLowerCase(),
+      passwordHash: await hashPassword(CONTRASENA),
+      hashAlgo: 'bcrypt',
       estado: 'activo',
       esAdmin: true,
       creadoEn: new Date().toISOString(),
@@ -146,11 +181,27 @@ export function run() {
   const port = process.env.PORT || 3000;
 
   configurarVapid();
-  asegurarAdmin().catch(console.error);
+  asegurarAdmin()
+    .then(migrarNombresNormalizados)
+    .then(asegurarIndiceNombreNormalizado)
+    .catch(console.error);
   migrarDatosAdmin().catch(console.error);
 
-  app.use(cors({ origin: true, credentials: true }));
+  app.use(helmet());
+  app.use(cors({
+    origin: (origen, callback) => {
+      if (origenPermitido(origen)) { callback(null, true); return; }
+      callback(new Error('Origen no permitido por CORS: ' + origen));
+    },
+    credentials: true,
+  }));
+  app.use(limitadorGeneral);
   app.use(express.json({ limit: '25mb' }));
+  app.use(cookieParser());
+  // Limitador estricto para toda la superficie de autenticación: frena
+  // fuerza bruta y credential stuffing sin afectar el uso normal. Debe
+  // registrarse antes que cualquier ruta /auth/*, incluida /auth/yo.
+  app.use('/auth', limitadorAuth);
 
   // ── Salud ──
   app.get('/', (_req, res) => { res.json({ ok: true, service: 'presupuestos' }); });
@@ -171,10 +222,9 @@ export function run() {
   });
 
   /** Registra una suscripción push para un usuario. */
-  app.post('/push/subscribe', async (req, res) => {
+  app.post('/push/subscribe', validar(esquemaPushSubscribe), async (req, res) => {
     try {
-      const { usuarioId, subscription } = req.body || {};
-      if (!usuarioId || !subscription) { res.status(400).json({ error: 'Faltan datos' }); return; }
+      const { usuarioId, subscription } = req.body;
       await conectarUsuarios();
       const u = await UsuarioModel.findOne({ id: usuarioId }).exec();
       if (!u) { res.status(404).json({ error: 'Usuario no encontrado' }); return; }
@@ -190,17 +240,19 @@ export function run() {
   // ── Auth ──
 
   /** Registro de nuevo usuario (queda en estado pendiente hasta que el admin apruebe). */
-  app.post('/auth/registrar', async (req, res) => {
+  app.post('/auth/registrar', validar(esquemaRegistro), async (req, res) => {
     try {
       await conectarUsuarios();
-      const { nombre, passwordHash } = req.body || {};
-      if (!nombre || !passwordHash) { res.status(400).json({ error: 'Faltan datos' }); return; }
-      const existe = await UsuarioModel.findOne({ nombre: { $regex: new RegExp('^' + nombre + '$', 'i') } }).lean().exec();
+      const { nombre, password } = req.body;
+      const nombreNormalizado = nombre.toLowerCase();
+      const existe = await UsuarioModel.findOne({ nombreNormalizado }).lean().exec();
       if (existe) { res.status(409).json({ error: 'Ese email ya está registrado.' }); return; }
       const nuevo = await UsuarioModel.create({
         id: generarId(),
-        nombre: nombre.trim(),
-        passwordHash,
+        nombre,
+        nombreNormalizado,
+        passwordHash: await hashPassword(password),
+        hashAlgo: 'bcrypt',
         estado: 'pendiente',
         esAdmin: false,
         creadoEn: new Date().toISOString(),
@@ -211,13 +263,27 @@ export function run() {
   });
 
   /** Login — devuelve token único por usuario. */
-  app.post('/auth/login', async (req, res) => {
+  app.post('/auth/login', validar(esquemaLogin), async (req, res) => {
     try {
       await conectarUsuarios();
-      const { nombre, passwordHash } = req.body || {};
-      if (!nombre || !passwordHash) { res.status(400).json({ error: 'Faltan datos' }); return; }
-      const u = await UsuarioModel.findOne({ nombre: { $regex: new RegExp('^' + nombre + '$', 'i') } }).lean().exec() as any;
-      if (!u || u.passwordHash !== passwordHash) {
+      const { nombre, password } = req.body;
+      const u = await UsuarioModel.findOne({ nombreNormalizado: nombre.toLowerCase() }).lean().exec() as any;
+      if (!u) { res.status(401).json({ error: 'Usuario o contraseña incorrectos.' }); return; }
+
+      let credencialesValidas: boolean;
+      if (u.hashAlgo === 'bcrypt') {
+        credencialesValidas = await verificarPassword(password, u.passwordHash);
+      } else {
+        // Cuenta creada antes de la migración a bcrypt: se verifica con el
+        // algoritmo legado y, si es correcta, se re-hashea de forma
+        // transparente — sin pedir al usuario que cambie su contraseña.
+        credencialesValidas = verificarPasswordLegado(password, u.passwordHash);
+        if (credencialesValidas) {
+          const passwordHash = await hashPassword(password);
+          await UsuarioModel.updateOne({ id: u.id }, { passwordHash, hashAlgo: 'bcrypt' });
+        }
+      }
+      if (!credencialesValidas) {
         res.status(401).json({ error: 'Usuario o contraseña incorrectos.' }); return;
       }
       if (u.estado === 'pendiente') {
@@ -227,18 +293,65 @@ export function run() {
         res.status(403).json({ error: 'suspendido', mensaje: 'Tu acceso ha sido suspendido. Contacta con Madera Creativa.' }); return;
       }
       await UsuarioModel.updateOne({ id: u.id }, { ultimoAcceso: new Date().toISOString() });
-      // Token único por usuario — admin usa token legado para compatibilidad con sesiones guardadas
-      const token = u.esAdmin ? TOKEN_ADMIN : tokenParaUsuario(u.id);
-      res.json({ ok: true, id: u.id, nombre: u.nombre, esAdmin: u.esAdmin, estado: u.estado, token });
+
+      const accessToken = firmarAccessToken({ sub: u.id, esAdmin: u.esAdmin });
+      const refreshToken = await crearRefreshToken(u.id);
+      res.cookie('mc_refresh', refreshToken, opcionesCookieRefresh(REFRESH_TTL_MS));
+      res.json({ ok: true, id: u.id, nombre: u.nombre, esAdmin: u.esAdmin, estado: u.estado, accessToken });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  /**
+   * Renueva la sesión: rota el refresh token de la cookie `mc_refresh` y
+   * devuelve un access token nuevo. El frontend lo llama automáticamente
+   * cuando una petición autenticada recibe 401 (ver `fetchConAuth` en
+   * `presupuestos-prototype/api.ts`) y al arrancar la app para restaurar
+   * la sesión sin pedir credenciales de nuevo.
+   */
+  app.post('/auth/refresh', async (req, res) => {
+    try {
+      const tokenPlano = req.cookies?.mc_refresh as string | undefined;
+      if (!tokenPlano) { res.status(401).json({ error: 'Sin sesión' }); return; }
+
+      const rotado = await rotarRefreshToken(tokenPlano);
+      if (!rotado) {
+        res.clearCookie('mc_refresh', opcionesCookieRefresh());
+        res.status(401).json({ error: 'Sesión caducada' });
+        return;
+      }
+
+      await conectarUsuarios();
+      const u = await UsuarioModel.findOne({ id: rotado.usuarioId }).lean().exec() as any;
+      if (!u || u.estado !== 'activo') {
+        res.clearCookie('mc_refresh', opcionesCookieRefresh());
+        res.status(403).json({ error: 'Acceso denegado' });
+        return;
+      }
+
+      res.cookie('mc_refresh', rotado.nuevoToken, opcionesCookieRefresh(REFRESH_TTL_MS));
+      const accessToken = firmarAccessToken({ sub: u.id, esAdmin: u.esAdmin });
+      res.json({ ok: true, accessToken });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  /**
+   * Cierra sesión revocando el refresh token — a diferencia del esquema
+   * Base64 anterior, esto sí invalida la sesión de verdad en el servidor.
+   */
+  app.post('/auth/logout', async (req, res) => {
+    try {
+      const tokenPlano = req.cookies?.mc_refresh as string | undefined;
+      if (tokenPlano) await revocarRefreshToken(tokenPlano);
+      res.clearCookie('mc_refresh', opcionesCookieRefresh());
+      res.json({ ok: true });
     } catch (err) { res.status(500).json({ error: String(err) }); }
   });
 
   /** Verifica si una sesión sigue activa. */
-  app.post('/auth/verificar', async (req, res) => {
+  app.post('/auth/verificar', validar(esquemaVerificarSesion), async (req, res) => {
     try {
       await conectarUsuarios();
-      const { usuarioId } = req.body || {};
-      if (!usuarioId) { res.status(400).json({ error: 'Falta usuarioId' }); return; }
+      const { usuarioId } = req.body;
       const u = await UsuarioModel.findOne({ id: usuarioId }).lean().exec() as any;
       if (!u) { res.status(404).json({ activo: false }); return; }
       res.json({ activo: u.estado === 'activo', estado: u.estado });
@@ -261,15 +374,17 @@ export function run() {
   });
 
   /** Cambia el estado de un usuario (solo admin). */
-  app.put('/admin/usuarios/:id/estado', requireAuth, async (req, res) => {
+  app.put('/admin/usuarios/:id/estado', requireAuth, validar(esquemaCambiarEstadoUsuario), async (req, res) => {
     try {
       await conectarUsuarios();
-      const { estado } = req.body || {};
-      if (!['activo', 'suspendido', 'pendiente'].includes(estado)) {
-        res.status(400).json({ error: 'Estado inválido' }); return;
-      }
+      const { estado } = req.body;
       const u = await UsuarioModel.findOneAndUpdate({ id: req.params.id }, { estado }, { new: true }).lean().exec() as any;
       if (!u) { res.status(404).json({ error: 'No encontrado' }); return; }
+      if (estado === 'suspendido') {
+        // Invalida la sesión de verdad: sin refresh token válido, el
+        // access token deja de poder renovarse en cuanto caduque (máx. 15 min).
+        await revocarTodosDeUsuario(u.id);
+      }
       if (estado === 'activo' && (u.pushSubs || []).length) {
         for (const sub of u.pushSubs as PushSub[]) {
           await enviarNotificacion(sub, 'Acceso aprobado', 'Ya puedes entrar a la app.', { tipo: 'acceso-aprobado' });
@@ -284,6 +399,7 @@ export function run() {
     try {
       await conectarUsuarios();
       await UsuarioModel.deleteOne({ id: req.params.id, esAdmin: false });
+      await revocarTodosDeUsuario(req.params.id);
       res.json({ ok: true });
     } catch (err) { res.status(500).json({ error: String(err) }); }
   });
@@ -309,7 +425,7 @@ export function run() {
     } catch (err) { res.status(500).json({ error: String(err) }); }
   });
 
-  app.put('/clientes/:id', requireAuth, async (req: AuthRequest, res) => {
+  app.put('/clientes/:id', requireAuth, validar(esquemaCliente), async (req: AuthRequest, res) => {
     try {
       const cliente = await svc.guardarCliente({ ...req.body, id: req.params.id }, req.usuarioId!);
       res.json(cliente);
@@ -330,7 +446,7 @@ export function run() {
     catch (err) { res.status(500).json({ error: String(err) }); }
   });
 
-  app.put('/empresa', requireAuth, async (req: AuthRequest, res) => {
+  app.put('/empresa', requireAuth, validar(esquemaEmpresa), async (req: AuthRequest, res) => {
     try { res.json(await svc.guardarEmpresa(req.body, req.usuarioId!)); }
     catch (err) { res.status(500).json({ error: String(err) }); }
   });
@@ -350,7 +466,7 @@ export function run() {
     } catch (err) { res.status(500).json({ error: String(err) }); }
   });
 
-  app.put('/facturas/:id', requireAuth, async (req: AuthRequest, res) => {
+  app.put('/facturas/:id', requireAuth, validar(esquemaFactura), async (req: AuthRequest, res) => {
     try { res.json(await svc.guardarFactura({ ...req.body, id: req.params.id }, req.usuarioId!)); }
     catch (err) { res.status(500).json({ error: String(err) }); }
   });
@@ -362,9 +478,9 @@ export function run() {
 
   // ── Asistente IA ──
 
-  app.post('/asistente', requireAuth, async (req: AuthRequest, res) => {
+  app.post('/asistente', requireAuth, validar(esquemaAsistente), async (req: AuthRequest, res) => {
     try {
-      const { mensajes, contexto } = req.body || {};
+      const { mensajes, contexto } = req.body;
       const apiKey = process.env.OPENAI_API_KEY;
       if (!apiKey) { res.status(503).json({ error: 'API key no configurada' }); return; }
 

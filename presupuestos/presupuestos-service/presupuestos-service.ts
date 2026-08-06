@@ -106,7 +106,7 @@ export class PresupuestosService {
     await conectar();
     const docs = await FacturaModel.find({ usuarioId }).sort({ creado: -1 }).lean().exec();
     return docs.map((d) => {
-      const { _id, __v, imagen: _img, ...rest } = d as any;
+      const { imagen: _img, ...rest } = this.limpiar(d as Record<string, unknown>);
       return rest;
     });
   }
@@ -120,8 +120,7 @@ export class PresupuestosService {
     await conectar();
     const doc = await FacturaModel.findOne({ id, usuarioId }).lean().exec();
     if (!doc) return null;
-    const { _id, __v, ...rest } = doc as any;
-    return rest;
+    return this.limpiar(doc as Record<string, unknown>);
   }
 
   /**
@@ -136,8 +135,7 @@ export class PresupuestosService {
       { ...factura, usuarioId },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     ).lean().exec();
-    const { _id, __v, ...rest } = doc as any;
-    return rest;
+    return this.limpiar(doc as Record<string, unknown>);
   }
 
   /**

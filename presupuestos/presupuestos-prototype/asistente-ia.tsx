@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import type { Cliente } from './types.js';
+import { fetchConAuth } from './api.js';
 import styles from './asistente-ia.module.css';
 
 /** Un mensaje del chat del asistente. */
@@ -44,9 +45,6 @@ export type AsistenteIAProps = {
   /** Iniciar creación de cliente. */
   onCrearCliente: () => void;
 };
-
-const CLAVE_TOKEN = 'mc-auth-token';
-const BASE = '/api/presupuestos-service';
 
 /** Genera un ID único simple. */
 const uid = () => Math.random().toString(36).slice(2);
@@ -149,12 +147,10 @@ export function AsistenteIA({
         .slice(-10)
         .map(m => ({ role: m.rol === 'usuario' ? 'user' : 'assistant', content: m.texto }));
 
-      const token = localStorage.getItem(CLAVE_TOKEN) ?? '';
-      const res = await fetch(`${BASE}/asistente`, {
+      const res = await fetchConAuth('/asistente', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mensajes: historial, contexto }),
-        credentials: 'include',
       });
 
       const data = await res.json();

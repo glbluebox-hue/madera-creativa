@@ -3,6 +3,7 @@ import type { Factura, Proveedor } from './types.js';
 import { EscanerDocumento } from './escaner-documento.js';
 import type { ResultadoEscaneo } from './escaner-documento.js';
 import { ImporteInput } from './importe-input.js';
+import { leerArchivoComoBase64 } from './archivos.js';
 import styles from './styles.module.css';
 
 /** Props del escáner de facturas. */
@@ -25,15 +26,6 @@ type Pagina = { id: string; dataUrl: string; nombre: string };
 /** Genera un id único. */
 function uid(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
-}
-
-/** Lee un File y devuelve su dataURL. */
-function leerArchivo(file: File): Promise<string> {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = (ev) => resolve(ev.target?.result as string);
-    reader.readAsDataURL(file);
-  });
 }
 
 /**
@@ -79,7 +71,7 @@ export function EscanerFactura({ clientes, proveedores = [], onGuardar, onCerrar
     if (!files || files.length === 0) return;
     const nuevas: Pagina[] = [];
     for (const file of Array.from(files)) {
-      const dataUrl = await leerArchivo(file);
+      const dataUrl = await leerArchivoComoBase64(file);
       nuevas.push({ id: uid(), dataUrl, nombre: file.name });
     }
     setPaginas(prev => {

@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import type { Adjunto } from './types.js';
 import { generarId } from './mock.js';
 import { formatoTamano } from './calculos.js';
+import { leerArchivoComoBase64 } from './archivos.js';
 import styles from './styles.module.css';
 
 /** Props del panel de archivos adjuntos. */
@@ -26,18 +27,16 @@ export function PanelAdjuntos({ adjuntos, onAnadir, onBorrar }: PanelAdjuntosPro
     Array.from(files)
       .filter((file) => file.type === 'application/pdf' || file.type.startsWith('image/'))
       .forEach((file) => {
-      const lector = new FileReader();
-      lector.onload = () => {
-        onAnadir({
-          id: generarId(),
-          nombre: file.name,
-          tipo: file.type,
-          tamano: file.size,
-          url: String(lector.result),
+        leerArchivoComoBase64(file).then((url) => {
+          onAnadir({
+            id: generarId(),
+            nombre: file.name,
+            tipo: file.type,
+            tamano: file.size,
+            url,
+          });
         });
-      };
-      lector.readAsDataURL(file);
-    });
+      });
   };
 
   const esImagen = (tipo: string) => tipo.startsWith('image/');

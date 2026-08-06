@@ -1,19 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { formatoFecha } from './calculos.js';
+import { fetchConAuth } from './api.js';
 import styles from './styles.module.css';
-
-const BASE = '/api/presupuestos-service';
-
-/**
- * Token de administrador. Usa el que guardó el login en localStorage; si no
- * existe, deriva el token estándar 'uid:admin' que el servidor reconoce.
- * Nunca contiene credenciales en texto plano.
- */
-function tokenAdmin(): string {
-  const guardado = localStorage.getItem('mc-auth-token');
-  if (guardado) return guardado.startsWith('Bearer ') ? guardado.slice(7) : guardado;
-  return btoa('uid:admin');
-}
 
 type EstadoUsuario = 'pendiente' | 'activo' | 'suspendido';
 
@@ -53,10 +41,7 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
     setCargando(true);
     setError('');
     try {
-      const res = await fetch(`${BASE}/admin/usuarios`, {
-        headers: { Authorization: `Bearer ${tokenAdmin()}` },
-        credentials: 'include',
-      });
+      const res = await fetchConAuth('/admin/usuarios');
       if (!res.ok) throw new Error('Error al cargar usuarios');
       const data = await res.json() as UsuarioAdmin[];
       setUsuarios(data.filter(u => !u.esAdmin));
@@ -71,10 +56,9 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
 
   const cambiarEstado = async (id: string, estado: EstadoUsuario) => {
     try {
-      await fetch(`${BASE}/admin/usuarios/${id}/estado`, {
+      await fetchConAuth(`/admin/usuarios/${id}/estado`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenAdmin()}` },
-        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ estado }),
       });
       setUsuarios(prev => prev.map(u => u.id === id ? { ...u, estado } : u));
@@ -85,11 +69,7 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
 
   const eliminar = async (id: string) => {
     try {
-      await fetch(`${BASE}/admin/usuarios/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${tokenAdmin()}` },
-        credentials: 'include',
-      });
+      await fetchConAuth(`/admin/usuarios/${id}`, { method: 'DELETE' });
       setUsuarios(prev => prev.filter(u => u.id !== id));
       setAccion(null);
     } catch {

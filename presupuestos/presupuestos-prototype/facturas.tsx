@@ -3,6 +3,7 @@ import type { Factura, Proveedor } from './types.js';
 import { formatoEuro, formatoFecha } from './calculos.js';
 import { EscanerFactura } from './escaner-factura.js';
 import { Trimestres } from './trimestres.js';
+import { autoCrearProveedorDeFactura } from './proveedor-utils.js';
 import styles from './styles.module.css';
 
 type Vista = 'lista' | 'trimestres';
@@ -38,15 +39,7 @@ export function Facturas({ facturas, clientes, proveedores = [], onGuardar, onBo
 
   const abrirEdicion = (f: Factura) => { setFacturaEditar(f); setEscaner(true); };
   const guardarYCerrar = (f: Factura) => {
-    // Auto-crear proveedor si el nombre no existe aún y hay nombre de proveedor
-    if (f.proveedor?.trim() && onCrearProveedor) {
-      const existe = proveedores.some(
-        p => p.nombre.toLowerCase() === f.proveedor.toLowerCase()
-      );
-      if (!existe) {
-        onCrearProveedor({ nombre: f.proveedor.trim(), contacto: '', telefono: '', email: '', direccion: '', notas: '' });
-      }
-    }
+    autoCrearProveedorDeFactura(f, proveedores, onCrearProveedor);
     onGuardar(f);
     setEscaner(false);
     setFacturaEditar(undefined);

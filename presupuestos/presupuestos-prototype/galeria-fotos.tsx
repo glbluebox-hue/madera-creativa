@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { generarId } from './mock.js';
 import { EscanerDocumento } from './escaner-documento.js';
+import { leerArchivoComoBase64 } from './archivos.js';
 import styles from './styles.module.css';
 
 /** Una foto del proyecto acabado. */
@@ -36,16 +37,14 @@ export function GaleriaFotos({ fotos, onAnadir, onBorrar }: GaleriaFotosProps) {
     Array.from(files)
       .filter((f) => f.type.startsWith('image/'))
       .forEach((file) => {
-        const reader = new FileReader();
-        reader.onload = () => {
+        leerArchivoComoBase64(file).then((url) => {
           onAnadir({
             id: generarId(),
-            url: String(reader.result),
+            url,
             descripcion: '',
             fecha: new Date().toISOString().slice(0, 10),
           });
-        };
-        reader.readAsDataURL(file);
+        });
       });
   };
 

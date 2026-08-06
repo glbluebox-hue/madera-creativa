@@ -1,6 +1,6 @@
 import type { Cliente } from './types.js';
 import { calcularMetricas } from './dashboard-calculos.js';
-import { formatoEuro } from './calculos.js';
+import { formatoEuro, formatoFecha } from './calculos.js';
 import styles from './styles.module.css';
 
 /** Props del panel principal (dashboard). */
@@ -34,16 +34,6 @@ function Kpi({
       </div>
     </div>
   );
-}
-
-/** Formatea una fecha ISO a formato corto en español. */
-function fechaCorta(iso: string): string {
-  try {
-    const d = new Date(iso + (iso.length === 10 ? 'T12:00:00' : ''));
-    return d.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  } catch {
-    return iso;
-  }
 }
 
 /**
@@ -83,7 +73,7 @@ export function Dashboard({ clientes, onAbrir }: DashboardProps) {
           ) : (
             m.proximosMontajes.map(({ cliente, fecha }) => (
               <div key={cliente.id} className={styles.agendaItem} onClick={() => onAbrir(cliente.id)}>
-                <span className={styles.agendaFecha}>{fechaCorta(fecha)}</span>
+                <span className={styles.agendaFecha}>{formatoFecha(fecha)}</span>
                 <div className={styles.agendaInfo}>
                   <span className={styles.agendaNombre}>{cliente.nombre}</span>
                   <span className={styles.agendaProyecto}>{cliente.proyecto || 'Sin proyecto'}</span>
@@ -100,7 +90,7 @@ export function Dashboard({ clientes, onAbrir }: DashboardProps) {
           ) : (
             m.proximasMediciones.map(({ cliente, fecha }) => (
               <div key={cliente.id} className={styles.agendaItem} onClick={() => onAbrir(cliente.id)}>
-                <span className={styles.agendaFecha}>{fechaCorta(fecha)}</span>
+                <span className={styles.agendaFecha}>{formatoFecha(fecha)}</span>
                 <div className={styles.agendaInfo}>
                   <span className={styles.agendaNombre}>{cliente.nombre}</span>
                   <span className={styles.agendaProyecto}>{cliente.proyecto || 'Sin proyecto'}</span>

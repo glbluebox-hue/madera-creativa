@@ -9,7 +9,8 @@ import { TablaMovimientos } from './tabla-movimientos.js';
 import { TablaHoras } from './tabla-horas.js';
 import { TablaMargen } from './tabla-margen.js';
 import { PanelAdjuntos } from './panel-adjuntos.js';
-import { PizarraMedidas } from './pizarra-medidas.js';
+import { PizarraMedidas, type DibujoGuardado } from './pizarra-medidas.js';
+import { autoCrearProveedorDeFactura } from './proveedor-utils.js';
 import styles from './styles.module.css';
 
 /** Props de la ficha detallada de un cliente. */
@@ -51,14 +52,7 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], onVolve
 
   /** Guarda la factura y vincula proveedor automáticamente si el nombre coincide con uno existente. */
   const guardarFacturaConProveedor = (f: Factura) => {
-    if (f.proveedor?.trim() && onCrearProveedor) {
-      const existe = proveedores.some(
-        p => p.nombre.toLowerCase() === f.proveedor.toLowerCase()
-      );
-      if (!existe) {
-        onCrearProveedor({ nombre: f.proveedor.trim(), contacto: '', telefono: '', email: '', direccion: '', notas: '' });
-      }
-    }
+    autoCrearProveedorDeFactura(f, proveedores, onCrearProveedor);
     onGuardarFactura?.(f);
   };
 
@@ -85,6 +79,14 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], onVolve
 
   const cambiarEstado = (estado: Cliente['estado']) =>
     onActualizar({ ...cliente, estado });
+
+  /** Guarda (o actualiza, si ya existía) un dibujo de la pizarra de medidas en la ficha del cliente. */
+  const guardarDibujo = (dibujo: DibujoGuardado) => {
+    const previos = cliente.dibujos ?? [];
+    const idx = previos.findIndex((d) => d.id === dibujo.id);
+    const nuevos = idx >= 0 ? previos.map((d, i) => (i === idx ? dibujo : d)) : [...previos, dibujo];
+    onActualizar({ ...cliente, dibujos: nuevos });
+  };
 
   return (
     <div>
@@ -189,7 +191,7 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], onVolve
         onBorrar={borrarAdjunto}
       />
 
-      <PizarraMedidas />
+      <PizarraMedidas dibujos={cliente.dibujos ?? []} onGuardar={guardarDibujo} />
 
       {/* Galería de fotos del proyecto acabado */}
       <GaleriaFotos

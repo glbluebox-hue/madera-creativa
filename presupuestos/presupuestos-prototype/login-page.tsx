@@ -215,7 +215,7 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
                   type={mostrarPassReg ? 'text' : 'password'}
                   value={regPass}
                   onChange={e => setRegPass(e.target.value)}
-                  placeholder="Contraseña (mín. 4 caracteres)"
+                  placeholder="Contraseña (mín. 8 caracteres)"
                   autoComplete="new-password"
                 />
                 <button type="button" className={styles.loginOjoBtn} onClick={() => setMostrarPassReg(v => !v)} tabIndex={-1}>

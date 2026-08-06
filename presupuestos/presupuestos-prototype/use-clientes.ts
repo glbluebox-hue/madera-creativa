@@ -46,27 +46,10 @@ export function useClientes(autenticado = true): UseClientes {
     cargar();
   }, [autenticado, cargar]);
 
-  /** Fuerza cierre de sesión si el token guardado no es válido en el servidor. */
-  useEffect(() => {
-    if (!autenticado) return;
-    const BASE_SVC = '/api/presupuestos-service';
-    const token = localStorage.getItem('mc-auth-token');
-    // Solo verificar si hay token guardado (usuarios que ya hicieron login)
-    if (!token) return;
-    fetch(`${BASE_SVC}/auth/yo`, {
-      headers: { Authorization: 'Bearer ' + token },
-      credentials: 'include',
-    }).then(r => {
-      if (r.status === 401 || r.status === 403) {
-        // Token inválido: limpiar sesión y forzar re-login
-        localStorage.removeItem('mc-auth-token');
-        localStorage.removeItem('mc_sesion');
-        localStorage.removeItem('mc_auth_actividad');
-        window.location.reload();
-      }
-    }).catch(() => { /* sin conexión: ignorar */ });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autenticado]);
+  // El cierre de sesión ante un token inválido ya lo gestiona de forma
+  // centralizada `fetchConAuth()` (ver api.ts): si el access token no es
+  // válido y la renovación tampoco funciona, dispara el callback registrado
+  // en use-auth.ts. No hace falta una comprobación ad-hoc aquí.
 
   const crear = useCallback(async (cliente: Cliente) => {
     setClientes((prev) => [cliente, ...prev]);
@@ -79,8 +62,15 @@ export function useClientes(autenticado = true): UseClientes {
 
   const actualizar = useCallback(async (cliente: Cliente) => {
     setClientes((prev) => prev.map((c) => (c.id === cliente.id ? cliente : c)));
-    await api.guardarCliente(cliente);
-  }, []);
+    try {
+      await api.guardarCliente(cliente);
+    } catch {
+      // El guardado falló: revertimos el cambio optimista recargando el
+      // estado real del servidor, en vez de dejar en pantalla una edición
+      // que el usuario cree guardada pero que nunca llegó a persistirse.
+      cargar();
+    }
+  }, [cargar]);
 
   const borrar = useCallback(async (id: string) => {
     setClientes((prev) => prev.filter((c) => c.id !== id));

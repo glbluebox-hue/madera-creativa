@@ -147,8 +147,6 @@ export function PizarraMedidas({ dibujos = [], onGuardar }: PizarraMedidasProps)
   const snapshotLinea = useRef<ImageData | null>(null);
   const historial = useRef<ImageData[]>([]);
   const fondoIniciado = useRef(false);
-  type RecAPI = { start: () => void; stop: () => void; lang: string; continuous: boolean; interimResults: boolean; onresult: ((e: Event) => void) | null; onerror: ((e: Event) => void) | null };
-  const reconocimiento = useRef<RecAPI | null>(null);
 
   /**
    * Obtiene el contexto 2D ya escalado por DPR.
@@ -258,23 +256,6 @@ export function PizarraMedidas({ dibujos = [], onGuardar }: PizarraMedidasProps)
     const onChange = () => { if (!document.fullscreenElement) setPantallaCompleta(false); };
     document.addEventListener('fullscreenchange', onChange);
     return () => document.removeEventListener('fullscreenchange', onChange);
-  }, []);
-
-  // Reconocimiento de voz
-  useEffect(() => {
-    type SpeechRecognitionCtor = new () => RecAPI;
-    const w = window as Window & { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor };
-    const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
-    if (!SR) return;
-    const rec = new SR();
-    rec.lang = 'es-ES'; rec.continuous = true; rec.interimResults = false;
-    rec.onresult = (e: Event) => {
-      const sre = e as Event & { results: { length: number; [i: number]: { [j: number]: { transcript: string } } } };
-      const texto = sre.results[sre.results.length - 1][0].transcript.toLowerCase().trim();
-      if (texto.includes('guardar') || texto.includes('save')) ejecutarGuardar();
-    };
-    rec.onerror = () => {};
-    reconocimiento.current = rec;
   }, []);
 
   const togglePantallaCompleta = () => {
@@ -393,10 +374,7 @@ export function PizarraMedidas({ dibujos = [], onGuardar }: PizarraMedidasProps)
     const rect = canvas.getBoundingClientRect();
     const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
-    // rect.width == CSS width, canvas.width == physical width — ratio == DPR
-    const scaleX = rect.width / rect.width; // always 1 — we work in CSS coords
-    const scaleY = rect.height / rect.height;
-    return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+    return { x: clientX - rect.left, y: clientY - rect.top };
   };
 
   const iniciarTrazo = useCallback((e: React.MouseEvent | React.TouchEvent) => {

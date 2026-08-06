@@ -1,20 +1,19 @@
 /**
  * Utilidades para registrar y autenticar usuarios contra el servidor de Madera Creativa.
  * El servidor es la fuente de verdad para el control de acceso.
+ *
+ * La contraseña se envía en claro sobre HTTPS — el hashing con sal (bcrypt)
+ * ocurre exclusivamente en el servidor, nunca en el cliente. Ver `password.service.ts`
+ * en `presupuestos-service`.
+ *
+ * El access token que devuelve el login se guarda a través de
+ * `establecerAccessToken()` (ver `api.ts`) — nunca en `localStorage`. El
+ * refresh token viaja en una cookie httpOnly que el navegador gestiona solo.
  */
 
-const BASE = '/api/presupuestos-service';
+import { establecerAccessToken } from './api.js';
 
-/** Hash simple sincronizado con el backend. */
-function hashSimple(texto: string): string {
-  let hash = 0;
-  for (let i = 0; i < texto.length; i++) {
-    const c = texto.charCodeAt(i);
-    hash = ((hash << 5) - hash) + c;
-    hash |= 0;
-  }
-  return 'h' + Math.abs(hash).toString(36);
-}
+const BASE = '/api/presupuestos-service';
 
 /** Resultado de un intento de login/registro. */
 export type ResultadoAuth = {
@@ -37,10 +36,16 @@ export async function registrarEnServidor(nombre: string, password: string): Pro
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ nombre, passwordHash: hashSimple(password) }),
+      body: JSON.stringify({ nombre, password }),
     });
     const data = await res.json() as any;
     if (res.status === 409) return { ok: false, error: 'Ese nombre de usuario ya existe.', codigo: 'credenciales' };
+    // 400 = datos inválidos (p. ej. contraseña demasiado corta) — es un error del
+    // usuario, no de conexión: no debe caer al registro local como si el servidor
+    // no respondiera.
+    if (res.status === 400) {
+      return { ok: false, error: data.detalles?.[0]?.mensaje || data.error || 'Datos inválidos.', codigo: 'credenciales' };
+    }
     if (!res.ok) return { ok: false, error: data.error || 'Error al registrarse.', codigo: 'error-red' };
     return { ok: true, id: data.id, estado: 'pendiente' };
   } catch {
@@ -58,7 +63,7 @@ export async function loginEnServidor(nombre: string, password: string): Promise
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ nombre, passwordHash: hashSimple(password) }),
+      body: JSON.stringify({ nombre, password }),
     });
     const data = await res.json() as any;
     if (res.status === 403 && data.error === 'pendiente') {
@@ -68,10 +73,7 @@ export async function loginEnServidor(nombre: string, password: string): Promise
       return { ok: false, error: data.mensaje, codigo: 'suspendido' };
     }
     if (!res.ok) return { ok: false, error: data.error || 'Usuario o contraseña incorrectos.', codigo: 'credenciales' };
-    // Guardar el token único del usuario para que las llamadas a la API usen su identidad
-    if (data.token) {
-      try { localStorage.setItem('mc-auth-token', data.token); } catch { /* noop */ }
-    }
+    establecerAccessToken(data.accessToken);
     return { ok: true, id: data.id, nombre: data.nombre, esAdmin: data.esAdmin, estado: data.estado };
   } catch {
     return { ok: false, error: 'Sin conexión con el servidor. Inténtalo de nuevo.', codigo: 'error-red' };
