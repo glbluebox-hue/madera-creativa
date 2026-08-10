@@ -1,0 +1,51 @@
+# ── Dependencias ──
+# Se reconstruyen con `pnpm install` — nunca deben versionarse (monorepo:
+# hay un node_modules en la raíz y uno por cada componente de Bit).
+node_modules/
+
+# ── Caché de Bit ──
+# Estado local reconstruible (`bit install`/`bit compile`), no historial de
+# componentes. `.bit/objects` (historial de versiones de componentes) y el
+# resto de `.bit/*` se dejan fuera de este bloque a propósito — pendiente de
+# confirmar antes de excluirlos (ver informe).
+.bit/cache/
+.bit/tmp/
+
+# ── Builds / artefactos generados ──
+dist/
+build/
+*.tsbuildinfo
+coverage/
+
+# ── Logs ──
+*.log
+logs/
+
+# ── Variables de entorno y credenciales ──
+# env.example NO se excluye — es la plantilla sin valores reales, debe
+# versionarse para que cualquiera pueda configurar su propio .env.
+.env
+.env.*
+!.env.example
+!env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+*.crt
+
+# ── Copias de seguridad de datos ──
+# Redundante con presupuestos/presupuestos-platform/backups/.gitignore
+# (que ya excluye esa carpeta entera) — regla general de más por si aparece
+# otra carpeta de backups en el futuro.
+backups/
+
+# ── Temporales / caché de herramientas ──
+*.tmp
+.cache/
+.pnpm-store/
+
+# ── Sistema operativo ──
+.DS_Store
+Thumbs.db

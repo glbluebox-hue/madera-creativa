@@ -1,7 +1,17 @@
 import { useState, useRef, useEffect } from 'react';
-import type { Cliente } from './types.js';
-import { fetchConAuth } from './api.js';
+import { generarRespuestaIA, confirmarPropuestaIA, type AccionInterfazIA } from './api.js';
 import styles from './asistente-ia.module.css';
+
+type MensajeChat = { role: 'user' | 'assistant' | 'system'; content: string };
+
+/** Una escritura propuesta por la IA, adjunta a un mensaje del chat, pendiente de confirmación explícita. */
+type PropuestaChat = {
+  nombre: string;
+  argumentos: Record<string, unknown>;
+  /** Conversación tal como se envió a `/ia/generar` cuando se propuso — necesaria para que la IA redacte la confirmación final con el resultado real. */
+  historial: MensajeChat[];
+  estado: 'pendiente' | 'confirmando' | 'confirmada' | 'error';
+};
 
 /** Un mensaje del chat del asistente. */
 type Mensaje = {
@@ -9,15 +19,7 @@ type Mensaje = {
   rol: 'usuario' | 'asistente';
   texto: string;
   cargando?: boolean;
-};
-
-/** Acción parseable que el asistente puede devolver. */
-type Accion = {
-  action: string;
-  seccion?: string;
-  clienteId?: string;
-  clienteNombre?: string;
-  termino?: string;
+  propuesta?: PropuestaChat;
 };
 
 /** Contexto actual de la app para que el asistente sepa dónde está el usuario. */
@@ -32,12 +34,18 @@ export type AsistenteIAProps = {
   sinFab?: boolean;
   /** Permite que el padre controle si el panel está abierto. */
   abiertoProp?: boolean;
-  /** Callback cuando el usuario cierra el panel desde dentro. */
-  onCerrar?: () => void;
+  /**
+   * Se llama cada vez que el panel debería abrirse o cerrarse desde dentro
+   * (FAB, botón de cerrar) — imprescindible cuando se usa `abiertoProp`: sin
+   * esto, el padre nunca se entera de que hay que ABRIR el panel (antes solo
+   * existía `onCerrar`, que solo cubría el cierre — el FAB no hacía nada
+   * visible al pulsarlo en modo controlado).
+   */
+  onCambiarAbierto?: (abierto: boolean) => void;
   /** Contexto actual de la pantalla. */
   contexto: ContextoApp;
-  /** Lista de clientes disponibles para navegación. */
-  clientes: Cliente[];
+  /** Solo id+nombre de todos los clientes, para resolver a quién se refiere el asistente al navegar. */
+  clientes: { id: string; nombre: string }[];
   /** Navegar a una sección. */
   onNavegar: (seccion: 'clientes' | 'presupuestos' | 'facturas') => void;
   /** Abrir la ficha de un cliente. */
@@ -49,39 +57,26 @@ export type AsistenteIAProps = {
 /** Genera un ID único simple. */
 const uid = () => Math.random().toString(36).slice(2);
 
-/** Extrae la acción JSON del texto de respuesta del asistente. */
-function parsearAccion(texto: string): { texto: string; accion: Accion | null } {
-  const match = texto.match(/<accion>([\s\S]*?)<\/accion>/);
-  if (!match) return { texto, accion: null };
-  try {
-    const accion = JSON.parse(match[1].trim());
-    const textoLimpio = texto.replace(/<accion>[\s\S]*?<\/accion>/, '').trim();
-    return { texto: textoLimpio, accion };
-  } catch {
-    return { texto, accion: null };
-  }
-}
-
 /**
  * Asistente IA flotante de Madera Creativa.
  * Procesa lenguaje natural y ejecuta acciones dentro de la app.
  */
 export function AsistenteIA({
   contexto, clientes, onNavegar, onAbrirCliente, onCrearCliente,
-  sinFab, abiertoProp, onCerrar,
+  sinFab, abiertoProp, onCambiarAbierto,
 }: AsistenteIAProps) {
   const [abiertoInterno, setAbiertoInterno] = useState(false);
   const abierto = abiertoProp !== undefined ? abiertoProp : abiertoInterno;
   const setAbierto = (v: boolean | ((prev: boolean) => boolean)) => {
     const next = typeof v === 'function' ? v(abierto) : v;
     setAbiertoInterno(next);
-    if (!next) onCerrar?.();
+    onCambiarAbierto?.(next);
   };
   const [mensajes, setMensajes] = useState<Mensaje[]>([
     {
       id: uid(),
       rol: 'asistente',
-      texto: '¡Hola! Soy tu asistente de Madera Creativa 🪚 Puedo abrir clientes, buscar proyectos, decirte el beneficio del mes o cualquier cosa que necesites. ¿En qué te ayudo?',
+      texto: '¡Hola! Soy tu asistente de Madera Creativa. Puedo abrir clientes, buscar proyectos, decirte el beneficio del mes o cualquier cosa que necesites. ¿En qué te ayudo?',
     },
   ]);
   const [input, setInput] = useState('');
@@ -101,19 +96,19 @@ export function AsistenteIA({
     if (abierto) setTimeout(() => inputRef.current?.focus(), 100);
   }, [abierto]);
 
-  /** Ejecuta la acción devuelta por el asistente. */
-  const ejecutarAccion = (accion: Accion) => {
-    switch (accion.action) {
+  /** Ejecuta una acción de interfaz devuelta por el núcleo de IA (`POST /ia/generar`). */
+  const ejecutarAccion = (accion: AccionInterfazIA) => {
+    const args = accion.argumentos;
+    switch (accion.nombre) {
       case 'navegarSeccion':
-        if (accion.seccion) onNavegar(accion.seccion as any);
+        if (typeof args.seccion === 'string') onNavegar(args.seccion as any);
         break;
       case 'abrirCliente':
-        if (accion.clienteId) {
-          onAbrirCliente(accion.clienteId);
-        } else if (accion.clienteNombre) {
-          const encontrado = clientes.find(c =>
-            c.nombre.toLowerCase().includes((accion.clienteNombre || '').toLowerCase())
-          );
+        if (typeof args.clienteId === 'string' && args.clienteId) {
+          onAbrirCliente(args.clienteId);
+        } else if (typeof args.clienteNombre === 'string' && args.clienteNombre) {
+          const termino = args.clienteNombre.toLowerCase();
+          const encontrado = clientes.find(c => c.nombre.toLowerCase().includes(termino));
           if (encontrado) onAbrirCliente(encontrado.id);
         }
         break;
@@ -142,26 +137,27 @@ export function AsistenteIA({
     setCargando(true);
 
     try {
-      const historial = [...mensajes, msgUsuario]
+      const historial: MensajeChat[] = [...mensajes, msgUsuario]
         .filter(m => !m.cargando)
         .slice(-10)
-        .map(m => ({ role: m.rol === 'usuario' ? 'user' : 'assistant', content: m.texto }));
+        .map(m => ({ role: (m.rol === 'usuario' ? 'user' : 'assistant') as 'user' | 'assistant', content: m.texto }));
 
-      const res = await fetchConAuth('/asistente', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mensajes: historial, contexto }),
-      });
-
-      const data = await res.json();
-      const raw = data.respuesta || 'No pude procesar tu solicitud.';
-      const { texto: textoLimpio, accion } = parsearAccion(raw);
+      const data = await generarRespuestaIA({ capacidad: 'asistente-global', mensajes: historial, referencias: contexto });
+      const primeraPropuesta = data.propuestas[0];
+      const raw = data.respuesta || (primeraPropuesta ? 'Antes de hacerlo, confírmamelo:' : 'No pude procesar tu solicitud.');
 
       setMensajes(prev => prev.map(m =>
-        m.cargando ? { ...m, texto: textoLimpio || raw, cargando: false } : m
+        m.cargando
+          ? {
+              ...m, texto: raw, cargando: false,
+              propuesta: primeraPropuesta
+                ? { nombre: primeraPropuesta.nombre, argumentos: primeraPropuesta.argumentos, historial, estado: 'pendiente' }
+                : undefined,
+            }
+          : m
       ));
 
-      if (accion) {
+      for (const accion of data.accionesInterfaz) {
         setTimeout(() => ejecutarAccion(accion), 400);
       }
     } catch {
@@ -170,6 +166,32 @@ export function AsistenteIA({
       ));
     } finally {
       setCargando(false);
+    }
+  };
+
+  /** Confirma una propuesta de escritura pendiente — ejecuta la acción real y muestra la respuesta redactada por la IA con el resultado real. */
+  const confirmarPropuesta = async (msgId: string) => {
+    const msg = mensajes.find(m => m.id === msgId);
+    if (!msg?.propuesta || msg.propuesta.estado !== 'pendiente') return;
+    const propuesta = msg.propuesta;
+
+    setMensajes(prev => prev.map(m => m.id === msgId ? { ...m, propuesta: { ...propuesta, estado: 'confirmando' } } : m));
+
+    try {
+      const { resultado, respuestaFinal } = await confirmarPropuestaIA({
+        capacidad: 'asistente-global',
+        nombre: propuesta.nombre,
+        argumentos: propuesta.argumentos,
+        mensajesPrevios: propuesta.historial,
+        referencias: contexto,
+      });
+      const textoFinal = respuestaFinal?.respuesta || `Hecho. ${JSON.stringify(resultado)}`;
+      setMensajes(prev => [
+        ...prev.map(m => m.id === msgId ? { ...m, propuesta: { ...propuesta, estado: 'confirmada' as const } } : m),
+        { id: uid(), rol: 'asistente' as const, texto: textoFinal },
+      ]);
+    } catch {
+      setMensajes(prev => prev.map(m => m.id === msgId ? { ...m, propuesta: { ...propuesta, estado: 'error' as const } } : m));
     }
   };
 
@@ -234,7 +256,9 @@ export function AsistenteIA({
           {/* Cabecera */}
           <div className={styles.cabecera}>
             <div className={styles.cabeceraInfo}>
-              <div className={styles.avatar}>🪚</div>
+              <div className={styles.avatar}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /><circle cx="9" cy="10" r="1" fill="currentColor" /><circle cx="12" cy="10" r="1" fill="currentColor" /><circle cx="15" cy="10" r="1" fill="currentColor" /></svg>
+              </div>
               <div>
                 <p className={styles.cabeceraTitle}>Asistente Madera</p>
                 <p className={styles.cabeceraStatus}>
@@ -256,7 +280,33 @@ export function AsistenteIA({
                     <span /><span /><span />
                   </span>
                 ) : (
-                  <p className={styles.msgTexto}>{m.texto}</p>
+                  <>
+                    <p className={styles.msgTexto}>{m.texto}</p>
+                    {m.propuesta && (
+                      <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        {m.propuesta.estado === 'pendiente' && (
+                          <button
+                            onClick={() => confirmarPropuesta(m.id)}
+                            style={{
+                              background: 'var(--verde, #2f9e44)', color: '#fff', border: 'none',
+                              borderRadius: 6, padding: '0.4rem 0.9rem', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer',
+                            }}
+                          >
+                            Confirmar
+                          </button>
+                        )}
+                        {m.propuesta.estado === 'confirmando' && (
+                          <span style={{ fontSize: '0.78rem', color: 'var(--topo-claro)' }}>Ejecutando…</span>
+                        )}
+                        {m.propuesta.estado === 'confirmada' && (
+                          <span style={{ fontSize: '0.78rem', color: 'var(--verde, #2f9e44)', fontWeight: 700 }}>✓ Confirmado</span>
+                        )}
+                        {m.propuesta.estado === 'error' && (
+                          <span style={{ fontSize: '0.78rem', color: 'var(--rojo, #c0392b)' }}>No se pudo confirmar. Inténtalo de nuevo.</span>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             ))}
@@ -293,7 +343,7 @@ export function AsistenteIA({
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && !e.shiftKey && enviar()}
-              placeholder={escuchando ? '🎙️ Escuchando...' : 'Escribe o habla...'}
+              placeholder={escuchando ? 'Escuchando...' : 'Escribe o habla...'}
               disabled={cargando}
             />
             <button

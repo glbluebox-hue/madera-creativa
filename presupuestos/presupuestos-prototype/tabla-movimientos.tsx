@@ -3,6 +3,7 @@ import type { Movimiento, TipoMovimiento } from './types.js';
 import { generarId } from './mock.js';
 import { formatoEuro, formatoFecha } from './calculos.js';
 import { ImporteInput } from './importe-input.js';
+import { ConfirmarBorrado } from './confirmar-borrado.js';
 import styles from './styles.module.css';
 
 /** Props de la tabla de movimientos (gastos e ingresos). */
@@ -86,7 +87,10 @@ export function TablaMovimientos({ movimientos, onAnadir, onBorrar, onEditar }: 
   return (
     <div className={styles.panel}>
       <div className={styles.panelHeader}>
-        <h3 className={styles.panelTitulo}>💰 Gastos e ingresos</h3>
+        <h3 className={styles.panelTitulo} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4" /></svg>
+          Gastos e ingresos
+        </h3>
         <button
           className={`${styles.btn} ${styles.btnSecundario}`}
           onClick={() => { resetForm(); setMostrarForm(v => !v); }}
@@ -133,17 +137,12 @@ export function TablaMovimientos({ movimientos, onAnadir, onBorrar, onEditar }: 
                       className={styles.btnIcono}
                       onClick={() => iniciarEdicion(m)}
                       title="Editar"
+                      aria-label="Editar movimiento"
                       style={{ color: 'var(--azul)' }}
                     >
-                      ✎
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
                     </button>
-                    <button
-                      className={styles.btnIcono}
-                      onClick={() => onBorrar(m.id)}
-                      title="Borrar"
-                    >
-                      🗑️
-                    </button>
+                    <ConfirmarBorrado onConfirmar={() => onBorrar(m.id)} titulo="Borrar movimiento" />
                   </td>
                 </tr>
               ))

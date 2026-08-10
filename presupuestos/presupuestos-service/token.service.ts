@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import jwt from 'jsonwebtoken';
+import { logger } from './logger.service.js';
 
 /** Duración del access token — corta a propósito: si se filtra, la ventana de uso es mínima. */
 export const ACCESS_TOKEN_TTL = '15m';
@@ -13,15 +14,34 @@ export type PayloadAcceso = {
 /** Secreto generado en memoria solo cuando falta JWT_SECRET en desarrollo. */
 let secretoEfimeroDev: string | null = null;
 
+/** Longitud mínima recomendada (256 bits en hexadecimal/base64 típico). */
+const LONGITUD_MINIMA_SECRETO = 32;
+
 function obtenerSecreto(): string {
   const secreto = process.env.JWT_SECRET;
-  if (secreto) return secreto;
-  if (process.env.NODE_ENV === 'production') {
+  const esProduccion = process.env.NODE_ENV === 'production';
+
+  if (secreto) {
+    if (secreto.length < LONGITUD_MINIMA_SECRETO) {
+      if (esProduccion) {
+        throw new Error(
+          `JWT_SECRET tiene ${secreto.length} caracteres; en producción se exigen al menos ${LONGITUD_MINIMA_SECRETO}.`
+        );
+      }
+      logger.warn(
+        { longitud: secreto.length, minima: LONGITUD_MINIMA_SECRETO },
+        '[token.service] JWT_SECRET más corto que lo recomendado — se acepta porque no estás en producción, pero un secreto corto es más fácil de adivinar por fuerza bruta.'
+      );
+    }
+    return secreto;
+  }
+
+  if (esProduccion) {
     throw new Error('JWT_SECRET no está configurada. Es obligatoria en producción.');
   }
   if (!secretoEfimeroDev) {
     secretoEfimeroDev = randomBytes(48).toString('hex');
-    console.warn(
+    logger.warn(
       '[token.service] JWT_SECRET no configurada — usando un secreto temporal solo para esta sesión de desarrollo. ' +
         'Todas las sesiones se invalidarán al reiniciar el servicio. Añade JWT_SECRET a tu .env para persistencia real.'
     );

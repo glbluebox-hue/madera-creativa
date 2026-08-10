@@ -1,12 +1,12 @@
 {
-  "name": "Madera Creativa",
-  "short_name": "Madera",
+  "name": "Madera Creativa Estudio",
+  "short_name": "Madera Creativa",
   "description": "Gestión de clientes, proyectos y presupuestos de carpintería",
-  "start_url": "/",
+  "start_url": "https://estudio.maderacreativa.com",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#ffffff",
-  "theme_color": "#4B433A",
+  "theme_color": "#51483F",
   "lang": "es",
   "categories": ["business", "productivity"],
   "icons": [

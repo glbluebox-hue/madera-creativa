@@ -1,1 +1,0 @@
-[{"name":"","description":"Genera un identificador único simple.","args":[],"returns":{},"access":"public","examples":[],"render":"","properties":[],"static":false,"filePath":"mock.ts"},{"name":"","description":"Datos de ejemplo iniciales para arrancar la app.","args":[],"returns":{},"access":"public","examples":[],"render":"","properties":[],"static":false,"filePath":"mock.ts"}]

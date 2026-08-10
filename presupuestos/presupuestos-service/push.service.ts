@@ -1,4 +1,5 @@
 import webpush from 'web-push';
+import { logger } from './logger.service.js';
 
 /**
  * Configura las claves VAPID para el envío de notificaciones push.
@@ -20,7 +21,7 @@ export function configurarVapid(): void {
       limpiarClave(privateKey)
     );
   } catch (err) {
-    console.warn('VAPID no configurado:', (err as Error).message);
+    logger.warn({ err }, 'VAPID no configurado');
   }
 }
 
@@ -51,7 +52,7 @@ export async function enviarNotificacion(
   } catch (err: any) {
     // 410 Gone = suscripción expirada, ignorar
     if (err?.statusCode !== 410) {
-      console.error('Error enviando push:', err?.message ?? err);
+      logger.error({ err }, 'Error enviando push');
     }
   }
 }

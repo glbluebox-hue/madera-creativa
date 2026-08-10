@@ -41,6 +41,16 @@ export type SesionActiva = {
 /** Resultado del hook de autenticación. */
 export type UseAuthResult = {
   autenticado: boolean;
+  /**
+   * true mientras se renueva en silencio el access token tras recargar la
+   * página (Dirección Creativa — corrige una carrera real: sin esto, la app
+   * se renderizaba ya autenticada, con todas las pantallas disparando sus
+   * peticiones, antes de tener un access token válido en memoria. Cada
+   * petición se recuperaba sola reintentando tras la renovación, pero al
+   * ser una carrera y no una garantía, alguna quedaba vacía de forma
+   * intermitente — típicamente "clientes").
+   */
+  verificando: boolean;
   sesion: SesionActiva | null;
   /** Prefijo único para separar los datos de cada usuario en localStorage. */
   storagePrefix: string;
@@ -141,6 +151,10 @@ export function useAuth(): UseAuthResult {
   migrarCuentaMaestra();
 
   const [sesion, setSesion] = useState<SesionActiva | null>(cargarSesion);
+  // Si hay sesión guardada, aún no sabemos si el access token en memoria es
+  // válido (se pierde en cada recarga) — hay que confirmarlo antes de dejar
+  // que el resto de la app dispare peticiones protegidas.
+  const [verificando, setVerificando] = useState<boolean>(() => !!cargarSesion());
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const logout = useCallback(() => {
@@ -177,8 +191,10 @@ export function useAuth(): UseAuthResult {
   // cada carga. Si había una sesión guardada, se renueva en silencio contra
   // el refresh token (cookie httpOnly); si ya no es válido, se cierra sesión.
   useEffect(() => {
-    if (!sesion) return;
-    refrescarSesion().then((ok) => { if (!ok) logout(); });
+    if (!sesion) { setVerificando(false); return; }
+    refrescarSesion()
+      .then((ok) => { if (!ok) logout(); })
+      .finally(() => setVerificando(false));
     // Solo debe ejecutarse una vez, al montar — no en cada cambio de sesión.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -266,5 +282,5 @@ export function useAuth(): UseAuthResult {
 
   const storagePrefix = sesion ? `mc_${sesion.usuarioId}_` : 'mc_';
 
-  return { autenticado: !!sesion, sesion, storagePrefix, login, loginDirecto, registrar, logout, actualizarAlmacenamiento };
+  return { autenticado: !!sesion, verificando, sesion, storagePrefix, login, loginDirecto, registrar, logout, actualizarAlmacenamiento };
 }

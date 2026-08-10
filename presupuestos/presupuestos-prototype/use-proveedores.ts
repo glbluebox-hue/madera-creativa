@@ -1,88 +1,66 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { Proveedor, Producto } from './types.js';
 import { generarId } from './mock.js';
-
-const LEGACY_KEY_PROV = 'mc_proveedores';
-const LEGACY_KEY_PROD = 'mc_productos';
-
-function load<T>(key: string): T[] {
-  try { return JSON.parse(localStorage.getItem(key) ?? '[]') as T[]; } catch { return []; }
-}
-function save<T>(key: string, data: T[]) {
-  try { localStorage.setItem(key, JSON.stringify(data)); } catch { /* ignore */ }
-}
+import * as api from './api.js';
 
 /**
- * Migra los datos de las claves antiguas (mc_proveedores / mc_productos)
- * a las nuevas claves por usuario, si las nuevas están vacías.
- */
-function migrarSiNecesario(keyProv: string, keyProd: string) {
-  if (keyProv === LEGACY_KEY_PROV) return; // admin ya usa la clave legacy
-  const yaHayProv = localStorage.getItem(keyProv);
-  if (!yaHayProv) {
-    const legacyProv = localStorage.getItem(LEGACY_KEY_PROV);
-    if (legacyProv) localStorage.setItem(keyProv, legacyProv);
-  }
-  const yaHayProd = localStorage.getItem(keyProd);
-  if (!yaHayProd) {
-    const legacyProd = localStorage.getItem(LEGACY_KEY_PROD);
-    if (legacyProd) localStorage.setItem(keyProd, legacyProd);
-  }
-}
-
-/**
- * Hook que gestiona proveedores y catálogo de productos en localStorage.
- * Las claves son únicas por usuario (prefijo) para evitar que distintos
- * usuarios compartan los mismos datos en el mismo navegador.
+ * Hook que gestiona proveedores y catálogo de productos contra el servidor
+ * (Fase "Integración completa") — antes vivían solo en el `localStorage`
+ * del navegador, sin persistencia real ni compartida entre dispositivos.
+ * Mismo patrón optimista que `useClientes`/`useFacturas`: la interfaz
+ * pública no cambia respecto a la versión anterior, para no tener que
+ * tocar los componentes que ya la consumen.
  *
- * @param prefijo Prefijo único del usuario (usuarioId o storagePrefix).
+ * @param autenticado Cuando es false no dispara la carga inicial.
  */
-export function useProveedores(prefijo = 'mc') {
-  const keyProv = prefijo === 'admin' ? LEGACY_KEY_PROV : `${prefijo}_proveedores`;
-  const keyProd = prefijo === 'admin' ? LEGACY_KEY_PROD : `${prefijo}_productos`;
+export function useProveedores(autenticado = true) {
+  const [proveedores, setProveedores] = useState<Proveedor[]>([]);
+  const [productos, setProductos] = useState<Producto[]>([]);
 
-  const [proveedores, setProveedores] = useState<Proveedor[]>(() => {
-    migrarSiNecesario(keyProv, keyProd);
-    return load<Proveedor>(keyProv);
-  });
-  const [productos, setProductos] = useState<Producto[]>(() => load<Producto>(keyProd));
+  const cargar = useCallback(() => {
+    api.obtenerProveedores().then(setProveedores).catch(() => setProveedores([]));
+    api.obtenerProductos().then(setProductos).catch(() => setProductos([]));
+  }, []);
 
-  // Recargar cuando cambia el prefijo (cambio de sesión)
   useEffect(() => {
-    migrarSiNecesario(keyProv, keyProd);
-    setProveedores(load<Proveedor>(keyProv));
-    setProductos(load<Producto>(keyProd));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefijo]);
+    if (!autenticado) return;
+    cargar();
+  }, [autenticado, cargar]);
 
-  useEffect(() => { save(keyProv, proveedores); }, [keyProv, proveedores]);
-  useEffect(() => { save(keyProd, productos); }, [keyProd, productos]);
-
-  const crearProveedor = (datos: Omit<Proveedor, 'id' | 'creado'>) => {
+  const crearProveedor = (datos: Omit<Proveedor, 'id' | 'creado'>): Proveedor => {
     const nuevo: Proveedor = { ...datos, id: generarId(), creado: new Date().toISOString() };
-    setProveedores(prev => [nuevo, ...prev]);
+    setProveedores((prev) => [nuevo, ...prev]);
+    api.guardarProveedor(nuevo).catch(() => cargar());
     return nuevo;
   };
 
-  const actualizarProveedor = (p: Proveedor) =>
-    setProveedores(prev => prev.map(x => x.id === p.id ? p : x));
+  const actualizarProveedor = (p: Proveedor) => {
+    setProveedores((prev) => prev.map((x) => (x.id === p.id ? p : x)));
+    api.guardarProveedor(p).catch(() => cargar());
+  };
 
   const borrarProveedor = (id: string) => {
-    setProveedores(prev => prev.filter(p => p.id !== id));
-    setProductos(prev => prev.filter(p => p.proveedorId !== id));
+    setProveedores((prev) => prev.filter((p) => p.id !== id));
+    setProductos((prev) => prev.filter((p) => p.proveedorId !== id));
+    api.borrarProveedor(id).catch(() => cargar());
   };
 
-  const crearProducto = (datos: Omit<Producto, 'id'>) => {
+  const crearProducto = (datos: Omit<Producto, 'id'>): Producto => {
     const nuevo: Producto = { ...datos, id: generarId() };
-    setProductos(prev => [nuevo, ...prev]);
+    setProductos((prev) => [nuevo, ...prev]);
+    api.guardarProducto(nuevo).catch(() => cargar());
     return nuevo;
   };
 
-  const actualizarProducto = (p: Producto) =>
-    setProductos(prev => prev.map(x => x.id === p.id ? p : x));
+  const actualizarProducto = (p: Producto) => {
+    setProductos((prev) => prev.map((x) => (x.id === p.id ? p : x)));
+    api.guardarProducto(p).catch(() => cargar());
+  };
 
-  const borrarProducto = (id: string) =>
-    setProductos(prev => prev.filter(p => p.id !== id));
+  const borrarProducto = (id: string) => {
+    setProductos((prev) => prev.filter((p) => p.id !== id));
+    api.borrarProducto(id).catch(() => cargar());
+  };
 
   return {
     proveedores, productos,

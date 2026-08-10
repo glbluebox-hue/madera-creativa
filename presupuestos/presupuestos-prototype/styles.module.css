@@ -2,6 +2,17 @@
 /* Fonts loaded via <link> in index.html */
 
 /* ===== Reset ===== */
+/* `background` en html/body (no solo en .app) — sin esto, el rebote
+   elástico de iOS al hacer scroll más allá del contenido (o cualquier
+   pantalla más corta que el contenido) deja ver el blanco por defecto del
+   navegador en vez del fondo cálido de la app. No se puede usar
+   `var(--fondo)` aquí: esa variable está declarada dentro de `.app`, que es
+   descendiente de `body`, no al revés — las custom properties solo heredan
+   hacia abajo. Mismo valor que `--fondo` (#f5f3ef), a mano.
+   Fase 5, reporte del usuario probando en móvil. */
+:global(html), :global(body) {
+  background: #f5f3ef;
+}
 :global(body) {
   margin: 0;
   -webkit-font-smoothing: antialiased;
@@ -10,16 +21,34 @@
 
 /* ===== DESIGN TOKENS ===== */
 .app {
-  /* Paleta base — identidad Madera Creativa */
+  /* Paleta base — identidad Madera Creativa.
+     --topo es el color real del logotipo (extraído por muestreo de
+     píxel, no a ojo): RGB(81,72,63) = #51483f. Antes era una
+     aproximación (#4a4138) — pequeña pero real desviación de marca,
+     corregida aquí (Dirección Creativa). */
   --blanco: #ffffff;
   --negro: #18140f;
-  --topo: #4a4138;
+  --topo: #51483f;
   --topo-claro: #7a7060;
   --topo-muy-claro: #b8b0a5;
   --fondo: #f5f3ef;
   --fondo-panel: #ffffff;
   --borde: #e5e0d8;
   --borde-fino: #ede9e2;
+  /* Tinte cálido de marca — fondo del elemento activo del menú lateral y
+     de la insignia "Presupuestos" del panel principal (Dirección Creativa). */
+  --topo-tinte: #efe6da;
+
+  /* Paleta del login — muestreada por píxel directamente sobre la última
+     imagen de referencia del cliente (file_...93d482439896698a7618fc71.png,
+     1023x1537), no aproximada. El acento principal usa var(--topo), el
+     mismo marrón de marca que el resto de la aplicación (botones,
+     dashboard, clientes...) — un único color primario en toda la app. */
+  --login-fondo: #ebdaca;
+  --login-gris: #7c726a;
+  --login-input-fondo: #eeded1;
+  --login-input-borde: #decbb8;
+  --login-badge: #d6c1ab;
 
   /* Colores semánticos */
   --verde: #3d7a52;
@@ -47,9 +76,34 @@
   --radio-grande: 14px;
   --radio-xl: 20px;
 
-  /* Transiciones */
-  --trans: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
-  --trans-fast: all 0.1s cubic-bezier(0.4, 0, 0.2, 1);
+  /* Movimiento — mismas curvas/duraciones que antes, ahora con nombre
+     para poder reutilizarlas explícitamente pantalla por pantalla. */
+  --ease-suave: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-salida: cubic-bezier(0.16, 1, 0.3, 1);
+  --trans: all 0.18s var(--ease-suave);
+  --trans-fast: all 0.1s var(--ease-suave);
+
+  /* Escala tipográfica — fuente de verdad para pantallas nuevas o al
+     retocar una existente. No se ha reescrito el CSS ya existente de
+     golpe (arriesgaría regresiones fuera de la pantalla que se esté
+     auditando); se adopta pantalla por pantalla según la metodología. */
+  --texto-xs: 0.68rem;
+  --texto-sm: 0.75rem;
+  --texto-base: 0.84rem;
+  --texto-md: 0.95rem;
+  --texto-lg: 1.15rem;
+  --texto-xl: 1.5rem;
+  --texto-2xl: 2rem;
+
+  /* Escala de espaciado — mismo criterio que la tipográfica. */
+  --espacio-1: 0.25rem;
+  --espacio-2: 0.5rem;
+  --espacio-3: 0.75rem;
+  --espacio-4: 1rem;
+  --espacio-5: 1.5rem;
+  --espacio-6: 2rem;
+  --espacio-7: 2.5rem;
+  --espacio-8: 3rem;
 
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
   color: var(--negro);
@@ -167,8 +221,8 @@
   font-family: inherit;
 }
 .bottomNavBtn svg { width: 22px; height: 22px; stroke: currentColor; stroke-width: 1.8; fill: none; }
-.bottomNavBtnActivo { color: #4a3828; }
-.bottomNavBtnActivo svg { stroke: #4a3828; }
+.bottomNavBtnActivo { color: var(--topo); }
+.bottomNavBtnActivo svg { stroke: var(--topo); }
 .bottomNavBtnActivo::after {
   content: '';
   position: absolute;
@@ -177,7 +231,7 @@
   transform: translateX(-50%);
   width: 28px;
   height: 3px;
-  background: #4a3828;
+  background: var(--topo);
   border-radius: 2px 2px 0 0;
 }
 .bottomNavBadge {
@@ -203,7 +257,9 @@
   .headerInner { height: 64px; }
   .headerNav { display: none !important; }
   .logoImg { height: 48px; }
-  .bottomNav { display: flex; }
+  /* Ya no hay barra inferior (sustituida por el menú lateral deslizante) —
+     no hace falta reservar hueco para ella. */
+  .mainConBottomNav { padding-bottom: calc(1.25rem + env(safe-area-inset-bottom)) !important; }
   /* Asegurar que el panel textura de login se muestra en móvil */
   .loginPanel { display: flex !important; }
 }
@@ -287,187 +343,188 @@
 .btnCerrarSesion:hover { border-color: var(--rojo); color: var(--rojo); background: var(--rojo-bg); }
 
 /* ===== LOGIN ===== */
+/* Reproducción a partir de la imagen de referencia del cliente
+   (C:\Users\Usuario\Downloads\nuevo login.jpeg, 1023x1537). Colores y
+   proporciones medidos por muestreo de píxel sobre ese archivo — no
+   estimados a ojo. Ver assets/login-madera.jpg y assets/login-hojas.jpg,
+   recortados directamente de esa misma imagen (foto real, no ilustración). */
 .loginFondo {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
-  background: var(--fondo);
+  background: var(--login-fondo);
+  position: relative;
 }
 
-/* Panel izquierdo — textura vetas de madera ilustrada */
+/* Panel izquierdo — foto real de corte de madera, recortada del archivo de
+   referencia. Ancho = 500/1023 del total medido en esa imagen (48.9%),
+   reducido en pantallas estrechas: con ese 48.9% literal, un móvil de
+   390px de ancho sólo deja ~140px para el formulario y las pestañas
+   Entrar/Regístrate se salen de la pantalla — se escalona el porcentaje
+   para que el formulario siempre tenga sitio real. */
+/* Envoltorio: solo tamaño + el drop-shadow. Separado a propósito del
+   elemento que lleva la máscara (.loginPanel) — aplicar `mask` y
+   `filter` en el MISMO elemento provocaba una línea vertical residual
+   en el propio borde de la caja (visible especialmente a la altura del
+   logo), porque algunos motores de render calculan el área del filtro
+   sobre la caja original del elemento, no sobre la forma ya recortada.
+   Con el filtro en el padre y la máscara en el hijo, el drop-shadow se
+   calcula sobre la silueta real ya enmascarada y no queda ningún borde
+   recto residual. */
+.loginPanelSombra {
+  flex-shrink: 0;
+  width: 56%;
+  max-width: 560px;
+}
+@media (max-width: 600px) {
+  .loginPanelSombra { width: 40%; max-width: none; }
+}
+@media (max-width: 420px) {
+  .loginPanelSombra { width: 24%; }
+  /* La foto real de la madera lleva, de forma natural, un ligero
+     oscurecimiento cerca de su propio borde (auténtico de la
+     fotografía, no algo añadido por CSS). Al estirar esa misma foto en
+     una tira tan estrecha como la del móvil, ese oscurecimiento ocupa
+     proporcionalmente mucho más sitio y se lee como si fuera una
+     sombra — se compensa aclarando/aplanando un poco solo en este
+     ancho, sin tocar la versión de escritorio. */
+  .loginPanel { filter: brightness(1.16) saturate(0.9); }
+  /* Con la madera más estrecha sobra columna a la derecha del
+     formulario; se recorta ese margen sobrante para que el bloque de
+     texto quede centrado respecto a TODA la pantalla, no solo dentro
+     de su propia columna (que sin esto queda descentrado hacia la
+     derecha). */
+  .loginFormPanel { padding-left: 0.3rem; padding-right: 2rem; }
+  .loginCaja { max-width: 280px; }
+}
+
 .loginPanel {
-  flex: 1;
-  background-color: #f9f6f1;
-  background-size: cover;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  background-size: 100% 100%;
   background-position: center;
   background-repeat: no-repeat;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 3rem;
-  position: relative;
-  overflow: hidden;
+  /* La propia foto se recorta con la curva real (máscara #maderaMask
+     definida en login-page.tsx), no un rectángulo con una forma de
+     color por encima — así no hay "recorte pegado". */
+  mask-image: url(#maderaMask);
+  -webkit-mask-image: url(#maderaMask);
+  mask-repeat: no-repeat;
+  -webkit-mask-repeat: no-repeat;
+  mask-size: 100% 100%;
+  -webkit-mask-size: 100% 100%;
 }
 
-/* ===== LOGIN MÓVIL ===== */
-@media (max-width: 640px) {
-  /* Fila horizontal: franja textura a la izquierda, formulario blanco a la derecha */
-  .loginFondo {
-    flex-direction: row;
-    min-height: 100vh;
-    min-height: 100dvh;
-    background: #ffffff;
-    align-items: stretch;
-  }
-
-  .loginFondo::before { display: none; }
-
-  /* Franja vertical de textura — delgada y elegante */
-  .loginPanel {
-    display: flex;
-    flex: none;
-    width: 72px;
-    height: auto;
-    min-height: 100vh;
-    min-height: 100dvh;
-    padding: 0;
-    position: relative;
-    background-attachment: scroll;
-    background-size: cover;
-    background-position: center;
-  }
-
-  /* Franjas blancas decorativas quitadas en móvil */
-  .loginFranjaSuperior,
-  .loginFranjaInferior {
-    display: none;
-  }
-
-  /* Panel formulario — ocupa el resto, blanco puro */
-  .loginFormPanel {
-    flex: 1;
-    width: auto;
-    background: #ffffff;
-    box-shadow: none;
-    border-radius: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 2.5rem 1.5rem calc(2.5rem + env(safe-area-inset-bottom)) 1.5rem;
-  }
-
-  .loginCaja {
-    width: 100%;
-    max-width: 100%;
-    align-items: flex-start;
-    background: transparent;
-    border-radius: 0;
-    box-shadow: none;
-    padding: 0;
-  }
-
-  /* Logo y subtítulo alineados a la izquierda en móvil */
-  .loginLogo {
-    width: 140px;
-    margin-bottom: 0.25rem;
-  }
-
-  .loginSubtitulo {
-    margin-bottom: 2rem;
-    font-size: 0.6rem;
-    text-align: left;
-  }
-}
-.loginPanel::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: rgba(255, 252, 248, 0.08);
-}
-.loginPanelInner {
-  position: relative;
-  z-index: 1;
-  max-width: 360px;
-}
-
-.loginFranjaSuperior {
+/* Sombra de hojas decorativa, en la misma proporción (x/y/ancho/alto
+   medidos por píxel) que ocupa en la imagen de referencia. */
+.loginHojas {
   position: absolute;
   top: 0;
-  left: 0;
   right: 0;
-  height: 48px;
-  background: #ffffff;
-  z-index: 2;
+  width: 100%;
+  height: auto;
+  pointer-events: none;
+  z-index: 0;
+  -webkit-mask-image: linear-gradient(to bottom, #000 35%, transparent 92%);
+  mask-image: linear-gradient(to bottom, #000 35%, transparent 92%);
 }
 
-.loginFranjaInferior {
+/* Difumina el borde izquierdo de la foto de hojas hacia el color plano
+   de fondo — sin esto, la columna de píxeles justo donde empieza esa
+   foto (con su propio tono/viñeteado real) choca con el color plano de
+   al lado y se ve como una línea recta vertical, algo que una sombra de
+   hojas real nunca tendría (sus bordes son irregulares, no rectos). */
+.loginHojasVelo {
   position: absolute;
-  bottom: 0;
-  left: 0;
+  top: 0;
   right: 0;
-  height: 48px;
-  background: #ffffff;
-  z-index: 2;
-}
-.loginCita {
-  color: #6b5744;
-  font-size: 1.15rem;
-  font-weight: 300;
-  font-style: normal;
-  font-family: 'Cormorant Garamond', 'Georgia', serif;
-  line-height: 2;
-  letter-spacing: 0.35em;
-  text-transform: uppercase;
-  margin: 0 0 3rem;
-  text-shadow: 0 1px 0 rgba(255,255,255,0.9);
-}
-.loginDecoGrid {
-  display: grid;
-  grid-template-columns: repeat(10, 1fr);
-  gap: 10px;
-  opacity: 0.3;
-}
-.loginDecoPunto {
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: rgba(255,255,255,0.6);
-  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 463 / 250;
+  background: linear-gradient(to right, var(--login-fondo) 0%, transparent 22%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 35%, transparent 92%);
+  mask-image: linear-gradient(to bottom, #000 35%, transparent 92%);
+  pointer-events: none;
+  z-index: 1;
 }
 
-/* Panel derecho con formulario */
+/* Panel derecho — contenido */
 .loginFormPanel {
-  width: 480px;
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 2rem;
-  background: var(--blanco);
-  box-shadow: -8px 0 40px rgba(24,20,15,0.08);
+  padding: 2rem 1.75rem calc(2rem + env(safe-area-inset-bottom));
+  overflow-x: hidden;
+  overflow-y: auto;
+  z-index: 1;
 }
 
 .loginCaja {
+  position: relative;
+  z-index: 1;
   width: 100%;
-  max-width: 360px;
+  max-width: 400px;
   display: flex;
   flex-direction: column;
   align-items: center;
 }
 
 .loginLogo {
-  width: 220px;
+  width: min(82%, 300px);
   height: auto;
-  margin-bottom: 0.5rem;
-  filter: drop-shadow(0 2px 4px rgba(24,20,15,0.08));
+  margin-bottom: 1.4rem;
+}
+
+.loginDivisor {
+  width: 30px;
+  height: 2px;
+  background: var(--topo);
+  border: none;
+  margin: 0 0 1.25rem;
+  border-radius: 2px;
 }
 
 .loginSubtitulo {
-  font-size: 0.68rem;
-  color: var(--topo-muy-claro);
-  letter-spacing: 0.12em;
+  font-size: 0.8rem;
+  color: var(--topo);
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  margin: 0 0 2.5rem;
-  font-weight: 600;
+  text-align: center;
+  line-height: 1.45;
+  margin: 0 0 2.25rem;
+  font-weight: 700;
+}
+
+/* Pestañas Entrar / Regístrate — línea inferior fina, acento en la activa */
+.loginTabsRow {
+  display: flex;
+  gap: 1.75rem;
+  width: 100%;
+  border-bottom: 1px solid rgba(81,72,63,0.16);
+  margin-bottom: 1.75rem;
+}
+.loginTab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 0 0 0.6rem;
+  font-family: inherit;
+  font-size: 1.08rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--login-gris);
+  cursor: pointer;
+  transition: var(--trans);
+}
+.loginTab:hover { color: var(--topo); }
+.loginTabActiva, .loginTabActiva:hover {
+  color: var(--topo);
+  border-bottom-color: var(--topo);
 }
 
 .loginForm { width: 100%; display: flex; flex-direction: column; gap: 1.1rem; }
@@ -478,24 +535,60 @@
   position: relative;
   display: flex;
   align-items: center;
+  background: var(--login-input-fondo);
+  border: 1px solid rgba(81,72,63,0.1);
+  border-radius: 14px;
+  padding: 0.2rem 1rem 0.2rem 0.2rem;
+  box-shadow:
+    inset 0 1px 2px rgba(81,72,63,0.05),
+    0 1px 1px rgba(255,255,255,0.5);
+  transition: var(--trans);
+}
+.loginInputWrap:focus-within {
+  border-color: var(--topo);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(81,72,63,0.08);
+}
+.loginIconoBadge {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--login-badge);
+  color: var(--topo);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 0.65rem;
 }
 .loginInputSimple {
+  flex: 1;
+  min-width: 0;
   width: 100%;
   box-sizing: border-box;
-  padding: 0.7rem 2.8rem 0.7rem 1rem !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0.6rem 0 !important;
+  font-size: 0.98rem !important;
 }
+.loginInputSimple:focus { outline: none !important; }
+.loginInputSimple::placeholder { color: var(--login-gris); }
 .loginOjoBtn {
-  position: absolute;
-  right: 0.65rem;
+  position: static;
+  flex-shrink: 0;
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 0.85rem;
-  opacity: 0.5;
+  color: var(--login-gris);
+  display: flex;
+  align-items: center;
+  opacity: 0.85;
   transition: var(--trans);
   padding: 0.2rem;
+  margin-left: 0.4rem;
 }
-.loginOjoBtn:hover { opacity: 1; }
+.loginOjoBtn:hover { opacity: 1; color: var(--topo); }
 
 .loginError {
   font-size: 0.8rem;
@@ -513,11 +606,22 @@
 .btnLoginSubmit {
   width: 100%;
   justify-content: center;
-  padding: 0.85rem;
-  margin-top: 0.5rem;
-  font-size: 0.88rem;
-  letter-spacing: 0.03em;
-  border-radius: var(--radio-md);
+  padding: 1.1rem;
+  margin-top: 0.35rem;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-radius: 16px;
+  background: var(--topo);
+  border-color: var(--topo);
+  box-shadow: 0 1px 3px rgba(24,20,15,0.12), 0 1px 2px rgba(24,20,15,0.08);
+  transition: var(--trans);
+}
+.btnLoginSubmit:not(:disabled):hover {
+  background: var(--negro);
+  border-color: var(--negro);
+  box-shadow: 0 2px 8px rgba(24,20,15,0.18);
+  transform: translateY(-1px);
 }
 
 .loginSpinner {
@@ -534,11 +638,11 @@
 .loginRecuperar {
   background: none;
   border: none;
-  color: var(--ocre);
-  font-size: 0.78rem;
+  color: var(--topo);
+  font-size: 0.82rem;
   cursor: pointer;
   padding: 0.25rem;
-  margin: 0 auto;
+  margin: 1.4rem auto 0;
   display: block;
   transition: var(--trans);
   font-family: inherit;
@@ -549,26 +653,64 @@
 .loginAyuda {
   font-size: 0.8rem;
   color: var(--topo-claro);
-  background: var(--fondo);
+  background: rgba(255,255,255,0.6);
   border: 1px solid var(--borde-fino);
   border-radius: var(--radio-md);
   padding: 0.9rem 1.1rem;
-  margin: 0;
+  margin: 0.75rem 0 0;
   line-height: 1.6;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.loginDivisorPunto {
+  position: relative;
+  width: 100%;
+  height: 1px;
+  background: rgba(81,72,63,0.18);
+  margin: 2rem 0 1.4rem;
+}
+.loginDivisorPunto::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--login-gris);
+  transform: translate(-50%, -50%);
 }
 
 .loginPie {
-  margin: 2.5rem 0 0;
-  font-size: 0.68rem;
-  color: var(--topo-muy-claro);
+  margin: 0;
+  font-size: 0.66rem;
+  color: var(--topo);
   text-align: center;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.01em;
+  font-weight: 500;
+}
+.loginPiePequeno {
+  margin: 0.4rem 0 0;
+  font-size: 0.64rem;
+  color: var(--login-gris);
+  text-align: center;
+  letter-spacing: 0.02em;
 }
 
-@media (max-width: 768px) {
-  .loginPanel { display: none; }
-  .loginFormPanel { width: 100%; box-shadow: none; }
-  .loginLogo { width: 180px; }
+@media (max-width: 480px) {
+  .loginLogo { width: 200px; margin-bottom: 1.1rem; }
+  .loginFormPanel { padding: 1.25rem 1.1rem calc(1.25rem + env(safe-area-inset-bottom)); }
+}
+
+@media (max-height: 700px) {
+  .loginLogo { margin-bottom: 1rem; }
+  .loginSubtitulo { margin-bottom: 1.5rem; }
+  .loginTabsRow { margin-bottom: 1.25rem; }
+  .loginForm { gap: 0.85rem; }
+  .loginRecuperar { margin-top: 1rem; }
+  .loginDivisorPunto { margin: 1.4rem 0 1rem; }
+  .loginFormPanel { padding: 1.1rem 1.75rem calc(1.1rem + env(safe-area-inset-bottom)); }
 }
 
 /* ===== LAYOUT PRINCIPAL ===== */
@@ -578,8 +720,13 @@
   padding: 2.5rem;
 }
 
-/* ===== BOTONES ===== */
+/* ===== BOTONES =====
+   Seis estados exigidos por la Dirección Creativa: normal, hover,
+   pressed, focus, loading, disabled. Focus y loading se resuelven una
+   sola vez aquí, en la base .btn, para que cualquier variante (nueva
+   o existente) los herede automáticamente sin repetir código. */
 .btn {
+  position: relative;
   border: 1px solid transparent;
   border-radius: var(--radio);
   padding: 0.5rem 1rem;
@@ -596,6 +743,30 @@
 }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
+/* Foco por teclado — anillo con el color de marca, nunca al hacer clic con ratón */
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(81,72,63,0.3);
+}
+
+/* Carga — el botón conserva su tamaño; el contenido se oculta y un
+   spinner centrado (hereda el color del texto vía currentColor) ocupa
+   su lugar, para no dar sensación de "salto" en la interfaz. */
+.btn.btnCargando { cursor: wait; pointer-events: none; }
+.btn.btnCargando > :not(.btnSpinner) { opacity: 0; }
+.btnSpinner {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 1em;
+  height: 1em;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  opacity: 0.85;
+  animation: spin 0.6s linear infinite;
+}
+
 .btnPrimario {
   background: var(--topo);
   color: var(--blanco);
@@ -608,7 +779,7 @@
   box-shadow: 0 2px 8px rgba(24,20,15,0.18);
   transform: translateY(-1px);
 }
-.btnPrimario:active:not(:disabled) { transform: translateY(0); }
+.btnPrimario:active:not(:disabled) { transform: translateY(0) scale(0.97); }
 
 .btnSecundario {
   background: var(--blanco);
@@ -617,10 +788,12 @@
   box-shadow: var(--sombra-xs);
 }
 .btnSecundario:hover:not(:disabled) {
+  background: var(--fondo);
   border-color: var(--topo-muy-claro);
   color: var(--negro);
   box-shadow: var(--sombra-sm);
 }
+.btnSecundario:active:not(:disabled) { transform: scale(0.97); }
 
 .btnVerde {
   background: var(--verde-bg);
@@ -628,6 +801,7 @@
   border-color: rgba(61,122,82,0.25);
 }
 .btnVerde:hover { background: var(--verde); color: #fff; border-color: var(--verde); }
+.btnVerde:active:not(:disabled) { transform: scale(0.97); }
 
 .btnPeligro {
   background: transparent;
@@ -637,6 +811,7 @@
   font-size: 0.75rem;
 }
 .btnPeligro:hover { border-color: var(--rojo); background: var(--rojo-bg); }
+.btnPeligro:active:not(:disabled) { transform: scale(0.96); }
 
 .btnIcono {
   background: transparent;
@@ -649,6 +824,19 @@
   transition: var(--trans);
 }
 .btnIcono:hover { color: var(--rojo); background: var(--rojo-bg); }
+.btnIcono:active:not(:disabled) { transform: scale(0.92); }
+
+/* Botón circular oscuro — acción principal en cabeceras de lista (Dirección Creativa) */
+.btnCirculoOscuro {
+  width: 40px; height: 40px; flex-shrink: 0;
+  border-radius: 50%; border: none;
+  background: var(--topo); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: var(--trans);
+}
+.btnCirculoOscuro svg { width: 18px; height: 18px; }
+.btnCirculoOscuro:hover { background: var(--negro); transform: translateY(-1px); box-shadow: var(--sombra-sm); }
+.btnCirculoOscuro:active { transform: scale(0.94); }
 
 /* ===== BARRA DE SECCIÓN ===== */
 .barraSeccion {
@@ -675,6 +863,65 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--topo-claro);
+}
+
+/* ===== LISTA DE CLIENTES — filas (Dirección Creativa) ===== */
+.clientesCabecera { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.1rem; }
+.clientesBusqueda {
+  flex: 1;
+  display: flex; align-items: center; gap: 0.55rem;
+  background: var(--blanco); border: 1px solid var(--borde); border-radius: var(--radio-md);
+  padding: 0.6rem 0.9rem; color: var(--topo-muy-claro);
+  transition: var(--trans);
+}
+.clientesBusqueda:has(input:focus) { border-color: var(--topo); box-shadow: 0 0 0 3px rgba(81,72,63,0.1); }
+.clientesBusqueda svg { width: 16px; height: 16px; flex-shrink: 0; }
+.clientesBusqueda input {
+  flex: 1; border: none; outline: none; background: none;
+  font-size: 0.85rem; font-family: inherit; color: var(--negro);
+}
+.clientesBusqueda input::placeholder { color: var(--topo-muy-claro); }
+
+.filtrosPill { display: flex; gap: 0.5rem; margin-bottom: 1.25rem; }
+.filtroPill {
+  background: none; border: none; cursor: pointer; font-family: inherit;
+  padding: 0.5rem 1.1rem; border-radius: var(--radio-full, 999px);
+  font-size: 0.82rem; font-weight: 600; color: var(--topo-claro);
+  transition: var(--trans);
+}
+.filtroPill:hover { background: var(--fondo); color: var(--negro); }
+.filtroPillActivo, .filtroPillActivo:hover { background: var(--topo); color: #fff; }
+
+.listaClientesFilas { background: var(--blanco); border: 1px solid var(--borde); border-radius: var(--radio-grande); overflow: hidden; }
+.clienteFila {
+  display: flex; align-items: center; gap: 0.9rem;
+  padding: 0.9rem 1.25rem; cursor: pointer;
+  border-bottom: 1px solid var(--borde-fino);
+  transition: var(--trans-fast);
+}
+.clienteFila:last-child { border-bottom: none; }
+.clienteFila:hover { background: var(--fondo); }
+.clienteAvatar {
+  width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 700; font-size: 0.85rem;
+}
+.clienteFilaCuerpo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
+.clienteFilaNombre { font-size: 0.92rem; font-weight: 700; color: var(--negro); }
+.clienteFilaSub { font-size: 0.78rem; color: var(--topo-muy-claro); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clienteFilaChevron { width: 18px; height: 18px; color: var(--topo-muy-claro); flex-shrink: 0; }
+
+.pillEstado {
+  display: inline-flex; align-items: center; flex-shrink: 0;
+  padding: 0.3rem 0.75rem; border-radius: var(--radio-full, 999px);
+  font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+}
+.pillEstadoCurso { background: var(--azul-bg); color: var(--azul); }
+.pillEstadoFin { background: var(--fondo); color: var(--topo-claro); }
+
+@media (max-width: 640px) {
+  .clienteFilaSub { max-width: 140px; }
+  .pillEstado { display: none; }
 }
 
 /* ===== GRID DE TARJETAS CLIENTES ===== */
@@ -877,6 +1124,32 @@
   padding: 2rem;
   margin-bottom: 1.25rem;
   box-shadow: var(--sombra-xs);
+}
+
+.fichaIdentidad { display: flex; align-items: center; gap: 1rem; }
+.fichaDesde { font-size: 0.76rem; color: var(--topo-muy-claro); margin: 0.15rem 0 0; }
+.fichaContacto { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--borde-fino); }
+.fichaContactoItem { display: flex; align-items: center; gap: 0.6rem; font-size: 0.84rem; color: var(--topo); }
+.fichaContactoItem svg { width: 15px; height: 15px; color: var(--topo-muy-claro); flex-shrink: 0; }
+
+/* Select nativo con la misma forma de insignia que .pillEstado (Dirección Creativa) */
+.selectPillEstado {
+  border: none;
+  border-radius: var(--radio-full, 999px);
+  padding: 0.4rem 2rem 0.4rem 0.9rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-family: inherit;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+  background-size: 12px;
+  flex-shrink: 0;
+  align-self: flex-start;
 }
 
 .fichaInfoGrid {
@@ -1358,6 +1631,297 @@
 .kpiValor { font-size: 1.6rem; font-weight: 800; line-height: 1.1; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
 .kpiSub { font-size: 0.73rem; color: var(--topo-claro); }
 
+/* ===== MENÚ LATERAL (Dirección Creativa) ===== */
+.appConSidebar { display: flex; min-height: 100vh; }
+.sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  background: var(--blanco);
+  border-right: 1px solid var(--borde);
+  padding: 0.85rem 0.85rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+/* En móvil el menú lateral deja de ocultarse: se convierte en un panel
+   deslizante (mismo <aside>, mismos enlaces que en escritorio — pediste
+   "un listado lateral como en la web" en vez de la barra inferior de
+   iconos). Cerrado por defecto (fuera de pantalla a la izquierda). */
+@media (max-width: 900px) {
+  .appConSidebar { display: block; }
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 200;
+    height: 100dvh;
+    transform: translateX(-100%);
+    transition: transform 0.25s var(--ease-suave);
+    box-shadow: var(--sombra-lg);
+  }
+  .sidebarMovilAbierto { transform: translateX(0); }
+}
+
+.botonMenuMovil {
+  display: none;
+  position: fixed;
+  top: 0.85rem;
+  right: 0.85rem;
+  z-index: 90;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: none;
+  background: var(--blanco);
+  color: var(--topo);
+  box-shadow: var(--sombra-sm);
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+.botonMenuMovil svg { width: 20px; height: 20px; }
+@media (max-width: 900px) { .botonMenuMovil { display: flex; } }
+
+.menuMovilVelo {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  background: rgba(24, 20, 15, 0.45);
+}
+
+.sidebarMarca {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem 0.15rem 0.75rem;
+  margin-bottom: 0.4rem;
+  border-bottom: 1px solid var(--borde-fino);
+  background: none;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  cursor: pointer;
+  text-align: center;
+  width: 100%;
+  flex-shrink: 0;
+}
+.sidebarLogoImg { width: 100%; max-width: 220px; height: auto; object-fit: contain; display: block; }
+
+/* `flex:1 1 auto` + `min-height:0` (imprescindible: sin esto, un flex-item
+   con overflow no se encoge nunca por debajo de su contenido, y el scroll
+   interno no llega a activarse) hace que SOLO la lista de secciones haga
+   scroll cuando no cabe — el pie con "cerrar sesión"/"asistente IA" queda
+   siempre fijo y visible, en vez de quedar empujado fuera de la pantalla
+   en móviles con poca altura (más secciones + teclado no aplica aquí, pero
+   la barra de direcciones del navegador sí resta altura real). */
+.sidebarNav { display: flex; flex-direction: column; gap: 0.15rem; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+.sidebarNavItem {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.62rem 0.75rem;
+  border-radius: var(--radio-md);
+  font-size: 0.87rem;
+  font-weight: 500;
+  color: var(--topo-claro);
+  cursor: pointer;
+  background: none;
+  border: none;
+  font-family: inherit;
+  text-align: left;
+  width: 100%;
+  transition: var(--trans-fast);
+  position: relative;
+}
+.sidebarNavItem svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 1.8; flex-shrink: 0; }
+.sidebarNavItem:hover { background: var(--fondo); color: var(--negro); }
+.sidebarNavItemActivo, .sidebarNavItemActivo:hover { background: var(--topo-tinte); color: var(--negro); font-weight: 700; }
+.sidebarNavBadge {
+  margin-left: auto;
+  background: var(--topo);
+  color: #fff;
+  border-radius: 20px;
+  padding: 0 6px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  min-width: 18px;
+  text-align: center;
+  line-height: 16px;
+  height: 16px;
+}
+
+.sidebarUser { flex-shrink: 0; padding-top: 1rem; border-top: 1px solid var(--borde-fino); display: flex; flex-direction: column; gap: 0.6rem; }
+.sidebarUserQuien { display: flex; align-items: center; gap: 0.65rem; padding: 0.4rem 0.5rem; }
+.sidebarAvatar {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: var(--topo-tinte); color: var(--negro);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 0.8rem; flex-shrink: 0;
+}
+.sidebarUserNombre { font-size: 0.82rem; font-weight: 700; color: var(--negro); }
+.sidebarUserRol { font-size: 0.7rem; color: var(--topo-muy-claro); }
+.sidebarAcciones { display: flex; gap: 0.4rem; }
+.sidebarAccionBtn {
+  flex: 1;
+  background: none; border: 1px solid var(--borde); border-radius: var(--radio);
+  cursor: pointer; color: var(--topo-claro);
+  height: 34px; display: flex; align-items: center; justify-content: center;
+  transition: var(--trans-fast);
+}
+.sidebarAccionBtn svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.9; }
+.sidebarAccionBtn:hover { border-color: var(--topo-muy-claro); color: var(--negro); }
+.sidebarAccionBtnActivo { background: var(--topo); border-color: var(--topo); color: #fff; }
+
+.contenidoPrincipal {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  z-index: 0;
+  overflow: hidden;
+  background: var(--login-fondo);
+}
+
+/* ===== IDENTIDAD DE MADERA EN EL RESTO DE LA APP =====
+   Mismo lenguaje visual del login (misma foto real, sin hojas): un
+   acento de madera por sección, siempre detrás del contenido real
+   (z-index negativo) y sin interceptar clics — nunca tapa información,
+   solo vive en el margen alrededor de .main (max-width:1200px), y en
+   pantallas más estrechas queda confinado al padding de .main sin
+   invadir las tarjetas. */
+.maderaAcento {
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+/* Inicio — franja izquierda, mismo borde orgánico que el login */
+.maderaAcentoIzq {
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: clamp(50px, 9vw, 180px);
+  background-position: left center;
+  -webkit-mask-image: linear-gradient(to right, #000 55%, transparent 100%);
+  mask-image: linear-gradient(to right, #000 55%, transparent 100%);
+  opacity: 0.9;
+}
+
+/* Clientes — misma franja, en el lado derecho (foto real reflejada) */
+.maderaAcentoDer {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: clamp(50px, 9vw, 180px);
+  background-position: left center;
+  transform: scaleX(-1);
+  -webkit-mask-image: linear-gradient(to right, #000 55%, transparent 100%);
+  mask-image: linear-gradient(to right, #000 55%, transparent 100%);
+  opacity: 0.9;
+}
+
+/* Facturas — esquina superior derecha, transición suave */
+.maderaAcentoSupDer {
+  top: 0;
+  right: 0;
+  width: clamp(120px, 20vw, 320px);
+  height: clamp(90px, 16vw, 240px);
+  background-position: right top;
+  -webkit-mask-image: radial-gradient(ellipse at top right, #000 40%, transparent 75%);
+  mask-image: radial-gradient(ellipse at top right, #000 40%, transparent 75%);
+  opacity: 0.7;
+}
+
+/* Proveedores — esquina superior izquierda, transición suave */
+.maderaAcentoSupIzq {
+  top: 0;
+  left: 0;
+  width: clamp(120px, 20vw, 320px);
+  height: clamp(90px, 16vw, 240px);
+  background-position: left top;
+  transform: scaleX(-1);
+  -webkit-mask-image: radial-gradient(ellipse at top right, #000 40%, transparent 75%);
+  mask-image: radial-gradient(ellipse at top right, #000 40%, transparent 75%);
+  opacity: 0.7;
+}
+
+/* Presupuestos — onda inferior, madera "entrando" desde abajo */
+.maderaAcentoInf {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: clamp(70px, 12vw, 200px);
+  background-position: center bottom;
+  -webkit-mask-image: linear-gradient(to top, #000 45%, transparent 100%);
+  mask-image: linear-gradient(to top, #000 45%, transparent 100%);
+  opacity: 0.8;
+}
+
+/* Notas — esquina inferior derecha, detalle discreto */
+.maderaAcentoInfDer {
+  right: 0;
+  bottom: 0;
+  width: clamp(110px, 18vw, 280px);
+  height: clamp(80px, 14vw, 220px);
+  background-position: right bottom;
+  -webkit-mask-image: radial-gradient(ellipse at bottom right, #000 40%, transparent 75%);
+  mask-image: radial-gradient(ellipse at bottom right, #000 40%, transparent 75%);
+  opacity: 0.6;
+}
+
+/* Dibujos (Fase 2.1) — esquina inferior izquierda, mismo criterio que InfDer reflejado */
+.maderaAcentoInfIzq {
+  left: 0;
+  bottom: 0;
+  width: clamp(110px, 18vw, 280px);
+  height: clamp(80px, 14vw, 220px);
+  background-position: left bottom;
+  transform: scaleX(-1);
+  -webkit-mask-image: radial-gradient(ellipse at bottom right, #000 40%, transparent 75%);
+  mask-image: radial-gradient(ellipse at bottom right, #000 40%, transparent 75%);
+  opacity: 0.6;
+}
+
+@media (max-width: 700px) {
+  .maderaAcentoSupDer, .maderaAcentoSupIzq, .maderaAcentoInfDer, .maderaAcentoInfIzq { opacity: 0.5; }
+}
+
+/* ===== PANEL PRINCIPAL — DASHBOARD (Dirección Creativa) ===== */
+.dashboard { display: flex; flex-direction: column; gap: 1.5rem; }
+.dashboardTop { margin-bottom: 0.25rem; }
+.dashboardSub { margin: 0.35rem 0 0; font-size: 0.86rem; color: var(--topo-claro); }
+.kpiGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.9rem; }
+@media (max-width: 700px) { .kpiGrid { grid-template-columns: repeat(2, 1fr); } }
+.kpiCabecera { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.35rem; }
+.kpiIconoChip {
+  width: 32px; height: 32px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  color: var(--topo);
+  background: var(--topo-tinte);
+}
+.kpiIconoChip svg { width: 16px; height: 16px; }
+.kpiIconoChipVerde { background: var(--verde-bg); color: var(--verde); }
+.kpiIconoChipRojo { background: var(--rojo-bg); color: var(--rojo); }
+.kpiIconoChipTopo { background: var(--topo-tinte); color: var(--topo); }
+.kpiIconoChipAzul { background: var(--azul-bg); color: var(--azul); }
+.kpiIconoChipOcre { background: var(--ocre-bg); color: var(--ocre); }
+
+.dashboardCols { display: grid; grid-template-columns: 1.3fr 1fr; gap: 0.9rem; }
+@media (max-width: 900px) { .dashboardCols { grid-template-columns: 1fr; } }
+.dashboardVacio { font-size: 0.82rem; color: var(--topo-muy-claro); padding: 0.5rem 0; margin: 0; }
+
+.actividadItem { display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0; border-bottom: 1px solid var(--borde-fino); }
+.actividadItem:last-child { border-bottom: none; }
+.actividadCuerpo { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.actividadTitulo { font-size: 0.85rem; font-weight: 600; color: var(--negro); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.actividadSub { font-size: 0.76rem; color: var(--topo-muy-claro); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.actividadDerecha { text-align: right; flex-shrink: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+.actividadFecha { font-size: 0.72rem; color: var(--topo-muy-claro); }
+
 /* ===== MODAL ESCÁNER ===== */
 .modalFondo {
   position: fixed;
@@ -1400,6 +1964,88 @@
   letter-spacing: 0.05em;
 }
 
+/* ===== FICHA DE CLIENTE — PESTAÑAS (Dirección Creativa) ===== */
+.fichaTabs {
+  display: flex;
+  gap: 1.75rem;
+  border-bottom: 1px solid var(--borde);
+  margin: 1.5rem 0 1.5rem;
+  overflow-x: auto;
+}
+.fichaTab {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 0 0 0.85rem;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--topo-muy-claro);
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  transition: var(--trans-fast);
+}
+.fichaTab:hover { color: var(--negro); }
+.fichaTabActiva, .fichaTabActiva:hover { color: var(--negro); border-color: var(--topo); }
+
+.tabPanel { display: flex; flex-direction: column; gap: 1.5rem; }
+.tabVacio { text-align: center; padding: 2.5rem 1rem; color: var(--topo-claro); }
+.tabVacioIcono { font-size: 2.25rem; margin-bottom: 0.75rem; opacity: 0.5; }
+
+/* ── Resumen — tarjeta de proyecto actual ── */
+.proyectoActualCard {
+  display: flex; align-items: center; gap: 1rem;
+  background: var(--fondo); border: 1px solid var(--borde-fino); border-radius: var(--radio-grande);
+  padding: 1rem 1.25rem; cursor: pointer; transition: var(--trans-fast);
+}
+.proyectoActualCard:hover { border-color: var(--topo-muy-claro); }
+.proyectoActualThumb {
+  width: 60px; height: 60px; border-radius: var(--radio-md); flex-shrink: 0;
+  object-fit: cover; background: var(--topo-tinte);
+  display: flex; align-items: center; justify-content: center; color: var(--topo);
+}
+.proyectoActualInfo { flex: 1; min-width: 0; }
+.proyectoActualLabel { font-size: 0.68rem; color: var(--topo-muy-claro); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }
+.proyectoActualNombre { font-size: 0.98rem; font-weight: 700; color: var(--negro); margin-top: 0.15rem; }
+.proyectoActualChevron { color: var(--topo-muy-claro); flex-shrink: 0; width: 18px; height: 18px; }
+
+.statStrip { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.75rem; }
+.statBox { background: var(--blanco); border: 1px solid var(--borde); border-radius: var(--radio-md); padding: 0.9rem 1rem; text-align: center; }
+.statBoxValor { font-size: 1.1rem; font-weight: 700; color: var(--negro); font-variant-numeric: tabular-nums; }
+.statBoxLabel { font-size: 0.68rem; color: var(--topo-muy-claro); margin-top: 0.2rem; }
+
+/* ── Notas ── */
+.notaItem { background: var(--blanco); border: 1px solid var(--borde); border-radius: var(--radio-md); padding: 0.9rem 1.1rem; box-shadow: var(--sombra-xs); }
+.notaFecha { font-size: 0.68rem; color: var(--topo-muy-claro); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; }
+.notaTexto { margin: 0.4rem 0 0; font-size: 0.88rem; color: var(--negro); white-space: pre-wrap; }
+
+/* ── Checklist de tareas ── */
+.checklistItem {
+  display: flex; align-items: center; gap: 0.75rem;
+  background: var(--blanco); border: 1px solid var(--borde); border-radius: var(--radio);
+  padding: 0.65rem 0.9rem; cursor: pointer; transition: var(--trans-fast);
+}
+.checklistItem:hover { border-color: var(--topo-muy-claro); }
+.checklistCheck {
+  width: 20px; height: 20px; border-radius: 5px; border: 1.5px solid var(--borde);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  font-size: 0.7rem; color: #fff; font-weight: 700;
+}
+.checklistHecha { background: var(--verde-bg); }
+.checklistHecha .checklistCheck { background: var(--verde); border-color: var(--verde); }
+.checklistTexto { font-size: 0.86rem; color: var(--negro); }
+.checklistHecha .checklistTexto { color: var(--topo-claro); text-decoration: line-through; }
+.btnIconoBorrar { background: none; border: none; cursor: pointer; padding: 0.2rem; border-radius: var(--radio); transition: var(--trans-fast); }
+.btnIconoBorrar:hover { color: var(--rojo); background: var(--rojo-bg); }
+
+/* ── Mediciones / estancias ── */
+.estanciaCard { background: var(--blanco); border: 1px solid var(--borde); border-radius: var(--radio-grande); padding: 1.25rem; margin-top: 1rem; }
+.estanciaCabecera { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; margin-bottom: 1rem; }
+.medidasGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.9rem; }
+.tablaDespiece { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.tablaDespiece th { text-align: left; padding: 0.5rem 0.75rem; background: var(--fondo); color: var(--topo-muy-claro); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--borde); }
+.tablaDespiece td { padding: 0.55rem 0.75rem; border-bottom: 1px solid var(--borde-fino); }
+
 /* ===== RESPONSIVE ===== */
 @media (max-width: 768px) {
   .header { padding: 0 1.25rem; }
@@ -1424,4 +2070,411 @@
   .main { padding: 1rem; }
   .h2 { font-size: 1.15rem; }
   .resumenValor { font-size: 1.3rem; }
+  /* Tarjetas de estadísticas más compactas en móvil — antes ocupaban
+     media pantalla cada una ("contadores enormes"); el objetivo es una
+     vista más densa, más parecida a la de escritorio. */
+  .kpiGrid { gap: 0.6rem; }
+  .kpiTarjeta { padding: 0.75rem 0.9rem; gap: 0.15rem; }
+  .kpiCabecera { gap: 0.4rem; margin-bottom: 0.15rem; }
+  .kpiIconoChip { width: 24px; height: 24px; border-radius: 7px; }
+  .kpiIconoChip svg { width: 13px; height: 13px; }
+  .kpiLabel { font-size: 0.6rem; }
+  .kpiValor { font-size: 1.05rem; }
+  .kpiSub { font-size: 0.64rem; }
+}
+
+/* ===== MÓDULO "DIBUJOS" (Fase 2.1) =====
+   Design System propio de la aplicación — a propósito, nada del aspecto
+   visual de la pizarra de medidas antigua ni de la interfaz de fábrica de
+   tldraw (se usa con `hideUi`, ver editor-dibujo.tsx). */
+
+.dibujosGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.dibujoCard {
+  position: relative;
+  background: var(--blanco);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-grande);
+  box-shadow: var(--sombra-xs);
+  overflow: hidden;
+  cursor: pointer;
+  transition: var(--trans);
+  display: flex;
+  flex-direction: column;
+}
+.dibujoCard:hover {
+  box-shadow: var(--sombra);
+  transform: translateY(-2px);
+  border-color: var(--topo-muy-claro);
+}
+
+.dibujoCardMiniatura {
+  aspect-ratio: 4 / 3;
+  background: var(--fondo);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--topo-muy-claro);
+  border-bottom: 1px solid var(--borde-fino);
+}
+.dibujoCardMiniatura img { width: 100%; height: 100%; object-fit: cover; }
+
+.dibujoCardCuerpo { padding: 0.7rem 0.85rem; display: flex; flex-direction: column; gap: 0.15rem; }
+.dibujoCardNombre { font-weight: 700; font-size: 0.85rem; color: var(--negro); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dibujoCardFecha { font-size: 0.7rem; color: var(--topo-muy-claro); }
+
+.dibujoCardAcciones {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  opacity: 0;
+  background: rgba(255,255,255,0.88);
+  border-radius: var(--radio-md);
+  padding: 2px;
+  transition: var(--trans-fast);
+}
+.dibujoCard:hover .dibujoCardAcciones { opacity: 1; }
+.dibujoCardAcciones select { font-size: 0.7rem; padding: 2px 4px; max-width: 110px; }
+
+/* ── Carpetas de dibujos por cliente (Fase 2.2) ── */
+
+.carpetaMigaVolver {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: none;
+  border: none;
+  color: var(--topo-claro);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  margin-bottom: 0.9rem;
+}
+.carpetaMigaVolver:hover { color: var(--topo); }
+
+.carpetasGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 1rem;
+}
+
+.carpetaCard {
+  position: relative;
+  background: var(--blanco);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-grande);
+  padding: 1.1rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  text-align: center;
+  cursor: pointer;
+  transition: var(--trans-fast);
+  color: var(--topo);
+}
+.carpetaCard:hover {
+  box-shadow: var(--sombra);
+  transform: translateY(-2px);
+  border-color: var(--topo-muy-claro);
+}
+.carpetaCardNombre { font-weight: 700; font-size: 0.85rem; color: var(--negro); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.carpetaCardCuenta { font-size: 0.7rem; color: var(--topo-muy-claro); }
+.carpetaCardAcciones {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  display: flex;
+  gap: 0.1rem;
+  opacity: 0;
+  transition: var(--trans-fast);
+}
+.carpetaCard:hover .carpetaCardAcciones { opacity: 1; }
+
+/* ── Editor de dibujo — pantalla completa propia ── */
+
+.editorDibujo {
+  position: fixed;
+  inset: 0;
+  /* Mismo valor que Z_PANTALLA_COMPLETA en z-index.ts (pantalla completa de
+     la pizarra) — aquí en CSS puro porque es una clase, no un estilo en
+     línea. */
+  z-index: 400;
+  background: var(--fondo);
+  display: flex;
+  flex-direction: column;
+}
+
+.editorDibujoCabecera {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.6rem 1rem;
+  background: var(--blanco);
+  border-bottom: 1px solid var(--borde);
+}
+
+.editorDibujoNombre {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--negro);
+  font-family: inherit;
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radio);
+  transition: var(--trans-fast);
+}
+.editorDibujoNombre:focus { outline: none; background: var(--fondo); }
+
+.editorDibujoGuardadoOk {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--verde);
+  flex-shrink: 0;
+}
+
+.editorDibujoOrientacionCota {
+  display: flex;
+  gap: 0.2rem;
+  background: var(--fondo);
+  border-radius: var(--radio-md);
+  padding: 3px;
+}
+
+.editorDibujoIdiomas {
+  display: flex;
+  gap: 0.15rem;
+  background: var(--fondo);
+  border-radius: var(--radio-md);
+  padding: 3px;
+  flex-shrink: 0;
+}
+
+.editorDibujoIdiomaBtn {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  border-radius: var(--radio);
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+  opacity: 0.55;
+  transition: var(--trans-fast);
+}
+.editorDibujoIdiomaBtn:hover { opacity: 0.85; }
+.editorDibujoIdiomaBtnActivo, .editorDibujoIdiomaBtnActivo:hover {
+  opacity: 1;
+  background: var(--blanco);
+  box-shadow: var(--sombra);
+}
+
+.editorDibujoEscalaBadge {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--topo-claro);
+  background: var(--fondo);
+  border: 1px solid var(--borde);
+  border-radius: 20px;
+  padding: 0.25rem 0.65rem;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.editorDibujoCuerpo {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.editorDibujoHerramientas {
+  flex-shrink: 0;
+  width: 56px;
+  background: var(--blanco);
+  border-right: 1px solid var(--borde);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.6rem 0.5rem;
+  overflow-y: auto;
+}
+
+.editorDibujoHerramientaBtn {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radio-md);
+  border: 1px solid transparent;
+  background: none;
+  color: var(--topo);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: var(--trans-fast);
+  flex-shrink: 0;
+}
+.editorDibujoHerramientaBtn:hover { background: var(--fondo); }
+.editorDibujoHerramientaBtnActivo, .editorDibujoHerramientaBtnActivo:hover {
+  background: var(--topo);
+  color: var(--blanco);
+}
+
+.editorDibujoDivisor { width: 28px; height: 1px; background: var(--borde); flex-shrink: 0; margin: 0.15rem 0; }
+
+.editorDibujoColorBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid rgba(0,0,0,0.12);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.editorDibujoPaleta {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 0;
+  background: var(--blanco);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-md);
+  padding: 0.5rem;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.35rem;
+  box-shadow: var(--sombra);
+  z-index: 10;
+  width: 140px;
+}
+/*
+ * El panel de calibración de escala se abre desde una insignia que vive en
+ * la cabecera, que puede estar en cualquier punto horizontal según el
+ * idioma/longitud del texto — anclarlo al propio botón (como la paleta de
+ * color) lo empujaba fuera de la pantalla en móvil: el botón podía estar ya
+ * cerca del borde derecho, así que abrir "hacia la derecha" del botón lo
+ * dejaba invisible sin ningún aviso (comprobado en vivo: click registrado,
+ * panel invisible). `position: fixed` centrado en la ventana, no en el
+ * botón, garantiza que quepa en cualquier ancho de pantalla.
+ */
+.editorDibujoCalibracionPanel {
+  position: fixed;
+  top: 60px;
+  left: 12px;
+  right: 12px;
+  max-width: 300px;
+  margin: 0 auto;
+  background: var(--blanco);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-md);
+  padding: 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  box-shadow: var(--sombra);
+  z-index: 500;
+}
+.editorDibujoPaletaSwatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid rgba(0,0,0,0.1);
+  cursor: pointer;
+}
+
+.editorDibujoLienzo { flex: 1; min-width: 0; position: relative; }
+
+/* Botón para mostrar/ocultar la barra de herramientas — vive sobre el
+   lienzo (no dentro de la barra) para seguir alcanzable aunque la barra
+   esté cerrada; así se puede recuperar sin dejar de poder volver a abrirla. */
+.editorDibujoToggleHerramientas {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 20;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radio-md);
+  border: 1px solid var(--borde);
+  background: var(--blanco);
+  color: var(--topo);
+  box-shadow: var(--sombra);
+}
+
+/*
+ * Excalidraw trae su propia interfaz (menú superior, barra de zoom/ayuda
+ * inferior, botón "volver al contenido", disparador de biblioteca). El
+ * requisito de arquitectura de la Fase 2.1 es que el aspecto visible sea
+ * el Design System propio, no el de Excalidraw — así que se oculta toda su
+ * interfaz nativa y solo queda el lienzo, controlado por nuestra barra de
+ * herramientas y cabecera.
+ */
+.editorDibujoLienzo :global(.App-menu_top),
+.editorDibujoLienzo :global(.App-bottom-bar),
+.editorDibujoLienzo :global(.layer-ui__wrapper__footer),
+.editorDibujoLienzo :global(.scroll-back-to-content),
+.editorDibujoLienzo :global(.default-sidebar-trigger),
+.editorDibujoLienzo :global(.Stats) {
+  display: none !important;
+}
+
+@media (max-width: 700px) {
+  .editorDibujoHerramientas { width: 48px; padding: 0.5rem 0.35rem; }
+  .editorDibujoHerramientaBtn { width: 36px; height: 36px; }
+  .editorDibujoCabecera { padding: 0.5rem 0.65rem; gap: 0.5rem; }
+  .editorDibujoNombre { font-size: 0.85rem; }
+}
+
+/*
+ * Con poca altura de pantalla (móvil en horizontal, o una ventana de
+ * escritorio muy baja) la barra vertical no cabe entera y quedaba con
+ * scroll interno poco visible — el color y el grosor acababan fuera de la
+ * vista sin que se notara que había más barra por debajo. Con tan poca
+ * altura disponible, una barra horizontal arriba del lienzo (en vez de una
+ * columna a la izquierda) es lo que realmente cabe: se ve entera de un
+ * vistazo, con scroll horizontal solo si hiciera falta.
+ */
+@media (max-height: 500px) {
+  .editorDibujoCuerpo { flex-direction: column; }
+  .editorDibujoHerramientas {
+    flex-direction: row;
+    width: 100%;
+    height: 52px;
+    padding: 0.35rem 0.5rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: none;
+    border-bottom: 1px solid var(--borde);
+  }
+  .editorDibujoHerramientaBtn { width: 36px; height: 36px; }
+  .editorDibujoOrientacionCota { flex-direction: row; }
+  .editorDibujoDivisor { width: 1px; height: 24px; margin: 0 0.2rem; }
+  /* La paleta de color se abría hacia la derecha (pensada para una barra
+     vertical) — con la barra ahora horizontal y pegada arriba, se abre
+     hacia abajo para no salirse de la pantalla. */
+  .editorDibujoPaleta { left: 0; top: calc(100% + 8px); }
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { RegistroHoras } from './types.js';
 import { generarId } from './mock.js';
+import { ConfirmarBorrado } from './confirmar-borrado.js';
 import styles from './styles.module.css';
 
 /** Props de la tabla de horas trabajadas. */
@@ -39,7 +40,10 @@ export function TablaHoras({ horas, tarifaHora, onAnadir, onBorrar }: TablaHoras
   return (
     <div className={styles.panel}>
       <div className={styles.panelHeader}>
-        <h3 className={styles.panelTitulo}>⏱️ Horas trabajadas</h3>
+        <h3 className={styles.panelTitulo} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+          Horas trabajadas
+        </h3>
         <button
           className={`${styles.btn} ${styles.btnSecundario}`}
           onClick={() => setMostrarForm((v) => !v)}
@@ -76,7 +80,7 @@ export function TablaHoras({ horas, tarifaHora, onAnadir, onBorrar }: TablaHoras
                     {new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(h.horas * tarifaHora)}
                   </td>
                   <td style={{ textAlign: 'right' }}>
-                    <button className={styles.btnIcono} onClick={() => onBorrar(h.id)} title="Borrar">🗑️</button>
+                    <ConfirmarBorrado onConfirmar={() => onBorrar(h.id)} titulo="Borrar registro de horas" />
                   </td>
                 </tr>
               ))

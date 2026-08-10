@@ -1,10 +1,9 @@
-import type { Factura } from './types.js';
 import { formatoEuro } from './calculos.js';
+import * as api from './api.js';
 import styles from './styles.module.css';
 
 /** Props del resumen trimestral. */
 export type TrimestresProps = {
-  facturas: Factura[];
   /** Año a mostrar. Si no se indica, usa el año actual. */
   anio?: number;
 };
@@ -32,24 +31,35 @@ function trimestre(fecha: string): number {
   return Math.floor(mes / 3);
 }
 
-/** Devuelve el año de una fecha ISO. */
-function anioFecha(fecha: string): number {
-  return new Date(fecha).getFullYear();
-}
-
 /**
  * Resumen por trimestres del año con cálculo de IRPF estimado (Modelo 130).
  * Muestra ingresos, gastos, beneficio neto y la cuota a ingresar en Hacienda
  * para cada trimestre.
+ *
+ * Pide sus propios datos al servidor en vez de recibir `facturas` completo
+ * por props (Incremento 1.5): necesita el año entero para ser correcto, y
+ * como el resto de la app pasó a paginar, ya no hay garantía de que el
+ * componente padre tenga cargado un año completo de facturas.
  */
-export function Trimestres({ facturas, anio }: TrimestresProps) {
+export function Trimestres({ anio }: TrimestresProps) {
   const anioActual = anio ?? new Date().getFullYear();
-  const aniosDisponibles = [...new Set(facturas.map((f) => anioFecha(f.fecha)))].sort((a, b) => b - a);
-  if (!aniosDisponibles.includes(anioActual)) aniosDisponibles.unshift(anioActual);
-
   const [anioSeleccionado, setAnioSeleccionado] = React.useState(anioActual);
+  const [aniosDisponibles, setAniosDisponibles] = React.useState<number[]>([anioActual]);
+  const [facturasFiltradas, setFacturasFiltradas] = React.useState<import('./types.js').Factura[]>([]);
+  const [cargando, setCargando] = React.useState(true);
 
-  const facturasFiltradas = facturas.filter((f) => anioFecha(f.fecha) === anioSeleccionado);
+  React.useEffect(() => {
+    api.obtenerAniosConFacturas().then((anios) => {
+      setAniosDisponibles(anios.includes(anioActual) ? anios : [anioActual, ...anios].sort((a, b) => b - a));
+    });
+  }, [anioActual]);
+
+  React.useEffect(() => {
+    setCargando(true);
+    api.obtenerFacturasPorAnio(anioSeleccionado)
+      .then(setFacturasFiltradas)
+      .finally(() => setCargando(false));
+  }, [anioSeleccionado]);
 
   const trimestresData: DatosTrimestre[] = [0, 1, 2, 3].map((t) => {
     const del = facturasFiltradas.filter((f) => trimestre(f.fecha) === t);
@@ -80,7 +90,10 @@ export function Trimestres({ facturas, anio }: TrimestresProps) {
       {/* Cabecera + selector de año */}
       <div className={styles.barraSeccion} style={{ marginBottom: '1.5rem' }}>
         <div>
-          <h2 className={styles.h2}>📊 Resumen trimestral</h2>
+          <h2 className={styles.h2} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 20V10" /><path d="M12 20V4" /><path d="M6 20v-6" /></svg>
+            Resumen trimestral
+          </h2>
           <p style={{ margin: '0.25rem 0 0', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>
             Pago fraccionado de IRPF · Modelo 130 · Tipo estimado: 20% sobre beneficio neto
           </p>
@@ -96,22 +109,46 @@ export function Trimestres({ facturas, anio }: TrimestresProps) {
         </select>
       </div>
 
+      {cargando && (
+        <p style={{ fontSize: '0.85rem', color: 'var(--topo-claro)', marginBottom: '1rem' }}>Cargando facturas del año…</p>
+      )}
+
       {/* Resumen anual */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-        <div className={styles.kpiTarjeta} style={{ borderTop: '3px solid var(--verde)' }}>
-          <span className={styles.kpiLabel}>Ingresos anuales</span>
+      <div className={styles.kpiGrid} style={{ marginBottom: '2rem' }}>
+        <div className={styles.kpiTarjeta}>
+          <div className={styles.kpiCabecera}>
+            <div className={styles.kpiIconoChipVerde} style={{ width: 32, height: 32, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /></svg>
+            </div>
+            <span className={styles.kpiLabel} style={{ textTransform: 'none', fontSize: '0.86rem', color: 'var(--topo-claro)' }}>Ingresos anuales</span>
+          </div>
           <span className={`${styles.kpiValor} ${styles.valorVerde}`}>{formatoEuro(totalIngresos)}</span>
         </div>
-        <div className={styles.kpiTarjeta} style={{ borderTop: '3px solid var(--rojo)' }}>
-          <span className={styles.kpiLabel}>Gastos anuales</span>
+        <div className={styles.kpiTarjeta}>
+          <div className={styles.kpiCabecera}>
+            <div className={styles.kpiIconoChipRojo} style={{ width: 32, height: 32, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><polyline points="19 12 12 19 5 12" /></svg>
+            </div>
+            <span className={styles.kpiLabel} style={{ textTransform: 'none', fontSize: '0.86rem', color: 'var(--topo-claro)' }}>Gastos anuales</span>
+          </div>
           <span className={`${styles.kpiValor} ${styles.valorRojo}`}>{formatoEuro(totalGastos)}</span>
         </div>
-        <div className={styles.kpiTarjeta} style={{ borderTop: `3px solid ${totalBeneficio >= 0 ? 'var(--verde)' : 'var(--rojo)'}` }}>
-          <span className={styles.kpiLabel}>Beneficio neto</span>
+        <div className={styles.kpiTarjeta}>
+          <div className={styles.kpiCabecera}>
+            <div className={totalBeneficio >= 0 ? styles.kpiIconoChipVerde : styles.kpiIconoChipRojo} style={{ width: 32, height: 32, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4" /></svg>
+            </div>
+            <span className={styles.kpiLabel} style={{ textTransform: 'none', fontSize: '0.86rem', color: 'var(--topo-claro)' }}>Beneficio neto</span>
+          </div>
           <span className={`${styles.kpiValor} ${totalBeneficio >= 0 ? styles.valorVerde : styles.valorRojo}`}>{formatoEuro(totalBeneficio)}</span>
         </div>
-        <div className={styles.kpiTarjeta} style={{ borderTop: '3px solid var(--ocre)', background: 'var(--ocre-bg)' }}>
-          <span className={styles.kpiLabel}>Total IRPF estimado</span>
+        <div className={styles.kpiTarjeta}>
+          <div className={styles.kpiCabecera}>
+            <div className={styles.kpiIconoChipOcre} style={{ width: 32, height: 32, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /></svg>
+            </div>
+            <span className={styles.kpiLabel} style={{ textTransform: 'none', fontSize: '0.86rem', color: 'var(--topo-claro)' }}>Total IRPF estimado</span>
+          </div>
           <span className={styles.kpiValor} style={{ color: 'var(--ocre)' }}>{formatoEuro(totalIrpf)}</span>
           <span className={styles.kpiSub}>20% del beneficio neto</span>
         </div>
@@ -149,11 +186,17 @@ export function Trimestres({ facturas, anio }: TrimestresProps) {
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '1rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
-                  <span style={{ color: 'var(--topo-claro)' }}>💰 Ingresos</span>
+                  <span style={{ color: 'var(--topo-claro)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /></svg>
+                    Ingresos
+                  </span>
                   <span style={{ color: 'var(--verde)', fontWeight: 600 }}>{formatoEuro(t.ingresos)}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
-                  <span style={{ color: 'var(--topo-claro)' }}>🧾 Gastos</span>
+                  <span style={{ color: 'var(--topo-claro)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" /><line x1="1" y1="10" x2="23" y2="10" /></svg>
+                    Gastos
+                  </span>
                   <span style={{ color: 'var(--rojo)', fontWeight: 600 }}>-{formatoEuro(t.gastos)}</span>
                 </div>
                 <div style={{ height: 1, background: 'var(--borde)', margin: '0.2rem 0' }} />
@@ -209,9 +252,11 @@ export function Trimestres({ facturas, anio }: TrimestresProps) {
         marginTop: '1.75rem', fontSize: '0.72rem', color: 'var(--topo-muy-claro)',
         background: 'var(--fondo)', padding: '0.75rem 1rem', borderRadius: 4,
         borderLeft: '3px solid var(--borde)',
+        display: 'flex', alignItems: 'flex-start', gap: '0.5rem',
       }}>
-        ⚠️ Estimación orientativa basada en el <strong>Modelo 130</strong> (pago fraccionado IRPF autónomos). Tipo aplicado: 20% sobre beneficio neto trimestral.
-        No incluye retenciones previas ni deducciones específicas. Consulta con tu asesor para la liquidación definitiva.
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12" y2="17" /></svg>
+        <span>Estimación orientativa basada en el <strong>Modelo 130</strong> (pago fraccionado IRPF autónomos). Tipo aplicado: 20% sobre beneficio neto trimestral.
+        No incluye retenciones previas ni deducciones específicas. Consulta con tu asesor para la liquidación definitiva.</span>
       </p>
     </div>
   );

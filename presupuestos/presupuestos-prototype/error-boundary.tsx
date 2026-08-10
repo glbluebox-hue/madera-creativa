@@ -29,7 +29,7 @@ export class ErrorBoundary extends Component<Props, State> {
           alignItems: 'center', justifyContent: 'center',
           background: '#f8f6f2', fontFamily: 'Inter, sans-serif', padding: '2rem', margin: 0,
         }}>
-          <h2 style={{ color: '#4a3828', marginBottom: '0.5rem', fontSize: '1.2rem' }}>
+          <h2 style={{ color: '#51483f', marginBottom: '0.5rem', fontSize: '1.2rem' }}>
             Error inesperado
           </h2>
           <p style={{ color: '#7a7060', fontSize: '0.85rem', marginBottom: '1.5rem', maxWidth: 400, textAlign: 'center' }}>
@@ -38,7 +38,7 @@ export class ErrorBoundary extends Component<Props, State> {
           <button
             onClick={() => window.location.reload()}
             style={{
-              background: '#4a3828', color: '#fff', border: 'none', borderRadius: 8,
+              background: '#51483f', color: '#fff', border: 'none', borderRadius: 8,
               padding: '0.75rem 2rem', cursor: 'pointer', fontSize: '0.9rem',
             }}
           >

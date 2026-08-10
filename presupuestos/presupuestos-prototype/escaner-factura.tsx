@@ -4,6 +4,8 @@ import { EscanerDocumento } from './escaner-documento.js';
 import type { ResultadoEscaneo } from './escaner-documento.js';
 import { ImporteInput } from './importe-input.js';
 import { leerArchivoComoBase64 } from './archivos.js';
+import { comprimirImagen } from './procesamiento-imagenes.js';
+import { Z_DESPLEGABLE } from './z-index.js';
 import styles from './styles.module.css';
 
 /** Props del escáner de facturas. */
@@ -71,7 +73,9 @@ export function EscanerFactura({ clientes, proveedores = [], onGuardar, onCerrar
     if (!files || files.length === 0) return;
     const nuevas: Pagina[] = [];
     for (const file of Array.from(files)) {
-      const dataUrl = await leerArchivoComoBase64(file);
+      const dataUrl = file.type.startsWith('image/')
+        ? await comprimirImagen(file).then(({ blob }) => leerArchivoComoBase64(blob))
+        : await leerArchivoComoBase64(file);
       nuevas.push({ id: uid(), dataUrl, nombre: file.name });
     }
     setPaginas(prev => {
@@ -125,8 +129,17 @@ export function EscanerFactura({ clientes, proveedores = [], onGuardar, onCerrar
     <div className={styles.modalFondo} onClick={onCerrar}>
       <div className={styles.modalCaja} style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
         <div className={styles.modalCabecera}>
-          <h2 className={styles.h2}>{esEdicion ? '✏️ Editar factura' : '🧾 Nueva factura'}</h2>
-          <button className={styles.btnIcono} onClick={onCerrar}>✕</button>
+          <h2 className={styles.h2} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            {esEdicion ? (
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
+            ) : (
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" /><line x1="1" y1="10" x2="23" y2="10" /></svg>
+            )}
+            {esEdicion ? 'Editar factura' : 'Nueva factura'}
+          </h2>
+          <button className={styles.btnIcono} onClick={onCerrar} aria-label="Cerrar">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
         </div>
 
         <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -136,16 +149,23 @@ export function EscanerFactura({ clientes, proveedores = [], onGuardar, onCerrar
             <input ref={camaraRef} type="file" accept="image/*" capture="environment" multiple style={{ display: 'none' }}
               onChange={e => agregarArchivos(e.target.files)} />
             <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ flex: 1, justifyContent: 'center', minWidth: 80 }}
-              onClick={() => camaraRef.current?.click()}>📷 Foto</button>
+              onClick={() => camaraRef.current?.click()}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
+              Foto
+            </button>
             {/* Escáner de documento con detección automática */}
             <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ flex: 2, justifyContent: 'center', minWidth: 140 }}
               onClick={() => setEscanerDocAbierto(true)}>
-              📄 Escanear y detectar precio
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+              Escanear y detectar precio
             </button>
             <input ref={inputRef} type="file" accept="image/*,application/pdf" multiple style={{ display: 'none' }}
               onChange={e => agregarArchivos(e.target.files)} />
             <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ flex: 1, justifyContent: 'center', minWidth: 80 }}
-              onClick={() => inputRef.current?.click()}>⬆️ Subir</button>
+              onClick={() => inputRef.current?.click()}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+              Subir
+            </button>
           </div>
 
           {/* Escáner de documento modal */}
@@ -207,11 +227,17 @@ export function EscanerFactura({ clientes, proveedores = [], onGuardar, onCerrar
                     </span>
                     <div style={{ display: 'flex', gap: '0.3rem' }}>
                       <button onClick={() => moverPagina(paginaActual.id, -1)} disabled={paginaVista === 0}
-                        className={styles.btnIcono} title="Mover antes" style={{ opacity: paginaVista === 0 ? 0.3 : 1 }}>←</button>
+                        className={styles.btnIcono} title="Mover antes" aria-label="Mover hoja antes" style={{ opacity: paginaVista === 0 ? 0.3 : 1 }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                      </button>
                       <button onClick={() => moverPagina(paginaActual.id, 1)} disabled={paginaVista === paginas.length - 1}
-                        className={styles.btnIcono} title="Mover después" style={{ opacity: paginaVista === paginas.length - 1 ? 0.3 : 1 }}>→</button>
+                        className={styles.btnIcono} title="Mover después" aria-label="Mover hoja después" style={{ opacity: paginaVista === paginas.length - 1 ? 0.3 : 1 }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                      </button>
                       <button onClick={() => quitarPagina(paginaActual.id)}
-                        className={styles.btnIcono} title="Quitar hoja" style={{ color: 'var(--rojo)' }}>🗑</button>
+                        className={styles.btnIcono} title="Quitar hoja" aria-label="Quitar hoja" style={{ color: 'var(--rojo)' }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -226,14 +252,16 @@ export function EscanerFactura({ clientes, proveedores = [], onGuardar, onCerrar
               style={{ flex: 1, justifyContent: 'center' }}
               onClick={() => setTipo('ingreso')}
             >
-              💰 Ingreso
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /></svg>
+              Ingreso
             </button>
             <button
               className={`${styles.btn} ${tipo === 'gasto' ? styles.btnPeligro : styles.btnSecundario}`}
               style={{ flex: 1, justifyContent: 'center', color: tipo === 'gasto' ? 'var(--rojo)' : undefined }}
               onClick={() => setTipo('gasto')}
             >
-              🧾 Gasto
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" /><line x1="1" y1="10" x2="23" y2="10" /></svg>
+              Gasto
             </button>
           </div>
 
@@ -262,7 +290,7 @@ export function EscanerFactura({ clientes, proveedores = [], onGuardar, onCerrar
                 <div style={{
                   position: 'absolute', top: 'calc(100% + 2px)', left: 0, right: 0,
                   background: '#fff', border: '1px solid var(--borde)', borderRadius: 8,
-                  boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 100,
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: Z_DESPLEGABLE,
                   maxHeight: 180, overflowY: 'auto',
                 }}>
                   {proveedores
@@ -281,7 +309,7 @@ export function EscanerFactura({ clientes, proveedores = [], onGuardar, onCerrar
                         onMouseEnter={e => (e.currentTarget.style.background = 'var(--fondo)')}
                         onMouseLeave={e => (e.currentTarget.style.background = 'none')}
                       >
-                        <span>🏭</span>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: 'var(--topo-muy-claro)' }}><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /></svg>
                         <span style={{ fontWeight: 600 }}>{p.nombre}</span>
                         {p.contacto && <span style={{ fontSize: '0.72rem', color: 'var(--topo-claro)', marginLeft: 'auto' }}>{p.contacto}</span>}
                       </button>
@@ -320,7 +348,7 @@ export function EscanerFactura({ clientes, proveedores = [], onGuardar, onCerrar
               disabled={!importe || parseFloat(String(importe).replace(',', '.')) <= 0}
               onClick={guardar}
             >
-              {esEdicion ? '✅ Guardar cambios' : 'Guardar factura'}
+              {esEdicion ? 'Guardar cambios' : 'Guardar factura'}
             </button>
           </div>
         </div>

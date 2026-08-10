@@ -20,11 +20,22 @@ export type PanelAdminProps = {
   onCerrar: () => void;
 };
 
-const BADGE: Record<EstadoUsuario, { color: string; label: string; emoji: string }> = {
-  pendiente:  { color: '#f59e0b', label: 'Pendiente',  emoji: '⏳' },
-  activo:     { color: '#16a34a', label: 'Activo',     emoji: '✅' },
-  suspendido: { color: '#dc2626', label: 'Suspendido', emoji: '🚫' },
+const BADGE: Record<EstadoUsuario, { color: string; label: string }> = {
+  pendiente:  { color: '#f59e0b', label: 'Pendiente' },
+  activo:     { color: '#16a34a', label: 'Activo' },
+  suspendido: { color: '#dc2626', label: 'Suspendido' },
 };
+
+// Iconos de línea (Dirección Creativa) — sustituyen a los emoji anteriores.
+const IconoReloj = ({ s = 12 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>;
+const IconoCheck = ({ s = 12 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>;
+const IconoBloqueado = ({ s = 12 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" /></svg>;
+const IconoUsuarios = ({ s = 16 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>;
+function iconoBadge(estado: EstadoUsuario, s = 12) {
+  if (estado === 'pendiente') return <IconoReloj s={s} />;
+  if (estado === 'activo') return <IconoCheck s={s} />;
+  return <IconoBloqueado s={s} />;
+}
 
 /**
  * Panel de administración de usuarios.
@@ -85,14 +96,19 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
       <div className={styles.modalCaja} style={{ maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
         <div className={styles.modalCabecera}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <h2 className={styles.h2}>🛡️ Panel de administración</h2>
+            <h2 className={styles.h2} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
+              Panel de administración
+            </h2>
             {pendientes > 0 && (
               <span style={{ background: '#f59e0b', color: '#fff', borderRadius: 20, padding: '2px 9px', fontSize: '0.72rem', fontWeight: 700 }}>
                 {pendientes} pendiente{pendientes > 1 ? 's' : ''}
               </span>
             )}
           </div>
-          <button className={styles.btnIcono} onClick={onCerrar}>✕</button>
+          <button className={styles.btnIcono} onClick={onCerrar} aria-label="Cerrar">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
         </div>
 
         <div style={{ padding: '1.25rem' }}>
@@ -106,11 +122,14 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
                 style={{ fontSize: '0.78rem' }}
                 onClick={() => setFiltro(f)}
               >
-                {f === 'todos' ? 'Todos' : `${BADGE[f].emoji} ${BADGE[f].label}`}
+                {f === 'todos' ? 'Todos' : <>{iconoBadge(f)} {BADGE[f].label}</>}
                 {f !== 'todos' && <span style={{ marginLeft: 4, opacity: 0.8 }}>({usuarios.filter(u => u.estado === f).length})</span>}
               </button>
             ))}
-            <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ marginLeft: 'auto', fontSize: '0.78rem' }} onClick={cargar}>🔄 Actualizar</button>
+            <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ marginLeft: 'auto', fontSize: '0.78rem' }} onClick={cargar}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
+              Actualizar
+            </button>
           </div>
 
           {/* Errores */}
@@ -118,10 +137,10 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
 
           {/* Lista */}
           {cargando ? (
-            <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--topo-claro)' }}>⏳ Cargando usuarios…</div>
+            <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--topo-claro)' }}>Cargando usuarios…</div>
           ) : filtrados.length === 0 ? (
             <div className={styles.vacio}>
-              <div className={styles.vacioIcono}>👥</div>
+              <div className={styles.vacioIcono} style={{ display: 'flex', justifyContent: 'center' }}><IconoUsuarios s={40} /></div>
               <p>{filtro === 'todos' ? 'Aún no hay usuarios registrados.' : `Sin usuarios en estado "${filtro}".`}</p>
             </div>
           ) : (
@@ -137,7 +156,7 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                       {/* Avatar */}
-                      <div style={{ width: 38, height: 38, borderRadius: '50%', background: '#4B433A', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: '1rem', flexShrink: 0 }}>
+                      <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--topo)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: '1rem', flexShrink: 0 }}>
                         {u.nombre.charAt(0).toUpperCase()}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -151,7 +170,7 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
                         fontSize: '0.7rem', fontWeight: 700, padding: '2px 9px', borderRadius: 20,
                         background: badge.color, color: '#fff', flexShrink: 0,
                       }}>
-                        {badge.emoji} {badge.label}
+                        {iconoBadge(u.estado)} {badge.label}
                       </span>
                     </div>
 
@@ -159,17 +178,18 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
                     <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
                       {u.estado !== 'activo' && (
                         <button className={`${styles.btn} ${styles.btnVerde}`} style={{ fontSize: '0.78rem' }} onClick={() => cambiarEstado(u.id, 'activo')}>
-                          ✅ Aprobar
+                          <IconoCheck /> Aprobar
                         </button>
                       )}
                       {u.estado !== 'suspendido' && (
                         <button className={`${styles.btn} ${styles.btnPeligro}`} style={{ fontSize: '0.78rem' }} onClick={() => cambiarEstado(u.id, 'suspendido')}>
-                          🚫 Suspender
+                          <IconoBloqueado /> Suspender
                         </button>
                       )}
                       {u.estado === 'suspendido' && (
                         <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.78rem' }} onClick={() => cambiarEstado(u.id, 'pendiente')}>
-                          ↩️ Volver a pendiente
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: -2, marginRight: 2 }}><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></svg>
+                          Volver a pendiente
                         </button>
                       )}
                       {accion?.id === u.id && accion.tipo === 'borrar' ? (
@@ -178,7 +198,9 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
                           <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.78rem' }} onClick={() => setAccion(null)}>Cancelar</button>
                         </>
                       ) : (
-                        <button className={styles.btnIcono} style={{ color: 'var(--rojo)', marginLeft: 'auto' }} title="Eliminar usuario" onClick={() => setAccion({ id: u.id, tipo: 'borrar' })}>🗑</button>
+                        <button className={styles.btnIcono} style={{ color: 'var(--rojo)', marginLeft: 'auto' }} title="Eliminar usuario" aria-label="Eliminar usuario" onClick={() => setAccion({ id: u.id, tipo: 'borrar' })}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                        </button>
                       )}
                     </div>
                   </div>

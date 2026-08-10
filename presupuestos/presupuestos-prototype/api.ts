@@ -1,4 +1,6 @@
-import type { Cliente, Factura } from './types.js';
+import type { Cliente, Factura, Proveedor, Producto, Dibujo, Carpeta } from './types.js';
+import type { NotaMC } from './notas-modelo.js';
+import type { PresupuestoMC } from './presupuestos-modelo.js';
 import type { Empresa } from './use-empresa.js';
 
 const BASE = '/api/presupuestos-service';
@@ -103,14 +105,94 @@ async function comprobarRespuesta(res: Response, mensaje: string): Promise<Respo
   return res;
 }
 
+/**
+ * Igual que `comprobarRespuesta`, pero si el servidor responde 400/409 con
+ * un mensaje de negocio concreto (`ErrorDeNegocio` — p. ej. "ya existe una
+ * carpeta con ese nombre" o "la carpeta contiene N dibujos"), lo usa en
+ * lugar del mensaje genérico, porque aquí sí merece la pena mostrárselo
+ * al usuario tal cual.
+ */
+async function comprobarRespuestaConMotivo(res: Response, mensaje: string): Promise<Response> {
+  if (res.ok) return res;
+  if (res.status === 401 || res.status === 403) throw new Error(String(res.status));
+  if (res.status === 400 || res.status === 409) {
+    const cuerpo = await res.json().catch(() => null) as { error?: string } | null;
+    if (cuerpo?.error) throw new Error(cuerpo.error);
+  }
+  throw new Error(mensaje);
+}
+
+/** Página de resultados de un listado paginado. */
+export type Pagina<T> = {
+  items: T[];
+  pagina: number;
+  limite: number;
+  total: number;
+  totalPaginas: number;
+};
+
 /* ===== FACTURAS ===== */
 
 /**
- * Lista todas las facturas (sin imagen base64).
+ * Lista una página de facturas (sin imagen base64), opcionalmente filtrada
+ * por tipo — el filtro se resuelve en el servidor, no en el cliente.
  */
-export async function obtenerFacturas(): Promise<Factura[]> {
-  const res = await fetchConAuth('/facturas');
+export async function obtenerFacturas(pagina = 1, limite = 30, tipo: 'ingreso' | 'gasto' | 'todas' = 'todas'): Promise<Pagina<Factura>> {
+  const res = await fetchConAuth(`/facturas?pagina=${pagina}&limite=${limite}&tipo=${tipo}`);
   await comprobarRespuesta(res, 'No se pudieron cargar las facturas');
+  return res.json();
+}
+
+/**
+ * Todas las facturas de un año concreto, sin paginar — para el resumen
+ * trimestral, que necesita el año completo para ser correcto.
+ */
+export async function obtenerFacturasPorAnio(anio: number): Promise<Factura[]> {
+  const res = await fetchConAuth(`/facturas?anio=${anio}`);
+  await comprobarRespuesta(res, 'No se pudieron cargar las facturas del año');
+  const datos: Pagina<Factura> = await res.json();
+  return datos.items;
+}
+
+/** Totales y recuentos de ingresos/gastos/balance, calculados en el servidor. */
+export type ResumenFacturas = {
+  totalIngresos: number; totalGastos: number; balance: number;
+  numIngresos: number; numGastos: number; numFacturas: number;
+};
+
+export async function obtenerResumenFacturas(): Promise<ResumenFacturas> {
+  const res = await fetchConAuth('/facturas/resumen');
+  await comprobarRespuesta(res, 'No se pudo cargar el resumen de facturas');
+  return res.json();
+}
+
+/** Años para los que existe alguna factura, más recientes primero. */
+export async function obtenerAniosConFacturas(): Promise<number[]> {
+  const res = await fetchConAuth('/facturas/anios');
+  await comprobarRespuesta(res, 'No se pudieron cargar los años con facturas');
+  return res.json();
+}
+
+/** Todas las facturas de un cliente concreto, sin paginar — para la ficha de cliente. */
+export async function obtenerFacturasDeCliente(clienteId: string): Promise<Factura[]> {
+  const res = await fetchConAuth(`/facturas?clienteId=${encodeURIComponent(clienteId)}`);
+  await comprobarRespuesta(res, 'No se pudieron cargar las facturas del cliente');
+  const datos: Pagina<Factura> = await res.json();
+  return datos.items;
+}
+
+/** Todas las facturas de un proveedor concreto (búsqueda difusa por nombre), sin paginar. */
+export async function obtenerFacturasDeProveedor(nombreProveedor: string): Promise<Factura[]> {
+  const res = await fetchConAuth(`/facturas?proveedor=${encodeURIComponent(nombreProveedor)}`);
+  await comprobarRespuesta(res, 'No se pudieron cargar las facturas del proveedor');
+  const datos: Pagina<Factura> = await res.json();
+  return datos.items;
+}
+
+/** Total gastado y número de facturas por proveedor (texto), calculado en el servidor. */
+export async function obtenerResumenPorProveedor(): Promise<{ proveedor: string; totalGastado: number; numFacturas: number }[]> {
+  const res = await fetchConAuth('/facturas/resumen-proveedores');
+  await comprobarRespuesta(res, 'No se pudo cargar el resumen de proveedores');
   return res.json();
 }
 
@@ -147,6 +229,121 @@ export async function borrarFactura(id: string): Promise<void> {
   await comprobarRespuesta(res, 'No se pudo borrar la factura');
 }
 
+/* ===== DIBUJOS (módulo profesional de dibujo, Fase 2.1) ===== */
+
+/**
+ * Lista los dibujos del usuario, sin el contenido vectorial (versión ligera
+ * para la galería y el apartado "Dibujos" de la ficha). `clienteId`/`carpetaId`
+ * distinguen "sin filtro" (omitido) de "filtrar por vacío" (cadena vacía) —
+ * así se puede pedir solo la bandeja de temporales (`temporales: true`) o
+ * solo los dibujos sueltos de un cliente (`carpetaId: ''`).
+ */
+export async function listarDibujos(opciones?: { clienteId?: string; carpetaId?: string; temporales?: boolean }): Promise<Dibujo[]> {
+  const params = new URLSearchParams();
+  if (opciones?.temporales) params.set('temporales', '1');
+  else if (opciones?.clienteId !== undefined) params.set('clienteId', opciones.clienteId);
+  if (opciones?.carpetaId !== undefined) params.set('carpetaId', opciones.carpetaId);
+  const query = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetchConAuth(`/dibujos${query}`);
+  await comprobarRespuesta(res, 'No se pudieron cargar los dibujos');
+  return res.json();
+}
+
+/**
+ * Obtiene un dibujo completo, incluyendo su contenido vectorial — solo al
+ * abrirlo para editar, nunca para listar.
+ * @param id Identificador del dibujo.
+ */
+export async function obtenerDibujo(id: string): Promise<Dibujo> {
+  const res = await fetchConAuth(`/dibujos/${id}`);
+  await comprobarRespuesta(res, 'No se pudo cargar el dibujo');
+  return res.json();
+}
+
+/**
+ * Guarda o actualiza un dibujo.
+ * @param d El dibujo a guardar.
+ */
+export async function guardarDibujo(d: Dibujo): Promise<Dibujo> {
+  const res = await fetchConAuth(`/dibujos/${d.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(d),
+  });
+  await comprobarRespuesta(res, 'No se pudo guardar el dibujo');
+  return res.json();
+}
+
+/**
+ * Borra un dibujo por su id.
+ * @param id Identificador del dibujo.
+ */
+export async function borrarDibujo(id: string): Promise<void> {
+  const res = await fetchConAuth(`/dibujos/${id}`, { method: 'DELETE' });
+  await comprobarRespuesta(res, 'No se pudo borrar el dibujo');
+}
+
+/**
+ * Duplica un dibujo — la copia se crea en el servidor (mismo cliente y
+ * carpeta que el original) y se devuelve ya lista.
+ * @param id Dibujo a duplicar.
+ */
+export async function duplicarDibujo(id: string): Promise<Dibujo> {
+  const res = await fetchConAuth(`/dibujos/${id}/duplicar`, { method: 'POST' });
+  await comprobarRespuesta(res, 'No se pudo duplicar el dibujo');
+  return res.json();
+}
+
+/* ===== CARPETAS DE DIBUJOS (Fase 2.2) ===== */
+
+/**
+ * Lista las carpetas de dibujos de un cliente.
+ * @param clienteId Ficha de cliente.
+ */
+export async function listarCarpetas(clienteId: string): Promise<Carpeta[]> {
+  const res = await fetchConAuth(`/carpetas?clienteId=${encodeURIComponent(clienteId)}`);
+  await comprobarRespuesta(res, 'No se pudieron cargar las carpetas');
+  return res.json();
+}
+
+/**
+ * Crea una carpeta de dibujos dentro de un cliente.
+ * @param carpeta Carpeta a crear (id, clienteId, nombre).
+ */
+export async function crearCarpeta(carpeta: { id: string; clienteId: string; nombre: string }): Promise<Carpeta> {
+  const res = await fetchConAuth('/carpetas', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(carpeta),
+  });
+  await comprobarRespuestaConMotivo(res, 'No se pudo crear la carpeta');
+  return res.json();
+}
+
+/**
+ * Renombra una carpeta.
+ * @param id Carpeta a renombrar.
+ * @param nombre Nuevo nombre.
+ */
+export async function renombrarCarpeta(id: string, nombre: string): Promise<Carpeta> {
+  const res = await fetchConAuth(`/carpetas/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nombre }),
+  });
+  await comprobarRespuestaConMotivo(res, 'No se pudo renombrar la carpeta');
+  return res.json();
+}
+
+/**
+ * Borra una carpeta — falla con un mensaje claro si todavía contiene dibujos.
+ * @param id Carpeta a borrar.
+ */
+export async function borrarCarpeta(id: string): Promise<void> {
+  const res = await fetchConAuth(`/carpetas/${id}`, { method: 'DELETE' });
+  await comprobarRespuestaConMotivo(res, 'No se pudo borrar la carpeta');
+}
+
 /* ===== CLIENTES ===== */
 
 /**
@@ -161,12 +358,48 @@ export async function obtenerCliente(id: string): Promise<Cliente> {
 }
 
 /**
- * Recupera todas las fichas de cliente desde el servidor.
- * @returns Lista de clientes.
+ * Recupera solo los adjuntos de un cliente — aparte de `obtenerCliente`,
+ * que ya no los incluye (algunos clientes reales tienen adjuntos
+ * históricos de varios MB; pedirlos aparte evita que abrir la ficha
+ * tarde tanto que el proxy de desarrollo corte la conexión).
+ * @param id Identificador del cliente.
  */
-export async function obtenerClientes(): Promise<Cliente[]> {
-  const res = await fetchConAuth('/clientes');
+export async function obtenerAdjuntosCliente(id: string): Promise<Cliente['adjuntos']> {
+  const res = await fetchConAuth(`/clientes/${id}/adjuntos`);
+  await comprobarRespuesta(res, 'No se pudieron cargar los adjuntos');
+  return res.json();
+}
+
+/**
+ * Recupera una página de fichas de cliente desde el servidor.
+ * @returns Página de clientes.
+ */
+export async function obtenerClientes(pagina = 1, limite = 30): Promise<Pagina<Cliente>> {
+  const res = await fetchConAuth(`/clientes?pagina=${pagina}&limite=${limite}`);
   await comprobarRespuesta(res, 'No se pudieron cargar los clientes'); // incluye código HTTP para detectar 401
+  return res.json();
+}
+
+/**
+ * Recupera solo `id`+`nombre` de todos los clientes, sin paginar — para
+ * selectores (p. ej. el desplegable de cliente al crear una factura).
+ */
+export async function obtenerNombresClientes(): Promise<{ id: string; nombre: string }[]> {
+  const res = await fetchConAuth('/clientes/nombres');
+  await comprobarRespuesta(res, 'No se pudieron cargar los nombres de clientes');
+  return res.json();
+}
+
+/** Cliente sin sus campos pesados (fotos/adjuntos/dibujos/movimientos), para vistas que necesitan el conjunto completo. */
+export type ClienteResumen = { id: string; nombre: string; proyecto: string; estado: string; presupuesto: number; creado: string };
+
+/**
+ * Recupera un resumen ligero de todos los clientes, sin paginar — para
+ * `SeccionPresupuestos`, que organiza el conjunto completo por año y carpeta.
+ */
+export async function obtenerResumenClientes(): Promise<ClienteResumen[]> {
+  const res = await fetchConAuth('/clientes/resumen');
+  await comprobarRespuesta(res, 'No se pudieron cargar los presupuestos');
   return res.json();
 }
 
@@ -194,6 +427,211 @@ export async function borrarCliente(id: string): Promise<void> {
   await comprobarRespuesta(res, 'No se pudo borrar el cliente');
 }
 
+/* ===== PROVEEDORES ===== */
+
+/** Recupera todos los proveedores del usuario. */
+export async function obtenerProveedores(): Promise<Proveedor[]> {
+  const res = await fetchConAuth('/proveedores');
+  await comprobarRespuesta(res, 'No se pudieron cargar los proveedores');
+  return res.json();
+}
+
+/** Crea o actualiza un proveedor. */
+export async function guardarProveedor(proveedor: Proveedor): Promise<Proveedor> {
+  const res = await fetchConAuth(`/proveedores/${proveedor.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(proveedor),
+  });
+  await comprobarRespuesta(res, 'No se pudo guardar el proveedor');
+  return res.json();
+}
+
+/** Borra un proveedor por su id. */
+export async function borrarProveedor(id: string): Promise<void> {
+  const res = await fetchConAuth(`/proveedores/${id}`, { method: 'DELETE' });
+  await comprobarRespuesta(res, 'No se pudo borrar el proveedor');
+}
+
+/* ===== NOTAS ===== */
+
+/** Recupera todas las notas del usuario (sin filtrar — el filtrado es en el cliente). */
+export async function obtenerNotas(): Promise<NotaMC[]> {
+  const res = await fetchConAuth('/notas');
+  await comprobarRespuesta(res, 'No se pudieron cargar las notas');
+  return res.json();
+}
+
+/** Crea o actualiza una nota. */
+export async function guardarNota(nota: NotaMC): Promise<NotaMC> {
+  const res = await fetchConAuth(`/notas/${nota.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(nota),
+  });
+  await comprobarRespuesta(res, 'No se pudo guardar la nota');
+  return res.json();
+}
+
+/** Borra una nota por su id. */
+export async function borrarNota(id: string): Promise<void> {
+  const res = await fetchConAuth(`/notas/${id}`, { method: 'DELETE' });
+  await comprobarRespuesta(res, 'No se pudo borrar la nota');
+}
+
+/* ===== NÚCLEO DE IA (Fase 3/4/5) ===== */
+
+/** Una acción de navegación pura que la app debe ejecutar (herramienta de permiso `'interfaz'`). */
+export type AccionInterfazIA = { nombre: string; argumentos: Record<string, unknown> };
+
+/** Una escritura propuesta por la IA, pendiente de confirmación explícita del usuario — nunca se ejecuta sola. */
+export type PropuestaEscrituraIA = { id: string; nombre: string; argumentos: Record<string, unknown> };
+
+export type RespuestaGenerarIA = {
+  respuesta: string;
+  accionesInterfaz: AccionInterfazIA[];
+  propuestas: PropuestaEscrituraIA[];
+};
+
+type MensajeChatIA = { role: 'user' | 'assistant' | 'system'; content: string };
+type EstadoTrabajoIA = 'pendiente' | 'completado' | 'error';
+type RespuestaTrabajoIA<T> = { estado: EstadoTrabajoIA; resultado?: T; error?: string };
+
+/**
+ * Sondea un trabajo asíncrono de IA hasta que termina (Fase 5). El proxy de
+ * desarrollo corta cualquier petición de más de ~3s — muy por debajo de lo
+ * que puede tardar una respuesta real de Ollama en hardware sin GPU (hasta
+ * ~90s medido) — por eso ninguna llamada de IA es una única petición
+ * bloqueante: el backend responde al instante con un `trabajoId` y este
+ * helper pregunta por su estado cada poco hasta que termina.
+ */
+async function sondearTrabajoIA<T>(trabajoId: string): Promise<T> {
+  const INTERVALO_MS = 1200;
+  const MAX_INTENTOS = 150; // ~3 minutos de margen
+  for (let intento = 0; intento < MAX_INTENTOS; intento++) {
+    const res = await fetchConAuth(`/ia/generar/${trabajoId}`);
+    await comprobarRespuesta(res, 'No se pudo consultar el estado de la IA');
+    const datos: RespuestaTrabajoIA<T> = await res.json();
+    if (datos.estado === 'completado') return datos.resultado as T;
+    if (datos.estado === 'error') throw new Error(datos.error || 'La IA no pudo completar la petición.');
+    await new Promise((r) => setTimeout(r, INTERVALO_MS));
+  }
+  throw new Error('La IA está tardando demasiado. Inténtalo de nuevo en un momento.');
+}
+
+/**
+ * Único punto de entrada al núcleo de IA — sustituye al antiguo `/asistente`.
+ * `capacidad` selecciona qué capacidad de IA responde (hoy solo existe
+ * `'asistente-global'`); `referencias` son solo identificadores/estado de
+ * pantalla, nunca datos completos (el servidor decide qué consultar con ellos).
+ * El sondeo ocurre dentro de esta función — el contrato externo (una
+ * promesa que resuelve con la respuesta) no cambia para quien la llama.
+ */
+export async function generarRespuestaIA(params: {
+  capacidad: string;
+  mensajes: MensajeChatIA[];
+  referencias?: Record<string, unknown>;
+}): Promise<RespuestaGenerarIA> {
+  const res = await fetchConAuth('/ia/generar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  await comprobarRespuesta(res, 'No se pudo generar la respuesta de IA');
+  const { trabajoId } = await res.json();
+  return sondearTrabajoIA<RespuestaGenerarIA>(trabajoId);
+}
+
+/**
+ * Confirma una propuesta de escritura pendiente (Fase 5) — el backend
+ * ejecuta la acción real (Mongo) y devuelve su resultado real de
+ * inmediato; si se pasa `mensajesPrevios`, además pide a la IA una segunda
+ * vuelta (sondeada igual que `generarRespuestaIA`) para redactar la
+ * respuesta final usando ese resultado real.
+ */
+export async function confirmarPropuestaIA(params: {
+  capacidad: string;
+  nombre: string;
+  argumentos: Record<string, unknown>;
+  mensajesPrevios?: MensajeChatIA[];
+  referencias?: Record<string, unknown>;
+}): Promise<{ resultado: Record<string, unknown>; respuestaFinal?: RespuestaGenerarIA }> {
+  const res = await fetchConAuth('/ia/herramientas/ejecutar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  await comprobarRespuesta(res, 'No se pudo confirmar la acción');
+  const data = await res.json();
+  if (!data.trabajoId) return { resultado: data.resultado };
+  const respuestaFinal = await sondearTrabajoIA<RespuestaGenerarIA>(data.trabajoId);
+  return { resultado: data.resultado, respuestaFinal };
+}
+
+/* ===== PRESUPUESTOS (Fase 5 — copiloto de Presupuestos) ===== */
+
+/**
+ * Presupuestos narrativos de un cliente — se pueden crear a mano desde
+ * esta pestaña o pidiéndoselo al asistente de IA (herramientas
+ * `crearPresupuesto`/`anadirElementoPresupuesto`, confirmadas por el
+ * usuario) — ambos caminos escriben en la misma colección.
+ */
+export async function obtenerPresupuestos(clienteId: string): Promise<PresupuestoMC[]> {
+  const res = await fetchConAuth(`/presupuestos?clienteId=${encodeURIComponent(clienteId)}`);
+  await comprobarRespuesta(res, 'No se pudieron cargar los presupuestos');
+  return res.json();
+}
+
+/** Lista todos los presupuestos del usuario, de cualquier cliente (Fase 6 — sección global "Documentos"). */
+export async function obtenerTodosLosPresupuestos(): Promise<PresupuestoMC[]> {
+  const res = await fetchConAuth('/presupuestos');
+  await comprobarRespuesta(res, 'No se pudieron cargar los presupuestos');
+  return res.json();
+}
+
+/** Crea o actualiza un presupuesto. */
+export async function guardarPresupuesto(p: PresupuestoMC): Promise<PresupuestoMC> {
+  const res = await fetchConAuth(`/presupuestos/${p.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(p),
+  });
+  await comprobarRespuesta(res, 'No se pudo guardar el presupuesto');
+  return res.json();
+}
+
+/** Borra un presupuesto por su id. */
+export async function borrarPresupuesto(id: string): Promise<void> {
+  const res = await fetchConAuth(`/presupuestos/${id}`, { method: 'DELETE' });
+  await comprobarRespuesta(res, 'No se pudo borrar el presupuesto');
+}
+
+/* ===== PRODUCTOS / CATÁLOGO ===== */
+
+/** Recupera todos los productos del catálogo del usuario. */
+export async function obtenerProductos(): Promise<Producto[]> {
+  const res = await fetchConAuth('/productos');
+  await comprobarRespuesta(res, 'No se pudieron cargar los productos');
+  return res.json();
+}
+
+/** Crea o actualiza un producto del catálogo. */
+export async function guardarProducto(producto: Producto): Promise<Producto> {
+  const res = await fetchConAuth(`/productos/${producto.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(producto),
+  });
+  await comprobarRespuesta(res, 'No se pudo guardar el producto');
+  return res.json();
+}
+
+/** Borra un producto del catálogo por su id. */
+export async function borrarProducto(id: string): Promise<void> {
+  const res = await fetchConAuth(`/productos/${id}`, { method: 'DELETE' });
+  await comprobarRespuesta(res, 'No se pudo borrar el producto');
+}
+
 /**
  * Recupera la configuración de empresa desde el servidor.
  * @returns Datos de la empresa.
@@ -202,7 +640,16 @@ export async function obtenerEmpresa(): Promise<Empresa> {
   const res = await fetchConAuth('/empresa');
   await comprobarRespuesta(res, 'No se pudo cargar la empresa');
   const data = await res.json();
-  return { nombre: data.nombre, eslogan: data.eslogan, logo: data.logo || null };
+  return {
+    nombre: data.nombre,
+    eslogan: data.eslogan,
+    logo: data.logo || null,
+    telefono: data.telefono || '',
+    email: data.email || '',
+    iban: data.iban || '',
+    condicionesPagoDefecto: data.condicionesPagoDefecto || '',
+    validezDiasDefecto: data.validezDiasDefecto || 30,
+  };
 }
 
 /**
@@ -218,5 +665,14 @@ export async function guardarEmpresa(empresa: Partial<Empresa>): Promise<Empresa
   });
   await comprobarRespuesta(res, 'No se pudo guardar la empresa');
   const data = await res.json();
-  return { nombre: data.nombre, eslogan: data.eslogan, logo: data.logo || null };
+  return {
+    nombre: data.nombre,
+    eslogan: data.eslogan,
+    logo: data.logo || null,
+    telefono: data.telefono || '',
+    email: data.email || '',
+    iban: data.iban || '',
+    condicionesPagoDefecto: data.condicionesPagoDefecto || '',
+    validezDiasDefecto: data.validezDiasDefecto || 30,
+  };
 }

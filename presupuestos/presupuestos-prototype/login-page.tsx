@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import logoImg from './assets/logo.png';
-import texturaVetas from './assets/textura-vetas.jpeg';
+import loginMadera from './assets/login-madera.jpg';
+import loginHojas from './assets/login-hojas.jpg';
 import type { TipoAlmacenamiento } from './use-auth.js';
 import { GuiaSupabase } from './guia-supabase.js';
 import { registrarEnServidor, loginEnServidor } from './use-registro.js';
@@ -14,6 +15,16 @@ export type LoginPageProps = {
 };
 
 type Pantalla = 'login' | 'registro' | 'almacenamiento';
+
+const IconoUsuario = ({ s = 18 }: { s?: number }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+);
+const IconoCandado = ({ s = 18 }: { s?: number }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+);
+const IconoCorreo = ({ s = 18 }: { s?: number }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 6-10 7L2 6" /></svg>
+);
 
 /**
  * Pantalla de inicio de sesión y registro de Madera Creativa.
@@ -50,9 +61,9 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
     const srv = await loginEnServidor(loginUsuario.trim(), loginPass);
     if (!srv.ok) {
       if (srv.codigo === 'pendiente') {
-        setLoginError('⏳ Tu cuenta está pendiente de aprobación. Recibi rás acceso en breve.');
+        setLoginError('Tu cuenta está pendiente de aprobación. Recibirás acceso en breve.');
       } else if (srv.codigo === 'suspendido') {
-        setLoginError('🚫 Tu acceso ha sido suspendido. Contacta con Madera Creativa.');
+        setLoginError('Tu acceso ha sido suspendido. Contacta con Madera Creativa.');
       } else if (srv.codigo === 'error-red') {
         // Sin servidor — intentar login local
         const local = onLogin(loginUsuario.trim(), loginPass);
@@ -87,50 +98,69 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
     if (!local.ok) { setRegError(local.error ?? 'Error al registrarse.'); return; }
     // Si el servidor lo registró, mostrar mensaje de pendiente
     if (srv.ok) {
-      setRegError('⏳ Tu cuenta está pendiente de aprobación. Recibi rás acceso en breve.');
+      setRegError('Tu cuenta está pendiente de aprobación. Recibirás acceso en breve.');
     }
   };
 
   return (
-    <div className={styles.loginFondo}>
+    <div className={`${styles.app} ${styles.loginFondo}`}>
 
-      {/* Panel izquierdo — textura */}
-      <div
-        className={styles.loginPanel}
-        style={{ backgroundImage: `url(${texturaVetas})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
-      >
-        <div className={styles.loginFranjaSuperior} />
-        <div className={styles.loginFranjaInferior} />
+      {/* Panel izquierdo — corte de madera real, recortado de la imagen de
+          referencia. En vez de superponer una forma de color por encima
+          para "tapar" el sobrante (lo que producía el efecto de recorte
+          pegado y una sombra falsa), la propia foto se recorta con una
+          máscara CSS que sigue la curva real medida píxel a píxel sobre
+          esa misma foto — así el `drop-shadow` que se aplica en el CSS
+          sigue automáticamente el contorno orgánico exacto de la madera,
+          en vez de proyectar la sombra de un rectángulo. */}
+      <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true">
+        <defs>
+          <mask id="maderaMask" maskContentUnits="objectBoundingBox" maskUnits="objectBoundingBox">
+            <path
+              transform="scale(0.0018182 0.000650618)"
+              d="M0,0 L512,0 L514,8 L510,16 L502,24 L504,32 L496,40 L492,48 L488,56 L484,64 L480,72 L476,80 L476,88 L470,96 L468,104 L462,112 L462,120 L460,128 L456,136 L450,144 L448,152 L442,160 L438,168 L432,176 L430,184 L430,192 L424,200 L420,208 L414,216 L408,224 L406,232 L398,240 L394,248 L392,256 L386,264 L380,272 L376,280 L370,288 L372,296 L364,304 L360,312 L358,320 L354,328 L350,336 L346,344 L346,352 L342,360 L344,368 L342,376 L344,384 L340,392 L340,400 L342,408 L342,416 L342,424 L342,432 L340,440 L342,448 L344,456 L344,464 L346,472 L346,480 L346,488 L348,496 L348,504 L348,512 L350,520 L350,528 L350,536 L352,544 L354,552 L356,560 L358,568 L358,576 L356,584 L358,592 L362,600 L366,608 L366,616 L368,624 L370,632 L370,640 L370,648 L376,656 L378,664 L380,672 L382,680 L388,688 L388,696 L392,704 L392,712 L396,720 L398,728 L398,736 L404,744 L406,752 L408,760 L408,768 L412,776 L414,784 L420,792 L420,800 L422,808 L426,816 L428,824 L428,832 L428,840 L430,848 L430,856 L432,864 L434,872 L436,880 L436,888 L438,896 L442,904 L442,912 L444,920 L444,928 L444,936 L444,944 L444,952 L444,960 L440,968 L440,976 L440,984 L436,992 L436,1000 L434,1008 L434,1016 L432,1024 L432,1032 L428,1040 L430,1048 L432,1056 L428,1064 L426,1072 L428,1080 L424,1088 L420,1096 L418,1104 L418,1112 L418,1120 L416,1128 L412,1136 L412,1144 L410,1152 L406,1160 L406,1168 L406,1176 L404,1184 L402,1192 L398,1200 L400,1208 L396,1216 L392,1224 L394,1232 L392,1240 L392,1248 L390,1256 L390,1264 L388,1272 L392,1280 L392,1288 L396,1296 L398,1304 L404,1312 L402,1320 L408,1328 L412,1336 L414,1344 L418,1352 L420,1360 L422,1368 L426,1376 L430,1384 L432,1392 L436,1400 L442,1408 L448,1416 L446,1424 L452,1432 L454,1440 L468,1448 L474,1456 L476,1464 L482,1472 L486,1480 L486,1488 L500,1496 L504,1504 L506,1512 L514,1520 L528,1528 L526,1536 L0,1537 Z"
+              fill="#fff"
+            />
+          </mask>
+        </defs>
+      </svg>
+      <div className={styles.loginPanelSombra}>
+        <div
+          className={styles.loginPanel}
+          style={{ backgroundImage: `url(${loginMadera})` }}
+        />
       </div>
 
       {/* Panel derecho — formulario */}
       <div className={styles.loginFormPanel}>
+        {/* Sombra de hojas — recorte fotográfico real de la propia imagen de
+            referencia (assets/login-hojas.jpg: x460-1023, y0-300 del
+            original), no una forma dibujada. Esa franja concreta está
+            garantizada libre de texto de interfaz (el logo empieza en
+            y=316 en la referencia), así que es 100% foto, cero
+            improvisación. */}
+        <img src={loginHojas} alt="" className={styles.loginHojas} />
+        <div className={styles.loginHojasVelo} aria-hidden="true" />
+
         <div className={styles.loginCaja}>
 
           <img src={logoImg} alt="Madera Creativa" className={styles.loginLogo} />
-          <p className={styles.loginSubtitulo}>Seguimiento de clientes y proyectos</p>
+          <hr className={styles.loginDivisor} />
+          <p className={styles.loginSubtitulo}>Seguimiento de clientes<br />y proyectos</p>
 
           {/* Tabs login / registro */}
-          <div style={{ display: 'flex', background: '#f0ede8', borderRadius: 10, padding: 3, marginBottom: '1.25rem', gap: 3 }}>
+          <div className={styles.loginTabsRow}>
             <button
+              type="button"
+              className={`${styles.loginTab} ${pantalla === 'login' ? styles.loginTabActiva : ''}`}
               onClick={() => { setPantalla('login'); setLoginError(''); }}
-              style={{
-                flex: 1, padding: '0.5rem', border: 'none', borderRadius: 8, cursor: 'pointer',
-                fontWeight: 700, fontSize: '0.85rem', transition: 'all 0.15s',
-                background: pantalla === 'login' ? '#4B433A' : 'transparent',
-                color: pantalla === 'login' ? '#fff' : 'var(--topo)',
-              }}
             >
               Entrar
             </button>
             <button
+              type="button"
+              className={`${styles.loginTab} ${pantalla === 'registro' ? styles.loginTabActiva : ''}`}
               onClick={() => { setPantalla('registro'); setRegError(''); }}
-              style={{
-                flex: 1, padding: '0.5rem', border: 'none', borderRadius: 8, cursor: 'pointer',
-                fontWeight: 700, fontSize: '0.85rem', transition: 'all 0.15s',
-                background: pantalla === 'registro' ? '#4B433A' : 'transparent',
-                color: pantalla === 'registro' ? '#fff' : 'var(--topo)',
-              }}
             >
               Regístrate
             </button>
@@ -140,6 +170,7 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
           {pantalla === 'login' && (
             <form className={styles.loginForm} onSubmit={iniciarSesion} noValidate>
               <div className={styles.loginInputWrap}>
+                <span className={styles.loginIconoBadge}><IconoUsuario /></span>
                 <input
                   className={`${styles.input} ${styles.loginInputSimple}`}
                   type="text"
@@ -151,6 +182,7 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
                 />
               </div>
               <div className={styles.loginInputWrap}>
+                <span className={styles.loginIconoBadge}><IconoCandado /></span>
                 <input
                   className={`${styles.input} ${styles.loginInputSimple}`}
                   type={mostrarPassLogin ? 'text' : 'password'}
@@ -167,7 +199,7 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
                 </button>
               </div>
 
-              {loginError && <div className={styles.loginError}><span>⚠️</span> {loginError}</div>}
+              {loginError && <div className={styles.loginError}><span style={{ display: 'inline-flex' }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12" y2="17" /></svg></span> {loginError}</div>}
 
               <button
                 type="submit"
@@ -199,6 +231,7 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
           {pantalla === 'registro' && (
             <form className={styles.loginForm} onSubmit={registrar} noValidate>
               <div className={styles.loginInputWrap}>
+                <span className={styles.loginIconoBadge}><IconoCorreo /></span>
                 <input
                   className={`${styles.input} ${styles.loginInputSimple}`}
                   type="email"
@@ -210,6 +243,7 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
                 />
               </div>
               <div className={styles.loginInputWrap}>
+                <span className={styles.loginIconoBadge}><IconoCandado /></span>
                 <input
                   className={`${styles.input} ${styles.loginInputSimple}`}
                   type={mostrarPassReg ? 'text' : 'password'}
@@ -226,6 +260,7 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
                 </button>
               </div>
               <div className={styles.loginInputWrap}>
+                <span className={styles.loginIconoBadge}><IconoCandado /></span>
                 <input
                   className={`${styles.input} ${styles.loginInputSimple}`}
                   type="password"
@@ -242,13 +277,14 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
                   type="button"
                   onClick={() => setAlmacenamiento('local')}
                   style={{
-                    flex: 1, padding: '0.65rem 0.5rem', border: `2px solid ${almacenamiento === 'local' ? '#4B433A' : 'var(--borde)'}`,
+                    flex: 1, padding: '0.65rem 0.5rem', border: `2px solid ${almacenamiento === 'local' ? 'var(--topo)' : 'var(--borde)'}`,
                     borderRadius: 8, cursor: 'pointer', background: almacenamiento === 'local' ? '#f5f1eb' : '#fff',
                     fontWeight: almacenamiento === 'local' ? 700 : 400, fontSize: '0.8rem',
                     color: 'var(--negro)', transition: 'all 0.15s',
                   }}
                 >
-                  📱 Local<br />
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ verticalAlign: -2, marginRight: 3 }}><rect x="5" y="2" width="14" height="20" rx="2" /><line x1="12" y1="18" x2="12" y2="18" /></svg>
+                  Local<br />
                   <span style={{ fontSize: '0.68rem', fontWeight: 400, color: 'var(--topo-claro)' }}>Solo este dispositivo</span>
                 </button>
                 <button
@@ -261,7 +297,8 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
                     color: 'var(--negro)', transition: 'all 0.15s',
                   }}
                 >
-                  ☁️ Nube gratis<br />
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ verticalAlign: -2, marginRight: 3 }}><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" /></svg>
+                  Nube gratis<br />
                   <span style={{ fontSize: '0.68rem', fontWeight: 400, color: 'var(--topo-claro)' }}>Supabase (500 MB)</span>
                 </button>
               </div>
@@ -271,21 +308,25 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
                 <div style={{ background: '#e8f5e9', border: '1px solid #81c784', borderRadius: 8, padding: '0.65rem 0.85rem', fontSize: '0.82rem' }}>
                   {supabaseUrl ? (
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ color: '#2e7d32', fontWeight: 600 }}>✅ Supabase configurado</span>
+                      <span style={{ color: '#2e7d32', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                        Supabase configurado
+                      </span>
                       <button type="button" className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.72rem' }} onClick={() => setGuiaAbierta(true)}>Cambiar</button>
                     </div>
                   ) : (
                     <div>
                       <p style={{ margin: '0 0 0.4rem', color: '#1b5e20', fontWeight: 600 }}>Necesitas configurar tu Supabase</p>
                       <button type="button" className={`${styles.btn} ${styles.btnPrimario}`} style={{ fontSize: '0.82rem', width: '100%', justifyContent: 'center' }} onClick={() => setGuiaAbierta(true)}>
-                        ☁️ Ver guía paso a paso
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ verticalAlign: -2, marginRight: 4 }}><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" /></svg>
+                        Ver guía paso a paso
                       </button>
                     </div>
                   )}
                 </div>
               )}
 
-              {regError && <div className={styles.loginError}><span>⚠️</span> {regError}</div>}
+              {regError && <div className={styles.loginError}><span style={{ display: 'inline-flex' }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12" y2="17" /></svg></span> {regError}</div>}
 
               <button
                 type="submit"
@@ -297,10 +338,11 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
             </form>
           )}
 
+          <div className={styles.loginDivisorPunto} />
           <p className={styles.loginPie}>
             © {new Date().getFullYear()} Madera Creativa · Acceso privado
           </p>
-          <p style={{ margin: '0.5rem 0 0', fontSize: '0.62rem', color: 'var(--topo-muy-claro)', textAlign: 'center', opacity: 0.6, letterSpacing: '0.02em' }}>
+          <p className={styles.loginPiePequeno}>
             Desarrollado por Madera Creativa
           </p>
         </div>

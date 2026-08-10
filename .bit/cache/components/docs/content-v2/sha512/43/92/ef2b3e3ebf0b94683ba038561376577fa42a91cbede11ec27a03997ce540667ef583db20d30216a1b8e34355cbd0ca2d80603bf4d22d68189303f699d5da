@@ -1,1 +1,0 @@
-[{"filePath":"error-boundary.tsx","name":"ErrorBoundary","description":"ErrorBoundary global — captura cualquier crash de React y muestra\r\nun mensaje de error en lugar de una pantalla en blanco.","properties":[{"name":"children","description":"","required":true,"type":"ReactNode"}],"access":"public","methods":[],"args":[],"examples":[]}]

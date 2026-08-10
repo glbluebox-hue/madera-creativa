@@ -55,7 +55,9 @@ export function TabMediciones({ cliente, onActualizar }: TabMedicionesProps) {
 
       {estancias.length === 0 ? (
         <div className={styles.tabVacio}>
-          <div className={styles.tabVacioIcono}>📐</div>
+          <div className={styles.tabVacioIcono} style={{ display: 'flex', justifyContent: 'center' }}>
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M7 3v4M11 3v2M15 3v4M3 7h4M3 11h2M3 15h4" /></svg>
+          </div>
           <p>Aún no hay estancias medidas. Añade la primera.</p>
         </div>
       ) : (
@@ -91,7 +93,7 @@ export function TabMediciones({ cliente, onActualizar }: TabMedicionesProps) {
                 onClick={() => setDespiecePara(despiecePara === e.id ? null : e.id)}
                 disabled={piezas.length === 0}
               >
-                {piezas.length === 0 ? 'Rellena las medidas para el despiece' : (despiecePara === e.id ? 'Ocultar despiece' : '🪚 Generar despiece automático')}
+                {piezas.length === 0 ? 'Rellena las medidas para el despiece' : (despiecePara === e.id ? 'Ocultar despiece' : 'Generar despiece automático')}
               </button>
 
               {despiecePara === e.id && piezas.length > 0 && (

@@ -2,6 +2,9 @@ import { useState, useRef } from 'react';
 import { generarId } from './mock.js';
 import { EscanerDocumento } from './escaner-documento.js';
 import { leerArchivoComoBase64 } from './archivos.js';
+import { comprimirImagen } from './procesamiento-imagenes.js';
+import { Z_MODAL } from './z-index.js';
+import { ConfirmarBorrado } from './confirmar-borrado.js';
 import styles from './styles.module.css';
 
 /** Una foto del proyecto acabado. */
@@ -27,7 +30,6 @@ export function GaleriaFotos({ fotos, onAnadir, onBorrar }: GaleriaFotosProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const camaraRef = useRef<HTMLInputElement>(null);
   const [visor, setVisor] = useState<FotoProyecto | null>(null);
-  const [confirmBorrar, setConfirmBorrar] = useState<string | null>(null);
   const [editandoDesc, setEditandoDesc] = useState<string | null>(null);
   const [desc, setDesc] = useState('');
   const [escanerDoc, setEscanerDoc] = useState(false);
@@ -36,14 +38,14 @@ export function GaleriaFotos({ fotos, onAnadir, onBorrar }: GaleriaFotosProps) {
     if (!files) return;
     Array.from(files)
       .filter((f) => f.type.startsWith('image/'))
-      .forEach((file) => {
-        leerArchivoComoBase64(file).then((url) => {
-          onAnadir({
-            id: generarId(),
-            url,
-            descripcion: '',
-            fecha: new Date().toISOString().slice(0, 10),
-          });
+      .forEach(async (file) => {
+        const { blob } = await comprimirImagen(file);
+        const url = await leerArchivoComoBase64(blob);
+        onAnadir({
+          id: generarId(),
+          url,
+          descripcion: '',
+          fecha: new Date().toISOString().slice(0, 10),
         });
       });
   };
@@ -58,18 +60,24 @@ export function GaleriaFotos({ fotos, onAnadir, onBorrar }: GaleriaFotosProps) {
     <div className={styles.panel}>
       {/* Cabecera */}
       <div className={styles.panelHeader}>
-        <h3 className={styles.panelTitulo}>📸 Fotos del proyecto acabado</h3>
+        <h3 className={styles.panelTitulo} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
+          Fotos del proyecto acabado
+        </h3>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <input ref={camaraRef} type="file" accept="image/*" capture="environment" multiple style={{ display: 'none' }} onChange={(e) => subirFotos(e.target.files)} />
           <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={() => camaraRef.current?.click()}>
-            📷 Cámara
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
+            Cámara
           </button>
           <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={() => setEscanerDoc(true)} title="Escanear como documento">
-            📄 Documento
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+            Documento
           </button>
           <input ref={inputRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={(e) => subirFotos(e.target.files)} />
           <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={() => inputRef.current?.click()}>
-            ⬆️ Subir
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+            Subir
           </button>
         </div>
       </div>
@@ -82,7 +90,9 @@ export function GaleriaFotos({ fotos, onAnadir, onBorrar }: GaleriaFotosProps) {
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => { e.preventDefault(); subirFotos(e.dataTransfer.files); }}
         >
-          <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>📸</div>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.5rem', color: 'var(--topo-muy-claro)' }}>
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
+          </div>
           <p style={{ margin: 0 }}>Haz clic o arrastra aquí las fotos del proyecto terminado</p>
           <p style={{ margin: '0.25rem 0 0', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>
             También puedes usar la cámara del móvil
@@ -141,14 +151,7 @@ export function GaleriaFotos({ fotos, onAnadir, onBorrar }: GaleriaFotosProps) {
                 )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.25rem' }}>
                   <span style={{ fontSize: '0.68rem', color: 'var(--topo-muy-claro)' }}>{foto.fecha}</span>
-                  {confirmBorrar === foto.id ? (
-                    <span style={{ display: 'flex', gap: '0.2rem' }}>
-                      <button className={`${styles.btn} ${styles.btnPeligro}`} style={{ fontSize: '0.65rem', padding: '2px 6px' }} onClick={() => { onBorrar(foto.id); setConfirmBorrar(null); }}>Sí</button>
-                      <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.65rem', padding: '2px 6px' }} onClick={() => setConfirmBorrar(null)}>No</button>
-                    </span>
-                  ) : (
-                    <button style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8rem', color: 'var(--topo-muy-claro)', padding: 0 }} onClick={() => setConfirmBorrar(foto.id)}>🗑️</button>
-                  )}
+                  <ConfirmarBorrado onConfirmar={() => onBorrar(foto.id)} titulo="Borrar foto" />
                 </div>
               </div>
             </div>
@@ -192,12 +195,12 @@ export function GaleriaFotos({ fotos, onAnadir, onBorrar }: GaleriaFotosProps) {
           style={{
             position: 'fixed', inset: 0, background: 'rgba(10,8,6,0.92)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            zIndex: 300, padding: '1rem',
+            zIndex: Z_MODAL, padding: '1rem',
           }}
         >
           <button onClick={(e) => { e.stopPropagation(); irA(-1); }} disabled={indiceActual === 0}
-            style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: 44, height: 44, fontSize: '1.2rem', color: '#fff', cursor: 'pointer', opacity: indiceActual === 0 ? 0.3 : 1 }}>
-            ‹
+            style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', cursor: 'pointer', opacity: indiceActual === 0 ? 0.3 : 1 }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
           </button>
 
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
@@ -211,13 +214,13 @@ export function GaleriaFotos({ fotos, onAnadir, onBorrar }: GaleriaFotosProps) {
           </div>
 
           <button onClick={(e) => { e.stopPropagation(); irA(1); }} disabled={indiceActual === fotos.length - 1}
-            style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: 44, height: 44, fontSize: '1.2rem', color: '#fff', cursor: 'pointer', opacity: indiceActual === fotos.length - 1 ? 0.3 : 1 }}>
-            ›
+            style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', cursor: 'pointer', opacity: indiceActual === fotos.length - 1 ? 0.3 : 1 }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
           </button>
 
           <button onClick={() => setVisor(null)}
-            style={{ position: 'absolute', top: 16, right: 16, background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: 36, height: 36, fontSize: '1rem', color: '#fff', cursor: 'pointer' }}>
-            ✕
+            style={{ position: 'absolute', top: 16, right: 16, background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', cursor: 'pointer' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
         </div>
       )}

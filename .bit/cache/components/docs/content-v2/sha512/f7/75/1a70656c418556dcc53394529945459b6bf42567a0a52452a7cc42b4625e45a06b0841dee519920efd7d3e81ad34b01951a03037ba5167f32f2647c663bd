@@ -1,1 +1,0 @@
-[{"name":"","description":"Conecta a MongoDB (reutiliza conexión existente).","args":[],"returns":{},"access":"public","examples":[],"render":"","properties":[],"static":false,"filePath":"usuario.model.ts"}]

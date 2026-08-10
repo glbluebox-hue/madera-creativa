@@ -1,1 +1,0 @@
-[{"name":"","description":"Hook de autenticación multi-usuario con soporte para almacenamiento local y Supabase.\r\nCierra sesión automáticamente tras 5 minutos de inactividad.","args":[],"returns":{},"access":"public","examples":[],"render":"","properties":[],"static":false,"filePath":"use-auth.ts"}]

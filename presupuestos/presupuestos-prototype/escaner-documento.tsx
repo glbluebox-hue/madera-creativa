@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { ImporteInput } from './importe-input.js';
 import { leerArchivoComoBase64 } from './archivos.js';
+import { prepararCanvas, codificarCanvas } from './procesamiento-imagenes.js';
 import styles from './styles.module.css';
 
 /** Modo de procesado de la imagen. */
@@ -22,37 +23,34 @@ export type EscanerDocumentoProps = {
   onCerrar: () => void;
 };
 
-/** Aplica filtro de mejora de documento sobre un canvas. */
-function aplicarFiltro(src: string, modo: Modo): Promise<string> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(img, 0, 0);
-      if (modo !== 'color') {
-        const d = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        for (let i = 0; i < d.data.length; i += 4) {
-          const r = d.data[i]; const g = d.data[i + 1]; const b = d.data[i + 2];
-          let lum = 0.299 * r + 0.587 * g + 0.114 * b;
-          if (modo === 'bn') {
-            lum = lum > 155 ? 255 : lum > 80 ? Math.min(255, lum * 1.5) : 0;
-            d.data[i] = d.data[i + 1] = d.data[i + 2] = lum;
-          } else {
-            const f = 1.7;
-            d.data[i] = Math.min(255, Math.max(0, (r - 128) * f + 148));
-            d.data[i + 1] = Math.min(255, Math.max(0, (g - 128) * f + 148));
-            d.data[i + 2] = Math.min(255, Math.max(0, (b - 128) * f + 148));
-          }
-        }
-        ctx.putImageData(d, 0, 0);
+/**
+ * Aplica filtro de mejora de documento y codifica el resultado — todo sobre
+ * el mismo canvas ya redimensionado, para que la imagen pase una única vez
+ * por la codificación final (antes: resolución nativa + JPEG q0,93 fijos;
+ * ver auditoría del Incremento 1.3).
+ */
+async function aplicarFiltro(src: string, modo: Modo): Promise<string> {
+  const { canvas } = await prepararCanvas(src);
+  const ctx = canvas.getContext('2d')!;
+  if (modo !== 'color') {
+    const d = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    for (let i = 0; i < d.data.length; i += 4) {
+      const r = d.data[i]; const g = d.data[i + 1]; const b = d.data[i + 2];
+      let lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      if (modo === 'bn') {
+        lum = lum > 155 ? 255 : lum > 80 ? Math.min(255, lum * 1.5) : 0;
+        d.data[i] = d.data[i + 1] = d.data[i + 2] = lum;
+      } else {
+        const f = 1.7;
+        d.data[i] = Math.min(255, Math.max(0, (r - 128) * f + 148));
+        d.data[i + 1] = Math.min(255, Math.max(0, (g - 128) * f + 148));
+        d.data[i + 2] = Math.min(255, Math.max(0, (b - 128) * f + 148));
       }
-      resolve(canvas.toDataURL('image/jpeg', 0.93));
-    };
-    img.src = src;
-  });
+    }
+    ctx.putImageData(d, 0, 0);
+  }
+  const blob = await codificarCanvas(canvas);
+  return leerArchivoComoBase64(blob);
 }
 
 /** Extrae el importe más alto del texto. */
@@ -171,9 +169,9 @@ export function EscanerDocumento({ onConfirmar, onCerrar }: EscanerDocumentoProp
 
   const paginaActual = paginas[paginaActiva];
   const modos: { id: Modo; label: string }[] = [
-    { id: 'mejorado', label: '✨ Mejorado' },
-    { id: 'bn', label: '◑ B&N' },
-    { id: 'color', label: '🌈 Color' },
+    { id: 'mejorado', label: 'Mejorado' },
+    { id: 'bn', label: 'B&N' },
+    { id: 'color', label: 'Color' },
   ];
 
   return (
@@ -185,8 +183,13 @@ export function EscanerDocumento({ onConfirmar, onCerrar }: EscanerDocumentoProp
       >
         {/* Cabecera */}
         <div className={styles.modalCabecera}>
-          <h2 className={styles.h2}>📄 Escanear documento</h2>
-          <button className={styles.btnIcono} onClick={onCerrar}>✕</button>
+          <h2 className={styles.h2} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+            Escanear documento
+          </h2>
+          <button className={styles.btnIcono} onClick={onCerrar} aria-label="Cerrar">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
@@ -196,7 +199,7 @@ export function EscanerDocumento({ onConfirmar, onCerrar }: EscanerDocumentoProp
             <>
               <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--topo-claro)', lineHeight: 1.5 }}>
                 Haz una foto con la cámara del móvil.<br />
-                <strong>💡 En iOS:</strong> al abrir la cámara, mantén pulsado el obturador o usa el modo "Escanear documentos" de la app Notas/Archivos para mejor resultado.
+                <strong>En iOS:</strong> al abrir la cámara, mantén pulsado el obturador o usa el modo "Escanear documentos" de la app Notas/Archivos para mejor resultado.
               </p>
 
               {/* Inputs ocultos */}
@@ -210,7 +213,8 @@ export function EscanerDocumento({ onConfirmar, onCerrar }: EscanerDocumentoProp
                 style={{ justifyContent: 'center', padding: '1rem', fontSize: '1rem', borderRadius: 12 }}
                 onClick={() => camaraRef.current?.click()}
               >
-                📷 Abrir cámara
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6, verticalAlign: -3 }}><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
+                Abrir cámara
               </button>
 
               <button
@@ -218,7 +222,8 @@ export function EscanerDocumento({ onConfirmar, onCerrar }: EscanerDocumentoProp
                 style={{ justifyContent: 'center' }}
                 onClick={() => galeriaRef.current?.click()}
               >
-                🖼️ Elegir de galería o archivos
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6, verticalAlign: -2 }}><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>
+                Elegir de galería o archivos
               </button>
 
               {/* Zona drop */}
@@ -229,7 +234,9 @@ export function EscanerDocumento({ onConfirmar, onCerrar }: EscanerDocumentoProp
                 onDragOver={e => e.preventDefault()}
                 onDrop={e => { e.preventDefault(); agregarImagenes(e.dataTransfer.files); }}
               >
-                <div style={{ fontSize: '2.5rem', marginBottom: '0.4rem' }}>📄</div>
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.4rem' }}>
+                  <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                </div>
                 <p style={{ margin: 0, fontSize: '0.8rem' }}>Arrastra aquí la imagen o PDF</p>
               </div>
             </>
@@ -274,7 +281,10 @@ export function EscanerDocumento({ onConfirmar, onCerrar }: EscanerDocumentoProp
                     padding: '0.4rem 0.6rem', background: '#f5f3ef', borderTop: '1px solid var(--borde-fino)' }}>
                     <span style={{ fontSize: '0.72rem', color: 'var(--topo-claro)', fontWeight: 600 }}>Hoja {paginaActiva + 1} / {paginas.length}</span>
                     <button onClick={() => quitarPagina(paginaActual.id)} className={styles.btnIcono}
-                      title="Quitar esta hoja" style={{ color: 'var(--rojo)', fontSize: '0.8rem' }}>🗑 Quitar</button>
+                      title="Quitar esta hoja" aria-label="Quitar esta hoja" style={{ color: 'var(--rojo)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                      Quitar
+                    </button>
                   </div>
                 </div>
               )}
@@ -295,19 +305,25 @@ export function EscanerDocumento({ onConfirmar, onCerrar }: EscanerDocumentoProp
               <div style={{ background: 'var(--fondo)', border: '1px solid var(--borde)', borderRadius: 10, padding: '0.85rem',
                 display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                 <p style={{ margin: 0, fontSize: '0.72rem', fontWeight: 700, color: 'var(--topo-claro)', letterSpacing: '0.04em' }}>
-                  {ocr?.importe ? '🔍 DETECTADO AUTOMÁTICAMENTE' : '✏️ INTRODUCE LOS DATOS'}
+                  {ocr?.importe ? 'DETECTADO AUTOMÁTICAMENTE' : 'INTRODUCE LOS DATOS'}
                 </p>
                 <div style={{ display: 'flex', gap: '0.4rem' }}>
                   <button className={`${styles.btn} ${tipoEditado === 'gasto' ? styles.btnPeligro : styles.btnSecundario}`}
                     style={{ flex: 1, justifyContent: 'center', fontSize: '0.8rem' }}
-                    onClick={() => setTipoEditado('gasto')}>🧾 Gasto</button>
+                    onClick={() => setTipoEditado('gasto')}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><rect x="1" y="4" width="22" height="16" rx="2" /><line x1="1" y1="10" x2="23" y2="10" /></svg>
+                    Gasto
+                  </button>
                   <button className={`${styles.btn} ${tipoEditado === 'ingreso' ? styles.btnVerde : styles.btnSecundario}`}
                     style={{ flex: 1, justifyContent: 'center', fontSize: '0.8rem' }}
-                    onClick={() => setTipoEditado('ingreso')}>💰 Ingreso</button>
+                    onClick={() => setTipoEditado('ingreso')}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /></svg>
+                    Ingreso
+                  </button>
                 </div>
                 <label className={styles.label} style={{ margin: 0 }}>
                   Importe (€)
-                  {ocr?.importe && <span style={{ marginLeft: '0.4rem', fontSize: '0.68rem', color: 'var(--verde)', fontWeight: 600 }}>✓ detectado</span>}
+                  {ocr?.importe && <span style={{ marginLeft: '0.4rem', fontSize: '0.68rem', color: 'var(--verde)', fontWeight: 600 }}>detectado</span>}
                   <ImporteInput value={importeEditado} onChange={setImporteEditado} placeholder="0,00" />
                 </label>
                 {ocr?.proveedor && <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--topo-claro)' }}>Emisor: <strong style={{ color: 'var(--negro)' }}>{ocr.proveedor}</strong></p>}
@@ -316,9 +332,12 @@ export function EscanerDocumento({ onConfirmar, onCerrar }: EscanerDocumentoProp
 
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ flex: 1, justifyContent: 'center' }}
-                  onClick={() => { setPaginas([]); setPaso('captura'); }}>← Nueva</button>
+                  onClick={() => { setPaginas([]); setPaso('captura'); }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><polyline points="15 18 9 12 15 6" /></svg>
+                  Nueva
+                </button>
                 <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ flex: 2, justifyContent: 'center' }}
-                  onClick={confirmar} disabled={!paginas.length}>💾 Guardar documento</button>
+                  onClick={confirmar} disabled={!paginas.length}>Guardar documento</button>
               </div>
             </>
           )}

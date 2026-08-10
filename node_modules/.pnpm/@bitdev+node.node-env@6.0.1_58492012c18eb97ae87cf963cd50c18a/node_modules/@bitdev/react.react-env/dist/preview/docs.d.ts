@@ -1,9 +1,0 @@
-/**
- * customize the bit documentation template or
- * replace this with one of your own.
- */
-declare const _default: {
-    ({ componentId, docs, compositions, context, }: import("@teambit/docs").DocsRootProps): void;
-    apiObject: boolean;
-};
-export default _default;

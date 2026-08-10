@@ -6,28 +6,39 @@ import * as api from './api.js';
 export type UseClientes = {
   clientes: Cliente[];
   cargando: boolean;
+  /** true mientras se carga una página adicional (distinto de la carga inicial). */
+  cargandoMas: boolean;
+  /** true si quedan más páginas por cargar. */
+  hayMas: boolean;
   error: string | null;
   crear: (cliente: Cliente) => Promise<void>;
   actualizar: (cliente: Cliente) => Promise<void>;
   borrar: (id: string) => Promise<void>;
   cargar: () => void;
+  /** Carga la siguiente página y la añade al final de la lista ya cargada. */
+  cargarMas: () => void;
 };
 
 /**
- * Hook que gestiona la lista de clientes con persistencia en el servidor.
+ * Hook que gestiona la lista de clientes con persistencia en el servidor,
+ * cargada por páginas (Incremento 1.5: "cargar más" en vez de traer todo
+ * de una vez).
  * @param autenticado Cuando es false no dispara la carga inicial.
  * @returns Estado y operaciones sobre los clientes.
  */
 export function useClientes(autenticado = true): UseClientes {
   const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [pagina, setPagina] = useState(1);
+  const [totalPaginas, setTotalPaginas] = useState(1);
   const [cargando, setCargando] = useState(false);
+  const [cargandoMas, setCargandoMas] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const cargar = useCallback(() => {
     setCargando(true);
     api
-      .obtenerClientes()
-      .then((datos) => { setClientes(datos); setError(null); })
+      .obtenerClientes(1)
+      .then((datos) => { setClientes(datos.items); setPagina(datos.pagina); setTotalPaginas(datos.totalPaginas); setError(null); })
       .catch((e) => {
         // 401 = token inválido (sesión antigua con token de admin)
         // Forzar pantalla vacía sin exponer datos ajenos
@@ -39,6 +50,19 @@ export function useClientes(autenticado = true): UseClientes {
       })
       .finally(() => { setCargando(false); });
   }, []);
+
+  const cargarMas = useCallback(() => {
+    setCargandoMas(true);
+    api
+      .obtenerClientes(pagina + 1)
+      .then((datos) => {
+        setClientes((prev) => [...prev, ...datos.items]);
+        setPagina(datos.pagina);
+        setTotalPaginas(datos.totalPaginas);
+      })
+      .catch((e) => setError(String(e)))
+      .finally(() => setCargandoMas(false));
+  }, [pagina]);
 
   // Solo cargar cuando el usuario está autenticado
   useEffect(() => {
@@ -77,5 +101,5 @@ export function useClientes(autenticado = true): UseClientes {
     await api.borrarCliente(id);
   }, []);
 
-  return { clientes, cargando, error, crear, actualizar, borrar, cargar };
+  return { clientes, cargando, cargandoMas, hayMas: pagina < totalPaginas, error, crear, actualizar, borrar, cargar, cargarMas };
 }

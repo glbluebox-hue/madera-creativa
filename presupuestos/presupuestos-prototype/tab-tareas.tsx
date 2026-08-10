@@ -56,7 +56,9 @@ export function TabTareas({ cliente, onActualizar }: TabTareasProps) {
 
       {tareas.length === 0 ? (
         <div className={styles.tabVacio}>
-          <div className={styles.tabVacioIcono}>☑️</div>
+          <div className={styles.tabVacioIcono} style={{ display: 'flex', justifyContent: 'center' }}>
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
+          </div>
           <p>Crea la checklist con las fases típicas: medir, diseñar, fabricar, montar, cobrar…</p>
         </div>
       ) : (
@@ -68,14 +70,14 @@ export function TabTareas({ cliente, onActualizar }: TabTareasProps) {
                 className={`${styles.checklistItem} ${t.hecha ? styles.checklistHecha : ''}`}
                 onClick={() => alternar(t.id)}
               >
-                <span className={styles.checklistCheck}>{t.hecha ? '✓' : ''}</span>
+                <span className={styles.checklistCheck}>{t.hecha ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg> : ''}</span>
                 <span className={styles.checklistTexto} style={{ flex: 1 }}>{t.texto}</span>
                 <button
                   className={styles.btnIconoBorrar ?? ''}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--topo-claro)' }}
                   onClick={(e) => { e.stopPropagation(); borrar(t.id); }}
                 >
-                  ✕
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                 </button>
               </div>
             ))}

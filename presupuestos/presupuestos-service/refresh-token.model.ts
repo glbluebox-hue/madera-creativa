@@ -1,5 +1,5 @@
 import { randomBytes, createHash } from 'node:crypto';
-import mongoose, { Schema, model, models, Model } from 'mongoose';
+import { Schema, model, models, Model } from 'mongoose';
 
 /** Días de validez de un refresh token, configurable por entorno. */
 const TTL_DIAS = Number(process.env.REFRESH_TOKEN_TTL_DIAS) || 30;
@@ -66,11 +66,4 @@ export async function revocarRefreshToken(tokenPlano: string): Promise<void> {
  */
 export async function revocarTodosDeUsuario(usuarioId: string): Promise<void> {
   await RefreshTokenModel.updateMany({ usuarioId, revocadoEn: null }, { revocadoEn: new Date() }).exec();
-}
-
-/** Conecta a MongoDB (reutiliza conexión existente). */
-export async function conectarRefreshTokens(): Promise<void> {
-  if (mongoose.connection.readyState === 1) return;
-  const url = process.env.MONGO_URL || 'mongodb://localhost:27017/madera-creativa';
-  await mongoose.connect(url);
 }

@@ -11,6 +11,11 @@ export type UseDictadoResult = {
   toggleDictado: () => void;
   /** Texto interino (lo que está reconociendo ahora, aún no confirmado). */
   interino: string;
+  /**
+   * `true` brevemente justo después de detener el dictado, si se transcribió
+   * algo — para mostrar "Transcripción completada" (se apaga solo).
+   */
+  completado: boolean;
 };
 
 /**
@@ -26,6 +31,21 @@ export function useDictado(onTexto: (texto: string) => void): UseDictadoResult {
     return w.SpeechRecognition || w.webkitSpeechRecognition ? 'inactivo' : 'no-soportado';
   });
   const [interino, setInterino] = useState('');
+  const [completado, setCompletado] = useState(false);
+  const huboTextoRef = useRef(false);
+  // `true` mientras el usuario quiere seguir dictando (pulsó "Hablar" y no
+  // ha pulsado "Detener" todavía) — independiente de que la sesión nativa
+  // de reconocimiento en curso siga viva o no, ver `iniciarSesion`.
+  const siguiendoRef = useRef(false);
+  // Freno de seguridad: si una sesión termina casi al instante (sin nada
+  // que reconocer) muchas veces seguidas, encadenar la siguiente sin
+  // límite podría convertirse en un bucle muy rápido reiniciando el
+  // reconocimiento sin parar — no debería pasar en uso normal (una pausa
+  // real sin hablar tarda segundos en expirar, no milisegundos), pero es
+  // una red de seguridad barata contra un comportamiento inesperado del
+  // navegador. Un silencio normal entre frases reinicia el contador.
+  const sesionesRapidasSeguidasRef = useRef(0);
+  const inicioSesionRef = useRef(0);
   const recRef = useRef<null | {
     start: () => void;
     stop: () => void;
@@ -38,48 +58,103 @@ export function useDictado(onTexto: (texto: string) => void): UseDictadoResult {
     onend: (() => void) | null;
   }>(null);
 
-  const iniciar = useCallback(() => {
+  /**
+   * Arranca UNA sesión de reconocimiento con `continuous: false` — la
+   * misma configuración que ya usa el asistente IA de la app (nunca ha
+   * tenido este problema) y que la propia especificación documenta como la
+   * forma fiable de leer resultados: con `continuous:false`, la sesión
+   * termina sola tras la primera frase reconocida, así que `results` nunca
+   * llega a acumular más de un resultado — no hay ninguna lista creciente
+   * que interpretar ni ningún índice que pueda fallar.
+   *
+   * Antes se usaba `continuous:true` con una sola sesión larga, leyendo
+   * `resultIndex` para saber qué resultados eran nuevos — funcionaba en
+   * las pruebas de escritorio, pero en un móvil real ese dato no venía
+   * bien y el texto se multiplicaba ("vamos vamos vamos a vamos a
+   * hacer..."). Encadenar sesiones cortas, en vez de intentar leer bien
+   * una sesión larga, elimina el problema de raíz en vez de intentar
+   * adivinar el comportamiento de cada navegador/dispositivo.
+   *
+   * Para que el usuario siga sintiendo que "habla todo lo que quiera sin
+   * soltar", cada sesión que termina sola (pausa natural al respirar,
+   * fin de frase) arranca automáticamente la siguiente mientras
+   * `siguiendoRef` siga activo — solo se detiene overtly cuando el
+   * usuario pulsa "Detener".
+   */
+  const iniciarSesion = useCallback(() => {
     type SRCtor = new () => typeof recRef.current & object;
     type W = Window & { SpeechRecognition?: SRCtor; webkitSpeechRecognition?: SRCtor };
     const w = window as W;
     const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
     if (!SR) { setEstado('no-soportado'); return; }
 
+    inicioSesionRef.current = Date.now();
+
     const rec = new SR() as NonNullable<typeof recRef.current>;
     rec.lang = 'es-ES';
-    rec.continuous = true;
+    rec.continuous = false;
     rec.interimResults = true;
 
     rec.onresult = (e: Event) => {
-      type SRE = Event & { results: { length: number; [i: number]: { isFinal: boolean; [j: number]: { transcript: string } } } };
+      type SRE = Event & {
+        results: { length: number; [i: number]: { isFinal: boolean; [j: number]: { transcript: string } } };
+      };
       const sre = e as SRE;
-      let finalText = '';
       let interinoText = '';
       for (let i = 0; i < sre.results.length; i++) {
         const r = sre.results[i];
         if (r.isFinal) {
-          finalText += r[0].transcript;
+          onTexto(r[0].transcript);
+          huboTextoRef.current = true;
         } else {
           interinoText += r[0].transcript;
         }
       }
-      if (finalText) {
-        onTexto(finalText);
-        setInterino('');
-      } else {
-        setInterino(interinoText);
-      }
+      setInterino(interinoText);
     };
 
-    rec.onerror = () => { setEstado('inactivo'); setInterino(''); };
-    rec.onend = () => { setEstado('inactivo'); setInterino(''); };
+    rec.onend = () => {
+      const duracionMs = Date.now() - inicioSesionRef.current;
+      sesionesRapidasSeguidasRef.current = duracionMs < 250 ? sesionesRapidasSeguidasRef.current + 1 : 0;
+
+      if (siguiendoRef.current && sesionesRapidasSeguidasRef.current < 5) {
+        // El usuario sigue queriendo dictar — la sesión solo terminó por
+        // el límite natural de `continuous:false`, se encadena otra.
+        iniciarSesion();
+        return;
+      }
+      siguiendoRef.current = false;
+      setEstado('inactivo');
+      setInterino('');
+      if (huboTextoRef.current) {
+        setCompletado(true);
+        setTimeout(() => setCompletado(false), 2000);
+      }
+    };
+    rec.onerror = (e: Event) => {
+      // "no-speech" (silencio prolongado) no es un fallo real — solo
+      // termina esta sesión concreta; `onend` se dispara igualmente
+      // después y decide si encadenar otra o parar del todo.
+      const error = (e as Event & { error?: string }).error;
+      if (error === 'no-speech' || error === 'aborted') return;
+      siguiendoRef.current = false;
+    };
 
     recRef.current = rec;
     rec.start();
-    setEstado('escuchando');
   }, [onTexto]);
 
+  const iniciar = useCallback(() => {
+    huboTextoRef.current = false;
+    sesionesRapidasSeguidasRef.current = 0;
+    setCompletado(false);
+    siguiendoRef.current = true;
+    setEstado('escuchando');
+    iniciarSesion();
+  }, [iniciarSesion]);
+
   const detener = useCallback(() => {
+    siguiendoRef.current = false;
     recRef.current?.stop();
     recRef.current = null;
     setEstado('inactivo');
@@ -91,7 +166,7 @@ export function useDictado(onTexto: (texto: string) => void): UseDictadoResult {
     else iniciar();
   }, [estado, iniciar, detener]);
 
-  return { estado, toggleDictado, interino };
+  return { estado, toggleDictado, interino, completado };
 }
 
 /** Botón de micrófono reutilizable con animación de onda cuando escucha. */
@@ -110,7 +185,7 @@ export function BtnMicrofono({
   return (
     <button
       onClick={onClick}
-      title={activo ? 'Detener dictado' : 'Dictar por voz'}
+      title={activo ? 'Detener' : 'Hablar'}
       style={{
         background: activo ? '#c0392b' : 'var(--fondo)',
         border: `1.5px solid ${activo ? '#c0392b' : 'var(--borde)'}`,

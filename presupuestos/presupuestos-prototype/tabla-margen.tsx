@@ -24,7 +24,10 @@ export function TablaMargen({ resumen, presupuesto }: TablaMargenProps) {
   return (
     <div className={styles.panel}>
       <div className={styles.panelHeader}>
-        <h3 className={styles.panelTitulo}>📊 Margen de ganancia</h3>
+        <h3 className={styles.panelTitulo} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 20V10" /><path d="M12 20V4" /><path d="M6 20v-6" /></svg>
+          Margen de ganancia
+        </h3>
       </div>
 
       <div className={styles.tablaWrap}>
@@ -78,7 +81,7 @@ export function TablaMargen({ resumen, presupuesto }: TablaMargenProps) {
           Presupuesto acordado: <strong>{formatoEuro(presupuesto)}</strong>
           {' · '}
           {resumen.totalIngresos >= presupuesto
-            ? '✅ Ya has cobrado el total presupuestado.'
+            ? 'Ya has cobrado el total presupuestado.'
             : `Pendiente de cobrar: ${formatoEuro(presupuesto - resumen.totalIngresos)}`}
         </p>
       )}

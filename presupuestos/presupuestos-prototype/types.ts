@@ -133,6 +133,41 @@ export type Factura = {
   creado: string;
 };
 
+/**
+ * Un dibujo del módulo profesional de dibujo (Fase 2.1) — colección propia,
+ * independiente de la ficha de cliente. Versión ligera (sin `contenido`)
+ * para la galería; `obtenerDibujo` en `api.ts` devuelve la versión completa.
+ */
+export type Dibujo = {
+  /** Identificador único. */
+  id: string;
+  /** Ficha de cliente a la que pertenece — vacío si es un dibujo "temporal". */
+  clienteId: string;
+  /** Carpeta del cliente que lo contiene — vacío si aún no se ha archivado. */
+  carpetaId: string;
+  /** Reservado para agrupar dibujos por proyecto en una fase futura. */
+  proyectoId: string;
+  nombre: string;
+  /** Miniatura PNG (URL en almacenamiento externo una vez guardado). */
+  miniatura: string;
+  /** Escena de Excalidraw (elements/files) — solo presente en `obtenerDibujo`, no en los listados. */
+  contenido?: Record<string, unknown>;
+  version: number;
+  /** Reservado: aún sin interfaz para gestionarlas. */
+  etiquetas: string[];
+  creadoEn: string;
+  actualizadoEn: string;
+};
+
+/** Carpeta de dibujos dentro de la ficha de un cliente (Fase 2.2). */
+export type Carpeta = {
+  id: string;
+  clienteId: string;
+  nombre: string;
+  creadoEn: string;
+  actualizadoEn: string;
+};
+
 /** Ficha completa de un cliente / proyecto. */
 export type Cliente = {
   /** Identificador único del cliente. */

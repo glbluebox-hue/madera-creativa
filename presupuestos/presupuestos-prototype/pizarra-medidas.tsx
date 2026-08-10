@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
+import { Z_BARRA_FLOTANTE, Z_PANTALLA_COMPLETA } from './z-index.js';
 import styles from './styles.module.css';
 
 /** Herramienta de dibujo activa. */
@@ -455,7 +456,7 @@ export function PizarraMedidas({ dibujos = [], onGuardar }: PizarraMedidasProps)
 
   // Estilos pantalla completa: wrapper fijo, fondo BLANCO, 90% canvas / 10% toolbar
   const estiloWrapper = pantallaCompleta
-    ? { position: 'fixed' as const, inset: 0, zIndex: 9999, background: '#ffffff', display: 'flex', flexDirection: 'column' as const, borderRadius: 0, boxShadow: 'none' }
+    ? { position: 'fixed' as const, inset: 0, zIndex: Z_PANTALLA_COMPLETA, background: '#ffffff', display: 'flex', flexDirection: 'column' as const, borderRadius: 0, boxShadow: 'none' }
     : {};
 
   const estiloToolbar = pantallaCompleta
@@ -473,7 +474,10 @@ export function PizarraMedidas({ dibujos = [], onGuardar }: PizarraMedidasProps)
       {!pantallaCompleta && (
         <div className={styles.panelHeader} style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <h3 className={styles.panelTitulo} style={{ margin: 0 }}>📐 Hoja de medidas</h3>
+            <h3 className={styles.panelTitulo} style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M7 3v4M11 3v2M15 3v4M3 7h4M3 11h2M3 15h4" /></svg>
+              Hoja de medidas
+            </h3>
             <input value={nombreDibujo} onChange={e => setNombreDibujo(e.target.value)}
               className={styles.input}
               style={{ width: 170, fontSize: '0.78rem', padding: '0.3rem 0.6rem' }}
@@ -483,15 +487,23 @@ export function PizarraMedidas({ dibujos = [], onGuardar }: PizarraMedidasProps)
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
             {dibujos.length > 0 && (
               <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={() => setModalDibujos(true)}>
-                🗂 Mis dibujos ({dibujos.length})
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
+                Mis dibujos ({dibujos.length})
               </button>
             )}
             {onGuardar && (
-              <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={() => setModalGuardar(true)}>💾 Guardar</button>
+              <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={() => setModalGuardar(true)}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+                Guardar
+              </button>
             )}
-            <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={descargar}>⬇ PNG</button>
+            <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={descargar}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+              PNG
+            </button>
             <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={togglePantallaCompleta} style={{ fontWeight: 600 }}>
-              ⛶ Expandir para dibujar
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" /></svg>
+              Expandir para dibujar
             </button>
           </div>
         </div>
@@ -499,8 +511,9 @@ export function PizarraMedidas({ dibujos = [], onGuardar }: PizarraMedidasProps)
 
       {/* Feedback guardado */}
       {guardadoOk && (
-        <div style={{ background: '#3d7a52', color: '#fff', fontSize: '0.78rem', padding: '0.35rem 1rem', textAlign: 'center', flexShrink: 0 }}>
-          ✅ Dibujo guardado correctamente en la ficha
+        <div style={{ background: '#3d7a52', color: '#fff', fontSize: '0.78rem', padding: '0.35rem 1rem', textAlign: 'center', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+          Dibujo guardado correctamente en la ficha
         </div>
       )}
 
@@ -547,7 +560,7 @@ export function PizarraMedidas({ dibujos = [], onGuardar }: PizarraMedidasProps)
               boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
               border: '1px solid rgba(255,255,255,0.1)',
             }}>
-              <span style={{ fontSize: '1.5rem' }}>⛶</span>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" /></svg>
               <span style={{ fontWeight: 600, fontSize: '0.88rem', letterSpacing: '-0.01em' }}>Expandir para dibujar</span>
               <span style={{ fontSize: '0.72rem', opacity: 0.6 }}>Toca para abrir a pantalla completa</span>
             </div>
@@ -573,14 +586,14 @@ export function PizarraMedidas({ dibujos = [], onGuardar }: PizarraMedidasProps)
 
         <div className={styles.pizarraHerramientas}>
           {([
-            { id: 'lapiz', icono: '✏️', label: 'Lápiz libre' },
-            { id: 'linea', icono: '╱', label: 'Línea + cota' },
+            { id: 'lapiz', icono: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z" /></svg>, label: 'Lápiz libre' },
+            { id: 'linea', icono: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="19" y1="5" x2="5" y2="19" /></svg>, label: 'Línea + cota' },
             { id: 'texto', icono: 'T', label: 'Texto' },
-            { id: 'borrador', icono: '⬜', label: 'Borrador' },
-          ] as { id: Herramienta; icono: string; label: string }[]).map(h => (
+            { id: 'borrador', icono: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 20H9L4 15a2 2 0 0 1 0-2.83l8-8a2 2 0 0 1 2.83 0l5 5a2 2 0 0 1 0 2.83z" /><line x1="6" y1="11" x2="14" y2="19" /></svg>, label: 'Borrador' },
+          ] as { id: Herramienta; icono: import('react').ReactNode; label: string }[]).map(h => (
             <button key={h.id} title={h.label}
               className={[styles.btnHerramienta, herramienta === h.id ? styles.btnHerramientaActivo : ''].filter(Boolean).join(' ')}
-              style={pantallaCompleta ? { color: herramienta === h.id ? '#fff' : '#bbb', background: herramienta === h.id ? '#4a3828' : 'rgba(255,255,255,0.07)', borderColor: 'transparent' } : {}}
+              style={pantallaCompleta ? { color: herramienta === h.id ? '#fff' : '#bbb', background: herramienta === h.id ? 'var(--topo)' : 'rgba(255,255,255,0.07)', borderColor: 'transparent' } : {}}
               onClick={() => setHerramienta(h.id)}>{h.icono}</button>
           ))}
         </div>
@@ -590,11 +603,11 @@ export function PizarraMedidas({ dibujos = [], onGuardar }: PizarraMedidasProps)
         <button title="Deshacer (Ctrl+Z)" disabled={!puedeDeshacer}
           className={[styles.btnHerramienta, styles.btnHerramientaDeshacer, !puedeDeshacer ? styles.btnHerramientaDesactivado : ''].filter(Boolean).join(' ')}
           style={pantallaCompleta ? { color: '#6a5a4a', background: '#ede9e3', borderColor: 'transparent' } : {}}
-          onClick={deshacer}>↩</button>
+          onClick={deshacer}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></svg></button>
         <button title="Limpiar todo"
           className={[styles.btnHerramienta, styles.btnHerramientaLimpiar].filter(Boolean).join(' ')}
           style={pantallaCompleta ? { color: '#c0392b', background: '#ede9e3', borderColor: 'transparent' } : {}}
-          onClick={limpiarCanvas}>🗑</button>
+          onClick={limpiarCanvas}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></button>
 
         <span style={{ width: 1, height: 22, background: pantallaCompleta ? '#d8d4ce' : 'var(--borde)', margin: '0 2px', flexShrink: 0 }} />
 
@@ -607,7 +620,7 @@ export function PizarraMedidas({ dibujos = [], onGuardar }: PizarraMedidasProps)
           />
           {paletaAbierta && (
             <div
-              style={{ position: 'absolute', bottom: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)', background: '#fff', border: '1px solid #e0dbd4', borderRadius: 12, padding: '0.5rem', display: 'flex', gap: '0.35rem', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', zIndex: 999, flexWrap: 'wrap', width: 156 }}
+              style={{ position: 'absolute', bottom: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)', background: '#fff', border: '1px solid #e0dbd4', borderRadius: 12, padding: '0.5rem', display: 'flex', gap: '0.35rem', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', zIndex: Z_BARRA_FLOTANTE, flexWrap: 'wrap', width: 156 }}
             >
               {coloresPaleta.map(c => (
                 <button key={c} onClick={() => { setColor(c); setPaletaAbierta(false); }}
@@ -631,7 +644,10 @@ export function PizarraMedidas({ dibujos = [], onGuardar }: PizarraMedidasProps)
             <span style={{ width: 1, height: 22, background: '#d8d4ce', margin: '0 2px', flexShrink: 0 }} />
             <button className={`${styles.btn} ${cotasActivas ? styles.btnVerde : styles.btnSecundario}`}
               style={{ padding: '0.25rem 0.6rem', fontSize: '0.7rem', flexShrink: 0 }}
-              onClick={() => setCotasActivas(v => !v)}>📏 {cotasActivas ? 'ON' : 'OFF'}</button>
+              onClick={() => setCotasActivas(v => !v)}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 3, verticalAlign: -2 }}><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M7 3v4M11 3v2M15 3v4M3 7h4M3 11h2M3 15h4" /></svg>
+              {cotasActivas ? 'ON' : 'OFF'}
+            </button>
             {cotasActivas && (
               <button className={styles.btn} onClick={() => setUnidad(u => u === 'mm' ? 'cm' : 'mm')}
                 style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem', background: '#ede9e3', color: '#5a4a3a', border: '1px solid #d8d4ce', borderRadius: 'var(--radio)', flexShrink: 0 }}>
@@ -641,15 +657,21 @@ export function PizarraMedidas({ dibujos = [], onGuardar }: PizarraMedidasProps)
             {onGuardar && (
               <button className={`${styles.btn} ${styles.btnPrimario}`}
                 style={{ padding: '0.25rem 0.7rem', fontSize: '0.7rem', flexShrink: 0 }}
-                onClick={() => setModalGuardar(true)}>💾 Guardar</button>
+                onClick={() => setModalGuardar(true)}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 3, verticalAlign: -2 }}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+                Guardar
+              </button>
             )}
             {onGuardar && (
               <button
                 style={{ padding: '0.25rem 0.6rem', fontSize: '0.7rem', background: 'var(--verde)', color: '#fff', border: 'none', borderRadius: 'var(--radio)', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
-                onClick={nuevaHoja}>＋ Hoja nueva</button>
+                onClick={nuevaHoja}>+ Hoja nueva</button>
             )}
-            <button style={{ marginLeft: 'auto', padding: '0.25rem 0.9rem', fontSize: '0.7rem', background: 'none', color: '#888', border: '1px solid #d8d4ce', borderRadius: 'var(--radio)', cursor: 'pointer', flexShrink: 0, fontFamily: 'inherit' }}
-              onClick={togglePantallaCompleta}>✕ Salir</button>
+            <button style={{ marginLeft: 'auto', padding: '0.25rem 0.9rem', fontSize: '0.7rem', background: 'none', color: '#888', border: '1px solid #d8d4ce', borderRadius: 'var(--radio)', cursor: 'pointer', flexShrink: 0, fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+              onClick={togglePantallaCompleta}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              Salir
+            </button>
           </>
         )}
       </div>
@@ -659,8 +681,13 @@ export function PizarraMedidas({ dibujos = [], onGuardar }: PizarraMedidasProps)
         <div className={styles.modalFondo} onClick={() => setModalGuardar(false)}>
           <div className={styles.modalCaja} style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
             <div className={styles.modalCabecera}>
-              <h2 className={styles.h2}>💾 Guardar dibujo</h2>
-              <button className={styles.btnIcono} onClick={() => setModalGuardar(false)}>✕</button>
+              <h2 className={styles.h2} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+                Guardar dibujo
+              </h2>
+              <button className={styles.btnIcono} onClick={() => setModalGuardar(false)} aria-label="Cerrar">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
             </div>
             <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <label className={styles.label}>Nombre
@@ -669,7 +696,7 @@ export function PizarraMedidas({ dibujos = [], onGuardar }: PizarraMedidasProps)
               {dibujoEditandoId && <p style={{ fontSize: '0.78rem', color: 'var(--topo-claro)', margin: 0 }}>Se sobrescribirá el dibujo anterior.</p>}
               <div style={{ display: 'flex', gap: '0.75rem' }}>
                 <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ flex: 1, justifyContent: 'center' }} onClick={() => setModalGuardar(false)}>Cancelar</button>
-                <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ flex: 2, justifyContent: 'center' }} onClick={ejecutarGuardar}>💾 Guardar en la ficha</button>
+                <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ flex: 2, justifyContent: 'center' }} onClick={ejecutarGuardar}>Guardar en la ficha</button>
               </div>
             </div>
           </div>
@@ -681,8 +708,13 @@ export function PizarraMedidas({ dibujos = [], onGuardar }: PizarraMedidasProps)
         <div className={styles.modalFondo} onClick={() => setModalDibujos(false)}>
           <div className={styles.modalCaja} style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
             <div className={styles.modalCabecera}>
-              <h2 className={styles.h2}>🗂 Dibujos guardados</h2>
-              <button className={styles.btnIcono} onClick={() => setModalDibujos(false)}>✕</button>
+              <h2 className={styles.h2} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
+                Dibujos guardados
+              </h2>
+              <button className={styles.btnIcono} onClick={() => setModalDibujos(false)} aria-label="Cerrar">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
             </div>
             <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '60vh', overflowY: 'auto' }}>
               {dibujos.map(d => (
@@ -692,7 +724,10 @@ export function PizarraMedidas({ dibujos = [], onGuardar }: PizarraMedidasProps)
                     <p style={{ margin: 0, fontWeight: 600, fontSize: '0.85rem', color: 'var(--negro)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.nombre}</p>
                     <p style={{ margin: '2px 0 0', fontSize: '0.72rem', color: 'var(--topo-muy-claro)' }}>{d.fecha}</p>
                   </div>
-                  <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ flexShrink: 0 }} onClick={() => cargarDibujo(d)}>✏️ Editar</button>
+                  <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ flexShrink: 0 }} onClick={() => cargarDibujo(d)}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
+                    Editar
+                  </button>
                 </div>
               ))}
             </div>

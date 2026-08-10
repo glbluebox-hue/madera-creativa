@@ -48,7 +48,10 @@ export function FormularioCliente({ onGuardar, onCerrar }: FormularioClienteProp
   return (
     <div className={styles.overlay} onClick={onCerrar}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <h2 className={styles.modalTitulo}>🪵 Nueva ficha de cliente</h2>
+        <h2 className={styles.modalTitulo} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+          Nueva ficha de cliente
+        </h2>
         <div className={styles.formGrid}>
           <div className={`${styles.campo} ${styles.full}`}>
             <label className={styles.campoLabel}>Nombre del cliente *</label>

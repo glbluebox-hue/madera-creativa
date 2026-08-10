@@ -32,18 +32,28 @@ export function useLicencia(sesion: SesionActiva | null, onSuspendido: () => voi
     }
   }, [usuarioId]);
 
-  // 5 segundos de gracia tras login, luego verifica cada 2 minutos
+  // 5 segundos de gracia tras login, luego verifica cada 2 minutos.
+  //
+  // Bug real corregido (Fase "Integración completa"): `setTimeout` en el
+  // navegador devuelve un `number`, no un objeto — intentar guardar el
+  // intervalo como una propiedad de ese número (`(delay as any)._interval =
+  // interval`) lanzaba un TypeError en cuanto pasaban los 5 segundos.
+  // Como el error ocurría *después* de crear el `setInterval`, el intervalo
+  // sí llegaba a arrancar, pero la función de limpieza nunca conseguía
+  // encontrarlo para cancelarlo — cada remontaje del componente dejaba un
+  // intervalo huérfano llamando a `/auth/verificar` cada 2 minutos para
+  // siempre. Con varios acumulados, agotaban el límite compartido de
+  // `/auth/*` (10 cada 15 min) y bloqueaban también el login/refresh reales.
   useEffect(() => {
     if (!usuarioId) return;
+    let interval: ReturnType<typeof setInterval> | undefined;
     const delay = setTimeout(() => {
       verificar();
-      const interval = setInterval(verificar, 2 * 60 * 1000);
-      // No podemos retornar cleanup aquí directamente
-      (delay as any)._interval = interval;
+      interval = setInterval(verificar, 2 * 60 * 1000);
     }, 5000);
     return () => {
       clearTimeout(delay);
-      if ((delay as any)._interval) clearInterval((delay as any)._interval);
+      if (interval) clearInterval(interval);
     };
   }, [usuarioId, verificar]);
 }

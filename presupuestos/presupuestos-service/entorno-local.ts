@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { config as cargarDotenv } from 'dotenv';
+import { logger } from './logger.service.js';
 
 /**
  * Carga variables de entorno desde un archivo `.env` para desarrollo local.
@@ -31,9 +32,9 @@ export function cargarVariablesEntornoLocal(): void {
   if (ruta) {
     cargarDotenv({ path: ruta, quiet: true });
   } else {
-    console.warn(
-      '[entorno-local] No se encontró ningún .env en desarrollo local. Rutas probadas: ' +
-        candidatos.join(', ')
+    logger.warn(
+      { rutasProbadas: candidatos },
+      '[entorno-local] No se encontró ningún .env en desarrollo local.'
     );
   }
 }

@@ -1,4 +1,5 @@
 import mongoose, { Schema, model, models, Model } from 'mongoose';
+import { logger } from './logger.service.js';
 
 /** Estado de un usuario en el sistema de licencias. */
 export type EstadoUsuario = 'pendiente' | 'activo' | 'suspendido';
@@ -30,12 +31,16 @@ const UsuarioSchema = new Schema({
   /**
    * `nombre` en minúsculas, usado para el login case-insensitive sin
    * construir un RegExp dinámico a partir de la entrada del usuario.
-   * El índice único se crea explícitamente en `asegurarIndiceNombreNormalizado()`
-   * — declararlo aquí como `unique` haría que Mongoose intentara construirlo
-   * automáticamente al conectar, antes de que `migrarNombresNormalizados()`
-   * rellene el campo en las cuentas existentes.
+   * El índice (único) se crea explícitamente en `asegurarIndiceNombreNormalizado()`
+   * — sin ningún `index`/`unique` aquí. Declararlo también en el esquema
+   * hacía que Mongoose creara automáticamente, al conectar, un índice no
+   * único con el mismo nombre autogenerado (`nombreNormalizado_1`) antes de
+   * que `asegurarIndiceNombreNormalizado()` pudiera crear su versión única
+   * — el intento posterior fallaba por conflicto de nombre, y la
+   * restricción de unicidad nunca llegaba a activarse de verdad
+   * (diagnosticado en la fase de Integración completa, contra la base real).
    */
-  nombreNormalizado: { type: String, index: true },
+  nombreNormalizado: { type: String },
   passwordHash: { type: String, required: true },
   hashAlgo:     { type: String, enum: ['legacy', 'bcrypt'], default: 'legacy' },
   estado:       { type: String, enum: ['pendiente', 'activo', 'suspendido'], default: 'pendiente' },
@@ -74,7 +79,7 @@ export async function migrarNombresNormalizados(): Promise<void> {
       UsuarioModel.updateOne({ id: u.id }, { $set: { nombreNormalizado: String(u.nombre).toLowerCase() } })
     )
   );
-  console.log(`Migración nombreNormalizado: ${sinNormalizar.length} cuenta(s) actualizadas`);
+  logger.info({ cuentasActualizadas: sinNormalizar.length }, 'Migración nombreNormalizado');
 }
 
 /**
@@ -93,6 +98,6 @@ export async function asegurarIndiceNombreNormalizado(): Promise<void> {
   try {
     await UsuarioModel.collection.createIndex({ nombreNormalizado: 1 }, { unique: true });
   } catch (err) {
-    console.error('No se pudo crear el índice único de nombreNormalizado:', err);
+    logger.error({ err }, 'No se pudo crear el índice único de nombreNormalizado');
   }
 }
