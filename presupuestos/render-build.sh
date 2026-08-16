@@ -6,7 +6,11 @@ set -euo pipefail
 
 echo "── Backend: instalar y compilar ──"
 cd presupuestos-service
-npm ci --legacy-peer-deps
+# `--include=dev`: con NODE_ENV=production puesta (Render, en tiempo de
+# ejecución) npm ci omite devDependencies por defecto — typescript vive ahí.
+# Aquí no dio fallo (parece que el orden de paquetes lo dejó en algún sitio
+# igualmente), pero mejor no confiar en eso — se fuerza explícito también.
+npm ci --legacy-peer-deps --include=dev
 npm run build
 cd ..
 
@@ -18,14 +22,13 @@ cp assets/icon-180.png assets/icon-192.png assets/icon-512.png assets/icon-maska
 cp manifest.webmanifest public-render/
 
 echo "── Frontend: instalar y compilar (mismo origen que la API, sin prefijo /api) ──"
-npm ci
-echo "── Diagnóstico: ¿existe el binario de vite tras npm ci? ──"
-ls -la node_modules/.bin/vite* 2>&1 || echo "(no existe node_modules/.bin/vite)"
-ls node_modules/vite/package.json 2>&1 && grep '"version"' node_modules/vite/package.json || echo "(el paquete vite no está instalado)"
-# Ruta explícita al binario — ni `npx vite` ni `npm run build` (que
-# internamente también depende de la resolución de PATH de npm) lo
-# encontraban en el entorno Linux de Render aunque `npm ci` reportara la
-# instalación como correcta.
+# `--include=dev`: causa real del fallo anterior — con NODE_ENV=production
+# puesta, npm ci omite devDependencies por defecto, y ahí viven vite y
+# @vitejs/plugin-react (confirmado con el diagnóstico: node_modules/vite ni
+# siquiera se llegaba a crear). Sin esto, ninguna ruta al binario sirve
+# porque el paquete no existe en absoluto, no es un problema de PATH.
+npm ci --include=dev
+ls node_modules/vite/package.json >/dev/null 2>&1 && echo "vite instalado correctamente" || { echo "ERROR: vite sigue sin instalarse"; exit 1; }
 VITE_API_BASE="" node node_modules/vite/bin/vite.js build --config vite.config.render.js
 cd ..
 
