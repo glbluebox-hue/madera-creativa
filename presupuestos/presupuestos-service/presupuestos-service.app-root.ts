@@ -771,6 +771,15 @@ export function run() {
     } catch (err) { responderError(req, res, err); }
   });
 
+  /** Elimina un código promocional (solo admin). No afecta a quien ya lo canjeó — su `acceso` ya quedó estampado en su propio usuario. */
+  app.delete('/admin/codigos/:id', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await conectarCodigos();
+      await CodigoPromocionalModel.deleteOne({ id: req.params.id });
+      res.json({ ok: true });
+    } catch (err) { responderError(req, res, err); }
+  });
+
   // ── Costes de infraestructura (solo admin — nada de esto se aísla por usuarioId) ──
 
   /** Lista todas las herramientas/servicios con coste (solo admin). */

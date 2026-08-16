@@ -118,6 +118,11 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
     codigo: '', tipoAccesoConcedido: 'promotional' as TipoAcceso, planConcedido: 'LIFETIME_FREE' as PlanAcceso,
     duracionDias: '', usosMaximos: '', fechaExpiracion: '', notas: '',
   });
+  const [editandoCodigo, setEditandoCodigo] = useState<string | null>(null);
+  const [formEdicionCodigo, setFormEdicionCodigo] = useState({
+    tipoAccesoConcedido: 'promotional' as TipoAcceso, planConcedido: 'LIFETIME_FREE' as PlanAcceso,
+    duracionDias: '', usosMaximos: '', fechaExpiracion: '', notas: '',
+  });
 
   // Gestión de costes de infraestructura.
   const [costes, setCostes] = useState<CosteInfraestructura[]>([]);
@@ -164,10 +169,13 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
     setErrorCostes('');
     try {
       const res = await fetchConAuth('/admin/costes');
-      if (!res.ok) throw new Error('Error al cargar costes');
+      if (!res.ok) {
+        const texto = await res.text().catch(() => '');
+        throw new Error(`${res.status} ${texto.slice(0, 300)}`);
+      }
       setCostes(await res.json() as CosteInfraestructura[]);
-    } catch {
-      setErrorCostes('No se pudieron cargar los costes.');
+    } catch (e) {
+      setErrorCostes(`No se pudieron cargar los costes — ${e instanceof Error ? e.message : 'error desconocido'}`);
     } finally {
       setCargandoCostes(false);
     }
@@ -246,6 +254,50 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
     }
   };
 
+  const iniciarEdicionCodigo = (c: CodigoPromocional) => {
+    setEditandoCodigo(c.id);
+    setFormEdicionCodigo({
+      tipoAccesoConcedido: c.tipoAccesoConcedido,
+      planConcedido: c.planConcedido,
+      duracionDias: c.duracionDias !== null ? String(c.duracionDias) : '',
+      usosMaximos: c.usosMaximos !== null ? String(c.usosMaximos) : '',
+      fechaExpiracion: c.fechaExpiracion ? c.fechaExpiracion.slice(0, 10) : '',
+      notas: c.notas ?? '',
+    });
+  };
+
+  const guardarEdicionCodigo = async (id: string) => {
+    try {
+      const res = await fetchConAuth(`/admin/codigos/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tipoAccesoConcedido: formEdicionCodigo.tipoAccesoConcedido,
+          planConcedido: formEdicionCodigo.planConcedido,
+          duracionDias: formEdicionCodigo.duracionDias ? Number(formEdicionCodigo.duracionDias) : null,
+          usosMaximos: formEdicionCodigo.usosMaximos ? Number(formEdicionCodigo.usosMaximos) : null,
+          fechaExpiracion: formEdicionCodigo.fechaExpiracion ? new Date(formEdicionCodigo.fechaExpiracion).toISOString() : null,
+          notas: formEdicionCodigo.notas.trim(),
+        }),
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json() as CodigoPromocional;
+      setCodigos(prev => prev.map(c => c.id === id ? data : c));
+      setEditandoCodigo(null);
+    } catch {
+      setErrorCodigos('Error al guardar los cambios del código.');
+    }
+  };
+
+  const eliminarCodigo = async (id: string) => {
+    try {
+      await fetchConAuth(`/admin/codigos/${id}`, { method: 'DELETE' });
+      setCodigos(prev => prev.filter(c => c.id !== id));
+    } catch {
+      setErrorCodigos('Error al eliminar el código.');
+    }
+  };
+
   const crearCoste = async () => {
     if (!nuevoCoste.nombre.trim() || !nuevoCoste.coste.trim()) return;
     setCreandoCoste(true);
@@ -264,12 +316,18 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
           notas: nuevoCoste.notas.trim(),
         }),
       });
-      const data = await res.json() as CosteInfraestructura & { error?: string };
-      if (!res.ok) { setErrorCostes(data.error ?? 'Error al crear el coste.'); return; }
+      const texto = await res.text();
+      let data: any = null;
+      try { data = JSON.parse(texto); } catch { /* respuesta no-JSON (p. ej. error de infraestructura) */ }
+      if (!res.ok) {
+        const detalle = data?.detalles ? JSON.stringify(data.detalles) : '';
+        setErrorCostes(`Error al crear el coste — ${res.status} ${data?.error ?? texto.slice(0, 300)} ${detalle}`);
+        return;
+      }
       setCostes(prev => [data, ...prev]);
       setNuevoCoste({ nombre: '', categoria: '', coste: '', moneda: 'EUR', periodicidad: 'mensual', url: '', notas: '' });
-    } catch {
-      setErrorCostes('Error al crear el coste.');
+    } catch (e) {
+      setErrorCostes(`Error al crear el coste — ${e instanceof Error ? e.message : 'error de red'}`);
     } finally {
       setCreandoCoste(false);
     }
@@ -617,13 +675,24 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
                     }}>
                       {c.activo ? 'Activo' : 'Desactivado'}
                     </span>
-                    <button
-                      className={`${styles.btn} ${c.activo ? styles.btnPeligro : styles.btnVerde}`}
-                      style={{ fontSize: '0.74rem', marginLeft: 'auto' }}
-                      onClick={() => alternarActivoCodigo(c.id, !c.activo)}
-                    >
-                      {c.activo ? 'Desactivar' : 'Reactivar'}
-                    </button>
+                    <div style={{ display: 'flex', gap: '0.4rem', marginLeft: 'auto' }}>
+                      <button
+                        className={`${styles.btn} ${c.activo ? styles.btnPeligro : styles.btnVerde}`}
+                        style={{ fontSize: '0.74rem' }}
+                        onClick={() => alternarActivoCodigo(c.id, !c.activo)}
+                      >
+                        {c.activo ? 'Desactivar' : 'Reactivar'}
+                      </button>
+                      <button
+                        className={styles.btnIcono} style={{ fontSize: '0.74rem', width: 'auto', padding: '2px 8px' }}
+                        onClick={() => editandoCodigo === c.id ? setEditandoCodigo(null) : iniciarEdicionCodigo(c)}
+                      >
+                        {editandoCodigo === c.id ? 'Cancelar' : 'Editar'}
+                      </button>
+                      <button className={styles.btnIcono} style={{ color: 'var(--rojo)' }} title="Eliminar" aria-label="Eliminar" onClick={() => eliminarCodigo(c.id)}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                      </button>
+                    </div>
                   </div>
                   <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--topo-claro)' }}>
                     {ETIQUETA_TIPO[c.tipoAccesoConcedido]} · {ETIQUETA_PLAN[c.planConcedido]}
@@ -632,6 +701,44 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
                     {c.fechaExpiracion ? ` · Canjeable hasta ${formatoFecha(c.fechaExpiracion)}` : ''}
                   </p>
                   {c.notas && <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--topo-claro)', fontStyle: 'italic' }}>{c.notas}</p>}
+
+                  {editandoCodigo === c.id && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', background: 'var(--topo-tinte)', borderRadius: 8, padding: '0.6rem' }}>
+                      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                        <select className={styles.input} style={{ fontSize: '0.78rem', flex: '1 1 120px' }} value={formEdicionCodigo.tipoAccesoConcedido} onChange={e => setFormEdicionCodigo(f => ({ ...f, tipoAccesoConcedido: e.target.value as TipoAcceso }))}>
+                          {TIPOS_ACCESO.map(t => <option key={t} value={t}>{ETIQUETA_TIPO[t]}</option>)}
+                        </select>
+                        <select className={styles.input} style={{ fontSize: '0.78rem', flex: '1 1 140px' }} value={formEdicionCodigo.planConcedido} onChange={e => setFormEdicionCodigo(f => ({ ...f, planConcedido: e.target.value as PlanAcceso }))}>
+                          {PLANES_ACCESO.map(p => <option key={p} value={p}>{ETIQUETA_PLAN[p]}</option>)}
+                        </select>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                        <input
+                          className={styles.input} style={{ fontSize: '0.78rem', flex: '1 1 140px' }}
+                          type="number" min="1" placeholder="Duración del acceso (días)"
+                          value={formEdicionCodigo.duracionDias} onChange={e => setFormEdicionCodigo(f => ({ ...f, duracionDias: e.target.value }))}
+                        />
+                        <input
+                          className={styles.input} style={{ fontSize: '0.78rem', flex: '1 1 140px' }}
+                          type="number" min="1" placeholder="Usos máximos"
+                          value={formEdicionCodigo.usosMaximos} onChange={e => setFormEdicionCodigo(f => ({ ...f, usosMaximos: e.target.value }))}
+                        />
+                        <input
+                          className={styles.input} style={{ fontSize: '0.78rem', flex: '1 1 140px' }}
+                          type="date" title="Canjeable hasta (vacío = sin caducidad)"
+                          value={formEdicionCodigo.fechaExpiracion} onChange={e => setFormEdicionCodigo(f => ({ ...f, fechaExpiracion: e.target.value }))}
+                        />
+                      </div>
+                      <input
+                        className={styles.input} style={{ fontSize: '0.78rem' }}
+                        type="text" placeholder="Notas internas"
+                        value={formEdicionCodigo.notas} onChange={e => setFormEdicionCodigo(f => ({ ...f, notas: e.target.value }))}
+                      />
+                      <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ fontSize: '0.78rem', alignSelf: 'flex-start' }} onClick={() => guardarEdicionCodigo(c.id)}>
+                        Guardar cambios
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
