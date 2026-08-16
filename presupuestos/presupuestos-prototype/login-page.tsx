@@ -2,8 +2,6 @@ import { useState } from 'react';
 import logoImg from './assets/logo.png';
 import loginMadera from './assets/login-madera.jpg';
 import loginHojas from './assets/login-hojas.jpg';
-import type { TipoAlmacenamiento } from './use-auth.js';
-import { GuiaSupabase } from './guia-supabase.js';
 import { registrarEnServidor, loginEnServidor } from './use-registro.js';
 import { soportaWebAuthn, iniciarSesionBiometrica } from './use-biometria.js';
 import styles from './styles.module.css';
@@ -12,10 +10,10 @@ import styles from './styles.module.css';
 export type LoginPageProps = {
   onLogin: (nombre: string, password: string) => { ok: boolean; error?: string };
   onLoginDirecto: (id: string, nombre: string, esAdmin: boolean) => void;
-  onRegistrar: (nombre: string, password: string, almacenamiento: TipoAlmacenamiento, supabaseUrl?: string, supabaseKey?: string) => { ok: boolean; error?: string };
+  onRegistrar: (nombre: string, password: string) => { ok: boolean; error?: string };
 };
 
-type Pantalla = 'login' | 'registro' | 'almacenamiento';
+type Pantalla = 'login' | 'registro';
 
 const IconoUsuario = ({ s = 18 }: { s?: number }) => (
   <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
@@ -35,10 +33,7 @@ const IconoHuella = ({ s = 18 }: { s?: number }) => (
   </svg>
 );
 
-/**
- * Pantalla de inicio de sesión y registro de Madera Creativa.
- * Soporta múltiples usuarios con almacenamiento local o Supabase.
- */
+/** Pantalla de inicio de sesión y registro de Madera Creativa. */
 export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPageProps) {
   const [pantalla, setPantalla] = useState<Pantalla>('login');
 
@@ -65,10 +60,12 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
   const [regPass2, setRegPass2] = useState('');
   const [regError, setRegError] = useState('');
   const [mostrarPassReg, setMostrarPassReg] = useState(false);
-  const [almacenamiento, setAlmacenamiento] = useState<TipoAlmacenamiento>('local');
-  const [guiaAbierta, setGuiaAbierta] = useState(false);
-  const [supabaseUrl, setSupabaseUrl] = useState('');
-  const [supabaseKey, setSupabaseKey] = useState('');
+  const [regCargando, setRegCargando] = useState(false);
+
+  // "¿Tienes un código de acceso?" — colapsado por defecto, para no alargar
+  // el formulario a quien no tiene uno (la mayoría de altas normales).
+  const [mostrarCampoCodigo, setMostrarCampoCodigo] = useState(false);
+  const [regCodigo, setRegCodigo] = useState('');
 
   const iniciarSesion = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,22 +107,33 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
     e.preventDefault();
     setRegError('');
     if (regPass !== regPass2) { setRegError('Las contraseñas no coinciden.'); return; }
-    if (almacenamiento === 'supabase' && (!supabaseUrl || !supabaseKey)) {
-      setRegError('Configura tu Supabase antes de continuar.');
-      return;
-    }
+    setRegCargando(true);
     // Registrar en servidor primero
-    const srv = await registrarEnServidor(regNombre, regPass);
+    const srv = await registrarEnServidor(regNombre, regPass, regCodigo.trim() || undefined);
     if (!srv.ok && srv.codigo !== 'error-red') {
       setRegError(srv.error ?? 'Error al registrarse.');
+      setRegCargando(false);
       return;
     }
     // Guardar localmente también
-    const local = onRegistrar(regNombre, regPass, almacenamiento, supabaseUrl || undefined, supabaseKey || undefined);
-    if (!local.ok) { setRegError(local.error ?? 'Error al registrarse.'); return; }
-    // Si el servidor lo registró, mostrar mensaje de pendiente
+    const local = onRegistrar(regNombre, regPass);
+    if (!local.ok) { setRegError(local.error ?? 'Error al registrarse.'); setRegCargando(false); return; }
+
+    if (srv.ok && srv.estado === 'activo') {
+      // Un código de acceso válido activa la cuenta al instante — se entra
+      // directamente, sin el paso de "pendiente de aprobación".
+      const login = await loginEnServidor(regNombre, regPass);
+      setRegCargando(false);
+      if (login.ok) { onLoginDirecto(login.id!, login.nombre!, !!login.esAdmin); return; }
+      setRegError('Tu cuenta ya está activa — entra desde la pestaña "Entrar".');
+      return;
+    }
+
+    setRegCargando(false);
     if (srv.ok) {
-      setRegError('Tu cuenta está pendiente de aprobación. Recibirás acceso en breve.');
+      setRegError(srv.avisoCodigo
+        ? `${srv.avisoCodigo} Tu cuenta se ha creado y está pendiente de aprobación.`
+        : 'Tu cuenta está pendiente de aprobación. Recibirás acceso en breve.');
     }
   };
 
@@ -323,59 +331,25 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
                 />
               </div>
 
-              {/* Tipo de almacenamiento */}
-              <div style={{ display: 'flex', gap: '0.5rem', margin: '0.25rem 0' }}>
-                <button
-                  type="button"
-                  onClick={() => setAlmacenamiento('local')}
-                  style={{
-                    flex: 1, padding: '0.65rem 0.5rem', border: `2px solid ${almacenamiento === 'local' ? 'var(--topo)' : 'var(--borde)'}`,
-                    borderRadius: 'var(--radio)', cursor: 'pointer', background: almacenamiento === 'local' ? 'var(--topo-tinte)' : 'var(--blanco)',
-                    fontWeight: almacenamiento === 'local' ? 700 : 400, fontSize: '0.8rem',
-                    color: 'var(--negro)', transition: 'all 0.15s',
-                  }}
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ verticalAlign: -2, marginRight: 3 }}><rect x="5" y="2" width="14" height="20" rx="2" /><line x1="12" y1="18" x2="12" y2="18" /></svg>
-                  Local<br />
-                  <span style={{ fontSize: '0.68rem', fontWeight: 400, color: 'var(--topo-claro)' }}>Solo este dispositivo</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAlmacenamiento('supabase')}
-                  style={{
-                    flex: 1, padding: '0.65rem 0.5rem', border: `2px solid ${almacenamiento === 'supabase' ? 'var(--verde)' : 'var(--borde)'}`,
-                    borderRadius: 'var(--radio)', cursor: 'pointer', background: almacenamiento === 'supabase' ? 'var(--verde-bg)' : 'var(--blanco)',
-                    fontWeight: almacenamiento === 'supabase' ? 700 : 400, fontSize: '0.8rem',
-                    color: 'var(--negro)', transition: 'all 0.15s',
-                  }}
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ verticalAlign: -2, marginRight: 3 }}><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" /></svg>
-                  Nube gratis<br />
-                  <span style={{ fontSize: '0.68rem', fontWeight: 400, color: 'var(--topo-claro)' }}>Supabase (500 MB)</span>
-                </button>
-              </div>
-
-              {/* Botón guía Supabase */}
-              {almacenamiento === 'supabase' && (
-                <div style={{ background: 'var(--verde-bg)', border: '1px solid var(--verde)', borderRadius: 'var(--radio)', padding: '0.65rem 0.85rem', fontSize: '0.82rem' }}>
-                  {supabaseUrl ? (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ color: 'var(--verde-dark)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                        Supabase configurado
-                      </span>
-                      <button type="button" className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.72rem' }} onClick={() => setGuiaAbierta(true)}>Cambiar</button>
-                    </div>
-                  ) : (
-                    <div>
-                      <p style={{ margin: '0 0 0.4rem', color: 'var(--verde-dark)', fontWeight: 600 }}>Necesitas configurar tu Supabase</p>
-                      <button type="button" className={`${styles.btn} ${styles.btnPrimario}`} style={{ fontSize: '0.82rem', width: '100%', justifyContent: 'center' }} onClick={() => setGuiaAbierta(true)}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ verticalAlign: -2, marginRight: 4 }}><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" /></svg>
-                        Ver guía paso a paso
-                      </button>
-                    </div>
-                  )}
+              {/* "¿Tienes un código de acceso?" — colapsado por defecto, un enlace pequeño en vez de un campo más en el formulario. */}
+              {mostrarCampoCodigo ? (
+                <div className={styles.loginInputWrap}>
+                  <span className={styles.loginIconoBadge}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41L13.42 20.6a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg>
+                  </span>
+                  <input
+                    className={`${styles.input} ${styles.loginInputSimple}`}
+                    type="text"
+                    value={regCodigo}
+                    onChange={e => setRegCodigo(e.target.value)}
+                    placeholder="Código de acceso (opcional)"
+                    autoCapitalize="characters"
+                  />
                 </div>
+              ) : (
+                <button type="button" className={styles.loginRecuperar} style={{ textAlign: 'left' }} onClick={() => setMostrarCampoCodigo(true)}>
+                  ¿Tienes un código de acceso?
+                </button>
               )}
 
               {regError && <div className={styles.loginError}><span style={{ display: 'inline-flex' }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12" y2="17" /></svg></span> {regError}</div>}
@@ -383,9 +357,9 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
               <button
                 type="submit"
                 className={`${styles.btn} ${styles.btnPrimario} ${styles.btnLoginSubmit}`}
-                disabled={!regNombre.trim() || !regPass.trim() || !regPass2.trim() || (almacenamiento === 'supabase' && !supabaseUrl)}
+                disabled={regCargando || !regNombre.trim() || !regPass.trim() || !regPass2.trim()}
               >
-                Crear cuenta y entrar
+                {regCargando ? <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center' }}><span className={styles.loginSpinner} /> Creando cuenta…</span> : 'Crear cuenta y entrar'}
               </button>
             </form>
           )}
@@ -399,15 +373,6 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
           </p>
         </div>
       </div>
-
-      {guiaAbierta && (
-        <GuiaSupabase
-          urlInicial={supabaseUrl}
-          claveInicial={supabaseKey}
-          onConfirmar={(url, clave) => { setSupabaseUrl(url); setSupabaseKey(clave); setGuiaAbierta(false); }}
-          onCancelar={() => setGuiaAbierta(false)}
-        />
-      )}
     </div>
   );
 }

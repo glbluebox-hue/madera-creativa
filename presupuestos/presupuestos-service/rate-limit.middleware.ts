@@ -26,6 +26,27 @@ export const limitadorAuth = rateLimit({
 });
 
 /**
+ * Límite para el login biométrico (WebAuthn) — deliberadamente más generoso
+ * que `limitadorAuth`. Ese límite (10/15min) está pensado para frenar fuerza
+ * bruta de contraseña, donde cada intento es barato de automatizar; una
+ * aserción WebAuthn exige posesión física del autenticador del dispositivo,
+ * así que no hay fuerza bruta real que frenar aquí. Además cada intento de
+ * login biométrico cuesta DOS peticiones (`/login/opciones` +
+ * `/login/verificar`), así que compartir el budget de 10 con el de
+ * contraseña deja solo 4-5 intentos reales antes de bloquear al usuario
+ * legítimo durante 15 minutos — confirmado en producción: varios reintentos
+ * normales del usuario agotaron el budget compartido y le dejaron sin poder
+ * entrar con huella, aunque la credencial en sí era válida.
+ */
+export const limitadorWebAuthnLogin = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos. Inténtalo de nuevo en unos minutos.' },
+});
+
+/**
  * Límite específico para las rutas que DISPARAN una llamada a IA
  * (`POST /ia/generar`, `POST /ia/herramientas/ejecutar`) — cada una cuesta
  * dinero real (tokens de proveedor), a diferencia del resto de la API. Más

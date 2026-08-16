@@ -11,7 +11,7 @@ import { responderError, opcionesCookieRefresh, REFRESH_TTL_MS } from './presupu
 import type { AuthRequest } from './presupuestos-service.app-root.js';
 import { requireAuth } from './presupuestos-service.app-root.js';
 import { validar } from './validacion.middleware.js';
-import { limitadorAuth } from './rate-limit.middleware.js';
+import { limitadorWebAuthnLogin } from './rate-limit.middleware.js';
 import { esquemaWebAuthnRegistroVerificar, esquemaWebAuthnLoginVerificar } from './esquemas-validacion.js';
 import { rpID, rpName, origenEsperado } from './webauthn-config.js';
 import { guardarChallengeRegistro, guardarChallengeLogin, consumirChallenge } from './webauthn-challenges.js';
@@ -38,10 +38,13 @@ import { logger } from './logger.service.js';
  *   elegir al usuario entre las credenciales guardadas para este RP ID sin
  *   pedir un nombre de usuario antes (ver `webauthn-challenges.ts`).
  *
- * `limitadorAuth` se aplica solo a `/login/*` (superficie sin autenticar,
- * mismo criterio que `/auth/login`) — nunca a `/registro/*` ni
- * `/credenciales`, que ya exigen `requireAuth` y comparten el budget
- * general de la API.
+ * `limitadorWebAuthnLogin` se aplica solo a `/login/*` (superficie sin
+ * autenticar) — nunca a `/registro/*` ni `/credenciales`, que ya exigen
+ * `requireAuth` y comparten el budget general de la API. Es un límite propio
+ * (no `limitadorAuth`, el de contraseña): una aserción WebAuthn exige
+ * posesión física del autenticador, así que no hace falta el mismo budget
+ * estricto pensado para frenar fuerza bruta de contraseña — ver el
+ * comentario en `rate-limit.middleware.ts`.
  */
 
 function generarIdCredencial(): string {
@@ -187,7 +190,7 @@ export function crearRouterWebAuthn(): express.Router {
    * omite a propósito (discoverable credentials / passkeys) — el propio
    * navegador ofrece las credenciales guardadas para este RP ID.
    */
-  router.post('/login/opciones', limitadorAuth, async (req: AuthRequest, res) => {
+  router.post('/login/opciones', limitadorWebAuthnLogin, async (req: AuthRequest, res) => {
     try {
       const origen = origenEsperado(req);
       if (!origen) { res.status(400).json({ error: 'Origen no permitido.' }); return; }
@@ -208,7 +211,7 @@ export function crearRouterWebAuthn(): express.Router {
    * `/auth/login` (access token + cookie `mc_refresh`) mediante
    * `emitirSesion` (`sesion.service.ts`).
    */
-  router.post('/login/verificar', limitadorAuth, validar(esquemaWebAuthnLoginVerificar), async (req: AuthRequest, res) => {
+  router.post('/login/verificar', limitadorWebAuthnLogin, validar(esquemaWebAuthnLoginVerificar), async (req: AuthRequest, res) => {
     try {
       const { respuesta } = req.body as { respuesta: any };
 

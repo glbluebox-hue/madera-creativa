@@ -6,7 +6,12 @@ import type { ContratoMC } from './contratos-modelo.js';
 import type { Empresa } from './use-empresa.js';
 import type { Perfil } from './use-perfil.js';
 
-const BASE = '/api/presupuestos-service';
+// En local (Bit) el gateway solo entiende peticiones bajo `/api/presupuestos-service/...`,
+// así que ese es el valor por defecto. En un despliegue combinado fuera de
+// Bit (Render: frontend y backend en el mismo proceso/origen, sin gateway
+// que reescriba nada) se compila con `VITE_API_BASE=""` para llamar a las
+// rutas directamente (`/auth/login`, no `/api/presupuestos-service/auth/login`).
+const BASE = (import.meta as any).env?.VITE_API_BASE ?? '/api/presupuestos-service';
 
 /**
  * Punto único de gestión de autenticación del frontend: guarda el access

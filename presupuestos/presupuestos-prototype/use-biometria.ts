@@ -19,7 +19,8 @@ import { fetchConAuth, establecerAccessToken } from './api.js';
  * React — las rutas del servidor están en `webauthn-rutas.ts`.
  */
 
-const BASE = '/api/presupuestos-service';
+// Ver el comentario de `BASE` en api.ts — mismo criterio (Bit local vs. Render combinado).
+const BASE = (import.meta as any).env?.VITE_API_BASE ?? '/api/presupuestos-service';
 
 /** Dispositivo con acceso biométrico registrado (sin ningún dato sensible). */
 export type CredencialBiometrica = {

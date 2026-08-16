@@ -1,0 +1,27 @@
+{
+  "name": "presupuestos-prototype",
+  "version": "1.0.0",
+  "private": true,
+  "description": "App web de Madera Creativa — despliegue independiente de Bit (Render).",
+  "type": "module",
+  "scripts": {
+    "build": "vite build --config vite.config.render.js"
+  },
+  "dependencies": {
+    "@excalidraw/excalidraw": "0.18.1",
+    "@simplewebauthn/browser": "^13.3.0",
+    "qrcode": "^1.5.4",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-moveable": "^0.56.0",
+    "react-router-dom": "^7.18.2"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.2.0"
+  }
+}

@@ -2,7 +2,8 @@ import { useEffect, useCallback } from 'react';
 import type { SesionActiva } from './use-auth.js';
 import { fetchConAuth } from './api.js';
 
-const BASE = '/api/presupuestos-service';
+// Ver el comentario de `BASE` en api.ts — mismo criterio (Bit local vs. Render combinado).
+const BASE = (import.meta as any).env?.VITE_API_BASE ?? '/api/presupuestos-service';
 
 /**
  * Hook que solicita permiso de notificaciones push y registra la suscripción

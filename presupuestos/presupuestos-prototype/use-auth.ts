@@ -14,17 +14,11 @@ const EVENTOS_ACTIVIDAD = ['mousemove', 'mousedown', 'keydown', 'touchstart', 's
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
-/** Tipo de almacenamiento elegido por el usuario. */
-export type TipoAlmacenamiento = 'local' | 'supabase';
-
 /** Datos de un usuario registrado en la app. */
 export type UsuarioRegistrado = {
   id: string;
   nombre: string;
   passwordHash: string;
-  almacenamiento: TipoAlmacenamiento;
-  supabaseUrl?: string;
-  supabaseKey?: string;
   creadoEn: string;
 };
 
@@ -33,9 +27,6 @@ export type SesionActiva = {
   usuarioId: string;
   nombre: string;
   esAdmin?: boolean;
-  almacenamiento: TipoAlmacenamiento;
-  supabaseUrl?: string;
-  supabaseKey?: string;
 };
 
 /** Resultado del hook de autenticación. */
@@ -57,9 +48,8 @@ export type UseAuthResult = {
   login: (nombre: string, password: string) => { ok: boolean; error?: string };
   /** Establece la sesión directamente sin verificar en localStorage (para login validado por servidor). */
   loginDirecto: (id: string, nombre: string, esAdmin: boolean) => void;
-  registrar: (nombre: string, password: string, almacenamiento: TipoAlmacenamiento, supabaseUrl?: string, supabaseKey?: string) => { ok: boolean; error?: string };
+  registrar: (nombre: string, password: string) => { ok: boolean; error?: string };
   logout: () => void;
-  actualizarAlmacenamiento: (tipo: TipoAlmacenamiento, supabaseUrl?: string, supabaseKey?: string) => void;
 };
 
 // ── Utilidades ────────────────────────────────────────────────────────────────
@@ -131,7 +121,6 @@ function migrarCuentaMaestra(): void {
         id: 'admin',
         nombre: 'admin',
         passwordHash: hashSimple('admin'),
-        almacenamiento: 'local',
         creadoEn: new Date().toISOString(),
       };
       guardarUsuarios([admin, ...usuarios]);
@@ -144,7 +133,7 @@ function migrarCuentaMaestra(): void {
 // ── Hook principal ────────────────────────────────────────────────────────────
 
 /**
- * Hook de autenticación multi-usuario con soporte para almacenamiento local y Supabase.
+ * Hook de autenticación multi-usuario.
  * Cierra sesión automáticamente tras 5 minutos de inactividad.
  */
 export function useAuth(): UseAuthResult {
@@ -217,26 +206,14 @@ export function useAuth(): UseAuthResult {
     const hash = hashSimple(password);
     const usuario = usuarios.find(u => u.nombre.toLowerCase() === nombre.toLowerCase() && u.passwordHash === hash);
     if (!usuario) return { ok: false, error: 'Usuario o contraseña incorrectos.' };
-    const s: SesionActiva = {
-      usuarioId: usuario.id,
-      nombre: usuario.nombre,
-      almacenamiento: usuario.almacenamiento,
-      supabaseUrl: usuario.supabaseUrl,
-      supabaseKey: usuario.supabaseKey,
-    };
+    const s: SesionActiva = { usuarioId: usuario.id, nombre: usuario.nombre };
     guardarSesion(s);
     setSesion(s);
     return { ok: true };
   }, []);
 
   /** Registra un nuevo usuario. */
-  const registrar = useCallback((
-    nombre: string,
-    password: string,
-    almacenamiento: TipoAlmacenamiento,
-    supabaseUrl?: string,
-    supabaseKey?: string,
-  ): { ok: boolean; error?: string } => {
+  const registrar = useCallback((nombre: string, password: string): { ok: boolean; error?: string } => {
     if (!nombre.trim() || nombre.length < 3) return { ok: false, error: 'El nombre debe tener al menos 3 caracteres.' };
     if (!password || password.length < 4) return { ok: false, error: 'La contraseña debe tener al menos 4 caracteres.' };
     const usuarios = cargarUsuarios();
@@ -247,38 +224,14 @@ export function useAuth(): UseAuthResult {
       id: generarId(),
       nombre: nombre.trim(),
       passwordHash: hashSimple(password),
-      almacenamiento,
-      supabaseUrl: supabaseUrl?.trim() || undefined,
-      supabaseKey: supabaseKey?.trim() || undefined,
       creadoEn: new Date().toISOString(),
     };
     guardarUsuarios([...usuarios, nuevo]);
-    const s: SesionActiva = {
-      usuarioId: nuevo.id,
-      nombre: nuevo.nombre,
-      almacenamiento: nuevo.almacenamiento,
-      supabaseUrl: nuevo.supabaseUrl,
-      supabaseKey: nuevo.supabaseKey,
-    };
+    const s: SesionActiva = { usuarioId: nuevo.id, nombre: nuevo.nombre };
     guardarSesion(s);
     setSesion(s);
     return { ok: true };
   }, []);
-
-  /** Actualiza el tipo de almacenamiento del usuario activo. */
-  const actualizarAlmacenamiento = useCallback((tipo: TipoAlmacenamiento, supabaseUrl?: string, supabaseKey?: string) => {
-    if (!sesion) return;
-    const usuarios = cargarUsuarios();
-    const actualizados = usuarios.map(u =>
-      u.id === sesion.usuarioId
-        ? { ...u, almacenamiento: tipo, supabaseUrl: supabaseUrl?.trim() || undefined, supabaseKey: supabaseKey?.trim() || undefined }
-        : u
-    );
-    guardarUsuarios(actualizados);
-    const nuevaSesion: SesionActiva = { ...sesion, almacenamiento: tipo, supabaseUrl, supabaseKey };
-    guardarSesion(nuevaSesion);
-    setSesion(nuevaSesion);
-  }, [sesion]);
 
   /**
    * Establece la sesión directamente desde la respuesta del servidor (sin
@@ -287,12 +240,12 @@ export function useAuth(): UseAuthResult {
    * solo fija la identidad de sesión para la interfaz.
    */
   const loginDirecto = useCallback((id: string, nombre: string, esAdmin: boolean) => {
-    const s: SesionActiva = { usuarioId: id, nombre, esAdmin, almacenamiento: 'local' };
+    const s: SesionActiva = { usuarioId: id, nombre, esAdmin };
     guardarSesion(s);
     setSesion(s);
   }, []);
 
   const storagePrefix = sesion ? `mc_${sesion.usuarioId}_` : 'mc_';
 
-  return { autenticado: !!sesion, verificando, sesion, storagePrefix, login, loginDirecto, registrar, logout, actualizarAlmacenamiento };
+  return { autenticado: !!sesion, verificando, sesion, storagePrefix, login, loginDirecto, registrar, logout };
 }

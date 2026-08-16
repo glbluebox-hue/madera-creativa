@@ -1,4 +1,4 @@
-import type { AlmacenamientoArchivos } from './almacenamiento-archivos.js';
+import type { AlmacenamientoArchivos, ResultadoSubida } from './almacenamiento-archivos.js';
 import { AlmacenamientoMemoria } from './almacenamiento-memoria.js';
 import { AlmacenamientoR2 } from './almacenamiento-r2.js';
 import { logger } from './logger.service.js';
@@ -27,4 +27,32 @@ function crearAlmacenamiento(): AlmacenamientoArchivos {
   return new AlmacenamientoMemoria();
 }
 
-export const almacenamiento: AlmacenamientoArchivos = crearAlmacenamiento();
+/**
+ * Instancia real, creada de forma perezosa (nunca en el momento de importar
+ * este módulo). Bug real encontrado el 16/08/2026: `export const
+ * almacenamiento = crearAlmacenamiento()` se ejecutaba en cuanto algo
+ * importaba este archivo — y como los imports de un módulo ES/CJS se
+ * resuelven ANTES que el cuerpo del módulo que los importa, eso pasaba antes
+ * de que `cargarVariablesEntornoLocal()` (primera línea real de
+ * `presupuestos-service.app-root.ts`) llegara a cargar el `.env`. Resultado:
+ * `R2_ACCOUNT_ID` y compañía siempre estaban `undefined` en el momento de
+ * decidir qué implementación usar, así que el servicio caía siempre en
+ * `AlmacenamientoMemoria` — aunque el `.env` tuviera las 5 variables de R2
+ * correctamente puestas. Confirmado en vivo: con las credenciales de R2 ya
+ * en el `.env`, el arranque seguía mostrando "R2 no configurado". Al hacerlo
+ * perezoso (se crea la primera vez que de verdad se sube/borra un archivo,
+ * no al importar el módulo), `process.env` ya está completo para entonces.
+ */
+let instancia: AlmacenamientoArchivos | null = null;
+function obtenerInstancia(): AlmacenamientoArchivos {
+  if (!instancia) instancia = crearAlmacenamiento();
+  return instancia;
+}
+
+export const almacenamiento: AlmacenamientoArchivos = {
+  subir: (datos: Buffer, opciones: { contentType: string; carpeta: string }): Promise<ResultadoSubida> =>
+    obtenerInstancia().subir(datos, opciones),
+  borrar: (clave: string): Promise<void> => obtenerInstancia().borrar(clave),
+  claveDesdeUrl: (url: string): string | null => obtenerInstancia().claveDesdeUrl(url),
+  obtener: (clave: string): Promise<{ datos: Buffer; contentType: string } | null> => obtenerInstancia().obtener(clave),
+};

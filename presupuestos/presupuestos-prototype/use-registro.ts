@@ -13,7 +13,8 @@
 
 import { establecerAccessToken } from './api.js';
 
-const BASE = '/api/presupuestos-service';
+// Ver el comentario de `BASE` en api.ts — mismo criterio (Bit local vs. Render combinado).
+const BASE = (import.meta as any).env?.VITE_API_BASE ?? '/api/presupuestos-service';
 
 /** Resultado de un intento de login/registro. */
 export type ResultadoAuth = {
@@ -24,19 +25,23 @@ export type ResultadoAuth = {
   estado?: string;
   error?: string;
   codigo?: 'pendiente' | 'suspendido' | 'error-red' | 'credenciales';
+  /** Solo en registro: si se indicó un código y no era válido, explica por qué (el registro no se bloquea por esto). */
+  avisoCodigo?: string;
 };
 
 /**
- * Registra un nuevo usuario en el servidor.
- * La cuenta queda en estado "pendiente" hasta que el admin la apruebe.
+ * Registra un nuevo usuario en el servidor. Sin código (o con uno inválido)
+ * la cuenta queda "pendiente" hasta que el admin la apruebe — el `estado`
+ * devuelto lo dice explícitamente, nunca se asume. Con un código
+ * promocional válido, el servidor la activa de inmediato.
  */
-export async function registrarEnServidor(nombre: string, password: string): Promise<ResultadoAuth> {
+export async function registrarEnServidor(nombre: string, password: string, codigoPromocional?: string): Promise<ResultadoAuth> {
   try {
     const res = await fetch(`${BASE}/auth/registrar`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ nombre, password }),
+      body: JSON.stringify({ nombre, password, ...(codigoPromocional ? { codigoPromocional } : {}) }),
     });
     const data = await res.json() as any;
     if (res.status === 409) return { ok: false, error: 'Ese nombre de usuario ya existe.', codigo: 'credenciales' };
@@ -47,7 +52,7 @@ export async function registrarEnServidor(nombre: string, password: string): Pro
       return { ok: false, error: data.detalles?.[0]?.mensaje || data.error || 'Datos inválidos.', codigo: 'credenciales' };
     }
     if (!res.ok) return { ok: false, error: data.error || 'Error al registrarse.', codigo: 'error-red' };
-    return { ok: true, id: data.id, estado: 'pendiente' };
+    return { ok: true, id: data.id, estado: data.estado, avisoCodigo: data.avisoCodigo };
   } catch {
     return { ok: false, error: 'Sin conexión con el servidor.', codigo: 'error-red' };
   }

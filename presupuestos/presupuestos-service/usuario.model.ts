@@ -4,6 +4,59 @@ import { logger } from './logger.service.js';
 /** Estado de un usuario en el sistema de licencias. */
 export type EstadoUsuario = 'pendiente' | 'activo' | 'suspendido';
 
+/**
+ * Tipo de acceso concedido a la cuenta — capa independiente de `estado`.
+ * `estado` decide SI puede entrar; `acceso` decide QUÉ puede usar una vez
+ * dentro. Se mantienen separados a propósito: suspender a alguien
+ * (`estado: 'suspendido'`) le quita el acceso de inmediato sin tocar ni un
+ * campo de `acceso` — si se reactiva más adelante, recupera exactamente el
+ * mismo plan que tenía, sin volver a canjear ningún código.
+ */
+export type TipoAcceso = 'trial' | 'promotional' | 'free' | 'paid';
+
+/**
+ * Plan asociado al acceso. `BASIC`/`PRO`/`PREMIUM` no tienen lógica real
+ * todavía (no existe sistema de pagos) — existen en el tipo para que,
+ * cuando lo haya, no haga falta ninguna migración de esquema.
+ */
+export type PlanAcceso = 'NONE' | 'LIFETIME_FREE' | 'BASIC' | 'PRO' | 'PREMIUM';
+
+/** Cómo se concedió el acceso actual — trazabilidad, nunca se usa para autorizar nada. */
+export type OrigenAcceso = 'registro' | 'codigo' | 'admin' | 'pago';
+
+/** Bloque de acceso/plan de una cuenta — ver `TipoAcceso`. */
+export type AccesoUsuario = {
+  tipo: TipoAcceso;
+  plan: PlanAcceso;
+  activadoEn: string | null;
+  expiraEn: string | null;
+  origen: OrigenAcceso;
+  /** Código promocional usado, solo a efectos de auditoría — nunca se relee para decidir acceso. */
+  codigoUsado: string | null;
+};
+
+/** Valor por defecto de `acceso` para cuentas nuevas sin código (o documentos anteriores a este campo). */
+export const ACCESO_POR_DEFECTO: AccesoUsuario = {
+  tipo: 'free',
+  plan: 'NONE',
+  activadoEn: null,
+  expiraEn: null,
+  origen: 'registro',
+  codigoUsado: null,
+};
+
+const AccesoSchema = new Schema(
+  {
+    tipo:        { type: String, enum: ['trial', 'promotional', 'free', 'paid'], default: 'free' },
+    plan:        { type: String, enum: ['NONE', 'LIFETIME_FREE', 'BASIC', 'PRO', 'PREMIUM'], default: 'NONE' },
+    activadoEn:  { type: String, default: null },
+    expiraEn:    { type: String, default: null },
+    origen:      { type: String, enum: ['registro', 'codigo', 'admin', 'pago'], default: 'registro' },
+    codigoUsado: { type: String, default: null },
+  },
+  { _id: false }
+);
+
 /** Suscripción push de un dispositivo. */
 const PushSubscriptionSchema = new Schema(
   {
@@ -57,6 +110,13 @@ const UsuarioSchema = new Schema({
   nombreMostrar: { type: String, default: '' },
   /** Foto de perfil en formato data URL (base64) — mismo patrón que `Empresa.logo`. Vacía si no se ha subido ninguna. */
   foto:         { type: String, default: '' },
+  /**
+   * Tipo de acceso/plan de la cuenta (sistema de códigos promocionales y,
+   * en el futuro, suscripciones de pago). Con `default`, así que los
+   * documentos ya existentes en producción lo reciben automáticamente al
+   * leerse — no hace falta ninguna migración destructiva.
+   */
+  acceso:       { type: AccesoSchema, default: () => ACCESO_POR_DEFECTO },
 });
 
 /** Modelo Mongoose de Usuario. */

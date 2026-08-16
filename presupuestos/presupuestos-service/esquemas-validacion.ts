@@ -36,6 +36,8 @@ export const esquemaLogin = z.object({
 export const esquemaRegistro = z.object({
   nombre: z.string().trim().min(3, 'El usuario debe tener al menos 3 caracteres.').max(254),
   password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres.').max(256),
+  /** Opcional — "¿Tienes un código de acceso?" en el registro. Se valida y canjea siempre en el servidor (ver `codigo-promocional.model.ts`), nunca se confía en nada más que en el propio texto del código. */
+  codigoPromocional: z.string().trim().max(40).optional(),
 });
 
 // ── Acceso biométrico (WebAuthn/passkeys) ───────────────────────────────────────
@@ -90,6 +92,50 @@ export const esquemaWebAuthnLoginVerificar = z.object({
 
 export const esquemaCambiarEstadoUsuario = z.object({
   estado: z.enum(['pendiente', 'activo', 'suspendido']),
+});
+
+// ── Códigos promocionales / tipo de acceso ──────────────────────────────────────
+// Ningún esquema de esta sección acepta el body tal cual (pass-through): cada
+// campo se lista explícitamente, así que un usuario nunca puede colar
+// `esAdmin`, `estado` ni nada fuera de esta lista blanca por esta vía.
+
+const TIPOS_ACCESO = ['trial', 'promotional', 'free', 'paid'] as const;
+const PLANES_ACCESO = ['NONE', 'LIFETIME_FREE', 'BASIC', 'PRO', 'PREMIUM'] as const;
+
+/** Body de `POST /codigos/canjear` (usuario ya autenticado, canje posterior al registro). */
+export const esquemaCanjearCodigo = z.object({
+  codigo: z.string().trim().min(1, 'Falta el código.').max(40),
+});
+
+/** Body de `POST /admin/codigos` — crear un código promocional nuevo. */
+export const esquemaCrearCodigo = z.object({
+  codigo: z.string().trim().min(3, 'El código debe tener al menos 3 caracteres.').max(40),
+  tipoAccesoConcedido: z.enum(TIPOS_ACCESO),
+  planConcedido: z.enum(PLANES_ACCESO),
+  duracionDias: z.number().int().positive().max(3650).nullable().optional().default(null),
+  usosMaximos: z.number().int().positive().max(1_000_000).nullable().optional().default(null),
+  fechaInicio: z.string().max(40).nullable().optional().default(null),
+  fechaExpiracion: z.string().max(40).nullable().optional().default(null),
+  notas: z.string().max(500).optional().default(''),
+});
+
+/** Body de `PUT /admin/codigos/:id` — todo opcional, solo se tocan los campos enviados. */
+export const esquemaActualizarCodigo = z.object({
+  activo: z.boolean().optional(),
+  tipoAccesoConcedido: z.enum(TIPOS_ACCESO).optional(),
+  planConcedido: z.enum(PLANES_ACCESO).optional(),
+  duracionDias: z.number().int().positive().max(3650).nullable().optional(),
+  usosMaximos: z.number().int().positive().max(1_000_000).nullable().optional(),
+  fechaInicio: z.string().max(40).nullable().optional(),
+  fechaExpiracion: z.string().max(40).nullable().optional(),
+  notas: z.string().max(500).optional(),
+});
+
+/** Body de `PUT /admin/usuarios/:id/acceso` — cambio manual del tipo de acceso/plan de una cuenta. */
+export const esquemaCambiarAccesoUsuario = z.object({
+  tipo: z.enum(TIPOS_ACCESO),
+  plan: z.enum(PLANES_ACCESO),
+  expiraEn: z.string().max(40).nullable().optional().default(null),
 });
 
 /** "Mi perfil" — nombre para mostrar y foto, siempre del propio usuario autenticado (nunca de otro). */

@@ -54,3 +54,8 @@ backups/
 # ── Sistema operativo ──
 .DS_Store
 Thumbs.db
+
+# ── Despliegue combinado en Render (fuera de Bit) ──
+# Generados por render-build.sh en cada build — nunca a mano, nunca versionados.
+presupuestos/presupuestos-prototype/dist-render/
+presupuestos/presupuestos-prototype/public-render/

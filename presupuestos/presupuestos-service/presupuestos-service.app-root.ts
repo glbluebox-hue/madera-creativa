@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import dns from 'node:dns';
+import { resolve } from 'node:path';
+import { existsSync } from 'node:fs';
 import mongoose from 'mongoose';
 import express from 'express';
 import cors from 'cors';
@@ -11,7 +13,9 @@ import { logger } from './logger.service.js';
 import { inicializarMotorDocumental } from './documento-motor-inicializar.js';
 import { inicializarAutomatizaciones } from './automatizaciones-listener.js';
 import { PresupuestosService, ErrorDeNegocio } from './presupuestos-service.js';
-import { UsuarioModel, conectarUsuarios, migrarNombresNormalizados, asegurarIndiceNombreNormalizado } from './usuario.model.js';
+import { UsuarioModel, conectarUsuarios, migrarNombresNormalizados, asegurarIndiceNombreNormalizado, ACCESO_POR_DEFECTO } from './usuario.model.js';
+import type { AccesoUsuario, EstadoUsuario } from './usuario.model.js';
+import { CodigoPromocionalModel, conectarCodigos, canjearCodigo, generarIdCodigo, normalizarCodigo } from './codigo-promocional.model.js';
 import { configurarVapid, enviarNotificacion } from './push.service.js';
 import type { PushSub } from './push.service.js';
 import { limitadorGeneral, limitadorAuth } from './rate-limit.middleware.js';
@@ -25,6 +29,10 @@ import {
   esquemaLogin,
   esquemaRegistro,
   esquemaCambiarEstadoUsuario,
+  esquemaCanjearCodigo,
+  esquemaCrearCodigo,
+  esquemaActualizarCodigo,
+  esquemaCambiarAccesoUsuario,
   esquemaPerfil,
   esquemaCambiarAcceso,
   esquemaCliente,
@@ -294,18 +302,31 @@ export function run() {
   const app = express();
   const svc = PresupuestosService.from();
   const port = process.env.PORT || 3000;
+  // Calculado ya aquí (no solo al final, donde se sirve el estático de
+  // verdad) porque también decide si la ruta de salud puede quedarse en
+  // '/' — ver más abajo.
+  const frontendDistDir = process.env.FRONTEND_DIST_DIR;
 
-  // Toda petición real llega a este proceso a través de varios saltos
-  // locales (proxy de Vite → gateway de la plataforma, ambos en
-  // localhost) — sin esto, `req.ip` es siempre la IP del último proxy
-  // (127.0.0.1) para TODAS las peticiones sin importar el dispositivo
-  // real, y los limitadores por IP (`limitadorAuth`, etc.) comparten un
-  // único cupo entre todos los usuarios en vez de aplicarse por
-  // dispositivo. 'loopback' confía en cualquier número de saltos que
-  // vengan de 127.0.0.1/::1 (nuestros propios proxies internos) y se
-  // detiene en la primera IP de la cadena que no sea loopback — la real
-  // del cliente — sin depender de contar saltos a mano.
-  app.set('trust proxy', 'loopback');
+  // Sin esto, `req.ip` es siempre la IP del último proxy para TODAS las
+  // peticiones sin importar el dispositivo real, y los limitadores por IP
+  // (`limitadorAuth`, etc.) comparten un único cupo entre todos los
+  // usuarios en vez de aplicarse por dispositivo. El valor correcto
+  // depende de dónde corre el proceso, así que es configurable por
+  // entorno en vez de asumir uno fijo:
+  // - Local (Bit): la petición pasa por varios saltos locales (proxy de
+  //   Vite → gateway de la plataforma, ambos en localhost) — 'loopback'
+  //   confía en cualquier número de saltos que vengan de 127.0.0.1/::1
+  //   (nuestros propios proxies internos) y se detiene en la primera IP
+  //   de la cadena que no sea loopback, sin depender de contar saltos a
+  //   mano.
+  // - Render (`TRUST_PROXY=1` en su panel): un único salto real (su propio
+  //   balanceador) delante del proceso — no loopback, así que hay que
+  //   decírselo explícitamente en vez de heredar el valor de desarrollo.
+  const trustProxyEnv = process.env.TRUST_PROXY;
+  // Express interpreta un string puramente numérico como IP/subred inválida,
+  // no como número de saltos — hay que convertirlo explícitamente para que
+  // `TRUST_PROXY=1` (Render) cuente saltos en vez de reventar.
+  app.set('trust proxy', trustProxyEnv ? (/^\d+$/.test(trustProxyEnv) ? Number(trustProxyEnv) : trustProxyEnv) : 'loopback');
 
   configurarVapid();
   asegurarAdmin()
@@ -326,20 +347,18 @@ export function run() {
   app.use(limitadorGeneral);
   app.use(express.json({ limit: '25mb' }));
   app.use(cookieParser());
-  // Limitador estricto para toda la superficie de autenticación: frena
-  // fuerza bruta y credential stuffing sin afectar el uso normal. Debe
-  // registrarse antes que cualquier ruta /auth/*, incluida /auth/yo.
-  //
-  // Estuvo desactivado temporalmente porque, sin `app.set('trust proxy', ...)`,
-  // todas las peticiones (de cualquier dispositivo, a través del túnel de
-  // Cloudflare y el proxy de Vite) llegaban a Express como si vinieran de
-  // 127.0.0.1 — así que este límite de 10 peticiones/15min por IP era en
-  // realidad UN ÚNICO cupo compartido por todo el mundo a la vez, y
-  // bloqueaba el acceso normal. Ya arreglado (`trust proxy` más abajo en
-  // este mismo archivo, más `xfwd: true` en el proxy de Vite): cada
-  // dispositivo tiene ahora su propio cupo real, así que ya es seguro
-  // reactivarlo.
-  app.use('/auth', limitadorAuth);
+  // `limitadorAuth` (10 peticiones/15min) se aplica SOLO a `/auth/login` y
+  // `/auth/registrar` — las únicas rutas donde tiene sentido frenar fuerza
+  // bruta/credential stuffing, directamente en su propia declaración más
+  // abajo. Antes se montaba en bloque con `app.use('/auth', limitadorAuth)`,
+  // lo que aplicaba ese mismo cupo de 10 a TODA la superficie /auth/*, incluida
+  // `/auth/verificar` (que `useLicencia` llama sola cada 2 minutos mientras la
+  // app está abierta), `/auth/logout` y `/auth/yo` — con uso normal de la app
+  // ese cupo se agotaba solo, dejando a un usuario legítimo completamente
+  // bloqueado (ni podía volver a entrar ni cerrar sesión) sin que nadie
+  // hubiera intentado adivinar ninguna contraseña. `limitadorGeneral` (300/15min,
+  // ya montado justo arriba) sigue cubriendo el resto de /auth/* como red de
+  // seguridad general, igual que cualquier otra ruta de la API.
 
   // ── Salud ──
   /**
@@ -348,14 +367,23 @@ export function run() {
    * uptime no habría detectado una base de datos caída mientras el
    * proceso Node siguiera vivo.
    */
-  app.get('/', (_req, res) => {
+  const responderSalud = (_req: express.Request, res: express.Response) => {
     const dbConectada = mongoose.connection.readyState === 1;
     res.status(dbConectada ? 200 : 503).json({
       ok: dbConectada,
       service: 'presupuestos',
       db: dbConectada ? 'conectada' : 'desconectada',
     });
-  });
+  };
+  // Siempre disponible en '/healthz' (para el monitor de salud de Render u
+  // otro proveedor). En '/' solo cuando NO se sirve el frontend desde este
+  // mismo proceso — con `FRONTEND_DIST_DIR` puesta, '/' tiene que devolver
+  // la app real (`index.html`), no este JSON, así que esa ruta se cede al
+  // bloque de frontend estático de más abajo.
+  app.get('/healthz', responderSalud);
+  if (!frontendDistDir) {
+    app.get('/', responderSalud);
+  }
 
   /**
    * Comprueba si el token guardado en el cliente es válido.
@@ -398,31 +426,77 @@ export function run() {
 
   // ── Auth ──
 
-  /** Registro de nuevo usuario (queda en estado pendiente hasta que el admin apruebe). */
-  app.post('/auth/registrar', validar(esquemaRegistro), async (req: AuthRequest, res) => {
+  /** Mensaje explicativo para cuando un código no se pudo canjear al registrarse — nunca bloquea el registro, solo informa. */
+  function mensajeCodigoInvalido(razon: 'no_existe' | 'inactivo' | 'fuera_de_fecha' | 'agotado'): string {
+    switch (razon) {
+      case 'no_existe': return 'Ese código no existe.';
+      case 'inactivo': return 'Ese código ya no está activo.';
+      case 'agotado': return 'Ese código ya alcanzó su límite de usos.';
+      case 'fuera_de_fecha': return 'Ese código no está disponible en este momento.';
+    }
+  }
+
+  /**
+   * Registro de nuevo usuario. Sin código (o con uno inválido), queda en
+   * estado `pendiente` hasta que el admin lo apruebe — comportamiento sin
+   * cambios. Con un código promocional válido, el canje se resuelve de
+   * forma atómica (`canjearCodigo`) y la cuenta queda `activa` de inmediato
+   * con el `acceso` que ese código concede — el código en sí no vuelve a
+   * consultarse nunca más para decidir nada; a partir de aquí todo lo
+   * decide el propio documento del usuario (ver `usuario.model.ts`).
+   */
+  app.post('/auth/registrar', limitadorAuth, validar(esquemaRegistro), async (req: AuthRequest, res) => {
     try {
       await conectarUsuarios();
-      const { nombre, password } = req.body;
+      const { nombre, password, codigoPromocional } = req.body as { nombre: string; password: string; codigoPromocional?: string };
       const nombreNormalizado = nombre.toLowerCase();
       const existe = await UsuarioModel.findOne({ nombreNormalizado }).lean().exec();
       if (existe) { res.status(409).json({ error: 'Ese email ya está registrado.' }); return; }
+
+      let estado: EstadoUsuario = 'pendiente';
+      let acceso: AccesoUsuario = ACCESO_POR_DEFECTO;
+      let avisoCodigo: string | undefined;
+
+      if (codigoPromocional) {
+        const resultado = await canjearCodigo(codigoPromocional);
+        if (resultado.ok === true) {
+          estado = 'activo';
+          acceso = {
+            tipo: resultado.tipoAcceso,
+            plan: resultado.plan,
+            activadoEn: new Date().toISOString(),
+            expiraEn: resultado.expiraEn,
+            origen: 'codigo',
+            codigoUsado: resultado.codigo,
+          };
+        }
+        if (resultado.ok === false) {
+          avisoCodigo = mensajeCodigoInvalido(resultado.razon);
+        }
+      }
+
       const nuevo = await UsuarioModel.create({
         id: generarId(),
         nombre,
         nombreNormalizado,
         passwordHash: await hashPassword(password),
         hashAlgo: 'bcrypt',
-        estado: 'pendiente',
+        estado,
         esAdmin: false,
         creadoEn: new Date().toISOString(),
+        acceso,
       });
-      notificarAdminNuevoUsuario(nombre).catch((err) => logger.error({ err, requestId: req.requestId }, 'Error notificando al admin de nuevo usuario'));
-      res.json({ ok: true, id: nuevo.id, estado: 'pendiente' });
+
+      // Si el código ya dio acceso inmediato, no hay nada que aprobar — no se molesta al admin.
+      if (estado === 'pendiente') {
+        notificarAdminNuevoUsuario(nombre).catch((err) => logger.error({ err, requestId: req.requestId }, 'Error notificando al admin de nuevo usuario'));
+      }
+      res.json({ ok: true, id: nuevo.id, estado, avisoCodigo });
     } catch (err) { responderError(req, res, err); }
   });
 
   /** Login — devuelve token único por usuario. */
-  app.post('/auth/login', validar(esquemaLogin), async (req, res) => {
+  app.post('/auth/login', limitadorAuth, validar(esquemaLogin), async (req, res) => {
     try {
       await conectarUsuarios();
       const { nombre, password } = req.body;
@@ -538,17 +612,51 @@ export function run() {
     } catch (err) { responderError(req, res, err); }
   });
 
+  /**
+   * Canjea un código promocional después del registro (por si el usuario no
+   * lo tenía a mano al crear la cuenta). Un usuario solo puede canjear un
+   * código una vez — si `acceso.codigoUsado` ya está relleno, se rechaza
+   * antes de tocar el código, para no gastar un uso de un código válido en
+   * un canje que de todas formas no iba a aplicarse.
+   */
+  app.post('/codigos/canjear', requireAuth, validar(esquemaCanjearCodigo), async (req: AuthRequest, res) => {
+    try {
+      await conectarUsuarios();
+      const usuarioId = req.usuarioId!;
+      const usuario = await UsuarioModel.findOne({ id: usuarioId }).lean().exec() as any;
+      if (!usuario) { res.status(404).json({ error: 'Usuario no encontrado' }); return; }
+      if (usuario.acceso?.codigoUsado) { res.status(409).json({ error: 'Ya has canjeado un código con esta cuenta.' }); return; }
+
+      const resultado = await canjearCodigo(req.body.codigo);
+      if (resultado.ok === false) { res.status(400).json({ error: mensajeCodigoInvalido(resultado.razon) }); return; }
+
+      const acceso: AccesoUsuario = {
+        tipo: resultado.tipoAcceso,
+        plan: resultado.plan,
+        activadoEn: new Date().toISOString(),
+        expiraEn: resultado.expiraEn,
+        origen: 'codigo',
+        codigoUsado: resultado.codigo,
+      };
+      await UsuarioModel.updateOne({ id: usuarioId }, { acceso, estado: 'activo' });
+      res.json({ ok: true, acceso });
+    } catch (err) { responderError(req, res, err); }
+  });
+
   // ── Admin ──
 
-  /** Lista todos los usuarios (solo admin). */
+  /** Lista todos los usuarios (solo admin). `?q=` filtra por nombre/email (subcadena, sin distinguir mayúsculas). */
   app.get('/admin/usuarios', requireAuth, requireAdmin, async (req: AuthRequest, res) => {
     try {
       await conectarUsuarios();
-      const usuarios = await UsuarioModel.find().lean().exec();
+      const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+      const filtro = q ? { nombreNormalizado: { $regex: q.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&') } } : {};
+      const usuarios = await UsuarioModel.find(filtro).lean().exec();
       res.json((usuarios as any[]).map((u) => ({
         id: u.id, nombre: u.nombre, email: u.nombre,
         estado: u.estado, esAdmin: u.esAdmin,
         creadoEn: u.creadoEn, ultimoAcceso: u.ultimoAcceso,
+        acceso: u.acceso ?? ACCESO_POR_DEFECTO,
       })));
     } catch (err) { responderError(req, res, err); }
   });
@@ -581,6 +689,82 @@ export function run() {
       await UsuarioModel.deleteOne({ id: req.params.id, esAdmin: false });
       await revocarTodosDeUsuario(req.params.id);
       res.json({ ok: true });
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /**
+   * Cambia manualmente el tipo de acceso/plan de un usuario (solo admin) —
+   * junto al canje de código, el ÚNICO lugar donde `acceso` puede cambiar.
+   * Nunca a través de una ruta que el propio usuario pueda llamar sobre sí
+   * mismo (ver `esquemaPerfil`/`esquemaCambiarAcceso`, que nunca incluyen
+   * este campo).
+   */
+  app.put('/admin/usuarios/:id/acceso', requireAuth, requireAdmin, validar(esquemaCambiarAccesoUsuario), async (req, res) => {
+    try {
+      await conectarUsuarios();
+      const { tipo, plan, expiraEn } = req.body as { tipo: string; plan: string; expiraEn: string | null };
+      const acceso: AccesoUsuario = {
+        tipo: tipo as AccesoUsuario['tipo'],
+        plan: plan as AccesoUsuario['plan'],
+        activadoEn: new Date().toISOString(),
+        expiraEn,
+        origen: 'admin',
+        codigoUsado: null,
+      };
+      const u = await UsuarioModel.findOneAndUpdate({ id: req.params.id }, { acceso }, { new: true }).lean().exec() as any;
+      if (!u) { res.status(404).json({ error: 'No encontrado' }); return; }
+      res.json({ ok: true, id: u.id, acceso: u.acceso });
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  // ── Códigos promocionales (solo admin gestiona; el canje es la única escritura no-admin) ──
+
+  /** Lista todos los códigos promocionales (solo admin). */
+  app.get('/admin/codigos', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await conectarCodigos();
+      const codigos = await CodigoPromocionalModel.find().sort({ creadoEn: -1 }).lean().exec();
+      res.json(codigos);
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /** Crea un código promocional nuevo (solo admin). */
+  app.post('/admin/codigos', requireAuth, requireAdmin, validar(esquemaCrearCodigo), async (req, res) => {
+    try {
+      await conectarCodigos();
+      const codigo = normalizarCodigo(req.body.codigo);
+      const yaExiste = await CodigoPromocionalModel.findOne({ codigo }).lean().exec();
+      if (yaExiste) { res.status(409).json({ error: 'Ya existe un código con ese nombre.' }); return; }
+      const nuevo = await CodigoPromocionalModel.create({
+        id: generarIdCodigo(),
+        codigo,
+        activo: true,
+        tipoAccesoConcedido: req.body.tipoAccesoConcedido,
+        planConcedido: req.body.planConcedido,
+        duracionDias: req.body.duracionDias,
+        usosMaximos: req.body.usosMaximos,
+        usosActuales: 0,
+        fechaInicio: req.body.fechaInicio,
+        fechaExpiracion: req.body.fechaExpiracion,
+        creadoEn: new Date().toISOString(),
+        creadoPor: 'admin',
+        notas: req.body.notas,
+      });
+      res.json(nuevo);
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /** Actualiza un código promocional — activarlo/desactivarlo, cambiar fechas, cupo, etc. (solo admin). */
+  app.put('/admin/codigos/:id', requireAuth, requireAdmin, validar(esquemaActualizarCodigo), async (req, res) => {
+    try {
+      await conectarCodigos();
+      const actualizado = await CodigoPromocionalModel.findOneAndUpdate(
+        { id: req.params.id },
+        { $set: req.body },
+        { new: true }
+      ).lean().exec();
+      if (!actualizado) { res.status(404).json({ error: 'No encontrado' }); return; }
+      res.json(actualizado);
     } catch (err) { responderError(req, res, err); }
   });
 
@@ -1149,6 +1333,23 @@ export function run() {
   // `crearRouterIA()` (Fase 5) — el sondeo asíncrono (`GET /generar/:id`)
   // necesita un budget muy distinto al de disparar una generación real.
   app.use('/ia', requireAuth, crearRouterIA());
+
+  // ── Frontend estático (solo despliegue combinado fuera de Bit, p. ej. Render) ──
+  // En local (`bit run`), el frontend lo sirve Vite en su propio proceso —
+  // esta rama nunca se activa ahí porque `FRONTEND_DIST_DIR` no está puesta.
+  // Va DESPUÉS de todas las rutas de la API a propósito: el comodín '*' solo
+  // debe capturar lo que ninguna ruta anterior haya resuelto ya.
+  if (frontendDistDir) {
+    const dir = resolve(process.cwd(), frontendDistDir);
+    const indexHtml = resolve(dir, 'index.html');
+    if (existsSync(indexHtml)) {
+      app.use(express.static(dir));
+      app.get('*', (req, res) => res.sendFile(indexHtml));
+      logger.info({ dir }, 'Sirviendo frontend estático');
+    } else {
+      logger.warn({ dir }, 'FRONTEND_DIST_DIR puesta pero no contiene index.html — el frontend no se servirá');
+    }
+  }
 
   const server = app.listen(port, () => {
     logger.info(`Servicio de presupuestos listo en: http://localhost:${port}`);

@@ -17,7 +17,6 @@ import { useClientes } from './use-clientes.js';
 import { useFacturas } from './use-facturas.js';
 import { useAuth } from './use-auth.js';
 import { LoginPage } from './login-page.js';
-import { AjustesAlmacenamiento } from './ajustes-almacenamiento.js';
 import { AjustesBiometria } from './ajustes-biometria.js';
 import { PanelAdmin } from './panel-admin.js';
 import { useLicencia } from './use-licencia.js';
@@ -38,7 +37,7 @@ type Seccion = 'inicio' | 'clientes' | 'presupuestos' | 'facturas' | 'notas' | '
  * Protegida por login — solo el propietario puede acceder.
  */
 export function PresupuestosPrototype() {
-  const { autenticado, verificando, sesion, login, loginDirecto, registrar, logout, actualizarAlmacenamiento } = useAuth();
+  const { autenticado, verificando, sesion, login, loginDirecto, registrar, logout } = useAuth();
   // No disparar ninguna petición protegida hasta confirmar que hay un access
   // token válido en memoria — recién autenticado (verificando ya es false
   // desde el principio) o recién confirmado tras recargar la página. Cierra
@@ -65,7 +64,6 @@ export function PresupuestosPrototype() {
   const [clienteActual, setClienteActual] = useState<Cliente | null>(null);
   const [creando, setCreando] = useState(false);
   const [ajustes, setAjustes] = useState(false);
-  const [ajustesAlmac, setAjustesAlmac] = useState(false);
   const [ajustesBiometria, setAjustesBiometria] = useState(false);
   const [panelAdmin, setPanelAdmin] = useState(false);
   // Siempre se entra por "Inicio" — a petición del usuario, nunca se
@@ -259,19 +257,6 @@ export function PresupuestosPrototype() {
               </div>
             </div>
             <div className={styles.sidebarAcciones}>
-              {!sesion?.esAdmin && (
-                <button
-                  className={styles.sidebarAccionBtn}
-                  onClick={() => { setAjustesAlmac(true); setMenuMovilAbierto(false); }}
-                  title={sesion?.almacenamiento === 'supabase' ? 'Almacenamiento en la nube' : 'Almacenamiento local'}
-                >
-                  {sesion?.almacenamiento === 'supabase' ? (
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" /></svg>
-                  ) : (
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="5" y="2" width="14" height="20" rx="2" /><line x1="12" y1="18" x2="12" y2="18" /></svg>
-                  )}
-                </button>
-              )}
               {sesion?.esAdmin && (
                 <button className={styles.sidebarAccionBtn} onClick={() => { setPanelAdmin(true); setMenuMovilAbierto(false); }} title="Panel de usuarios">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
@@ -466,14 +451,6 @@ export function PresupuestosPrototype() {
           onGuardar={actualizarPerfil}
           onCambioAcceso={loginDirecto}
           onCerrar={() => setAjustesPerfil(false)}
-        />
-      )}
-
-      {ajustesAlmac && sesion && (
-        <AjustesAlmacenamiento
-          sesion={sesion}
-          onActualizar={actualizarAlmacenamiento}
-          onCerrar={() => setAjustesAlmac(false)}
         />
       )}
 
