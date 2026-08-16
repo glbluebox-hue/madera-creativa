@@ -19,7 +19,13 @@ cp manifest.webmanifest public-render/
 
 echo "── Frontend: instalar y compilar (mismo origen que la API, sin prefijo /api) ──"
 npm ci
-VITE_API_BASE="" npx vite build --config vite.config.render.js
+# `npm run build` (no `npx vite build`): npx resuelve el binario por su
+# cuenta y en el entorno Linux de Render no encontraba `vite` ni
+# `@vitejs/plugin-react` al cargar el propio vite.config.render.js aunque
+# `npm ci` ya los hubiera instalado — `npm run` antepone node_modules/.bin
+# al PATH de forma fiable, que es exactamente lo que ya funcionaba para
+# compilar el backend.
+VITE_API_BASE="" npm run build
 cd ..
 
 echo "── Build completo ──"
