@@ -29,6 +29,32 @@ echo "── Frontend: instalar y compilar (mismo origen que la API, sin prefijo
 # porque el paquete no existe en absoluto, no es un problema de PATH.
 npm ci --include=dev
 ls node_modules/vite/package.json >/dev/null 2>&1 && echo "vite instalado correctamente" || { echo "ERROR: vite sigue sin instalarse"; exit 1; }
+
+# tsconfig.json de este directorio lo genera y mantiene Bit (`bit compile`)
+# — SOLO existe con contenido válido en local, porque `extends` apunta a un
+# archivo de caché (node_modules/.cache/tsconfig.bit.*.json) que nunca se
+# versiona y que un clon fresco de Render no tiene. Vite 8 lee ese
+# tsconfig.json automáticamente para su transform de TS/JSX y el build
+# revienta al no poder resolver el `extends`. Se sobrescribe aquí con una
+# versión propia y autocontenida — SOLO dentro de este checkout efímero de
+# Render, nunca se toca ni se commitea el archivo real que usa Bit en local.
+cat > tsconfig.json << 'TSCONFIG'
+{
+  "compilerOptions": {
+    "target": "es2020",
+    "lib": ["esnext", "dom", "dom.iterable"],
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "allowJs": true,
+    "skipLibCheck": true
+  }
+}
+TSCONFIG
+
 VITE_API_BASE="" node node_modules/vite/bin/vite.js build --config vite.config.render.js
 cd ..
 
