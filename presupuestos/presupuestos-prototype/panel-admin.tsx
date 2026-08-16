@@ -133,7 +133,9 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
     nombre: '', categoria: '', coste: '', moneda: 'EUR', periodicidad: 'mensual' as Periodicidad, url: '', notas: '',
   });
   const [editandoCoste, setEditandoCoste] = useState<string | null>(null);
-  const [formEdicionCoste, setFormEdicionCoste] = useState({ coste: '', periodicidad: 'mensual' as Periodicidad });
+  const [formEdicionCoste, setFormEdicionCoste] = useState({
+    nombre: '', categoria: '', coste: '', moneda: 'EUR', periodicidad: 'mensual' as Periodicidad, url: '', notas: '',
+  });
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -335,7 +337,10 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
 
   const iniciarEdicionCoste = (c: CosteInfraestructura) => {
     setEditandoCoste(c.id);
-    setFormEdicionCoste({ coste: String(c.coste), periodicidad: c.periodicidad });
+    setFormEdicionCoste({
+      nombre: c.nombre, categoria: c.categoria, coste: String(c.coste), moneda: c.moneda,
+      periodicidad: c.periodicidad, url: c.url, notas: c.notas,
+    });
   };
 
   const guardarEdicionCoste = async (id: string) => {
@@ -343,7 +348,15 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
       const res = await fetchConAuth(`/admin/costes/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ coste: Number(formEdicionCoste.coste), periodicidad: formEdicionCoste.periodicidad }),
+        body: JSON.stringify({
+          nombre: formEdicionCoste.nombre.trim(),
+          categoria: formEdicionCoste.categoria.trim(),
+          coste: Number(formEdicionCoste.coste),
+          moneda: formEdicionCoste.moneda.trim() || 'EUR',
+          periodicidad: formEdicionCoste.periodicidad,
+          url: formEdicionCoste.url.trim(),
+          notas: formEdicionCoste.notas.trim(),
+        }),
       });
       if (!res.ok) throw new Error();
       const data = await res.json() as CosteInfraestructura;
@@ -836,22 +849,53 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
                   {c.notas && <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--topo-claro)', fontStyle: 'italic' }}>{c.notas}</p>}
 
                   {editandoCoste === c.id ? (
-                    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center', background: 'var(--topo-tinte)', borderRadius: 8, padding: '0.6rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', background: 'var(--topo-tinte)', borderRadius: 8, padding: '0.6rem' }}>
+                      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                        <input
+                          className={styles.input} style={{ fontSize: '0.78rem', flex: '1 1 140px' }}
+                          type="text" placeholder="Nombre" value={formEdicionCoste.nombre}
+                          onChange={e => setFormEdicionCoste(f => ({ ...f, nombre: e.target.value }))}
+                        />
+                        <input
+                          className={styles.input} style={{ fontSize: '0.78rem', flex: '1 1 140px' }}
+                          type="text" placeholder="Categoría" value={formEdicionCoste.categoria}
+                          onChange={e => setFormEdicionCoste(f => ({ ...f, categoria: e.target.value }))}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                        <input
+                          className={styles.input} style={{ fontSize: '0.78rem', width: 100 }}
+                          type="number" min="0" step="0.01" value={formEdicionCoste.coste}
+                          onChange={e => setFormEdicionCoste(f => ({ ...f, coste: e.target.value }))}
+                        />
+                        <input
+                          className={styles.input} style={{ fontSize: '0.78rem', width: 70 }}
+                          type="text" placeholder="EUR" value={formEdicionCoste.moneda}
+                          onChange={e => setFormEdicionCoste(f => ({ ...f, moneda: e.target.value }))}
+                        />
+                        <select className={styles.input} style={{ fontSize: '0.78rem', width: 'auto' }} value={formEdicionCoste.periodicidad} onChange={e => setFormEdicionCoste(f => ({ ...f, periodicidad: e.target.value as Periodicidad }))}>
+                          {(['mensual', 'anual', 'unico'] as const).map(p => <option key={p} value={p}>{ETIQUETA_PERIODICIDAD[p]}</option>)}
+                        </select>
+                        <input
+                          className={styles.input} style={{ fontSize: '0.78rem', flex: '1 1 160px' }}
+                          type="text" placeholder="URL del panel" value={formEdicionCoste.url}
+                          onChange={e => setFormEdicionCoste(f => ({ ...f, url: e.target.value }))}
+                        />
+                      </div>
                       <input
-                        className={styles.input} style={{ fontSize: '0.78rem', width: 100 }}
-                        type="number" min="0" step="0.01" value={formEdicionCoste.coste}
-                        onChange={e => setFormEdicionCoste(f => ({ ...f, coste: e.target.value }))}
+                        className={styles.input} style={{ fontSize: '0.78rem' }}
+                        type="text" placeholder="Notas internas" value={formEdicionCoste.notas}
+                        onChange={e => setFormEdicionCoste(f => ({ ...f, notas: e.target.value }))}
                       />
-                      <select className={styles.input} style={{ fontSize: '0.78rem', width: 'auto' }} value={formEdicionCoste.periodicidad} onChange={e => setFormEdicionCoste(f => ({ ...f, periodicidad: e.target.value as Periodicidad }))}>
-                        {(['mensual', 'anual', 'unico'] as const).map(p => <option key={p} value={p}>{ETIQUETA_PERIODICIDAD[p]}</option>)}
-                      </select>
-                      <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ fontSize: '0.76rem' }} onClick={() => guardarEdicionCoste(c.id)}>Guardar</button>
-                      <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.76rem' }} onClick={() => setEditandoCoste(null)}>Cancelar</button>
+                      <div style={{ display: 'flex', gap: '0.4rem' }}>
+                        <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ fontSize: '0.76rem' }} onClick={() => guardarEdicionCoste(c.id)}>Guardar</button>
+                        <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.76rem' }} onClick={() => setEditandoCoste(null)}>Cancelar</button>
+                      </div>
                     </div>
                   ) : (
                     <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
                       <button className={styles.btnIcono} style={{ fontSize: '0.74rem', width: 'auto', padding: '2px 8px' }} onClick={() => iniciarEdicionCoste(c)}>
-                        Cambiar precio
+                        Editar
                       </button>
                       <button
                         className={`${styles.btn} ${c.activo ? styles.btnSecundario : styles.btnVerde}`}
