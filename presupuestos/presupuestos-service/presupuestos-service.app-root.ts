@@ -16,6 +16,7 @@ import { PresupuestosService, ErrorDeNegocio } from './presupuestos-service.js';
 import { UsuarioModel, conectarUsuarios, migrarNombresNormalizados, asegurarIndiceNombreNormalizado, ACCESO_POR_DEFECTO } from './usuario.model.js';
 import type { AccesoUsuario, EstadoUsuario } from './usuario.model.js';
 import { CodigoPromocionalModel, conectarCodigos, canjearCodigo, generarIdCodigo, normalizarCodigo } from './codigo-promocional.model.js';
+import { CosteInfraestructuraModel, conectarCostes, generarIdCoste } from './coste-infraestructura.model.js';
 import { configurarVapid, enviarNotificacion } from './push.service.js';
 import type { PushSub } from './push.service.js';
 import { limitadorGeneral, limitadorAuth } from './rate-limit.middleware.js';
@@ -33,6 +34,8 @@ import {
   esquemaCrearCodigo,
   esquemaActualizarCodigo,
   esquemaCambiarAccesoUsuario,
+  esquemaCrearCoste,
+  esquemaActualizarCoste,
   esquemaPerfil,
   esquemaCambiarAcceso,
   esquemaCliente,
@@ -765,6 +768,62 @@ export function run() {
       ).lean().exec();
       if (!actualizado) { res.status(404).json({ error: 'No encontrado' }); return; }
       res.json(actualizado);
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  // ── Costes de infraestructura (solo admin — nada de esto se aísla por usuarioId) ──
+
+  /** Lista todas las herramientas/servicios con coste (solo admin). */
+  app.get('/admin/costes', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await conectarCostes();
+      const costes = await CosteInfraestructuraModel.find().sort({ creadoEn: -1 }).lean().exec();
+      res.json(costes);
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /** Da de alta una herramienta/servicio nuevo (solo admin). */
+  app.post('/admin/costes', requireAuth, requireAdmin, validar(esquemaCrearCoste), async (req, res) => {
+    try {
+      await conectarCostes();
+      const ahora = new Date().toISOString();
+      const nuevo = await CosteInfraestructuraModel.create({
+        id: generarIdCoste(),
+        nombre: req.body.nombre,
+        categoria: req.body.categoria,
+        coste: req.body.coste,
+        moneda: req.body.moneda,
+        periodicidad: req.body.periodicidad,
+        url: req.body.url,
+        notas: req.body.notas,
+        activo: true,
+        creadoEn: ahora,
+        actualizadoEn: ahora,
+      });
+      res.json(nuevo);
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /** Actualiza una herramienta/servicio — precio, categoría, activo/inactivo, etc. (solo admin). */
+  app.put('/admin/costes/:id', requireAuth, requireAdmin, validar(esquemaActualizarCoste), async (req, res) => {
+    try {
+      await conectarCostes();
+      const actualizado = await CosteInfraestructuraModel.findOneAndUpdate(
+        { id: req.params.id },
+        { $set: { ...req.body, actualizadoEn: new Date().toISOString() } },
+        { new: true }
+      ).lean().exec();
+      if (!actualizado) { res.status(404).json({ error: 'No encontrado' }); return; }
+      res.json(actualizado);
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /** Elimina una herramienta/servicio de la lista (solo admin). */
+  app.delete('/admin/costes/:id', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await conectarCostes();
+      await CosteInfraestructuraModel.deleteOne({ id: req.params.id });
+      res.json({ ok: true });
     } catch (err) { responderError(req, res, err); }
   });
 

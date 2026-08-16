@@ -138,6 +138,33 @@ export const esquemaCambiarAccesoUsuario = z.object({
   expiraEn: z.string().max(40).nullable().optional().default(null),
 });
 
+// ── Costes de infraestructura (panel admin) ─────────────────────────────────────
+
+const PERIODICIDADES_COSTE = ['mensual', 'anual', 'unico'] as const;
+
+/** Body de `POST /admin/costes` — dar de alta una herramienta/servicio nuevo. */
+export const esquemaCrearCoste = z.object({
+  nombre: z.string().trim().min(1, 'Falta el nombre.').max(80),
+  categoria: z.string().trim().max(60).optional().default(''),
+  coste: z.number().nonnegative().max(1_000_000),
+  moneda: z.string().trim().max(10).optional().default('EUR'),
+  periodicidad: z.enum(PERIODICIDADES_COSTE),
+  url: z.string().trim().max(300).optional().default(''),
+  notas: z.string().trim().max(500).optional().default(''),
+});
+
+/** Body de `PUT /admin/costes/:id` — todo opcional, solo se tocan los campos enviados. */
+export const esquemaActualizarCoste = z.object({
+  nombre: z.string().trim().min(1).max(80).optional(),
+  categoria: z.string().trim().max(60).optional(),
+  coste: z.number().nonnegative().max(1_000_000).optional(),
+  moneda: z.string().trim().max(10).optional(),
+  periodicidad: z.enum(PERIODICIDADES_COSTE).optional(),
+  url: z.string().trim().max(300).optional(),
+  notas: z.string().trim().max(500).optional(),
+  activo: z.boolean().optional(),
+});
+
 /** "Mi perfil" — nombre para mostrar y foto, siempre del propio usuario autenticado (nunca de otro). */
 export const esquemaPerfil = z.object({
   nombreMostrar: z.string().trim().max(200).optional().default(''),

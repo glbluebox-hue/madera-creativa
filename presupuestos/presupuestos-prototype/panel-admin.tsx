@@ -43,6 +43,24 @@ type CodigoPromocional = {
   notas: string;
 };
 
+type Periodicidad = 'mensual' | 'anual' | 'unico';
+
+type CosteInfraestructura = {
+  id: string;
+  nombre: string;
+  categoria: string;
+  coste: number;
+  moneda: string;
+  periodicidad: Periodicidad;
+  url: string;
+  notas: string;
+  activo: boolean;
+  creadoEn: string;
+  actualizadoEn: string;
+};
+
+const ETIQUETA_PERIODICIDAD: Record<Periodicidad, string> = { mensual: '/mes', anual: '/año', unico: 'pago único' };
+
 const TIPOS_ACCESO: TipoAcceso[] = ['trial', 'promotional', 'free', 'paid'];
 const PLANES_ACCESO: PlanAcceso[] = ['NONE', 'LIFETIME_FREE', 'BASIC', 'PRO', 'PREMIUM'];
 const ETIQUETA_TIPO: Record<TipoAcceso, string> = { trial: 'Prueba', promotional: 'Promocional', free: 'Gratuito', paid: 'Pago' };
@@ -75,7 +93,7 @@ function iconoBadge(estado: EstadoUsuario, s = 12) {
  * Solo visible para el administrador — permite aprobar, suspender y eliminar usuarios.
  */
 export function PanelAdmin({ onCerrar }: PanelAdminProps) {
-  const [pestana, setPestana] = useState<'usuarios' | 'codigos'>('usuarios');
+  const [pestana, setPestana] = useState<'usuarios' | 'codigos' | 'costes'>('usuarios');
 
   const [usuarios, setUsuarios] = useState<UsuarioAdmin[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -100,6 +118,17 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
     codigo: '', tipoAccesoConcedido: 'promotional' as TipoAcceso, planConcedido: 'LIFETIME_FREE' as PlanAcceso,
     duracionDias: '', usosMaximos: '', fechaExpiracion: '', notas: '',
   });
+
+  // Gestión de costes de infraestructura.
+  const [costes, setCostes] = useState<CosteInfraestructura[]>([]);
+  const [cargandoCostes, setCargandoCostes] = useState(true);
+  const [errorCostes, setErrorCostes] = useState('');
+  const [creandoCoste, setCreandoCoste] = useState(false);
+  const [nuevoCoste, setNuevoCoste] = useState({
+    nombre: '', categoria: '', coste: '', moneda: 'EUR', periodicidad: 'mensual' as Periodicidad, url: '', notas: '',
+  });
+  const [editandoCoste, setEditandoCoste] = useState<string | null>(null);
+  const [formEdicionCoste, setFormEdicionCoste] = useState({ coste: '', periodicidad: 'mensual' as Periodicidad });
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -130,8 +159,23 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
     }
   }, []);
 
+  const cargarCostes = useCallback(async () => {
+    setCargandoCostes(true);
+    setErrorCostes('');
+    try {
+      const res = await fetchConAuth('/admin/costes');
+      if (!res.ok) throw new Error('Error al cargar costes');
+      setCostes(await res.json() as CosteInfraestructura[]);
+    } catch {
+      setErrorCostes('No se pudieron cargar los costes.');
+    } finally {
+      setCargandoCostes(false);
+    }
+  }, []);
+
   useEffect(() => { cargar(); }, [cargar]);
   useEffect(() => { cargarCodigos(); }, [cargarCodigos]);
+  useEffect(() => { cargarCostes(); }, [cargarCostes]);
 
   const iniciarEdicionAcceso = (u: UsuarioAdmin) => {
     setEditandoAcceso(u.id);
@@ -202,6 +246,79 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
     }
   };
 
+  const crearCoste = async () => {
+    if (!nuevoCoste.nombre.trim() || !nuevoCoste.coste.trim()) return;
+    setCreandoCoste(true);
+    setErrorCostes('');
+    try {
+      const res = await fetchConAuth('/admin/costes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nombre: nuevoCoste.nombre.trim(),
+          categoria: nuevoCoste.categoria.trim(),
+          coste: Number(nuevoCoste.coste),
+          moneda: nuevoCoste.moneda.trim() || 'EUR',
+          periodicidad: nuevoCoste.periodicidad,
+          url: nuevoCoste.url.trim(),
+          notas: nuevoCoste.notas.trim(),
+        }),
+      });
+      const data = await res.json() as CosteInfraestructura & { error?: string };
+      if (!res.ok) { setErrorCostes(data.error ?? 'Error al crear el coste.'); return; }
+      setCostes(prev => [data, ...prev]);
+      setNuevoCoste({ nombre: '', categoria: '', coste: '', moneda: 'EUR', periodicidad: 'mensual', url: '', notas: '' });
+    } catch {
+      setErrorCostes('Error al crear el coste.');
+    } finally {
+      setCreandoCoste(false);
+    }
+  };
+
+  const iniciarEdicionCoste = (c: CosteInfraestructura) => {
+    setEditandoCoste(c.id);
+    setFormEdicionCoste({ coste: String(c.coste), periodicidad: c.periodicidad });
+  };
+
+  const guardarEdicionCoste = async (id: string) => {
+    try {
+      const res = await fetchConAuth(`/admin/costes/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ coste: Number(formEdicionCoste.coste), periodicidad: formEdicionCoste.periodicidad }),
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json() as CosteInfraestructura;
+      setCostes(prev => prev.map(c => c.id === id ? data : c));
+      setEditandoCoste(null);
+    } catch {
+      setErrorCostes('Error al actualizar el coste.');
+    }
+  };
+
+  const alternarActivoCoste = async (id: string, activo: boolean) => {
+    try {
+      const res = await fetchConAuth(`/admin/costes/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ activo }),
+      });
+      if (!res.ok) throw new Error();
+      setCostes(prev => prev.map(c => c.id === id ? { ...c, activo } : c));
+    } catch {
+      setErrorCostes('Error al actualizar el coste.');
+    }
+  };
+
+  const eliminarCoste = async (id: string) => {
+    try {
+      await fetchConAuth(`/admin/costes/${id}`, { method: 'DELETE' });
+      setCostes(prev => prev.filter(c => c.id !== id));
+    } catch {
+      setErrorCostes('Error al eliminar el coste.');
+    }
+  };
+
   const cambiarEstado = async (id: string, estado: EstadoUsuario) => {
     try {
       await fetchConAuth(`/admin/usuarios/${id}/estado`, {
@@ -230,6 +347,11 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
   const q = busqueda.trim().toLowerCase();
   const filtrados = q ? porEstado.filter(u => u.nombre.toLowerCase().includes(q)) : porEstado;
 
+  // Total mensual estimado: solo herramientas activas, el coste anual prorrateado a 12 meses, el de pago único no cuenta como gasto recurrente.
+  const totalMensualCostes = costes
+    .filter(c => c.activo)
+    .reduce((acc, c) => acc + (c.periodicidad === 'mensual' ? c.coste : c.periodicidad === 'anual' ? c.coste / 12 : 0), 0);
+
   return (
     <div className={styles.modalFondo} onClick={onCerrar}>
       <div className={styles.modalCaja} style={{ maxWidth: 680, maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
@@ -252,7 +374,7 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
 
         {/* Pestañas */}
         <div style={{ display: 'flex', gap: '0.3rem', padding: '0 1.25rem', borderBottom: '1px solid var(--borde)' }}>
-          {([['usuarios', 'Usuarios'], ['codigos', 'Códigos de acceso']] as const).map(([clave, etiqueta]) => (
+          {([['usuarios', 'Usuarios'], ['codigos', 'Códigos de acceso'], ['costes', 'Costes']] as const).map(([clave, etiqueta]) => (
             <button
               key={clave}
               onClick={() => setPestana(clave)}
@@ -515,6 +637,137 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
             </div>
           )}
 
+          </>}
+
+          {pestana === 'costes' && <>
+
+          {/* Total mensual estimado */}
+          <div style={{ background: 'var(--topo-tinte)', border: '1px solid var(--borde)', borderRadius: 10, padding: '0.9rem 1rem', marginBottom: '1.25rem', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '0.82rem', color: 'var(--topo-claro)', fontWeight: 600 }}>Gasto mensual estimado</span>
+            <span style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--negro)' }}>
+              {totalMensualCostes.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €/mes
+            </span>
+          </div>
+
+          {/* Añadir herramienta nueva */}
+          <div style={{ background: 'var(--ocre-bg)', border: '1px solid var(--ocre)', borderRadius: 10, padding: '0.9rem 1rem', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <p style={{ margin: 0, fontWeight: 700, fontSize: '0.86rem' }}>Añadir herramienta o servicio</p>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <input
+                className={styles.input} style={{ flex: '1 1 140px', fontSize: '0.82rem' }}
+                type="text" placeholder="Nombre (p. ej. Render)" value={nuevoCoste.nombre}
+                onChange={e => setNuevoCoste(f => ({ ...f, nombre: e.target.value }))}
+              />
+              <input
+                className={styles.input} style={{ flex: '1 1 140px', fontSize: '0.82rem' }}
+                type="text" placeholder="Categoría (p. ej. Hosting)" value={nuevoCoste.categoria}
+                onChange={e => setNuevoCoste(f => ({ ...f, categoria: e.target.value }))}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <input
+                className={styles.input} style={{ flex: '1 1 100px', fontSize: '0.82rem' }}
+                type="number" min="0" step="0.01" placeholder="Coste" value={nuevoCoste.coste}
+                onChange={e => setNuevoCoste(f => ({ ...f, coste: e.target.value }))}
+              />
+              <input
+                className={styles.input} style={{ flex: '1 1 70px', fontSize: '0.82rem' }}
+                type="text" placeholder="EUR" value={nuevoCoste.moneda}
+                onChange={e => setNuevoCoste(f => ({ ...f, moneda: e.target.value }))}
+              />
+              <select className={styles.input} style={{ flex: '1 1 130px', fontSize: '0.82rem' }} value={nuevoCoste.periodicidad} onChange={e => setNuevoCoste(f => ({ ...f, periodicidad: e.target.value as Periodicidad }))}>
+                {(['mensual', 'anual', 'unico'] as const).map(p => <option key={p} value={p}>{ETIQUETA_PERIODICIDAD[p]}</option>)}
+              </select>
+              <input
+                className={styles.input} style={{ flex: '1 1 160px', fontSize: '0.82rem' }}
+                type="text" placeholder="URL del panel (opcional)" value={nuevoCoste.url}
+                onChange={e => setNuevoCoste(f => ({ ...f, url: e.target.value }))}
+              />
+            </div>
+            <input
+              className={styles.input} style={{ fontSize: '0.82rem' }}
+              type="text" placeholder="Notas internas (opcional)"
+              value={nuevoCoste.notas} onChange={e => setNuevoCoste(f => ({ ...f, notas: e.target.value }))}
+            />
+            {errorCostes && <div style={{ color: 'var(--rojo)', fontSize: '0.8rem' }}>{errorCostes}</div>}
+            <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ fontSize: '0.82rem', alignSelf: 'flex-start' }} disabled={creandoCoste || !nuevoCoste.nombre.trim() || !nuevoCoste.coste.trim()} onClick={crearCoste}>
+              {creandoCoste ? 'Añadiendo…' : 'Añadir'}
+            </button>
+          </div>
+
+          {/* Lista de costes */}
+          {cargandoCostes ? (
+            <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--topo-claro)' }}>Cargando costes…</div>
+          ) : costes.length === 0 ? (
+            <div className={styles.vacio}>
+              <p>Aún no has añadido ninguna herramienta.</p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+              {costes.map(c => (
+                <div key={c.id} style={{
+                  background: c.activo ? 'var(--blanco)' : 'var(--topo-tinte)',
+                  border: '1px solid var(--borde)', opacity: c.activo ? 1 : 0.7,
+                  borderRadius: 10, padding: '0.85rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.4rem',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                    {c.url ? (
+                      <a href={c.url} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--negro)' }}>{c.nombre}</a>
+                    ) : (
+                      <span style={{ fontWeight: 700, fontSize: '0.92rem' }}>{c.nombre}</span>
+                    )}
+                    {c.categoria && (
+                      <span style={{ fontSize: '0.68rem', fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: 'var(--topo-tinte)', color: 'var(--topo)' }}>
+                        {c.categoria}
+                      </span>
+                    )}
+                    <span style={{ marginLeft: 'auto', fontWeight: 700, fontSize: '0.9rem' }}>
+                      {c.coste.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {c.moneda} <span style={{ fontWeight: 400, color: 'var(--topo-claro)', fontSize: '0.76rem' }}>{ETIQUETA_PERIODICIDAD[c.periodicidad]}</span>
+                    </span>
+                  </div>
+
+                  {c.notas && <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--topo-claro)', fontStyle: 'italic' }}>{c.notas}</p>}
+
+                  {editandoCoste === c.id ? (
+                    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center', background: 'var(--topo-tinte)', borderRadius: 8, padding: '0.6rem' }}>
+                      <input
+                        className={styles.input} style={{ fontSize: '0.78rem', width: 100 }}
+                        type="number" min="0" step="0.01" value={formEdicionCoste.coste}
+                        onChange={e => setFormEdicionCoste(f => ({ ...f, coste: e.target.value }))}
+                      />
+                      <select className={styles.input} style={{ fontSize: '0.78rem', width: 'auto' }} value={formEdicionCoste.periodicidad} onChange={e => setFormEdicionCoste(f => ({ ...f, periodicidad: e.target.value as Periodicidad }))}>
+                        {(['mensual', 'anual', 'unico'] as const).map(p => <option key={p} value={p}>{ETIQUETA_PERIODICIDAD[p]}</option>)}
+                      </select>
+                      <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ fontSize: '0.76rem' }} onClick={() => guardarEdicionCoste(c.id)}>Guardar</button>
+                      <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.76rem' }} onClick={() => setEditandoCoste(null)}>Cancelar</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                      <button className={styles.btnIcono} style={{ fontSize: '0.74rem', width: 'auto', padding: '2px 8px' }} onClick={() => iniciarEdicionCoste(c)}>
+                        Cambiar precio
+                      </button>
+                      <button
+                        className={`${styles.btn} ${c.activo ? styles.btnSecundario : styles.btnVerde}`}
+                        style={{ fontSize: '0.74rem' }}
+                        onClick={() => alternarActivoCoste(c.id, !c.activo)}
+                      >
+                        {c.activo ? 'Desactivar' : 'Reactivar'}
+                      </button>
+                      <button className={styles.btnIcono} style={{ color: 'var(--rojo)', marginLeft: 'auto' }} title="Eliminar" aria-label="Eliminar" onClick={() => eliminarCoste(c.id)}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Pie informativo */}
+          <p style={{ marginTop: '1.25rem', fontSize: '0.72rem', color: 'var(--topo-claro)', textAlign: 'center' }}>
+            Esta pestaña solo la ves tú como administrador — nunca aparece para los usuarios de la app.
+            Desactivar una herramienta la excluye del gasto mensual sin borrar su histórico.
+          </p>
           </>}
 
         </div>
