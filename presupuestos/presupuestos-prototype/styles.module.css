@@ -549,7 +549,7 @@
 }
 
 .loginLogo {
-  width: min(82%, 300px);
+  width: min(70%, 255px);
   height: auto;
   margin-bottom: 1.4rem;
 }
@@ -774,7 +774,7 @@
 }
 
 @media (max-width: 480px) {
-  .loginLogo { width: 200px; margin-bottom: 1.1rem; }
+  .loginLogo { width: 170px; margin-bottom: 1.1rem; }
   .loginFormPanel { padding: 1.25rem 1.1rem calc(1.25rem + env(safe-area-inset-bottom)); }
 }
 
@@ -1811,7 +1811,7 @@
   width: 100%;
   flex-shrink: 0;
 }
-.sidebarLogoImg { width: 100%; max-width: 220px; height: auto; object-fit: contain; display: block; }
+.sidebarLogoImg { width: 100%; max-width: 187px; height: auto; object-fit: contain; display: block; }
 
 /* `flex:1 1 auto` + `min-height:0` (imprescindible: sin esto, un flex-item
    con overflow no se encoge nunca por debajo de su contenido, y el scroll
