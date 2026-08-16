@@ -46,10 +46,22 @@ export async function crearRefreshToken(usuarioId: string): Promise<string> {
  */
 export async function rotarRefreshToken(tokenPlano: string): Promise<{ usuarioId: string; nuevoToken: string } | null> {
   const tokenHash = hashearToken(tokenPlano);
-  const doc = await RefreshTokenModel.findOne({ tokenHash }).exec();
-  if (!doc || doc.revocadoEn || doc.expiraEn.getTime() < Date.now()) return null;
-  doc.revocadoEn = new Date();
-  await doc.save();
+  // `findOneAndUpdate` con el filtro `revocadoEn: null` incluido: la lectura
+  // ("¿sigue sin revocar?") y la escritura ("revócalo") son una sola
+  // operación atómica en MongoDB, no dos pasos separados. Con
+  // `findOne` + `doc.save()` (como estaba antes), dos peticiones casi
+  // simultáneas con el mismo token (p. ej. un token robado reutilizado
+  // justo cuando el usuario legítimo también renueva) podían leer las dos
+  // `revocadoEn: null` antes de que ninguna escribiera, y las dos generaban
+  // un token nuevo válido a partir del mismo token viejo — rompiendo la
+  // garantía de "un token robado y reutilizado solo funciona una vez" que
+  // este mecanismo existe para dar. Con la operación atómica, como mucho
+  // una de las dos peticiones concurrentes puede "ganar" el `revocadoEn: null`.
+  const doc = await RefreshTokenModel.findOneAndUpdate(
+    { tokenHash, revocadoEn: null },
+    { revocadoEn: new Date() }
+  ).exec();
+  if (!doc || doc.expiraEn.getTime() < Date.now()) return null;
   const nuevoToken = await crearRefreshToken(doc.usuarioId);
   return { usuarioId: doc.usuarioId, nuevoToken };
 }

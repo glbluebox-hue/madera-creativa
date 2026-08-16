@@ -75,7 +75,17 @@ const EMPRESA_USUARIO: Empresa = {
  */
 export function useEmpresa(autenticado = false, esAdmin = false): {
   empresa: Empresa;
-  actualizar: (cambios: Partial<Empresa>) => void;
+  /**
+   * Guarda los cambios en el servidor y solo entonces actualiza el estado
+   * local — antes se actualizaba de inmediato y el guardado real fallaba en
+   * silencio (`.catch(() => {})`), mismo fallo ya diagnosticado y corregido
+   * en `use-perfil.ts` pero nunca replicado aquí: un fallo de red/sesión al
+   * cambiar `regionFiscal`/`repepActivo` dejaba el modal cerrado como si se
+   * hubiera guardado, con el Trimestral calculando impuestos con la
+   * configuración fiscal antigua sin que nadie se enterase. Devuelve si
+   * tuvo éxito para que el modal pueda avisar en vez de cerrarse como si nada.
+   */
+  actualizar: (cambios: Partial<Empresa>) => Promise<boolean>;
 } {
   const inicial = esAdmin ? EMPRESA_ADMIN : EMPRESA_USUARIO;
   const [empresa, setEmpresa] = useState<Empresa>(inicial);
@@ -95,7 +105,7 @@ export function useEmpresa(autenticado = false, esAdmin = false): {
           email: datos.email || inicial.email,
           iban: datos.iban || inicial.iban,
           condicionesPagoDefecto: datos.condicionesPagoDefecto || inicial.condicionesPagoDefecto,
-          validezDiasDefecto: datos.validezDiasDefecto || inicial.validezDiasDefecto,
+          validezDiasDefecto: datos.validezDiasDefecto ?? inicial.validezDiasDefecto,
           temaPorDefecto: datos.temaPorDefecto ?? null,
           regionFiscal: datos.regionFiscal ?? inicial.regionFiscal,
           repepActivo: datos.repepActivo ?? inicial.repepActivo,
@@ -106,13 +116,16 @@ export function useEmpresa(autenticado = false, esAdmin = false): {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autenticado, esAdmin]);
 
-  const actualizar = useCallback((cambios: Partial<Empresa>) => {
-    setEmpresa((prev) => {
-      const siguiente = { ...prev, ...cambios };
-      api.guardarEmpresa(siguiente).catch(() => { /* noop */ });
-      return siguiente;
-    });
-  }, []);
+  const actualizar = useCallback(async (cambios: Partial<Empresa>): Promise<boolean> => {
+    const siguiente = { ...empresa, ...cambios };
+    try {
+      await api.guardarEmpresa(siguiente);
+      setEmpresa(siguiente);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [empresa]);
 
   return { empresa, actualizar };
 }

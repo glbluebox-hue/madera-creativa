@@ -9,8 +9,8 @@ import styles from './styles.module.css';
 export type AjustesEmpresaProps = {
   /** Datos actuales de la empresa. */
   empresa: Empresa;
-  /** Guarda los cambios de la empresa. */
-  onGuardar: (cambios: Partial<Empresa>) => void;
+  /** Guarda los cambios de la empresa — devuelve si tuvo éxito. */
+  onGuardar: (cambios: Partial<Empresa>) => Promise<boolean>;
   /** Cierra el modal. */
   onCerrar: () => void;
 };
@@ -32,6 +32,8 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
   const [tema, setTema] = useState<TemaMC>(empresa.temaPorDefecto ?? TEMA_POR_DEFECTO);
   const [regionFiscal, setRegionFiscal] = useState(empresa.regionFiscal);
   const [repepActivo, setRepepActivo] = useState(empresa.repepActivo);
+  const [guardando, setGuardando] = useState(false);
+  const [errorGuardar, setErrorGuardar] = useState('');
 
   const subirLogo = (files: FileList | null) => {
     const file = files?.[0];
@@ -39,8 +41,10 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
     leerArchivoComoBase64(file).then(setLogo);
   };
 
-  const guardar = () => {
-    onGuardar({
+  const guardar = async () => {
+    setErrorGuardar('');
+    setGuardando(true);
+    const ok = await onGuardar({
       nombre: nombre.trim() || 'Mi empresa',
       eslogan: eslogan.trim(),
       logo,
@@ -53,6 +57,8 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
       regionFiscal,
       repepActivo: regionFiscal === 'canarias' ? repepActivo : false,
     });
+    setGuardando(false);
+    if (!ok) { setErrorGuardar('No se pudo guardar. Comprueba tu conexión e inténtalo de nuevo.'); return; }
     onCerrar();
   };
 
@@ -172,9 +178,13 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
           </div>
         </div>
 
+        {errorGuardar && <div className={styles.loginError}>{errorGuardar}</div>}
+
         <div className={styles.modalAcciones}>
-          <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={onCerrar}>Cancelar</button>
-          <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={guardar}>Guardar</button>
+          <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={onCerrar} disabled={guardando}>Cancelar</button>
+          <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={guardar} disabled={guardando}>
+            {guardando ? 'Guardando…' : 'Guardar'}
+          </button>
         </div>
       </div>
     </div>

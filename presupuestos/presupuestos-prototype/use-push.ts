@@ -1,5 +1,6 @@
 import { useEffect, useCallback } from 'react';
 import type { SesionActiva } from './use-auth.js';
+import { fetchConAuth } from './api.js';
 
 const BASE = '/api/presupuestos-service';
 
@@ -39,15 +40,15 @@ export function usePush(sesion: SesionActiva | null): void {
         applicationServerKey: urlBase64ToUint8Array(key) as unknown as BufferSource,
       });
 
-      // Enviar suscripción al servidor
-      await fetch(`${BASE}/push/subscribe`, {
+      // Enviar suscripción al servidor — el usuario sale de la sesión
+      // autenticada (`fetchConAuth`), nunca de un campo que mande el
+      // cliente: antes se enviaba `usuarioId` en el body sin exigir sesión,
+      // así que cualquiera que conociera el id de otra cuenta podía
+      // registrar su propio navegador como destino de sus notificaciones.
+      await fetchConAuth('/push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          usuarioId,
-          subscription: sub.toJSON(),
-        }),
+        body: JSON.stringify({ subscription: sub.toJSON() }),
       });
     } catch (err) {
       console.warn('Push no disponible:', err);

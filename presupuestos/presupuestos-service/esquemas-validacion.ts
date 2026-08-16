@@ -38,10 +38,6 @@ export const esquemaRegistro = z.object({
   password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres.').max(256),
 });
 
-export const esquemaVerificarSesion = z.object({
-  usuarioId: z.string().min(1).max(128),
-});
-
 // ── Acceso biométrico (WebAuthn/passkeys) ───────────────────────────────────────
 // Verifica solo la forma del payload (tamaños razonables, campos presentes) —
 // la seguridad real de la ceremonia (firma, challenge, origin, RP ID) la
@@ -628,7 +624,6 @@ export const esquemaEmpresa = z.object({
 // ── Notificaciones push ───────────────────────────────────────────────────────
 
 export const esquemaPushSubscribe = z.object({
-  usuarioId: z.string().min(1).max(128),
   subscription: z.object({
     endpoint: z.string().min(1),
     keys: z.object({

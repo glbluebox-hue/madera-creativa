@@ -24,7 +24,6 @@ import { crearRefreshToken, rotarRefreshToken, revocarRefreshToken, revocarTodos
 import {
   esquemaLogin,
   esquemaRegistro,
-  esquemaVerificarSesion,
   esquemaCambiarEstadoUsuario,
   esquemaPerfil,
   esquemaCambiarAcceso,
@@ -331,13 +330,16 @@ export function run() {
   // fuerza bruta y credential stuffing sin afectar el uso normal. Debe
   // registrarse antes que cualquier ruta /auth/*, incluida /auth/yo.
   //
-  // DESACTIVADO temporalmente (fase "Integración completa", a petición
-  // explícita del usuario): mientras se está probando y desarrollando en
-  // local, este límite compartido de 10 peticiones/15min entre login,
-  // refresh, logout y verificar-licencia bloqueaba el acceso normal.
-  // Reactivar (quitar el comentario de la línea siguiente) antes de
-  // exponer la aplicación fuera del entorno de desarrollo/pruebas.
-  // app.use('/auth', limitadorAuth);
+  // Estuvo desactivado temporalmente porque, sin `app.set('trust proxy', ...)`,
+  // todas las peticiones (de cualquier dispositivo, a través del túnel de
+  // Cloudflare y el proxy de Vite) llegaban a Express como si vinieran de
+  // 127.0.0.1 — así que este límite de 10 peticiones/15min por IP era en
+  // realidad UN ÚNICO cupo compartido por todo el mundo a la vez, y
+  // bloqueaba el acceso normal. Ya arreglado (`trust proxy` más abajo en
+  // este mismo archivo, más `xfwd: true` en el proxy de Vite): cada
+  // dispositivo tiene ahora su propio cupo real, así que ya es seguro
+  // reactivarlo.
+  app.use('/auth', limitadorAuth);
 
   // ── Salud ──
   /**
@@ -370,10 +372,18 @@ export function run() {
     res.json({ key: (process.env.VAPID_PUBLIC_KEY || '').trim() });
   });
 
-  /** Registra una suscripción push para un usuario. */
-  app.post('/push/subscribe', validar(esquemaPushSubscribe), async (req, res) => {
+  /**
+   * Registra una suscripción push para el usuario autenticado. Antes tomaba
+   * `usuarioId` del propio body sin exigir sesión — cualquiera que conociera
+   * o adivinara el id de otra cuenta podía registrar su propio navegador
+   * como destino de sus notificaciones push (aprobaciones de acceso,
+   * avisos de automatización...). Ahora el id sale siempre de
+   * `requireAuth`, nunca de lo que mande el cliente.
+   */
+  app.post('/push/subscribe', requireAuth, validar(esquemaPushSubscribe), async (req: AuthRequest, res) => {
     try {
-      const { usuarioId, subscription } = req.body;
+      const usuarioId = req.usuarioId!;
+      const { subscription } = req.body;
       await conectarUsuarios();
       const u = await UsuarioModel.findOne({ id: usuarioId }).exec();
       if (!u) { res.status(404).json({ error: 'Usuario no encontrado' }); return; }
@@ -509,11 +519,19 @@ export function run() {
    */
   app.use('/auth/webauthn', crearRouterWebAuthn());
 
-  /** Verifica si una sesión sigue activa. */
-  app.post('/auth/verificar', validar(esquemaVerificarSesion), async (req, res) => {
+  /**
+   * Verifica si una sesión sigue activa. El id sale siempre de la sesión ya
+   * autenticada (`requireAuth`), nunca de un campo que mande el cliente —
+   * antes se aceptaba `usuarioId` en el body sin exigir sesión, así que
+   * cualquiera que conociera el id de otra cuenta podía consultar su estado
+   * (activo/suspendido) sin autenticarse. `useLicencia` en el frontend ya
+   * solo llama a esta ruta una vez hay sesión iniciada, así que exigir
+   * `requireAuth` no le quita nada.
+   */
+  app.post('/auth/verificar', requireAuth, async (req: AuthRequest, res) => {
     try {
       await conectarUsuarios();
-      const { usuarioId } = req.body;
+      const usuarioId = req.usuarioId!;
       const u = await UsuarioModel.findOne({ id: usuarioId }).lean().exec() as any;
       if (!u) { res.status(404).json({ activo: false }); return; }
       res.json({ activo: u.estado === 'activo', estado: u.estado });

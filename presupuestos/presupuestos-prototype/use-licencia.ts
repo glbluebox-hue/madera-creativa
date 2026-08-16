@@ -1,7 +1,6 @@
 import { useEffect, useCallback, useRef } from 'react';
 import type { SesionActiva } from './use-auth.js';
-
-const BASE = '/api/presupuestos-service';
+import { fetchConAuth } from './api.js';
 
 /**
  * Hook que verifica periódicamente si la sesión del usuario sigue activa en el servidor.
@@ -18,12 +17,11 @@ export function useLicencia(sesion: SesionActiva | null, onSuspendido: () => voi
   const verificar = useCallback(async () => {
     if (!usuarioId) return;
     try {
-      const res = await fetch(`${BASE}/auth/verificar`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ usuarioId }),
-        credentials: 'include',
-      });
+      // El id sale de la sesión autenticada (`fetchConAuth`), nunca de un
+      // campo que mande el cliente — antes se enviaba `usuarioId` en el body
+      // sin exigir sesión, así que cualquiera que conociera el id de otra
+      // cuenta podía consultar si estaba activa o suspendida sin autenticarse.
+      const res = await fetchConAuth('/auth/verificar', { method: 'POST' });
       if (!res.ok) return;
       const data = await res.json() as { activo: boolean; estado: string };
       if (!data.activo) onSuspRef.current();
