@@ -37,6 +37,6 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.0.0",
     "@types/web-push": "^3.6.4",
-    "typescript": "^5.9.3"
+    "typescript": "5.9.3"
   }
 }

@@ -6,7 +6,17 @@ node_modules/
 # package-lock.json en cualquier subcarpeta es un artefacto accidental de
 # haber ejecutado npm ahí (ver informe de auditoría del Incremento 1 del
 # Motor Documental), nunca una fuente real de reproducibilidad.
+#
+# Excepción a propósito: presupuestos-service/ y presupuestos-prototype/
+# tienen su propio package.json real (despliegue combinado en Render, fuera
+# de Bit — ver render-build.sh) — ahí un package-lock.json SÍ es la fuente
+# real de reproducibilidad (`npm ci`), y es justo lo que evitó que un
+# TypeScript más nuevo que el probado en local rompiera el build en Render
+# el 16/08/2026 (opción `moduleResolution=node10` eliminada en una versión
+# posterior). Debe versionarse.
 package-lock.json
+!presupuestos/presupuestos-service/package-lock.json
+!presupuestos/presupuestos-prototype/package-lock.json
 
 # ── Caché de Bit ──
 # Estado local reconstruible (`bit install`/`bit compile`), no historial de

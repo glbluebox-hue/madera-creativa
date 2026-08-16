@@ -6,7 +6,7 @@ set -euo pipefail
 
 echo "── Backend: instalar y compilar ──"
 cd presupuestos-service
-npm install --legacy-peer-deps
+npm ci --legacy-peer-deps
 npm run build
 cd ..
 
@@ -18,7 +18,7 @@ cp assets/icon-180.png assets/icon-192.png assets/icon-512.png assets/icon-maska
 cp manifest.webmanifest public-render/
 
 echo "── Frontend: instalar y compilar (mismo origen que la API, sin prefijo /api) ──"
-npm install
+npm ci
 VITE_API_BASE="" npx vite build --config vite.config.render.js
 cd ..
 
