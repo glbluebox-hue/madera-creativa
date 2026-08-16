@@ -16,13 +16,20 @@ export type PresupuestoMC = {
   id: string;
   clienteId: string;
   titulo: string;
-  /** 'simple' (formulario/IA conversacional) o 'lienzo' (editor libre por hojas, Fase 6). */
-  formato: 'simple' | 'lienzo';
+  /**
+   * 'simple' (formulario/IA conversacional), 'lienzo' (editor legado sobre
+   * Excalidraw — en transición, sin documentos nuevos, ver
+   * ARQUITECTURA-MOTOR-DOCUMENTAL.md) o 'documento' (Motor Documental,
+   * formato definitivo desde el Incremento 1).
+   */
+  formato: 'simple' | 'lienzo' | 'documento';
   descripcion: string;
   alcance: string[];
   items: ElementoPresupuesto[];
-  /** Escena de Excalidraw ({ elements, files }) — solo relevante si formato==='lienzo'. */
+  /** LEGADO — escena de Excalidraw ({ elements, files }), solo relevante si formato==='lienzo'. */
   contenidoLienzo: Record<string, unknown>;
+  /** `DocumentoMC` (ver documento-modelo.ts), solo relevante si formato==='documento'. */
+  contenidoDocumento: Record<string, unknown>;
   condicionesPago: string;
   validezDias: number;
   condicionesGenerales: string;

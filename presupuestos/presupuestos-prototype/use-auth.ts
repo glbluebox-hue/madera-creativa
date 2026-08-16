@@ -175,8 +175,20 @@ export function useAuth(): UseAuthResult {
     resetTimer();
     const handler = () => resetTimer();
     EVENTOS_ACTIVIDAD.forEach(ev => window.addEventListener(ev, handler, { passive: true }));
+    // Volver a primer plano tras abrir la cámara del sistema (o cualquier
+    // app externa: compartir, selector de archivos…) cuenta como actividad
+    // real — sin esto, el propio `setTimeout` de abajo sigue contando
+    // tiempo real mientras la pestaña está en segundo plano, y una sesión
+    // de escaneo que se demore lo suficiente (o que llegue ya cerca del
+    // límite tras un rato sin tocar la pantalla, p. ej. leyendo algo antes
+    // de escanear) puede cerrar la sesión a mitad de la captura — se
+    // percibe como que "la app se cierra y vuelve al principio" justo al
+    // volver de la cámara, sin tener nada que ver con el escáner en sí.
+    const handlerVisibilidad = () => { if (document.visibilityState === 'visible') resetTimer(); };
+    document.addEventListener('visibilitychange', handlerVisibilidad);
     return () => {
       EVENTOS_ACTIVIDAD.forEach(ev => window.removeEventListener(ev, handler));
+      document.removeEventListener('visibilitychange', handlerVisibilidad);
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [sesion, resetTimer]);

@@ -143,8 +143,8 @@ export function GuiaSupabase({ urlInicial = '', claveInicial = '', onConfirmar, 
                   onClick={() => setPasoActual(i)}
                   style={{
                     width: 28, height: 28, borderRadius: '50%', border: 'none',
-                    background: i === pasoActual ? 'var(--topo)' : i < pasoActual ? '#7a9e7e' : '#e0dbd4',
-                    color: i <= pasoActual ? '#fff' : '#9b928a',
+                    background: i === pasoActual ? 'var(--topo)' : i < pasoActual ? 'var(--verde)' : 'var(--borde)',
+                    color: i <= pasoActual ? 'var(--blanco)' : 'var(--topo-claro)',
                     fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer',
                     flexShrink: 0, transition: 'background 0.2s',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -153,7 +153,7 @@ export function GuiaSupabase({ urlInicial = '', claveInicial = '', onConfirmar, 
                   {i < pasoActual ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg> : p.numero}
                 </button>
                 {i < PASOS.length - 1 && (
-                  <div style={{ flex: 1, height: 2, background: i < pasoActual ? '#7a9e7e' : '#e0dbd4', borderRadius: 1 }} />
+                  <div style={{ flex: 1, height: 2, background: i < pasoActual ? 'var(--verde)' : 'var(--borde)', borderRadius: 1 }} />
                 )}
               </div>
             ))}
@@ -161,7 +161,7 @@ export function GuiaSupabase({ urlInicial = '', claveInicial = '', onConfirmar, 
 
           {/* Paso actual */}
           <div style={{
-            background: '#faf8f5', border: '1px solid var(--borde)',
+            background: 'var(--fondo)', border: '1px solid var(--borde)',
             borderRadius: 12, padding: '1.25rem', marginBottom: '1.25rem',
           }}>
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.5rem', color: 'var(--topo)' }}>{paso.imagen}</div>
@@ -173,8 +173,8 @@ export function GuiaSupabase({ urlInicial = '', claveInicial = '', onConfirmar, 
             </p>
             {paso.nota && (
               <div style={{
-                background: '#fff9e6', border: '1px solid #f0d060', borderRadius: 8,
-                padding: '0.5rem 0.75rem', fontSize: '0.78rem', color: '#7a6000',
+                background: 'var(--ocre-bg)', border: '1px solid var(--ocre)', borderRadius: 8,
+                padding: '0.5rem 0.75rem', fontSize: '0.78rem', color: 'var(--ocre)',
               }}>
                 {paso.nota}
               </div>
@@ -235,13 +235,13 @@ export function GuiaSupabase({ urlInicial = '', claveInicial = '', onConfirmar, 
 
               {/* Resultado de verificación */}
               {estadoVerif === 'ok' && (
-                <div style={{ background: '#e8f5e9', border: '1px solid #81c784', borderRadius: 8, padding: '0.6rem 0.85rem', fontSize: '0.82rem', color: '#2e7d32', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <div style={{ background: 'var(--verde-bg)', border: '1px solid var(--verde)', borderRadius: 'var(--radio)', padding: '0.6rem 0.85rem', fontSize: '0.82rem', color: 'var(--verde-dark)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                   Conexión correcta — tu Supabase está listo
                 </div>
               )}
               {estadoVerif === 'error' && (
-                <div style={{ background: '#ffebee', border: '1px solid #e57373', borderRadius: 8, padding: '0.6rem 0.85rem', fontSize: '0.82rem', color: '#c62828', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <div style={{ background: 'var(--rojo-bg)', border: '1px solid var(--rojo)', borderRadius: 'var(--radio)', padding: '0.6rem 0.85rem', fontSize: '0.82rem', color: 'var(--rojo)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
                   {errorVerif}
                 </div>

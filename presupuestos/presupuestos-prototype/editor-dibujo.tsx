@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { Fragment, useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Excalidraw, exportToBlob, viewportCoordsToSceneCoords, CaptureUpdateAction } from '@excalidraw/excalidraw';
 import type { ExcalidrawImperativeAPI, AppState } from '@excalidraw/excalidraw/types';
@@ -8,7 +8,8 @@ import type { Dibujo } from './types.js';
 import { generarId } from './mock.js';
 import { SelectorDestinoGuardado, type DestinoDibujo } from './selector-destino-guardado.js';
 import {
-  iniciarCotaEnCurso, actualizarCotaEnCurso, sincronizarCotas, calibrarDesdeCota, regenerarEtiquetasCotas, ajustarLongitudCotaEnEscena, convertirDesdeMm,
+  iniciarCotaEnCurso, actualizarCotaEnCurso, sincronizarCotas, calibrarDesdeCota, calibrarPorRectangulo, regenerarEtiquetasCotas, ajustarLongitudCotaEnEscena, convertirDesdeMm, convertirAMm,
+  construirMarcadoresCalibracion, IDS_MARCADORES_CALIBRACION, ID_LINEA_CALIBRACION,
   type Cota, type EscalaDibujo, type OrientacionCota, type PuntoEscena, type UnidadVisualizacion,
 } from './cota-modelo.js';
 import { puntosCandidatosSnap, buscarSnap, umbralSnapEscena, construirResaltoSnap } from './medicion-snapping.js';
@@ -40,10 +41,14 @@ export type EditorDibujoProps = {
 // el orden y el icono, que no cambian con el idioma.
 const HERRAMIENTAS: { id: HerramientaId; icono: import('react').ReactNode }[] = [
   { id: 'selection', icono: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51z" /></svg> },
+  { id: 'rectangle', icono: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="1.5" /></svg> },
+  { id: 'diamond', icono: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l10 10-10 10L2 12z" /></svg> },
+  { id: 'ellipse', icono: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9" /></svg> },
   { id: 'freedraw', icono: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z" /></svg> },
   { id: 'line', icono: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="19" y1="5" x2="5" y2="19" /></svg> },
   { id: 'arrow', icono: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="19" x2="19" y2="5" /><polyline points="9 5 19 5 19 15" /></svg> },
   { id: 'text', icono: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 7 4 4 20 4 20 7" /><line x1="9" y1="20" x2="15" y2="20" /><line x1="12" y1="4" x2="12" y2="20" /></svg> },
+  { id: 'image', icono: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg> },
   { id: 'eraser', icono: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 20H9L4 15a2 2 0 0 1 0-2.83l8-8a2 2 0 0 1 2.83 0l5 5a2 2 0 0 1 0 2.83z" /><line x1="6" y1="11" x2="14" y2="19" /></svg> },
   { id: 'cota', icono: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="7" x2="4" y2="17" /><line x1="20" y1="7" x2="20" y2="17" /><line x1="4" y1="12" x2="20" y2="12" /><polyline points="8 8 4 12 8 16" /><polyline points="16 8 20 12 16 16" /></svg> },
 ];
@@ -111,13 +116,35 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, clientes, onGuardar
   // herramienta/color/grosor que haga falta, y se cierra; la herramienta
   // activa no cambia por ocultar la barra.
   const [herramientasAbiertas, setHerramientasAbiertas] = useState(true);
+  // La barra lateral tiene `overflow-y: auto` (ver `.editorDibujoHerramientas`
+  // en CSS) porque en pantallas bajas no caben las 11 herramientas + deshacer
+  // + rehacer + grosor sin cortar nada — pero en táctil el scrollbar nativo
+  // no se ve (a diferencia de un ratón), así que no hay ninguna pista de que
+  // se puede bajar más: la Goma quedaba fuera de la vista y parecía no
+  // existir (reportado por el usuario en tablet). Este aviso hace visible
+  // que hay más herramientas por debajo.
+  const toolbarRef = useRef<HTMLElement>(null);
+  const [toolbarDesbordaAbajo, setToolbarDesbordaAbajo] = useState(false);
   const [nombre, setNombre] = useState(dibujo?.nombre ?? 'Dibujo sin título');
   const [herramienta, setHerramienta] = useState<HerramientaId>('freedraw');
+  useEffect(() => {
+    const el = toolbarRef.current;
+    if (!el) { setToolbarDesbordaAbajo(false); return; }
+    const actualizar = () => setToolbarDesbordaAbajo(el.scrollHeight - el.scrollTop - el.clientHeight > 2);
+    actualizar();
+    el.addEventListener('scroll', actualizar);
+    const observer = new ResizeObserver(actualizar);
+    observer.observe(el);
+    return () => {
+      el.removeEventListener('scroll', actualizar);
+      observer.disconnect();
+    };
+  }, [herramientasAbiertas, herramienta]);
   const [colorActivo, setColorActivo] = useState<string>(COLORES[0]);
   // "Extra fino" es el grosor por defecto (a petición explícita del
   // usuario) — se busca por id, no por índice, para que reordenar
   // `GROSORES` no cambie el valor inicial sin querer.
-  const [grosorActivo, setGrosorActivo] = useState<number>(GROSORES.find((g) => g.id === 'extraFino')!.valor);
+  const [grosorActivo, setGrosorActivo] = useState<number>(GROSORES.find((g) => g.id === 'muyFino')!.valor);
   const [idioma, setIdioma] = useState<Idioma>('es');
   const t = TEXTOS[idioma];
   const colorActivoRef = useRef(colorActivo);
@@ -153,6 +180,20 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, clientes, onGuardar
   const [calibracionCotaId, setCalibracionCotaId] = useState<string | null>(null);
   const [calibracionValor, setCalibracionValor] = useState('');
   const [calibracionUnidad, setCalibracionUnidad] = useState<UnidadVisualizacion>('cm');
+
+  // Calibración por rectángulo (corrige la perspectiva de la foto) — a
+  // petición explícita del usuario: una sola cota de referencia solo es
+  // exacta en su propia orientación/profundidad; marcando las 4 esquinas
+  // (ya distorsionadas por la perspectiva) de un rectángulo real conocido
+  // se puede corregir esa distorsión para toda esa zona de la foto (ver
+  // `calibrarPorRectangulo` en cota-modelo.ts).
+  const [modoCalibracion, setModoCalibracion] = useState<'cota' | 'rectangulo'>('cota');
+  const [esquinasRectangulo, setEsquinasRectangulo] = useState<PuntoEscena[]>([]);
+  const esquinasRectanguloRef = useRef(esquinasRectangulo);
+  esquinasRectanguloRef.current = esquinasRectangulo;
+  const [anchoRectangulo, setAnchoRectangulo] = useState('');
+  const [altoRectangulo, setAltoRectangulo] = useState('');
+  const [unidadRectangulo, setUnidadRectangulo] = useState<UnidadVisualizacion>('cm');
 
   // Edición numérica de la longitud de una cota — se abre sola al terminar
   // de crearla arrastrando, o al seleccionarla con la herramienta
@@ -206,7 +247,7 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, clientes, onGuardar
       api.setActiveTool({ type: 'freedraw' });
       // Sin esto, Excalidraw dibuja con su propio grosor/color por defecto
       // hasta que el usuario toque el selector una vez — nuestra barra ya
-      // muestra "Extra fino" como activo desde el principio, así que lo que
+      // muestra "Muy fino" como activo desde el principio, así que lo que
       // se dibuja debe coincidir desde el primer trazo, no solo visualmente.
       api.updateScene({ appState: { currentItemStrokeColor: colorActivoRef.current, currentItemStrokeWidth: grosorActivoRef.current } });
     }, 0);
@@ -252,17 +293,137 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, clientes, onGuardar
     const api = apiRef.current;
     if (!cotaReferencia || !(valorReal > 0) || !api) return;
     const nuevaEscala = calibrarDesdeCota(cotaReferencia, valorReal, unidadReal);
+    // La unidad elegida aquí pasa a ser la unidad por defecto de TODO el
+    // dibujo (antes solo se aplicaba a esta calibración puntual y se
+    // olvidaba en la siguiente selección de cota — fallo real reportado:
+    // "pongo milímetros... no hay manera de cambiarlo, vuelve a cm").
+    setUnidadVisualizacion(unidadReal);
     // `setEscala` por sí solo no recalcula nada: `sincronizarCotas` solo se
     // ejecuta en el `onChange` de Excalidraw, que no se dispara por un
     // cambio de estado de React. Se fuerza aquí mismo, una vez, reutilizando
     // la misma detección de "cambió la escala" que ya usa el arrastre de un
     // extremo — así las cotas ya dibujadas pasan de "u" a la medida real
     // en el mismo instante en que se calibra, no en el siguiente cambio.
-    const resultado = sincronizarCotas(api.getSceneElements(), cotasRef.current, nuevaEscala, unidadVisualizacionRef.current);
+    const resultado = sincronizarCotas(api.getSceneElements(), cotasRef.current, nuevaEscala, unidadReal);
+    setCotas(resultado.cotas);
+    // Cierra el panel de edición por cota de forma directa e inmediata
+    // (`setCotaSeleccionadaId(null)`, un cambio de estado de React normal
+    // que no depende de que Excalidraw dispare ningún evento). El primer
+    // intento de arreglo forzaba además la deselección en el propio
+    // `appState` de Excalidraw junto con el cambio de `elements` — se
+    // retira: no hacía falta para cerrar el panel (eso ya lo resuelve
+    // `setCotaSeleccionadaId`) y es sospechoso de estar detrás del nuevo
+    // fallo reportado (la cota desaparece al reabrir su edición).
+    if (resultado.elementos) api.updateScene({ elements: resultado.elementos });
+    setEscala(nuevaEscala);
+    setCalibracionAbierta(false);
+    setCotaSeleccionadaId(null);
+  };
+
+  // Quita los marcadores temporales de la escena (sin dejarlos en el
+  // historial de deshacer: no son parte del dibujo, solo una guía visual
+  // mientras se calibra).
+  const borrarMarcadoresRectangulo = () => {
+    const api = apiRef.current;
+    if (!api) return;
+    const idsFuera = new Set<string>([...IDS_MARCADORES_CALIBRACION, ID_LINEA_CALIBRACION]);
+    const elementos = api.getSceneElements();
+    if (!elementos.some((e) => idsFuera.has(e.id))) return;
+    api.updateScene({
+      elements: elementos.filter((e) => !idsFuera.has(e.id)) as ExcalidrawElement[],
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+  };
+
+  // Captura las 4 esquinas del rectángulo de referencia mientras el panel
+  // de calibración está en modo "Rectángulo": cada toque en el lienzo
+  // añade un punto (con su marcador visual) hasta llegar a 4. Igual que la
+  // creación de una cota, se intercepta el `pointerdown` en fase de
+  // captura para que Excalidraw no lo procese como una selección/arrastre
+  // suyo mientras se marcan las esquinas.
+  useEffect(() => {
+    if (!calibracionAbierta || modoCalibracion !== 'rectangulo' || esquinasRectangulo.length >= 4) return;
+    const contenedor = document.querySelector<HTMLElement>(`.${styles.editorDibujoLienzo}`);
+    const canvas = contenedor?.querySelector<HTMLCanvasElement>('canvas.interactive');
+    const api = apiRef.current;
+    if (!canvas || !api) return;
+
+    api.setActiveTool({ type: 'selection' });
+
+    const manejarPulsar = (e: PointerEvent) => {
+      e.preventDefault();
+      // `stopImmediatePropagation`, no solo `stopPropagation`: hay otros
+      // interceptores propios en este mismo `canvas` (crear cota, seleccionar
+      // una cota cerca de un toque) que también escuchan `pointerdown` en
+      // fase de captura — `stopPropagation` no les impide procesar el MISMO
+      // evento, solo evita que suba a otros elementos. Sin esto, un toque
+      // aquí podía disparar TAMBIÉN el otro interceptor (p. ej. seleccionar
+      // una cota ya existente cerca del punto tocado), interfiriendo con la
+      // captura de la esquina — reportado por el usuario: recalibrar con un
+      // rectángulo dejaba de marcar los puntos.
+      e.stopImmediatePropagation();
+      const rect = canvas!.getBoundingClientRect();
+      const appState = api.getAppState();
+      const punto = viewportCoordsToSceneCoords(
+        { clientX: e.clientX, clientY: e.clientY },
+        { zoom: appState.zoom, offsetLeft: rect.left, offsetTop: rect.top, scrollX: appState.scrollX, scrollY: appState.scrollY }
+      );
+      const siguientes = [...esquinasRectanguloRef.current, punto];
+      setEsquinasRectangulo(siguientes);
+      const base = api.getSceneElements().filter((el) => ![...IDS_MARCADORES_CALIBRACION, ID_LINEA_CALIBRACION].includes(el.id));
+      api.updateScene({
+        elements: [...base, ...construirMarcadoresCalibracion(siguientes)] as ExcalidrawElement[],
+        captureUpdate: CaptureUpdateAction.NEVER,
+      });
+    };
+
+    canvas.addEventListener('pointerdown', manejarPulsar, { capture: true });
+    return () => canvas.removeEventListener('pointerdown', manejarPulsar, { capture: true });
+  }, [calibracionAbierta, modoCalibracion, esquinasRectangulo.length]);
+
+  // Calibra corrigiendo la perspectiva a partir de las 4 esquinas marcadas
+  // (ver el efecto de captura más abajo) y el ancho/alto reales del
+  // rectángulo — mismo patrón que `confirmarCalibracion` (fuerza
+  // `sincronizarCotas` una vez, en el mismo instante).
+  const confirmarCalibracionRectangulo = (anchoReal: number, altoReal: number, unidadReal: UnidadVisualizacion) => {
+    const api = apiRef.current;
+    if (esquinasRectanguloRef.current.length !== 4 || !(anchoReal > 0) || !(altoReal > 0) || !api) return;
+    const [a, b, c, d] = esquinasRectanguloRef.current;
+    const nuevaEscala = calibrarPorRectangulo(
+      [a, b, c, d],
+      convertirAMm(anchoReal, unidadReal),
+      convertirAMm(altoReal, unidadReal)
+    );
+    setUnidadVisualizacion(unidadReal);
+    borrarMarcadoresRectangulo();
+    const resultado = sincronizarCotas(api.getSceneElements(), cotasRef.current, nuevaEscala, unidadReal);
     setCotas(resultado.cotas);
     if (resultado.elementos) api.updateScene({ elements: resultado.elementos });
     setEscala(nuevaEscala);
     setCalibracionAbierta(false);
+    setEsquinasRectangulo([]);
+    setAnchoRectangulo('');
+    setAltoRectangulo('');
+  };
+
+  // Quita la calibración por completo y vuelve el dibujo a "sin calibrar" —
+  // a petición explícita del usuario: no había forma de deshacer una
+  // calibración ya hecha para empezar de cero con otra referencia distinta.
+  // Mismo patrón que calibrar: fuerza `sincronizarCotas` una vez para que
+  // las cotas ya dibujadas vuelvan a mostrarse en unidades internas ("u")
+  // en el mismo instante, no en el siguiente cambio.
+  const quitarCalibracion = () => {
+    const api = apiRef.current;
+    if (!api) return;
+    const resultado = sincronizarCotas(api.getSceneElements(), cotasRef.current, null, unidadVisualizacionRef.current);
+    setCotas(resultado.cotas);
+    if (resultado.elementos) api.updateScene({ elements: resultado.elementos });
+    setEscala(null);
+    borrarMarcadoresRectangulo();
+    setEsquinasRectangulo([]);
+    setAnchoRectangulo('');
+    setAltoRectangulo('');
+    setCalibracionValor('');
   };
 
   // Confirma el número escrito a mano para la cota seleccionada. Sin
@@ -280,11 +441,41 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, clientes, onGuardar
     }
     const cota = cotasRef.current.find((c) => c.id === cotaSeleccionadaId);
     if (!cota) return;
+    // Misma unidad elegida aquí = unidad por defecto de todo el dibujo a
+    // partir de ahora (ver nota igual en `confirmarCalibracion`).
+    setUnidadVisualizacion(edicionUnidad);
     const resultado = ajustarLongitudCotaEnEscena(
-      api.getSceneElements(), cota, valor, edicionUnidad, escalaRef.current, unidadVisualizacionRef.current
+      api.getSceneElements(), cota, valor, edicionUnidad, escalaRef.current, edicionUnidad
     );
     setCotas((prev) => prev.map((c) => (c.id === cota.id ? resultado.cota : c)));
-    api.updateScene({ elements: resultado.elementos });
+    // Cierra el panel de forma directa — mismo motivo que en `confirmarCalibracion`.
+    // `IMMEDIATELY` por el mismo motivo que al crear la cota (ver más abajo):
+    // sin esto, editar la medida exacta tampoco queda como su propio paso
+    // de deshacer.
+    api.updateScene({ elements: resultado.elementos, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+    setCotaSeleccionadaId(null);
+  };
+
+  // Borra la cota seleccionada desde su propio panel — a petición del
+  // usuario: la goma borra por dónde pasa el arrastre, así que si la cota
+  // está encima de una imagen es fácil que se lleve la imagen por delante
+  // sin querer. Seleccionar la cota y pulsar aquí es explícito: solo borra
+  // eso, nunca lo que tenga debajo.
+  const borrarCotaSeleccionada = () => {
+    const api = apiRef.current;
+    const cota = cotasRef.current.find((c) => c.id === cotaSeleccionadaId);
+    if (!api || !cota) return;
+    const { grupoId, flechaId } = cota.elementos;
+    const restantes = api.getSceneElements().filter((el) => {
+      const enGrupo = el.groupIds?.includes(grupoId);
+      // La medida ("226 u") es un texto ligado a la flecha vía `containerId`,
+      // no comparte `groupIds` — hay que quitarlo aparte o queda huérfano.
+      const esEtiquetaDeLaFlecha = (el as any).containerId === flechaId;
+      return !enGrupo && !esEtiquetaDeLaFlecha;
+    });
+    setCotas((prev) => prev.filter((c) => c.id !== cota.id));
+    api.updateScene({ elements: restantes as ExcalidrawElement[], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+    setCotaSeleccionadaId(null);
   };
 
   // Umbral de enganche a puntos notables (píxeles de pantalla, independiente del zoom).
@@ -301,6 +492,10 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, clientes, onGuardar
   // estos mismos gestos como una selección/arrastre suyo.
   useEffect(() => {
     if (herramienta !== 'cota') return;
+    // Misma prioridad explícita que el interceptor de "seleccionar cota" —
+    // ver el comentario largo ahí sobre por qué no basta con el orden en
+    // el código.
+    if (calibracionAbierta && modoCalibracion === 'rectangulo' && esquinasRectangulo.length < 4) return;
     const contenedor = document.querySelector<HTMLElement>(`.${styles.editorDibujoLienzo}`);
     const canvas = contenedor?.querySelector<HTMLCanvasElement>('canvas.interactive');
     if (!canvas) return;
@@ -385,9 +580,15 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, clientes, onGuardar
       if (resultado.cota.longitudInterna < LONGITUD_MINIMA_ARRASTRE) { descartar(); return; }
 
       setCotas((prev) => [...prev, resultado.cota]);
-      // Sin `captureUpdate`: esta es la única llamada que debe quedar en el
+      // `IMMEDIATELY`: esta es la única llamada que debe quedar en el
       // historial de deshacer — todo el arrastre cuenta como una sola acción.
-      api.updateScene({ elements: [...base, ...resultado.elementos] as ExcalidrawElement[] });
+      // Sin especificarlo explícitamente, Excalidraw no la trataba como su
+      // propio paso de deshacer (quedaba como `EVENTUALLY`, sin checkpoint
+      // propio) — el botón "atrás" saltaba entonces al último paso que sí
+      // estaba registrado, que era lo dibujado ANTES de la cota (p. ej. una
+      // imagen recién insertada), dejando la cota intacta y borrando en su
+      // lugar lo que había debajo.
+      api.updateScene({ elements: [...base, ...resultado.elementos] as ExcalidrawElement[], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
       arrastrandoCotaRef.current = false;
 
       // Recién soltada, se abre directamente su edición numérica — no hace
@@ -408,7 +609,11 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, clientes, onGuardar
     const manejarPulsar = (e: PointerEvent) => {
       const api = apiRef.current;
       if (!api || arrastrando) return;
-      e.stopPropagation();
+      // `stopImmediatePropagation`: ver el mismo comentario en el
+      // interceptor de calibración por rectángulo — hay varios interceptores
+      // propios en este `canvas` y `stopPropagation` no basta para que se
+      // ignoren entre sí.
+      e.stopImmediatePropagation();
       e.preventDefault();
 
       puntoA = puntoDeEvento(e);
@@ -435,7 +640,81 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, clientes, onGuardar
       canvas.removeEventListener('pointerdown', manejarPulsar, { capture: true });
       finalizar(null);
     };
-  }, [herramienta]);
+  }, [herramienta, calibracionAbierta, modoCalibracion, esquinasRectangulo.length]);
+
+  // Con la herramienta Seleccionar activa, una cota dibujada encima de una
+  // imagen es casi imposible de tocar: su línea es muy fina y cualquier
+  // toque que no caiga justo en esos pocos píxeles selecciona la imagen de
+  // debajo, que ocupa toda esa zona (reportado por el usuario — no podía
+  // seleccionar la cota para borrarla sin antes quitar la imagen). Se
+  // intercepta el `pointerdown` en fase de captura, igual que el arrastre de
+  // creación de arriba: si el punto cae cerca de la línea de alguna cota
+  // (margen generoso, pensado para el dedo, no para precisión de ratón), se
+  // selecciona esa cota a propósito y se evita que Excalidraw procese el
+  // toque — así la cota siempre gana sobre lo que tenga debajo.
+  useEffect(() => {
+    if (herramienta !== 'selection') return;
+    // Se desactiva del todo (ni siquiera se engancha el listener) mientras
+    // se están marcando las esquinas del rectángulo de calibración: el
+    // orden real en que dos listeners de `pointerdown` en el mismo
+    // `canvas` se disparan depende de CUÁNDO se enganchó cada uno, no del
+    // orden en el código — si la herramienta Seleccionar ya estaba activa
+    // antes de abrir la calibración, este listener llevaba más tiempo
+    // enganchado y se disparaba ANTES que el de las esquinas, robándole el
+    // toque si caía cerca de una cota ya existente (reportado por el
+    // usuario: recalibrar con un rectángulo dejaba de marcar los puntos).
+    // Bajar la prioridad aquí explícitamente, en vez de fiarse del orden de
+    // enganche, es la única forma robusta de evitarlo.
+    if (calibracionAbierta && modoCalibracion === 'rectangulo' && esquinasRectangulo.length < 4) return;
+    const contenedor = document.querySelector<HTMLElement>(`.${styles.editorDibujoLienzo}`);
+    const canvas = contenedor?.querySelector<HTMLCanvasElement>('canvas.interactive');
+    if (!canvas) return;
+
+    const UMBRAL_SELECCION_COTA_PX = 14;
+
+    const distanciaASegmento = (p: PuntoEscena, a: PuntoEscena, b: PuntoEscena): number => {
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const largo2 = dx * dx + dy * dy;
+      if (largo2 === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+      let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / largo2;
+      t = Math.max(0, Math.min(1, t));
+      return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+    };
+
+    const manejarPulsar = (e: PointerEvent) => {
+      const api = apiRef.current;
+      if (!api || cotasRef.current.length === 0) return;
+      const rect = canvas!.getBoundingClientRect();
+      const appState = api.getAppState();
+      const punto = viewportCoordsToSceneCoords(
+        { clientX: e.clientX, clientY: e.clientY },
+        { zoom: appState.zoom, offsetLeft: rect.left, offsetTop: rect.top, scrollX: appState.scrollX, scrollY: appState.scrollY }
+      );
+      const umbral = UMBRAL_SELECCION_COTA_PX / appState.zoom.value;
+
+      let mejor: Cota | null = null;
+      let mejorDistancia = umbral;
+      for (const cota of cotasRef.current) {
+        const d = distanciaASegmento(punto, cota.puntoOrigen, cota.puntoDestino);
+        if (d <= mejorDistancia) { mejorDistancia = d; mejor = cota; }
+      }
+      if (!mejor) return;
+
+      e.preventDefault();
+      // `stopImmediatePropagation`: ver el mismo comentario en el
+      // interceptor de calibración por rectángulo.
+      e.stopImmediatePropagation();
+      const { flechaId, extension1Id, extension2Id } = mejor.elementos;
+      api.updateScene({
+        appState: {
+          selectedElementIds: { [flechaId]: true, [extension1Id]: true, [extension2Id]: true },
+        },
+      });
+    };
+
+    canvas.addEventListener('pointerdown', manejarPulsar, { capture: true });
+    return () => canvas.removeEventListener('pointerdown', manejarPulsar, { capture: true });
+  }, [herramienta, calibracionAbierta, modoCalibracion, esquinasRectangulo.length]);
 
   // Recalcula la longitud y reconstruye la geometría de una cota cuando el
   // usuario arrastra uno de sus extremos (o, en el futuro, cuando cambie la
@@ -447,6 +726,23 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, clientes, onGuardar
     // cota todavía no está en `cotasRef`, así que `sincronizarCotas` la
     // trataría como "desconocida" y competiría con el arrastre.
     if (arrastrandoCotaRef.current) return;
+
+    // La goma borra cualquier elemento que toque su arrastre, imágenes
+    // incluidas — muy fácil llevarse por delante la imagen de referencia
+    // al intentar borrar solo una línea/cota dibujada encima. Con la goma
+    // activa, ninguna imagen debe desaparecer: si alguna quedó marcada
+    // como borrada, se revive antes de seguir. Con otra herramienta (p.
+    // ej. Seleccionar + Suprimir) sí se deja borrar con normalidad — el
+    // gate es `herramienta === 'eraser'`, no "toda imagen borrada".
+    if (herramientaRef.current === 'eraser') {
+      const hayImagenBorrada = elements.some((el) => el.type === 'image' && el.isDeleted);
+      if (hayImagenBorrada) {
+        const restauradas = elements.map((el) => (el.type === 'image' && el.isDeleted ? { ...el, isDeleted: false } : el));
+        apiRef.current?.updateScene({ elements: restauradas as ExcalidrawElement[], captureUpdate: CaptureUpdateAction.NEVER });
+        return;
+      }
+    }
+
     const resultado = sincronizarCotas(elements, cotasRef.current, escalaRef.current, unidadVisualizacionRef.current);
     if (resultado.cotas !== cotasRef.current) setCotas(resultado.cotas);
     if (resultado.elementos) apiRef.current?.updateScene({ elements: resultado.elementos });
@@ -615,54 +911,146 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, clientes, onGuardar
             title={t.escalaTitulo}
             onClick={() => {
               setCalibracionTop(posicionBajoCabecera());
-              setCalibracionAbierta((v) => !v);
+              setCalibracionAbierta((v) => {
+                const siguiente = !v;
+                if (!siguiente) { borrarMarcadoresRectangulo(); setEsquinasRectangulo([]); }
+                return siguiente;
+              });
             }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12" y2="17" /></svg>
-            {t.escalaLabel} {escala ? t.escalaFormato(escala.factorMm) : t.escalaSinCalibrar}
+            {t.escalaLabel} {escala ? (escala.tipo === 'lineal' ? t.escalaFormato(escala.factorMm) : t.escalaFormatoPerspectiva(escala.anchoMm, escala.altoMm)) : t.escalaSinCalibrar}
           </button>
           {calibracionAbierta && (
             <div className={styles.editorDibujoCalibracionPanel} style={{ top: calibracionTop }}>
-              {cotas.length === 0 ? (
-                <span style={{ fontSize: 12 }}>{t.calibrarSinCotas}</span>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button
+                  type="button"
+                  className={`${styles.btn} ${modoCalibracion === 'cota' ? styles.btnPrimario : ''}`}
+                  style={{ flex: 1, fontSize: 11, padding: '0.3rem 0.4rem' }}
+                  onClick={() => { setModoCalibracion('cota'); borrarMarcadoresRectangulo(); setEsquinasRectangulo([]); }}
+                >
+                  {t.calibrarModoCota}
+                </button>
+                <button
+                  type="button"
+                  className={`${styles.btn} ${modoCalibracion === 'rectangulo' ? styles.btnPrimario : ''}`}
+                  style={{ flex: 1, fontSize: 11, padding: '0.3rem 0.4rem' }}
+                  onClick={() => setModoCalibracion('rectangulo')}
+                >
+                  {t.calibrarModoRectangulo}
+                </button>
+              </div>
+              {escala && (
+                <button
+                  type="button"
+                  className={`${styles.btn} ${styles.btnPeligro}`}
+                  onClick={quitarCalibracion}
+                >
+                  {t.calibrarQuitar}
+                </button>
+              )}
+              {modoCalibracion === 'cota' ? (
+                cotas.length === 0 ? (
+                  <span style={{ fontSize: 12 }}>{t.calibrarSinCotas}</span>
+                ) : (
+                  <>
+                    <label style={{ fontSize: 12 }}>{t.calibrarCotaLabel}</label>
+                    <select
+                      className={styles.select}
+                      value={calibracionCotaId ?? cotas[cotas.length - 1].id}
+                      onChange={(e) => setCalibracionCotaId(e.target.value)}
+                    >
+                      {cotas.map((c, i) => (
+                        <option key={c.id} value={c.id}>{t.calibrarEtiquetaCota(i + 1, Math.round(c.longitudInterna))}</option>
+                      ))}
+                    </select>
+                    <label style={{ fontSize: 12 }}>{t.calibrarValorLabel}</label>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <input
+                        type="number" min="0" step="any"
+                        className={styles.select} style={{ flex: 1 }}
+                        value={calibracionValor}
+                        onChange={(e) => setCalibracionValor(e.target.value)}
+                      />
+                      <select
+                        className={styles.select} style={{ width: 66 }}
+                        value={calibracionUnidad}
+                        onChange={(e) => setCalibracionUnidad(e.target.value as UnidadVisualizacion)}
+                      >
+                        <option value="mm">mm</option>
+                        <option value="cm">cm</option>
+                        <option value="m">m</option>
+                      </select>
+                    </div>
+                    <button
+                      type="button"
+                      className={`${styles.btn} ${styles.btnPrimario}`}
+                      disabled={!(Number(calibracionValor) > 0)}
+                      onClick={() => confirmarCalibracion(calibracionCotaId ?? cotas[cotas.length - 1].id, Number(calibracionValor), calibracionUnidad)}
+                    >
+                      {t.calibrarBoton}
+                    </button>
+                  </>
+                )
+              ) : esquinasRectangulo.length < 4 ? (
+                <>
+                  <span style={{ fontSize: 12 }}>{t.calibrarRectanguloInstruccion(esquinasRectangulo.length + 1)}</span>
+                  {esquinasRectangulo.length > 0 && (
+                    <button
+                      type="button"
+                      className={`${styles.btn} ${styles.btnPeligro}`}
+                      onClick={() => { setEsquinasRectangulo([]); borrarMarcadoresRectangulo(); }}
+                    >
+                      {t.calibrarRectanguloReiniciar}
+                    </button>
+                  )}
+                </>
               ) : (
                 <>
-                  <label style={{ fontSize: 12 }}>{t.calibrarCotaLabel}</label>
-                  <select
+                  <label style={{ fontSize: 12 }}>{t.calibrarRectanguloAncho}</label>
+                  <input
+                    type="number" min="0" step="any"
                     className={styles.select}
-                    value={calibracionCotaId ?? cotas[cotas.length - 1].id}
-                    onChange={(e) => setCalibracionCotaId(e.target.value)}
-                  >
-                    {cotas.map((c, i) => (
-                      <option key={c.id} value={c.id}>{t.calibrarEtiquetaCota(i + 1, Math.round(c.longitudInterna))}</option>
-                    ))}
-                  </select>
-                  <label style={{ fontSize: 12 }}>{t.calibrarValorLabel}</label>
+                    value={anchoRectangulo}
+                    onChange={(e) => setAnchoRectangulo(e.target.value)}
+                  />
+                  <label style={{ fontSize: 12 }}>{t.calibrarRectanguloAlto}</label>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <input
                       type="number" min="0" step="any"
                       className={styles.select} style={{ flex: 1 }}
-                      value={calibracionValor}
-                      onChange={(e) => setCalibracionValor(e.target.value)}
+                      value={altoRectangulo}
+                      onChange={(e) => setAltoRectangulo(e.target.value)}
                     />
                     <select
                       className={styles.select} style={{ width: 66 }}
-                      value={calibracionUnidad}
-                      onChange={(e) => setCalibracionUnidad(e.target.value as UnidadVisualizacion)}
+                      value={unidadRectangulo}
+                      onChange={(e) => setUnidadRectangulo(e.target.value as UnidadVisualizacion)}
                     >
                       <option value="mm">mm</option>
                       <option value="cm">cm</option>
                       <option value="m">m</option>
                     </select>
                   </div>
-                  <button
-                    type="button"
-                    className={`${styles.btn} ${styles.btnPrimario}`}
-                    disabled={!(Number(calibracionValor) > 0)}
-                    onClick={() => confirmarCalibracion(calibracionCotaId ?? cotas[cotas.length - 1].id, Number(calibracionValor), calibracionUnidad)}
-                  >
-                    {t.calibrarBoton}
-                  </button>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      type="button"
+                      className={`${styles.btn} ${styles.btnPrimario}`}
+                      style={{ flex: 1 }}
+                      disabled={!(Number(anchoRectangulo) > 0 && Number(altoRectangulo) > 0)}
+                      onClick={() => confirmarCalibracionRectangulo(Number(anchoRectangulo), Number(altoRectangulo), unidadRectangulo)}
+                    >
+                      {t.calibrarBoton}
+                    </button>
+                    <button
+                      type="button"
+                      className={`${styles.btn} ${styles.btnPeligro}`}
+                      onClick={() => { setEsquinasRectangulo([]); borrarMarcadoresRectangulo(); }}
+                    >
+                      {t.calibrarRectanguloReiniciar}
+                    </button>
+                  </div>
                 </>
               )}
             </div>
@@ -700,14 +1088,26 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, clientes, onGuardar
                 <option value="m">m</option>
               </select>
             </div>
-            <button
-              type="button"
-              className={`${styles.btn} ${styles.btnPrimario}`}
-              disabled={!(Number(edicionValor) > 0)}
-              onClick={confirmarEdicionLongitud}
-            >
-              {t.edicionLongitudBoton}
-            </button>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                type="button"
+                className={`${styles.btn} ${styles.btnPrimario}`}
+                style={{ flex: 1 }}
+                disabled={!(Number(edicionValor) > 0)}
+                onClick={confirmarEdicionLongitud}
+              >
+                {t.edicionLongitudBoton}
+              </button>
+              <button
+                type="button"
+                className={`${styles.btn} ${styles.btnPeligro}`}
+                title={t.borrarCota}
+                aria-label={t.borrarCota}
+                onClick={borrarCotaSeleccionada}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+              </button>
+            </div>
           </div>
         )}
         {herramienta === 'cota' && (
@@ -741,16 +1141,28 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, clientes, onGuardar
 
       <div className={styles.editorDibujoCuerpo}>
         {herramientasAbiertas && (
-        <aside className={styles.editorDibujoHerramientas}>
+        <aside className={styles.editorDibujoHerramientas} ref={toolbarRef}>
           {HERRAMIENTAS.map((h) => (
-            <button
-              key={h.id}
-              title={t.herramientas[h.id]}
-              className={`${styles.editorDibujoHerramientaBtn} ${herramienta === h.id ? styles.editorDibujoHerramientaBtnActivo : ''}`}
-              onClick={() => seleccionarHerramienta(h.id)}
-            >
-              {h.icono}
-            </button>
+            <Fragment key={h.id}>
+              {/* "Imagen" abre el selector de archivos nativo en el
+                  siguiente toque del lienzo, no al pulsar el botón — un
+                  roce accidental con este botón mientras se busca la Goma o
+                  la Cota (justo debajo) pasa desapercibido hasta que ese
+                  siguiente toque, pensado para medir, abre el selector de
+                  golpe (en Android, a pantalla completa — reportado por el
+                  usuario como "se cierra todo y se abre un drive"). Este
+                  hueco de más no evita el roce, pero lo hace menos probable
+                  al separar Imagen del resto de herramientas de medición. */}
+              {h.id === 'image' && <span className={styles.editorDibujoDivisor} />}
+              <button
+                title={t.herramientas[h.id]}
+                className={`${styles.editorDibujoHerramientaBtn} ${herramienta === h.id ? styles.editorDibujoHerramientaBtnActivo : ''}`}
+                onClick={() => seleccionarHerramienta(h.id)}
+              >
+                {h.icono}
+              </button>
+              {h.id === 'image' && <span className={styles.editorDibujoDivisor} />}
+            </Fragment>
           ))}
 
           {herramienta === 'cota' && (
@@ -816,12 +1228,13 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, clientes, onGuardar
 
           <select
             className={styles.select}
-            style={{ width: 92 }}
+            style={{ width: 120 }}
             value={grosorActivo}
             onChange={(e) => elegirGrosor(Number(e.target.value))}
           >
             {GROSORES.map((g) => <option key={g.id} value={g.valor}>{t.grosores[g.id]}</option>)}
           </select>
+          {toolbarDesbordaAbajo && <span className={styles.editorDibujoScrollAviso} aria-hidden="true" />}
         </aside>
         )}
 

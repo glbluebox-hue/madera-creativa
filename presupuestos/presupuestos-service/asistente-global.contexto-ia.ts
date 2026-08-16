@@ -20,9 +20,10 @@ export const contextoAsistenteGlobal: ConstructorContexto = {
     const mesActual = hoy.slice(0, 7);
     const anioActual = Number(hoy.slice(0, 4));
 
-    const [clientes, facturasAnio] = await Promise.all([
+    const [clientes, facturasAnio, resumenTotal] = await Promise.all([
       svc.listarClientesResumen(usuarioId),
       svc.listarFacturasPorAnio(usuarioId, anioActual),
+      svc.resumenFacturas(usuarioId),
     ]);
 
     const ingresosMes = (facturasAnio as any[])
@@ -41,7 +42,14 @@ export const contextoAsistenteGlobal: ConstructorContexto = {
 
     const resumenParaPrompt = [
       `FECHA HOY: ${hoy}`,
-      `RESUMEN FINANCIERO MES ACTUAL: ingresos ${ingresosMes.toFixed(2)} €, gastos ${gastosMes.toFixed(2)} €, beneficio ${(ingresosMes - gastosMes).toFixed(2)} €`,
+      // Dos resúmenes con alcance distinto y explícito — antes solo existía
+      // el del mes actual, y una pregunta por el balance "total"/"general"
+      // recibía como respuesta 0,00 € en cualquier mes sin facturas
+      // todavía, dando la impresión (falsa) de que la app no tenía datos
+      // reales. Se etiquetan ambos con su alcance para que el asistente no
+      // los confunda al redactar la respuesta.
+      `RESUMEN FINANCIERO DE TODA LA HISTORIA (todas las facturas, cualquier año): ingresos ${resumenTotal.totalIngresos.toFixed(2)} €, gastos ${resumenTotal.totalGastos.toFixed(2)} €, balance ${resumenTotal.balance.toFixed(2)} € (${resumenTotal.numFacturas} facturas en total)`,
+      `RESUMEN FINANCIERO SOLO DEL MES ACTUAL (${mesActual}): ingresos ${ingresosMes.toFixed(2)} €, gastos ${gastosMes.toFixed(2)} €, beneficio ${(ingresosMes - gastosMes).toFixed(2)} €`,
       `CLIENTES Y PROYECTOS (${resumenClientes.length} en total): ${JSON.stringify(resumenClientes)}`,
       clienteAbierto ? `CLIENTE ACTUALMENTE ABIERTO EN PANTALLA: ${JSON.stringify({ id: clienteAbierto.id, nombre: (clienteAbierto as any).nombre })}` : '',
       `CONTEXTO DE PANTALLA: ${JSON.stringify(referencias)}`,

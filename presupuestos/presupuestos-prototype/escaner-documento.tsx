@@ -1,20 +1,16 @@
 import { useState, useRef } from 'react';
-import { ImporteInput } from './importe-input.js';
 import { leerArchivoComoBase64 } from './archivos.js';
-import { prepararCanvas, codificarCanvas } from './procesamiento-imagenes.js';
+import { prepararCanvas, CALIDAD_COMPRESION, DIMENSION_MAXIMA_PX } from './procesamiento-imagenes.js';
+import { AjusteEsquinas } from './ajuste-esquinas.js';
 import styles from './styles.module.css';
 
 /** Modo de procesado de la imagen. */
 type Modo = 'color' | 'bn' | 'mejorado';
 
-/** Resultado del escaneado con datos detectados. */
+/** Resultado del escaneado — todas las hojas capturadas, en orden, no solo la que estaba activa al pulsar "Continuar". Los datos de la factura (proveedor, importe, tipo, cliente…) se rellenan después, en el formulario de `EscanerFactura` — este paso es solo el documento. */
 export type ResultadoEscaneo = {
-  dataUrl: string;
+  dataUrls: string[];
   modo: Modo;
-  importe?: number;
-  tipo?: 'gasto' | 'ingreso';
-  proveedor?: string;
-  fecha?: string;
 };
 
 /** Props del escáner de documento. */
@@ -27,7 +23,10 @@ export type EscanerDocumentoProps = {
  * Aplica filtro de mejora de documento y codifica el resultado — todo sobre
  * el mismo canvas ya redimensionado, para que la imagen pase una única vez
  * por la codificación final (antes: resolución nativa + JPEG q0,93 fijos;
- * ver auditoría del Incremento 1.3).
+ * ver auditoría del Incremento 1.3). Siempre JPEG, nunca WebP (aunque el
+ * navegador lo soporte): `pdf-lib` (generación real de PDF, Fase Facturas
+ * Profesional) solo sabe incrustar JPEG/PNG — WebP produciría un PDF roto
+ * más adelante en la cadena, sin ningún aviso hasta ese momento.
  */
 async function aplicarFiltro(src: string, modo: Modo): Promise<string> {
   const { canvas } = await prepararCanvas(src);
@@ -49,90 +48,126 @@ async function aplicarFiltro(src: string, modo: Modo): Promise<string> {
     }
     ctx.putImageData(d, 0, 0);
   }
-  const blob = await codificarCanvas(canvas);
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', CALIDAD_COMPRESION));
+  if (!blob) throw new Error('No se pudo codificar la imagen');
   return leerArchivoComoBase64(blob);
-}
-
-/** Extrae el importe más alto del texto. */
-function extraerImporte(texto: string): number | undefined {
-  const t = texto.replace(/\s+/g, ' ');
-  const patrones = [
-    /TOTAL[^\d]*([\d.,]+)/gi,
-    /IMPORTE[^\d]*([\d.,]+)/gi,
-    /A PAGAR[^\d]*([\d.,]+)/gi,
-    /€\s*([\d.,]+)/g,
-    /([\d.,]+)\s*€/g,
-    /([\d.,]+)\s*EUR/gi,
-  ];
-  const encontrados: number[] = [];
-  for (const p of patrones) {
-    let m;
-    while ((m = p.exec(t)) !== null) {
-      const raw = m[1].trim().replace(/\.(\d{3})/g, '$1').replace(',', '.');
-      const n = parseFloat(raw);
-      if (!isNaN(n) && n > 0 && n < 999999) encontrados.push(n);
-    }
-  }
-  return encontrados.length ? Math.max(...encontrados) : undefined;
-}
-
-function inferirTipo(texto: string): 'gasto' | 'ingreso' {
-  const t = texto.toUpperCase();
-  if (['PRESUPUESTO', 'COBRO', 'INGRESO', 'ABONO', 'PAGO RECIBIDO'].some(p => t.includes(p))) return 'ingreso';
-  return 'gasto';
-}
-
-function extraerFecha(texto: string): string | undefined {
-  const m1 = texto.match(/(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})/);
-  if (m1) return `${m1[3]}-${m1[2].padStart(2,'0')}-${m1[1].padStart(2,'0')}`;
-  const m2 = texto.match(/(\d{4})[/\-](\d{2})[/\-](\d{2})/);
-  if (m2) return m2[0];
-  return undefined;
-}
-
-function extraerProveedor(texto: string): string | undefined {
-  const lineas = texto.split('\n').map(l => l.trim()).filter(l => l.length > 3 && !/^\d/.test(l));
-  return lineas[0]?.slice(0, 60) || undefined;
 }
 
 /**
  * Escáner de documentos simplificado y fiable.
- * - Usa la cámara nativa del móvil (que en iOS/Android ya tiene modo documento).
+ * - Usa la cámara nativa del móvil.
  * - Permite subir múltiples imágenes.
  * - Aplica filtros de mejora (mejorado / B&N / color).
- * - Extrae precio, tipo y fecha automáticamente.
+ * - Solo se ocupa del documento (páginas, recorte, mejora) — los datos de
+ *   la factura (proveedor, importe, tipo, cliente…) se rellenan después,
+ *   en un único formulario (`EscanerFactura`), no aquí duplicados.
  */
 export function EscanerDocumento({ onConfirmar, onCerrar }: EscanerDocumentoProps) {
   const [paginas, setPaginas] = useState<{ id: string; original: string; procesada: string }[]>([]);
   const [paginaActiva, setPaginaActiva] = useState(0);
   const [modo, setModo] = useState<Modo>('mejorado');
   const [procesando, setProcesando] = useState(false);
-  const [ocr, setOcr] = useState<{ importe?: number; tipo?: 'gasto' | 'ingreso'; proveedor?: string; fecha?: string } | null>(null);
-  const [importeEditado, setImporteEditado] = useState('');
-  const [tipoEditado, setTipoEditado] = useState<'gasto' | 'ingreso'>('gasto');
-  const [paso, setPaso] = useState<'captura' | 'revision'>('captura');
+  const [paso, setPaso] = useState<'captura' | 'ajuste' | 'revision'>('captura');
+  // Páginas recién capturadas, en espera de que el usuario ajuste sus
+  // esquinas (una a la vez) antes de aplicarles el filtro y añadirlas a
+  // `paginas`.
+  const [colaAjuste, setColaAjuste] = useState<{ id: string; original: string }[]>([]);
+  // Entre "se cierra la cámara" y "aparece el ajuste de esquinas" hay un
+  // redimensionado asíncrono (ver `agregarFuentes`) — sin este estado, la
+  // pantalla volvía a mostrar brevemente (o, si algo fallaba, de forma
+  // permanente y sin aviso) el paso inicial "Escanear documento", dando la
+  // sensación de que la app no había hecho nada con la foto.
+  const [procesandoCaptura, setProcesandoCaptura] = useState(false);
+  const [errorCaptura, setErrorCaptura] = useState<string | null>(null);
 
   const camaraRef = useRef<HTMLInputElement>(null);
   const galeriaRef = useRef<HTMLInputElement>(null);
 
   const uid = () => Math.random().toString(36).slice(2);
 
-  const agregarImagenes = async (files: FileList | null) => {
-    if (!files || !files.length) return;
-    setProcesando(true);
-    const nuevas: { id: string; original: string; procesada: string }[] = [];
-    for (const file of Array.from(files)) {
-      const dataUrl = await leerArchivoComoBase64(file);
-      const procesada = await aplicarFiltro(dataUrl, modo);
-      nuevas.push({ id: uid(), original: dataUrl, procesada });
+  /**
+   * Añade una o más imágenes ya capturadas (data URL o, mejor, el propio
+   * `File`/`Blob` sin convertir) a la cola de ajuste de esquinas. Una foto
+   * real de cámara (12-48 MP, varios MB) decodificada a resolución
+   * completa —y luego usada en el ajuste de esquinas y en la corrección de
+   * perspectiva píxel a píxel— satura la memoria de un navegador móvil y
+   * hace que la pestaña se recargue sola (visto en pruebas reales en
+   * Android). Se redimensiona aquí, ANTES de mostrarla, al mismo límite
+   * que ya usa el resto de la app (`DIMENSION_MAXIMA_PX`) — `prepararCanvas`
+   * decodifica con `createImageBitmap` y libera la imagen a resolución
+   * nativa de inmediato en cuanto se ha dibujado ya reducida, en vez de
+   * esperar al recolector de basura.
+   *
+   * La captura usa la cámara del sistema (`capture="environment"`), no una
+   * cámara en vivo dentro de la página: en pruebas reales, `getUserMedia` +
+   * lectura del `<video>` por canvas resultó inestable en un dispositivo
+   * concreto (Xiaomi 14T, chip MediaTek) — la app se cerraba sola al
+   * capturar, con o sin restricciones de batería de MIUI — mientras que la
+   * cámara del sistema, una vez corregido el ahorro de batería de MIUI para
+   * esta app, funciona de forma fiable. Se mantiene el resto del flujo
+   * (ajuste de esquinas, filtro, multipágina) exactamente igual.
+   */
+  const agregarFuentes = async (fuentes: (string | Blob)[]) => {
+    setErrorCaptura(null);
+    setProcesandoCaptura(true);
+    try {
+      const nuevas = await Promise.all(fuentes.map(async (original) => {
+        const { canvas } = await prepararCanvas(original, DIMENSION_MAXIMA_PX);
+        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', CALIDAD_COMPRESION));
+        const reducida = blob ? await leerArchivoComoBase64(blob) : (typeof original === 'string' ? original : await leerArchivoComoBase64(original));
+        return { id: uid(), original: reducida };
+      }));
+      setColaAjuste(prev => [...prev, ...nuevas]);
+      setPaso('ajuste');
+    } catch {
+      // Nunca fallar en silencio: si el redimensionado falla (foto
+      // corrupta, memoria insuficiente…) el usuario debe ver un aviso
+      // claro y poder reintentar, no quedarse sin explicación en la
+      // pantalla inicial.
+      setErrorCaptura('No se pudo procesar la foto. Vuelve a intentarlo.');
+    } finally {
+      setProcesandoCaptura(false);
     }
-    setPaginas(prev => {
-      const updated = [...prev, ...nuevas];
-      setPaginaActiva(updated.length - 1);
-      return updated;
+  };
+
+  const agregarImagenes = async (files: FileList | null) => {
+    // Filtro defensivo: el `accept` del input ya limita a imágenes, pero
+    // arrastrar-y-soltar puede saltárselo — un PDF aquí rompería
+    // `aplicarFiltro` (intenta cargarlo como `<img>`).
+    const soloImagenes = files ? Array.from(files).filter(f => f.type.startsWith('image/')) : [];
+    if (!soloImagenes.length) return;
+    // Los `File` se pasan tal cual — nunca se convierten antes a data URL
+    // de texto, que para una foto de cámara real duplicaría en memoria
+    // varios MB justo antes del paso más delicado (decodificarla).
+    await agregarFuentes(soloImagenes);
+  };
+
+  /** Aplica el filtro actual a una imagen ya recortada/enderezada (o a la original si el usuario prefirió no ajustar) y la añade como página. */
+  const confirmarPaginaAjustada = async (id: string, dataUrl: string) => {
+    setProcesando(true);
+    try {
+      const procesada = await aplicarFiltro(dataUrl, modo);
+      setPaginas(prev => {
+        const updated = [...prev, { id, original: dataUrl, procesada }];
+        setPaginaActiva(updated.length - 1);
+        return updated;
+      });
+    } finally {
+      setProcesando(false);
+    }
+    setColaAjuste(prev => {
+      const restante = prev.slice(1);
+      setPaso(restante.length ? 'ajuste' : 'revision');
+      return restante;
     });
-    setProcesando(false);
-    if (paginas.length + nuevas.length > 0) setPaso('revision');
+  };
+
+  const cancelarPaginaEnCola = () => {
+    setColaAjuste(prev => {
+      const restante = prev.slice(1);
+      setPaso(restante.length ? 'ajuste' : (paginas.length ? 'revision' : 'captura'));
+      return restante;
+    });
   };
 
   const cambiarModo = async (nuevoModo: Modo) => {
@@ -155,16 +190,28 @@ export function EscanerDocumento({ onConfirmar, onCerrar }: EscanerDocumentoProp
     });
   };
 
+  /** Quita la hoja actual y vuelve directamente a la cámara para volver a capturarla — la nueva captura se añade al final; si hacía falta en la misma posición, se puede reordenar después. */
+  const repetirPagina = (id: string) => {
+    quitarPagina(id);
+    camaraRef.current?.click();
+  };
+
+  const moverPagina = (id: string, dir: -1 | 1) => {
+    setPaginas(prev => {
+      const idx = prev.findIndex(p => p.id === id);
+      if (idx < 0) return prev;
+      const destino = idx + dir;
+      if (destino < 0 || destino >= prev.length) return prev;
+      const arr = [...prev];
+      [arr[idx], arr[destino]] = [arr[destino], arr[idx]];
+      setPaginaActiva(destino);
+      return arr;
+    });
+  };
+
   const confirmar = () => {
     if (!paginas.length) return;
-    onConfirmar({
-      dataUrl: paginas[paginaActiva].procesada,
-      modo,
-      importe: parseFloat(importeEditado) || ocr?.importe,
-      tipo: tipoEditado,
-      proveedor: ocr?.proveedor,
-      fecha: ocr?.fecha,
-    });
+    onConfirmar({ dataUrls: paginas.map((p) => p.procesada), modo });
   };
 
   const paginaActual = paginas[paginaActiva];
@@ -194,18 +241,38 @@ export function EscanerDocumento({ onConfirmar, onCerrar }: EscanerDocumentoProp
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
 
+          {errorCaptura && (
+            <div style={{ background: 'var(--rojo-bg)', border: '1px solid var(--rojo)', borderRadius: 8, padding: '0.75rem 0.85rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+              <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--rojo)' }}>{errorCaptura}</p>
+              <button className={styles.btnIcono} onClick={() => setErrorCaptura(null)} aria-label="Cerrar aviso" style={{ color: 'var(--rojo)', flexShrink: 0 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </div>
+          )}
+
+          {/* ── Procesando la foto recién capturada (redimensionado) — pantalla propia para que nunca dé la sensación de "no ha pasado nada" mientras se resuelve. ── */}
+          {procesandoCaptura ? (
+            <div style={{ padding: '3.5rem 0', textAlign: 'center' }}>
+              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--topo-claro)' }}>Procesando foto…</p>
+            </div>
+          ) : (
+          <>
           {/* ── PASO 1: CAPTURA ── */}
           {paso === 'captura' && (
             <>
               <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--topo-claro)', lineHeight: 1.5 }}>
-                Haz una foto con la cámara del móvil.<br />
-                <strong>En iOS:</strong> al abrir la cámara, mantén pulsado el obturador o usa el modo "Escanear documentos" de la app Notas/Archivos para mejor resultado.
+                Encuadra el documento completo y haz la foto. En la siguiente pantalla podrás ajustar las esquinas para enderezarlo.<br />
+                <strong>¿La factura tiene varias hojas?</strong> No hace falta hacerlo ahora — después de la primera podrás pulsar "+ Hoja" para añadir las siguientes y guardarlas todas juntas como un único documento.
               </p>
 
               {/* Inputs ocultos */}
               <input ref={camaraRef} type="file" accept="image/*" capture="environment" multiple style={{ display: 'none' }}
                 onChange={e => agregarImagenes(e.target.files)} />
-              <input ref={galeriaRef} type="file" accept="image/*,application/pdf" multiple style={{ display: 'none' }}
+              {/* Solo imágenes — un PDF no pasa por el filtro de mejora de
+                  documento (no tiene sentido aplicar contraste/B&N a un
+                  PDF), así que su subida vive en el paso anterior
+                  (EscanerFactura, botón "Subir"), que lo conserva tal cual. */}
+              <input ref={galeriaRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
                 onChange={e => agregarImagenes(e.target.files)} />
 
               <button
@@ -213,8 +280,8 @@ export function EscanerDocumento({ onConfirmar, onCerrar }: EscanerDocumentoProp
                 style={{ justifyContent: 'center', padding: '1rem', fontSize: '1rem', borderRadius: 12 }}
                 onClick={() => camaraRef.current?.click()}
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6, verticalAlign: -3 }}><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
-                Abrir cámara
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6, verticalAlign: -3 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                Escanear con la cámara
               </button>
 
               <button
@@ -237,9 +304,23 @@ export function EscanerDocumento({ onConfirmar, onCerrar }: EscanerDocumentoProp
                 <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.4rem' }}>
                   <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
                 </div>
-                <p style={{ margin: 0, fontSize: '0.8rem' }}>Arrastra aquí la imagen o PDF</p>
+                <p style={{ margin: 0, fontSize: '0.8rem' }}>Arrastra aquí la imagen</p>
               </div>
             </>
+          )}
+
+          {/* ── PASO 1.5: AJUSTE DE ESQUINAS ── */}
+          {paso === 'ajuste' && colaAjuste[0] && (
+            procesando ? (
+              <p style={{ margin: '2rem 0', textAlign: 'center', fontSize: '0.85rem', color: 'var(--topo-claro)' }}>Enderezando documento…</p>
+            ) : (
+              <AjusteEsquinas
+                imagenSrc={colaAjuste[0].original}
+                onConfirmar={(dataUrl) => confirmarPaginaAjustada(colaAjuste[0].id, dataUrl)}
+                onOmitir={() => confirmarPaginaAjustada(colaAjuste[0].id, colaAjuste[0].original)}
+                onCancelar={cancelarPaginaEnCola}
+              />
+            )
           )}
 
           {/* ── PASO 2: REVISIÓN ── */}
@@ -253,7 +334,7 @@ export function EscanerDocumento({ onConfirmar, onCerrar }: EscanerDocumentoProp
                       borderRadius: 6, overflow: 'hidden', cursor: 'pointer', position: 'relative' }}>
                     <img src={p.procesada} alt={`Hoja ${i+1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     <span style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: i === paginaActiva ? 'var(--topo)' : 'rgba(0,0,0,0.4)',
-                      color: '#fff', fontSize: '0.58rem', textAlign: 'center', fontWeight: 700, padding: '1px 0' }}>{i + 1}</span>
+                      color: 'var(--blanco)', fontSize: '0.58rem', textAlign: 'center', fontWeight: 700, padding: '1px 0' }}>{i + 1}</span>
                   </div>
                 ))}
                 {/* + hoja */}
@@ -277,14 +358,29 @@ export function EscanerDocumento({ onConfirmar, onCerrar }: EscanerDocumentoProp
                     </div>
                   )}
                   <img src={paginaActual.procesada} alt="Documento" style={{ width: '100%', maxHeight: '42dvh', objectFit: 'contain', display: 'block' }} />
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    padding: '0.4rem 0.6rem', background: '#f5f3ef', borderTop: '1px solid var(--borde-fino)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.3rem',
+                    padding: '0.4rem 0.6rem', background: 'var(--fondo)', borderTop: '1px solid var(--borde-fino)' }}>
                     <span style={{ fontSize: '0.72rem', color: 'var(--topo-claro)', fontWeight: 600 }}>Hoja {paginaActiva + 1} / {paginas.length}</span>
-                    <button onClick={() => quitarPagina(paginaActual.id)} className={styles.btnIcono}
-                      title="Quitar esta hoja" aria-label="Quitar esta hoja" style={{ color: 'var(--rojo)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
-                      Quitar
-                    </button>
+                    <div style={{ display: 'flex', gap: '0.2rem' }}>
+                      <button onClick={() => moverPagina(paginaActual.id, -1)} disabled={paginaActiva === 0}
+                        className={styles.btnIcono} title="Mover antes" aria-label="Mover hoja antes" style={{ opacity: paginaActiva === 0 ? 0.3 : 1 }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                      </button>
+                      <button onClick={() => moverPagina(paginaActual.id, 1)} disabled={paginaActiva === paginas.length - 1}
+                        className={styles.btnIcono} title="Mover después" aria-label="Mover hoja después" style={{ opacity: paginaActiva === paginas.length - 1 ? 0.3 : 1 }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                      </button>
+                      <button onClick={() => repetirPagina(paginaActual.id)} className={styles.btnIcono}
+                        title="Repetir esta hoja" aria-label="Repetir esta hoja" style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
+                        Repetir
+                      </button>
+                      <button onClick={() => quitarPagina(paginaActual.id)} className={styles.btnIcono}
+                        title="Quitar esta hoja" aria-label="Quitar esta hoja" style={{ color: 'var(--rojo)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                        Quitar
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -301,34 +397,9 @@ export function EscanerDocumento({ onConfirmar, onCerrar }: EscanerDocumentoProp
                 ))}
               </div>
 
-              {/* Datos económicos */}
-              <div style={{ background: 'var(--fondo)', border: '1px solid var(--borde)', borderRadius: 10, padding: '0.85rem',
-                display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                <p style={{ margin: 0, fontSize: '0.72rem', fontWeight: 700, color: 'var(--topo-claro)', letterSpacing: '0.04em' }}>
-                  {ocr?.importe ? 'DETECTADO AUTOMÁTICAMENTE' : 'INTRODUCE LOS DATOS'}
-                </p>
-                <div style={{ display: 'flex', gap: '0.4rem' }}>
-                  <button className={`${styles.btn} ${tipoEditado === 'gasto' ? styles.btnPeligro : styles.btnSecundario}`}
-                    style={{ flex: 1, justifyContent: 'center', fontSize: '0.8rem' }}
-                    onClick={() => setTipoEditado('gasto')}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><rect x="1" y="4" width="22" height="16" rx="2" /><line x1="1" y1="10" x2="23" y2="10" /></svg>
-                    Gasto
-                  </button>
-                  <button className={`${styles.btn} ${tipoEditado === 'ingreso' ? styles.btnVerde : styles.btnSecundario}`}
-                    style={{ flex: 1, justifyContent: 'center', fontSize: '0.8rem' }}
-                    onClick={() => setTipoEditado('ingreso')}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /></svg>
-                    Ingreso
-                  </button>
-                </div>
-                <label className={styles.label} style={{ margin: 0 }}>
-                  Importe (€)
-                  {ocr?.importe && <span style={{ marginLeft: '0.4rem', fontSize: '0.68rem', color: 'var(--verde)', fontWeight: 600 }}>detectado</span>}
-                  <ImporteInput value={importeEditado} onChange={setImporteEditado} placeholder="0,00" />
-                </label>
-                {ocr?.proveedor && <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--topo-claro)' }}>Emisor: <strong style={{ color: 'var(--negro)' }}>{ocr.proveedor}</strong></p>}
-                {ocr?.fecha && <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--topo-claro)' }}>Fecha: <strong style={{ color: 'var(--negro)' }}>{ocr.fecha}</strong></p>}
-              </div>
+              <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--topo-claro)', lineHeight: 1.5 }}>
+                A continuación podrás elegir el proveedor, el importe, si es ingreso o gasto y vincularla a un cliente.
+              </p>
 
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ flex: 1, justifyContent: 'center' }}
@@ -337,9 +408,13 @@ export function EscanerDocumento({ onConfirmar, onCerrar }: EscanerDocumentoProp
                   Nueva
                 </button>
                 <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ flex: 2, justifyContent: 'center' }}
-                  onClick={confirmar} disabled={!paginas.length}>Guardar documento</button>
+                  onClick={confirmar} disabled={!paginas.length}>
+                  Continuar{paginas.length > 1 ? ` (${paginas.length} hojas)` : ''}
+                </button>
               </div>
             </>
+          )}
+          </>
           )}
         </div>
       </div>

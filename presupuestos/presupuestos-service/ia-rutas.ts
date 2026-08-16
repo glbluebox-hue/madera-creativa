@@ -11,10 +11,12 @@ import { ErrorProveedorInalcanzable } from './ia-proveedor.js';
 import { crearTrabajo, completarTrabajo, fallarTrabajo, obtenerTrabajo } from './ia-trabajos.js';
 import { limitadorIA, limitadorSondeoIA } from './rate-limit.middleware.js';
 // Importado solo por su efecto secundario: registra las capacidades
-// `asistente-global` y `redactar-presupuesto` en `ia-registro-capacidades.ts`
-// al cargar este módulo.
+// `asistente-global`, `redactar-presupuesto`, `generar-bloque-documento` y
+// `extraer-datos-factura` en `ia-registro-capacidades.ts` al cargar este módulo.
 import './ia-capacidad-asistente-global.js';
 import './ia-capacidad-redactar-presupuesto.js';
+import './ia-capacidad-generar-bloque-documento.js';
+import './ia-capacidad-extraer-factura.js';
 
 /**
  * Router único del núcleo de IA — `POST /generar` (parametrizado por
@@ -74,7 +76,7 @@ export function crearRouterIA(): express.Router {
 
   router.post('/herramientas/ejecutar', limitadorIA, validar(esquemaEjecutarHerramientaIA), async (req: AuthRequest, res) => {
     try {
-      const { capacidad: nombreCapacidad, nombre, argumentos, mensajesPrevios, referencias } = req.body;
+      const { capacidad: nombreCapacidad, nombre, argumentos, mensajesPrevios, referencias, toolCallId } = req.body;
       const capacidad = obtenerCapacidad(nombreCapacidad);
       const herramienta = capacidad.herramientas.find((h) => h.nombre === nombre);
       if (!herramienta) { res.status(404).json({ error: 'Herramienta no encontrada en esta capacidad.' }); return; }
@@ -102,10 +104,17 @@ export function crearRouterIA(): express.Router {
       let trabajoId: string | undefined;
       if (mensajesPrevios?.length) {
         trabajoId = crearTrabajo(req.usuarioId!);
+        // El id debe coincidir entre el 'assistant' (que "propone" la
+        // llamada) y el 'tool' que la responde — si no llega uno real del
+        // cliente (propuesta antigua, o llamada directa a la API), se usa
+        // un id de relleno: solo hace falta que ambos mensajes coincidan
+        // entre sí dentro de esta conversación puntual, no que sea único
+        // globalmente.
+        const idLlamada = toolCallId || 'call_confirmacion';
         const mensajesConResultado = [
           ...mensajesPrevios,
-          { role: 'assistant' as const, content: '' },
-          { role: 'tool' as const, toolName: nombre, content: JSON.stringify(resultado) },
+          { role: 'assistant' as const, content: '', toolCalls: [{ id: idLlamada, nombre, argumentos }] },
+          { role: 'tool' as const, toolName: nombre, toolCallId: idLlamada, content: JSON.stringify(resultado) },
         ];
         servicioCentralIA.generar({
           usuarioId: req.usuarioId!, capacidad: nombreCapacidad, mensajes: mensajesConResultado,

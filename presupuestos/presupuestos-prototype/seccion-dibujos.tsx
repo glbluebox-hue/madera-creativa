@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Dibujo } from './types.js';
 import { useDibujos } from './use-dibujos.js';
 import { EditorDibujo } from './editor-dibujo.js';
@@ -12,6 +12,17 @@ import styles from './styles.module.css';
 export type SeccionDibujosProps = {
   /** Lista ligera de clientes — para el selector de destino al guardar o asignar. */
   clientes?: { id: string; nombre: string }[];
+  /**
+   * Avisa al contenedor cuando el editor de un dibujo está abierto a
+   * pantalla completa. Sin esto, la barra "← Inicio" móvil (fuera de este
+   * componente, en `presupuestos-prototype.tsx`) sigue existiendo en el DOM
+   * — solo tapada por z-index — mientras se dibuja, y un toque accidental
+   * cerca del borde superior de la pantalla (muy fácil dibujando con el
+   * dedo o con el canto de la mano) puede llegar a activarla y sacar al
+   * usuario a Inicio sin querer. Quitarla del todo del DOM en vez de solo
+   * ocultarla visualmente cierra esa vía por completo.
+   */
+  onEditorAbierto?: (abierto: boolean) => void;
 };
 
 const IconoDibujo = ({ s = 40 }: { s?: number }) => (
@@ -35,12 +46,17 @@ const IconoAsignar = () => (
  * con "Asignar a cliente", sin haber tenido que decidir nada en el momento
  * de dibujar.
  */
-export function SeccionDibujos({ clientes = [] }: SeccionDibujosProps) {
+export function SeccionDibujos({ clientes = [], onEditorAbierto }: SeccionDibujosProps) {
   const { dibujos, cargando, guardar, borrar } = useDibujos(true, { temporales: true });
   const [busqueda, setBusqueda] = useState('');
   const [editando, setEditando] = useState<{ dibujo: Dibujo | null } | null>(null);
   const [cargandoCompleto, setCargandoCompleto] = useState(false);
   const [asignando, setAsignando] = useState<Dibujo | null>(null);
+
+  useEffect(() => {
+    onEditorAbierto?.(editando !== null);
+    return () => onEditorAbierto?.(false);
+  }, [editando, onEditorAbierto]);
 
   const visibles = dibujos.filter((d) => d.nombre.toLowerCase().includes(busqueda.trim().toLowerCase()));
 
@@ -136,7 +152,7 @@ export function SeccionDibujos({ clientes = [] }: SeccionDibujosProps) {
 
       {cargandoCompleto && (
         <div className={styles.overlay}>
-          <p style={{ color: '#fff' }}>Abriendo dibujo…</p>
+          <p style={{ color: 'var(--blanco)' }}>Abriendo dibujo…</p>
         </div>
       )}
 

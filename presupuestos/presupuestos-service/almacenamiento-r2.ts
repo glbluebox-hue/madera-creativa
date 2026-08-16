@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import type { AlmacenamientoArchivos, ResultadoSubida } from './almacenamiento-archivos.js';
 
 /**
@@ -46,5 +46,22 @@ export class AlmacenamientoR2 implements AlmacenamientoArchivos {
   claveDesdeUrl(url: string): string | null {
     const prefijo = `${this.urlPublicaBase}/`;
     return url.startsWith(prefijo) ? url.slice(prefijo.length) : null;
+  }
+
+  /**
+   * Nunca se ejercita en la práctica — `subir()` ya devuelve una URL pública
+   * de R2 directamente servible, así que el frontend nunca pasa por
+   * `GET /almacenamiento/...` para un archivo subido a R2. Implementado por
+   * completitud del contrato de `AlmacenamientoArchivos`.
+   */
+  async obtener(clave: string): Promise<{ datos: Buffer; contentType: string } | null> {
+    try {
+      const respuesta = await this.cliente.send(new GetObjectCommand({ Bucket: this.bucket, Key: clave }));
+      const trozos: Buffer[] = [];
+      for await (const trozo of respuesta.Body as AsyncIterable<Buffer>) trozos.push(Buffer.from(trozo));
+      return { datos: Buffer.concat(trozos), contentType: respuesta.ContentType ?? 'application/octet-stream' };
+    } catch {
+      return null;
+    }
   }
 }

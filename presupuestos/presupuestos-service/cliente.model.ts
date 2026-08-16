@@ -77,6 +77,35 @@ const DibujoGuardadoSchema = new Schema(
   { _id: false }
 );
 
+/** Subdocumento de una tarea del checklist de proyecto (ver `tab-tareas.tsx`). */
+const TareaSchema = new Schema(
+  {
+    id: { type: String, required: true },
+    texto: { type: String, required: true },
+    hecha: { type: Boolean, required: true },
+  },
+  { _id: false }
+);
+
+/** Subdocumento de una estancia medida (ver `TabMediciones`). */
+const EstanciaSchema = new Schema(
+  {
+    id: { type: String, required: true },
+    nombre: { type: String, required: true },
+    ancho: { type: Number },
+    alto: { type: Number },
+    fondo: { type: Number },
+    altura: { type: Number },
+    anchura: { type: Number },
+    profundidad: { type: Number },
+    angulos: { type: String },
+    desniveles: { type: String },
+    escuadra: { type: String },
+    observaciones: { type: String },
+  },
+  { _id: false }
+);
+
 /** Esquema principal de una ficha de cliente / proyecto. */
 const ClienteSchema = new Schema({
   id: { type: String, required: true, unique: true, index: true },
@@ -95,6 +124,23 @@ const ClienteSchema = new Schema({
     enum: ['presupuestado', 'en_curso', 'finalizado', 'rechazado'],
     default: 'presupuestado',
   },
+  // Datos de acceso a la obra (pestaña "Datos") — faltaban en este esquema
+  // por completo: Mongoose descarta en silencio, al guardar, cualquier
+  // campo que no esté declarado aquí, así que se veían marcados/rellenos
+  // en pantalla pero nunca llegaban a persistirse de verdad (reportado por
+  // el usuario para "Tareas del proyecto"; mismo fallo afectaba también a
+  // estos campos y a "Mediciones").
+  whatsapp: { type: String },
+  ubicacion: { type: String },
+  codigoPuerta: { type: String },
+  planta: { type: String },
+  ascensor: { type: Boolean },
+  zonaCarga: { type: String },
+  observacionesAcceso: { type: String },
+  fechaMedicion: { type: String },
+  fechaMontaje: { type: String },
+  estancias: { type: [EstanciaSchema], default: [] },
+  tareas: { type: [TareaSchema], default: [] },
   movimientos: { type: [MovimientoSchema], default: [] },
   horas: { type: [HorasSchema], default: [] },
   adjuntos: { type: [AdjuntoSchema], default: [] },
@@ -117,6 +163,24 @@ const EmpresaSchema = new Schema({
   /** Valores por defecto que se copian (y quedan congelados) al crear un presupuesto en modo lienzo (Fase 6). */
   condicionesPagoDefecto: { type: String, default: '60% al aceptar el presupuesto / 40% al finalizar el trabajo.' },
   validezDiasDefecto: { type: Number, default: 30 },
+  /**
+   * Región fiscal del negocio (Fase Facturas Profesional) — determina qué
+   * impuesto indirecto se calcula en el Trimestral: IGIC (Canarias) o IVA
+   * (Península). Investigado con fuentes oficiales (AEAT / Agencia
+   * Tributaria Canaria); ver auditoría 11/08/2026. Vacío hasta que el
+   * usuario lo configura — el Trimestral no calcula ningún impuesto
+   * indirecto hasta entonces, para no asumir una región equivocada.
+   */
+  regionFiscal: { type: String, enum: ['canarias', 'peninsula', ''], default: '' },
+  /**
+   * REPEP (Régimen Especial del Pequeño Empresario o Profesional) — exime
+   * del IGIC a autónomos canarios con hasta 50.000€/año de facturación,
+   * activo desde julio 2026, voluntario (modelo 400). Solo relevante si
+   * `regionFiscal === 'canarias'`. Decisión del usuario, nunca inferida.
+   */
+  repepActivo: { type: Boolean, default: false },
+  /** Tema por defecto del Motor Documental (Incremento 3) — identidad corporativa: todo documento nuevo sin tema propio hereda este. `null` hasta que el usuario personalice uno. */
+  temaPorDefecto: { type: Schema.Types.Mixed, default: null },
 });
 
 /**
@@ -185,18 +249,26 @@ const ElementoPresupuestoSchema = new Schema(
 );
 
 /**
- * Esquema de presupuesto — dos formatos conviven en la misma colección
- * (Fase 6, `formato` explícito, nunca inferido):
+ * Esquema de presupuesto — tres formatos conviven en la misma colección,
+ * `formato` explícito, nunca inferido:
  * - `'simple'` (Fase 5, sin cambios): descripción + alcance (bullets sin
  *   precio) + items con precio propio + precio total editable a mano. Es
  *   el único formato que crean/modifican las herramientas de IA
  *   (`crearPresupuesto`/`anadirElementoPresupuesto`, `ia-herramientas-presupuestos.ts`)
  *   — no se toca nada de este modo.
- * - `'lienzo'` (Fase 6): documento con plantilla libre, varias hojas
- *   (frames de Excalidraw) con texto/imágenes/archivos colocados donde
- *   quiera el usuario. `contenidoLienzo` es del mismo tipo `Mixed` sin
- *   forma fija que `Dibujo.contenido` — mismo motivo: su estructura interna
- *   es responsabilidad de Excalidraw, no de este esquema.
+ * - `'lienzo'` (Fase 6) — **editor LEGADO, en transición** (ver
+ *   `ARQUITECTURA-MOTOR-DOCUMENTAL.md`, sección "Transición desde el
+ *   editor legado"): documento con plantilla libre sobre Excalidraw.
+ *   `contenidoLienzo` sigue siendo del mismo tipo `Mixed` sin forma fija
+ *   que antes — no se toca ni se añaden funciones nuevas a este formato.
+ *   Ningún documento nuevo se crea ya así; solo sigue existiendo para
+ *   poder abrir/editar los que ya hubiera. Se retira por completo
+ *   (campo, editor y procesado) en cuanto no quede ninguno real.
+ * - `'documento'` (Motor Documental, Incremento 1 en adelante): el
+ *   formato definitivo. `contenidoDocumento` es un `DocumentoMC` real,
+ *   validado contra `documento-modelo.ts`/`documento-registro-tipos.ts`
+ *   — a diferencia de `contenidoLienzo`, su estructura SÍ es propia de
+ *   esta aplicación, nunca de una librería de render (Regla de Oro 1).
  * Asociado siempre a un cliente ya existente (`clienteId` obligatorio, a
  * diferencia de Nota que puede vivir sin cliente).
  */
@@ -205,12 +277,14 @@ const PresupuestoSchema = new Schema({
   usuarioId: { type: String, required: true, index: true, default: 'admin' },
   clienteId: { type: String, required: true, index: true },
   titulo: { type: String, required: true },
-  formato: { type: String, enum: ['simple', 'lienzo'], default: 'simple' },
+  formato: { type: String, enum: ['simple', 'lienzo', 'documento'], default: 'simple' },
   descripcion: { type: String, default: '' },
   alcance: { type: [String], default: [] },
   items: { type: [ElementoPresupuestoSchema], default: [] },
-  /** Escena de Excalidraw ({ elements, files }) — solo con contenido cuando `formato === 'lienzo'`. */
+  /** LEGADO — escena de Excalidraw ({ elements, files }), solo con contenido cuando `formato === 'lienzo'`. Sin funciones nuevas, ver nota de arriba. */
   contenidoLienzo: { type: Schema.Types.Mixed, default: {} },
+  /** `DocumentoMC` real, solo con contenido cuando `formato === 'documento'` — campo independiente de `contenidoLienzo`, nunca reutilizado entre los dos formatos. */
+  contenidoDocumento: { type: Schema.Types.Mixed, default: {} },
   /** Copiadas desde `Empresa.condicionesPagoDefecto`/`validezDiasDefecto` al crear, y congeladas a partir de ahí (Fase 6). */
   condicionesPago: { type: String, default: '' },
   validezDias: { type: Number, default: 30 },
@@ -220,6 +294,99 @@ const PresupuestoSchema = new Schema({
   actualizado: { type: String, required: true },
 });
 PresupuestoSchema.index({ usuarioId: 1, clienteId: 1, creado: -1 });
+
+/**
+ * Plantilla del Motor Documental (Incremento 4) — catalogada aparte, no
+ * vive dentro de ningún presupuesto/cliente concreto. `documentoBase`
+ * guarda el `DocumentoMC` con variables `{{clave}}` sin resolver.
+ */
+const PlantillaSchema = new Schema({
+  id: { type: String, required: true, unique: true, index: true },
+  usuarioId: { type: String, required: true, index: true, default: 'admin' },
+  nombre: { type: String, required: true },
+  ambito: { type: String, enum: ['corporativa', 'usuario', 'compartida', 'ia'], default: 'usuario' },
+  documentoBase: { type: Schema.Types.Mixed, required: true },
+  creadoEn: { type: String, required: true },
+  actualizadoEn: { type: String, required: true },
+});
+PlantillaSchema.index({ usuarioId: 1, creadoEn: -1 });
+
+/**
+ * Recurso de la biblioteca compartida (Motor Documental, Incremento 5) —
+ * catálogo aparte, `hashContenido` indexado para la deduplicación (ver
+ * `documento-recursos-biblioteca.ts`).
+ */
+const RecursoSchema = new Schema({
+  id: { type: String, required: true, unique: true, index: true },
+  usuarioId: { type: String, required: true, index: true, default: 'admin' },
+  nombre: { type: String, required: true },
+  tipo: { type: String, enum: ['logo', 'icono', 'imagen', 'fondo', 'sello', 'otro'], default: 'otro' },
+  url: { type: String, required: true },
+  claveAlmacenamiento: { type: String, required: true },
+  mimeType: { type: String, required: true },
+  tamano: { type: Number, default: 0 },
+  hashContenido: { type: String, required: true },
+  ambito: { type: String, enum: ['corporativa', 'usuario'], default: 'usuario' },
+  etiquetas: { type: [String], default: [] },
+  creadoEn: { type: String, required: true },
+});
+RecursoSchema.index({ usuarioId: 1, hashContenido: 1 });
+RecursoSchema.index({ usuarioId: 1, creadoEn: -1 });
+
+/**
+ * Componente reutilizable (Motor Documental, Incremento 6) — catálogo
+ * aparte, igual que Plantilla/Recurso. `elementos` es `Mixed` porque su
+ * forma exacta depende del registro de tipos (no se modela en Mongoose).
+ */
+const ComponenteSchema = new Schema({
+  id: { type: String, required: true, unique: true, index: true },
+  usuarioId: { type: String, required: true, index: true, default: 'admin' },
+  nombre: { type: String, required: true },
+  tipo: { type: String, enum: ['cabecera', 'pie', 'firma', 'condiciones', 'bloqueCorporativo', 'libre'], default: 'libre' },
+  elementos: { type: Schema.Types.Mixed, default: [] },
+  ambito: { type: String, enum: ['corporativa', 'usuario'], default: 'usuario' },
+  creadoEn: { type: String, required: true },
+  actualizadoEn: { type: String, required: true },
+});
+ComponenteSchema.index({ usuarioId: 1, creadoEn: -1 });
+
+/**
+ * Automatización por eventos (Motor Documental, Incremento 11) — catálogo
+ * aparte, igual que Plantilla/Recurso/Componente. `condicion`/`configuracionAccion`
+ * son `Mixed` porque su forma depende de la `accion` elegida (ver
+ * `esquemaAutomatizacionMC` en `esquemas-validacion.ts`).
+ */
+const AutomatizacionSchema = new Schema({
+  id: { type: String, required: true, unique: true, index: true },
+  usuarioId: { type: String, required: true, index: true, default: 'admin' },
+  nombre: { type: String, required: true },
+  evento: { type: String, required: true, index: true },
+  activa: { type: Boolean, default: true },
+  condicion: { type: Schema.Types.Mixed, default: {} },
+  accion: { type: String, enum: ['crearDocumento', 'modificarElemento', 'notificar'], required: true },
+  configuracionAccion: { type: Schema.Types.Mixed, default: {} },
+  creadoEn: { type: String, required: true },
+  actualizadoEn: { type: String, required: true },
+});
+AutomatizacionSchema.index({ usuarioId: 1, evento: 1, activa: 1 });
+
+/**
+ * Contrato (Motor Documental, Incremento 12 — segundo tipo de documento) —
+ * prueba real de que el núcleo se reutiliza sin cambios: a diferencia de
+ * Presupuesto, nace ya como `DocumentoMC` puro desde el primer día, sin
+ * `formato`/`contenidoLienzo` (esa dualidad es una transición histórica
+ * propia de Presupuesto, no algo que todo tipo de documento deba arrastrar).
+ */
+const ContratoSchema = new Schema({
+  id: { type: String, required: true, unique: true, index: true },
+  usuarioId: { type: String, required: true, index: true, default: 'admin' },
+  clienteId: { type: String, required: true, index: true },
+  titulo: { type: String, required: true },
+  contenidoDocumento: { type: Schema.Types.Mixed, default: {} },
+  creado: { type: String, required: true },
+  actualizado: { type: String, required: true },
+});
+ContratoSchema.index({ usuarioId: 1, clienteId: 1, creado: -1 });
 
 /**
  * Índice compuesto para `listarClientes` paginado (Incremento 1.5), que
@@ -245,6 +412,21 @@ export const ProveedorModel: Model<any> = models.Proveedor || model('Proveedor',
 /** Modelo Mongoose de Nota — colección nueva, sin nombre de colección heredado que respetar. */
 export const NotaModel: Model<any> = models.Nota || model('Nota', NotaSchema);
 
+/** Modelo Mongoose de Plantilla (Motor Documental, Incremento 4) — colección nueva. */
+export const PlantillaModel: Model<any> = models.Plantilla || model('Plantilla', PlantillaSchema);
+
+/** Modelo Mongoose de Recurso (Motor Documental, Incremento 5) — colección nueva. */
+export const RecursoModel: Model<any> = models.Recurso || model('Recurso', RecursoSchema);
+
+/** Modelo Mongoose de Componente (Motor Documental, Incremento 6) — colección nueva. */
+export const ComponenteModel: Model<any> = models.Componente || model('Componente', ComponenteSchema);
+
+/** Modelo Mongoose de Automatización (Motor Documental, Incremento 11) — colección nueva. */
+export const AutomatizacionModel: Model<any> = models.Automatizacion || model('Automatizacion', AutomatizacionSchema);
+
+/** Modelo Mongoose de Contrato (Motor Documental, Incremento 12) — colección nueva. */
+export const ContratoModel: Model<any> = models.Contrato || model('Contrato', ContratoSchema);
+
 /** Modelo Mongoose de Presupuesto (Fase 5) — colección nueva. */
 export const PresupuestoModel: Model<any> = models.Presupuesto || model('Presupuesto', PresupuestoSchema);
 
@@ -266,7 +448,41 @@ const FacturaSchema = new Schema({
   proveedor: { type: String, default: '' },
   clienteId: { type: String, default: '' },
   imagen: { type: String, default: '' },
+  /**
+   * Páginas adicionales del documento multihoja — el frontend ya las
+   * construye y `esquemaFactura` (Zod) ya las validaba, pero al no estar
+   * declaradas aquí, Mongoose (`strict` por defecto) las descartaba en
+   * silencio en cada `findOneAndUpdate`. Bug real, corregido (Fase Facturas
+   * Profesional, auditoría 11/08/2026).
+   */
+  imagenes: { type: [String], default: [] },
   creado: { type: String, required: true },
+
+  // ── Ampliación documental/fiscal (Fase Facturas Profesional) — todo
+  // opcional con default vacío, para no romper ni migrar las facturas ya
+  // guardadas con el esquema anterior. ──
+  numeroFactura: { type: String, default: '' },
+  cifNif: { type: String, default: '' },
+  baseImponible: { type: Number },
+  /** Impuesto indirecto — depende de la región fiscal de la empresa (Canarias→IGIC, Península→IVA). */
+  tipoImpuesto: { type: String, enum: ['igic', 'iva', ''], default: '' },
+  porcentajeImpuesto: { type: Number },
+  importeImpuesto: { type: Number },
+  categoria: { type: String, default: '' },
+  proyectoId: { type: String, default: '' },
+  /** Relación real al proveedor — `proveedor` (texto) se mantiene como respaldo/compatibilidad con facturas antiguas. */
+  proveedorId: { type: String, default: '', index: true },
+  /** Cómo entró el documento al sistema. */
+  origen: { type: String, enum: ['escaner', 'foto', 'pdf', 'manual', ''], default: '' },
+  /** PDF generado a partir de las páginas escaneadas/fotografiadas. */
+  pdfUrl: { type: String, default: '' },
+  /** PDF original, si la factura se subió directamente como PDF. */
+  pdfOriginalUrl: { type: String, default: '' },
+  /** Páginas del documento en orden, con su tipo — sustituye gradualmente a `imagenes` para poder mezclar imagen y PDF en un mismo documento. */
+  paginas: {
+    type: [{ tipo: { type: String, enum: ['imagen', 'pdf'] }, url: String }],
+    default: [],
+  },
 });
 
 /**
@@ -278,6 +494,45 @@ FacturaSchema.index({ usuarioId: 1, creado: -1 });
 
 /** Modelo Mongoose de Factura. */
 export const FacturaModel: Model<any> = models.Factura || model('Factura', FacturaSchema);
+
+/**
+ * Gasto periódico o estimado (Fase Facturas Profesional, auditoría fiscal
+ * 11/08/2026) — gastos deducibles reales que no llegan como una factura
+ * puntual (amortizaciones, cuota de autónomos, suministros de vivienda con
+ * uso parcial…). El usuario los introduce con el dato que le confirme su
+ * asesor; la app nunca infiere `coeficiente` ni `afectacionExclusiva` por
+ * su cuenta — ver `nota` para dejar constancia del origen del dato.
+ */
+const GastoPeriodicoSchema = new Schema({
+  id: { type: String, required: true, unique: true, index: true },
+  usuarioId: { type: String, required: true, index: true, default: 'admin' },
+  tipo: { type: String, enum: ['amortizacion', 'reta', 'suministro', 'provision', 'otro'], required: true },
+  descripcion: { type: String, required: true },
+  /** Importe ya calculado a aplicar por periodicidad (p. ej. la cuota mensual de amortización, o la cuota de RETA). */
+  importe: { type: Number, required: true },
+  periodicidad: { type: String, enum: ['mensual', 'trimestral'], default: 'mensual' },
+  // Campos propios de una amortización — tabla de coeficientes AEAT
+  // sugerida en el frontend, pero el valor final lo confirma el usuario.
+  valorAdquisicion: { type: Number },
+  categoriaBien: { type: String, default: '' },
+  coeficiente: { type: Number },
+  fechaInicio: { type: String, default: '' },
+  /**
+   * Solo relevante para bienes indivisibles como un vehículo — en IRPF NO
+   * existe un % de afectación intermedio (art. 22 RIRPF): o exclusivo
+   * (deducible al 100%) o no afecto (no deducible en absoluto). `null`
+   * hasta que el usuario lo confirma explícitamente.
+   */
+  afectacionExclusiva: { type: Boolean, default: null },
+  /** P. ej. "según mi asesor, 12/2026" — deja constancia de que el dato no lo generó la app. */
+  nota: { type: String, default: '' },
+  activo: { type: Boolean, default: true },
+  creado: { type: String, required: true },
+});
+GastoPeriodicoSchema.index({ usuarioId: 1, activo: 1 });
+
+/** Modelo Mongoose de GastoPeriodico. */
+export const GastoPeriodicoModel: Model<any> = models.GastoPeriodico || model('GastoPeriodico', GastoPeriodicoSchema);
 
 /**
  * Esquema de un dibujo del módulo profesional de dibujo (Fase 2.1).
@@ -347,9 +602,24 @@ export const CarpetaModel: Model<any> = models.Carpeta || model('Carpeta', Carpe
 /**
  * Conecta a MongoDB usando la variable de entorno MONGO_URL.
  * Reutiliza la conexión existente si ya está abierta.
+ *
+ * Pool acotado explícitamente (auditoría 12/08/2026, alerta real de Atlas
+ * "nearing the connection limit" en el clúster M0, límite duro de 500
+ * conexiones para todo el clúster): sin esto, el driver de MongoDB usa sus
+ * valores por defecto — hasta 100 conexiones concurrentes *por proceso* y
+ * sin cerrar nunca las inactivas (`maxIdleTimeMS` sin definir). En este
+ * entorno de desarrollo, cuando `bit run --watch` recompila tras un cambio
+ * de código a veces deja vivo el proceso backend anterior además del
+ * nuevo (huérfano ya documentado varias veces en esta sesión) — cada
+ * proceso zombi de esos, sin este límite, podía abrir hasta 100
+ * conexiones más por su cuenta. `maxPoolSize: 10` dimensiona esto para lo
+ * que de verdad necesita un backend pequeño (nunca decenas de peticiones
+ * Mongo concurrentes reales), y `maxIdleTimeMS` hace que las conexiones
+ * que ya no se usan se cierren solas en vez de quedarse abiertas para
+ * siempre.
  */
 export async function conectar(): Promise<void> {
   if (mongoose.connection.readyState === 1) return;
   const url = process.env.MONGO_URL || 'mongodb://localhost:27017/madera-creativa';
-  await mongoose.connect(url);
+  await mongoose.connect(url, { maxPoolSize: 10, minPoolSize: 0, maxIdleTimeMS: 30_000 });
 }

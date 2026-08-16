@@ -131,6 +131,68 @@ export type Factura = {
   imagenes?: string[];
   /** Fecha de creación en ISO. */
   creado: string;
+
+  // ── Ampliación documental/fiscal (Fase Facturas Profesional) ──
+  /** Número de factura del proveedor/cliente, si consta. */
+  numeroFactura?: string;
+  /** CIF/NIF del emisor, si consta. */
+  cifNif?: string;
+  /** Base imponible (importe sin impuesto). */
+  baseImponible?: number;
+  /** Impuesto indirecto aplicado — depende de la región fiscal de la empresa. */
+  tipoImpuesto?: 'igic' | 'iva' | '';
+  /** Porcentaje del impuesto aplicado (p. ej. 7 para IGIC general, 21 para IVA general). */
+  porcentajeImpuesto?: number;
+  /** Cuota del impuesto en euros. */
+  importeImpuesto?: number;
+  /** Categoría libre del gasto/ingreso (materiales, herramientas, combustible…). */
+  categoria?: string;
+  /** Proyecto al que se asocia, si aplica. */
+  proyectoId?: string;
+  /** Relación real al proveedor (ver `Proveedor.id`) — `proveedor` (texto) se mantiene como respaldo/compatibilidad. */
+  proveedorId?: string;
+  /** Cómo entró el documento al sistema. */
+  origen?: 'escaner' | 'foto' | 'pdf' | 'manual' | '';
+  /** PDF generado a partir de las páginas escaneadas/fotografiadas. */
+  pdfUrl?: string;
+  /** PDF original, si la factura se subió directamente como PDF. */
+  pdfOriginalUrl?: string;
+  /** Páginas del documento en orden, cada una con su tipo — sustituye gradualmente a `imagenes` para poder mezclar imagen y PDF en un mismo documento. */
+  paginas?: { tipo: 'imagen' | 'pdf'; url: string }[];
+  /** Solo presente en el listado paginado (`GET /facturas`): indica si hay algún documento adjunto sin exponer su contenido, que se omite ahí por peso. */
+  tieneDocumento?: boolean;
+};
+
+/**
+ * Gasto periódico o estimado (Fase Facturas Profesional) — gastos
+ * deducibles reales que no llegan como una factura puntual: amortizaciones
+ * (vehículos, maquinaria, herramientas), cuota de autónomos (RETA),
+ * suministros de vivienda con uso parcial como taller, provisión por
+ * impagos. El usuario los introduce con el dato que le confirme su
+ * asesor — la app nunca infiere `coeficiente` ni `afectacionExclusiva`.
+ */
+export type GastoPeriodico = {
+  id: string;
+  tipo: 'amortizacion' | 'reta' | 'suministro' | 'provision' | 'otro';
+  descripcion: string;
+  /** Importe ya calculado a aplicar por periodicidad. */
+  importe: number;
+  periodicidad: 'mensual' | 'trimestral';
+  /** Solo para `tipo: 'amortizacion'`. */
+  valorAdquisicion?: number;
+  categoriaBien?: string;
+  coeficiente?: number;
+  fechaInicio?: string;
+  /**
+   * Solo relevante para bienes indivisibles como un vehículo — en IRPF no
+   * existe un % de afectación intermedio: o exclusivo (deducible al 100%)
+   * o no afecto (no deducible). `null` hasta que el usuario lo confirma.
+   */
+  afectacionExclusiva?: boolean | null;
+  /** P. ej. "según mi asesor, 12/2026". */
+  nota?: string;
+  activo: boolean;
+  creado: string;
 };
 
 /**

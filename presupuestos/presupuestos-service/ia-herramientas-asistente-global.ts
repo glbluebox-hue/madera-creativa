@@ -16,11 +16,11 @@ function ejecutarInterfazNuncaLlamado(): Promise<never> {
   return Promise.reject(new Error("Herramienta de permiso 'interfaz': no se ejecuta en el servidor."));
 }
 
-export const herramientaNavegarSeccion: HerramientaIA<{ seccion: 'clientes' | 'presupuestos' | 'facturas' }> = {
+export const herramientaNavegarSeccion: HerramientaIA<{ seccion: 'clientes' | 'presupuestos' | 'facturas' | 'notas' }> = {
   nombre: 'navegarSeccion',
-  descripcion: 'Navega a una sección principal de la aplicación: clientes, presupuestos o facturas.',
+  descripcion: 'Navega a una sección principal de la aplicación: clientes, presupuestos, facturas o notas.',
   permiso: 'interfaz',
-  esquemaParametros: z.object({ seccion: z.enum(['clientes', 'presupuestos', 'facturas']) }),
+  esquemaParametros: z.object({ seccion: z.enum(['clientes', 'presupuestos', 'facturas', 'notas']) }),
   ejecutar: ejecutarInterfazNuncaLlamado,
 };
 

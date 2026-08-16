@@ -62,7 +62,7 @@ export function GaleriaFotos({ fotos, onAnadir, onBorrar }: GaleriaFotosProps) {
       <div className={styles.panelHeader}>
         <h3 className={styles.panelTitulo} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
-          Fotos del proyecto acabado
+          Fotos del proyecto
         </h3>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <input ref={camaraRef} type="file" accept="image/*" capture="environment" multiple style={{ display: 'none' }} onChange={(e) => subirFotos(e.target.files)} />
@@ -177,11 +177,14 @@ export function GaleriaFotos({ fotos, onAnadir, onBorrar }: GaleriaFotosProps) {
         <EscanerDocumento
           onCerrar={() => setEscanerDoc(false)}
           onConfirmar={(r) => {
-            onAnadir({
-              id: generarId(),
-              url: r.dataUrl,
-              descripcion: `Documento (${r.modo})`,
-              fecha: new Date().toISOString().slice(0, 10),
+            const fecha = new Date().toISOString().slice(0, 10);
+            r.dataUrls.forEach((dataUrl, i) => {
+              onAnadir({
+                id: generarId(),
+                url: dataUrl,
+                descripcion: r.dataUrls.length > 1 ? `Documento (${r.modo}) — hoja ${i + 1}` : `Documento (${r.modo})`,
+                fecha,
+              });
             });
             setEscanerDoc(false);
           }}
@@ -199,14 +202,14 @@ export function GaleriaFotos({ fotos, onAnadir, onBorrar }: GaleriaFotosProps) {
           }}
         >
           <button onClick={(e) => { e.stopPropagation(); irA(-1); }} disabled={indiceActual === 0}
-            style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', cursor: 'pointer', opacity: indiceActual === 0 ? 0.3 : 1 }}>
+            style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--blanco)', cursor: 'pointer', opacity: indiceActual === 0 ? 0.3 : 1 }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
           </button>
 
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
             <img src={visor.url} alt={visor.descripcion} style={{ maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain', borderRadius: 6 }} />
             {visor.descripcion && (
-              <p style={{ color: '#fff', margin: 0, fontSize: '0.9rem', textAlign: 'center' }}>{visor.descripcion}</p>
+              <p style={{ color: 'var(--blanco)', margin: 0, fontSize: '0.9rem', textAlign: 'center' }}>{visor.descripcion}</p>
             )}
             <p style={{ color: 'rgba(255,255,255,0.45)', margin: 0, fontSize: '0.75rem' }}>
               {indiceActual + 1} / {fotos.length} · {visor.fecha}
@@ -214,12 +217,12 @@ export function GaleriaFotos({ fotos, onAnadir, onBorrar }: GaleriaFotosProps) {
           </div>
 
           <button onClick={(e) => { e.stopPropagation(); irA(1); }} disabled={indiceActual === fotos.length - 1}
-            style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', cursor: 'pointer', opacity: indiceActual === fotos.length - 1 ? 0.3 : 1 }}>
+            style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--blanco)', cursor: 'pointer', opacity: indiceActual === fotos.length - 1 ? 0.3 : 1 }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
           </button>
 
           <button onClick={() => setVisor(null)}
-            style={{ position: 'absolute', top: 16, right: 16, background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', cursor: 'pointer' }}>
+            style={{ position: 'absolute', top: 16, right: 16, background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--blanco)', cursor: 'pointer' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
         </div>

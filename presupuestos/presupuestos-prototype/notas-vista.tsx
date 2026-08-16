@@ -7,7 +7,8 @@ import * as api from './api.js';
 import { PRIORIDADES, ordenarPorDefecto, type NotaMC, type PrioridadNota } from './notas-modelo.js';
 import styles from './styles.module.css';
 
-const COLOR_PRIORIDAD: Record<PrioridadNota, string> = { alta: '#e03131', media: '#f08c00', baja: '#868e96' };
+const COLOR_PRIORIDAD: Record<PrioridadNota, string> = { alta: 'var(--rojo)', media: 'var(--ocre)', baja: 'var(--topo-claro)' };
+const COLOR_PRIORIDAD_BG: Record<PrioridadNota, string> = { alta: 'var(--rojo-bg)', media: 'var(--ocre-bg)', baja: 'var(--topo-tinte)' };
 const ETIQUETA_PRIORIDAD: Record<PrioridadNota, string> = { alta: 'Alta', media: 'Media', baja: 'Baja' };
 
 const CLAVE_MIGRACION_GLOBAL = 'mc_notas_globales';
@@ -60,6 +61,19 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [tituloEdicion, setTituloEdicion] = useState('');
   const [contenidoEdicion, setContenidoEdicion] = useState('');
+
+  // Solo una nota abierta a la vez — la lista muestra títulos, y al hacer
+  // clic se despliega el contenido completo con sus acciones (editar,
+  // borrar, cambiar prioridad). Cambiar de nota abierta cancela cualquier
+  // edición en curso de la anterior.
+  const [abiertaId, setAbiertaId] = useState<string | null>(null);
+  const alternarAbierta = (id: string) => {
+    setAbiertaId((prev) => {
+      const siguiente = prev === id ? null : id;
+      if (editandoId && editandoId !== siguiente) setEditandoId(null);
+      return siguiente;
+    });
+  };
 
   const cargar = useCallback(() => {
     setCargando(true);
@@ -217,8 +231,10 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
             Notas
           </h2>
-          <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={() => setFormAbierto((v) => !v)}>
-            {formAbierto ? 'Cancelar' : '+ Nueva nota'}
+          <button className={styles.btnCirculoOscuro} onClick={() => setFormAbierto((v) => !v)} title={formAbierto ? 'Cancelar' : 'Nueva nota'}>
+            {formAbierto
+              ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>}
           </button>
         </div>
       )}
@@ -226,8 +242,10 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
       {clienteFijo && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
           <h3 style={{ margin: 0 }}>Notas del proyecto</h3>
-          <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ fontSize: '0.8rem' }} onClick={() => setFormAbierto((v) => !v)}>
-            {formAbierto ? 'Cancelar' : '+ Nueva nota'}
+          <button className={styles.btnCirculoOscuro} onClick={() => setFormAbierto((v) => !v)} title={formAbierto ? 'Cancelar' : 'Nueva nota'}>
+            {formAbierto
+              ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>}
           </button>
         </div>
       )}
@@ -254,13 +272,13 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
             <BtnMicrofono estado={dictadoNueva.estado} onClick={dictadoNueva.toggleDictado} />
           </div>
           {dictadoNueva.estado === 'escuchando' && (
-            <p style={{ margin: 0, fontSize: '0.72rem', color: '#c0392b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#c0392b', display: 'inline-block', flexShrink: 0 }} />
+            <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--rojo)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--rojo)', display: 'inline-block', flexShrink: 0 }} />
               Escuchando… pulsa el micro para parar.
             </p>
           )}
           {dictadoNueva.completado && (
-            <p style={{ margin: 0, fontSize: '0.72rem', color: '#2f9e44', fontWeight: 600 }}>✓ Transcripción completada</p>
+            <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--verde)', fontWeight: 600 }}>✓ Transcripción completada</p>
           )}
 
           <div>
@@ -272,10 +290,10 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
                   type="button"
                   onClick={() => setPrioridad(p.id)}
                   style={{
-                    padding: '0.35rem 0.8rem', borderRadius: 20, fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer',
+                    padding: '0.35rem 0.8rem', borderRadius: 'var(--radio-full, 999px)', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer',
                     border: `1.5px solid ${COLOR_PRIORIDAD[p.id]}`,
                     background: prioridad === p.id ? COLOR_PRIORIDAD[p.id] : 'transparent',
-                    color: prioridad === p.id ? '#fff' : COLOR_PRIORIDAD[p.id],
+                    color: prioridad === p.id ? 'var(--blanco)' : COLOR_PRIORIDAD[p.id],
                   }}
                 >
                   {ETIQUETA_PRIORIDAD[p.id]}
@@ -346,65 +364,91 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
           <p>{busqueda || filtroPrioridad !== 'todas' ? 'Sin notas que coincidan.' : 'Sin notas todavía. Pulsa "+ Nueva nota" y escribe o dicta.'}</p>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: clienteFijo ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.75rem' }}>
-          {notasFiltradas.map((n) => (
-            <div key={n.id} style={{
-              background: 'var(--blanco)', border: '1px solid var(--borde)', borderRadius: 10,
-              borderLeft: `4px solid ${COLOR_PRIORIDAD[n.prioridad]}`,
-              padding: '0.85rem', boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
-              display: 'flex', flexDirection: 'column', gap: '0.4rem',
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-                  {n.titulo && <strong style={{ fontSize: '0.9rem' }}>{n.titulo}</strong>}
-                  <span style={{ fontSize: '0.65rem', color: 'var(--topo-claro)', fontWeight: 600 }}>{formatoFecha(n.creado)}</span>
-                </div>
-                <select
-                  value={n.prioridad}
-                  onChange={(e) => cambiarPrioridad(n, e.target.value as PrioridadNota)}
-                  title="Cambiar prioridad"
-                  style={{
-                    fontSize: '0.68rem', fontWeight: 700, borderRadius: 12, padding: '0.15rem 0.5rem',
-                    border: `1.5px solid ${COLOR_PRIORIDAD[n.prioridad]}`, color: COLOR_PRIORIDAD[n.prioridad], background: 'transparent',
-                  }}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          {notasFiltradas.map((n) => {
+            const abierta = abiertaId === n.id;
+            const tituloMostrado = n.titulo || (n.contenido.length > 60 ? `${n.contenido.slice(0, 60)}…` : n.contenido) || '(nota vacía)';
+            return (
+              <div key={n.id} className={styles.filaLista}>
+                <div
+                  onClick={() => alternarAbierta(n.id)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.75rem 0.9rem', cursor: 'pointer' }}
                 >
-                  {PRIORIDADES.map((p) => <option key={p.id} value={p.id}>{ETIQUETA_PRIORIDAD[p.id]}</option>)}
-                </select>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+                    style={{ flexShrink: 0, color: 'var(--topo-claro)', transition: 'transform 0.15s', transform: abierta ? 'rotate(90deg)' : 'none' }}>
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                  <span style={{
+                    flex: 1, minWidth: 0, fontWeight: 700, fontSize: '0.88rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    color: n.titulo ? 'var(--negro)' : 'var(--topo-claro)', fontStyle: n.titulo ? 'normal' : 'italic',
+                  }}>
+                    {tituloMostrado}
+                  </span>
+                  {!clienteFijo && n.clienteId && nombreCliente(n.clienteId) && (
+                    <span style={{ fontSize: '0.68rem', color: 'var(--ocre)', fontWeight: 600, flexShrink: 0, whiteSpace: 'nowrap' }}>{nombreCliente(n.clienteId)}</span>
+                  )}
+                  <span style={{
+                    fontSize: '0.65rem', fontWeight: 700, borderRadius: 'var(--radio-full, 999px)', padding: '0.15rem 0.55rem', flexShrink: 0,
+                    color: COLOR_PRIORIDAD[n.prioridad], background: COLOR_PRIORIDAD_BG[n.prioridad],
+                  }}>
+                    {ETIQUETA_PRIORIDAD[n.prioridad]}
+                  </span>
+                  <span style={{ fontSize: '0.65rem', color: 'var(--topo-muy-claro)', flexShrink: 0, whiteSpace: 'nowrap' }}>{formatoFecha(n.creado)}</span>
+                </div>
+
+                {abierta && (
+                  <div style={{ padding: '0.7rem 0.9rem 0.9rem', borderTop: '1px solid var(--borde-fino)', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                    <div>
+                      <span className={styles.campoLabel}>Prioridad</span>
+                      <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.3rem' }}>
+                        {PRIORIDADES.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => cambiarPrioridad(n, p.id)}
+                            style={{
+                              padding: '0.3rem 0.7rem', borderRadius: 'var(--radio-full, 999px)', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer',
+                              border: `1.5px solid ${COLOR_PRIORIDAD[p.id]}`,
+                              background: n.prioridad === p.id ? COLOR_PRIORIDAD[p.id] : 'transparent',
+                              color: n.prioridad === p.id ? 'var(--blanco)' : COLOR_PRIORIDAD[p.id],
+                            }}
+                          >
+                            {ETIQUETA_PRIORIDAD[p.id]}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {editandoId === n.id ? (
+                      <>
+                        <input className={styles.input} placeholder="Título" value={tituloEdicion} onChange={(e) => setTituloEdicion(e.target.value)} style={{ fontSize: '0.85rem' }} />
+                        <div style={{ display: 'flex', gap: '0.4rem' }}>
+                          <textarea className={styles.input} value={contenidoEdicion + (dictadoEdicion.interino ? ` ${dictadoEdicion.interino}` : '')} onChange={(e) => setContenidoEdicion(e.target.value)} rows={4} style={{ flex: 1, resize: 'vertical' }} autoFocus />
+                          <BtnMicrofono estado={dictadoEdicion.estado} onClick={dictadoEdicion.toggleDictado} />
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.4rem' }}>
+                          <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ fontSize: '0.78rem' }} onClick={guardarEdicion}>Guardar</button>
+                          <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.78rem' }} onClick={() => setEditandoId(null)}>Cancelar</button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <p style={{ margin: 0, fontSize: '0.86rem', lineHeight: 1.5, whiteSpace: 'pre-wrap', color: 'var(--negro)' }}>{n.contenido}</p>
+                        <div style={{ display: 'flex', gap: '0.3rem', justifyContent: 'flex-end' }}>
+                          <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--topo-claro)', padding: '2px 6px' }} onClick={() => iniciarEdicion(n)} title="Editar" aria-label="Editar">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
+                          </button>
+                          <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--topo-claro)', padding: '2px 6px' }} onClick={() => borrar(n.id)} title="Borrar" aria-label="Borrar">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
-
-              {!clienteFijo && n.clienteId && nombreCliente(n.clienteId) && (
-                <span style={{ fontSize: '0.7rem', color: 'var(--ocre)', fontWeight: 600 }}>
-                  Cliente: {nombreCliente(n.clienteId)}
-                </span>
-              )}
-
-              {editandoId === n.id ? (
-                <>
-                  <input className={styles.input} placeholder="Título" value={tituloEdicion} onChange={(e) => setTituloEdicion(e.target.value)} style={{ fontSize: '0.85rem' }} />
-                  <div style={{ display: 'flex', gap: '0.4rem' }}>
-                    <textarea className={styles.input} value={contenidoEdicion + (dictadoEdicion.interino ? ` ${dictadoEdicion.interino}` : '')} onChange={(e) => setContenidoEdicion(e.target.value)} rows={3} style={{ flex: 1, resize: 'vertical' }} autoFocus />
-                    <BtnMicrofono estado={dictadoEdicion.estado} onClick={dictadoEdicion.toggleDictado} />
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.4rem' }}>
-                    <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ fontSize: '0.78rem' }} onClick={guardarEdicion}>Guardar</button>
-                    <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.78rem' }} onClick={() => setEditandoId(null)}>Cancelar</button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <p style={{ margin: 0, fontSize: '0.86rem', lineHeight: 1.5, whiteSpace: 'pre-wrap', color: 'var(--negro)' }}>{n.contenido}</p>
-                  <div style={{ display: 'flex', gap: '0.3rem', justifyContent: 'flex-end', marginTop: '0.2rem' }}>
-                    <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--topo-claro)', padding: '2px 6px' }} onClick={() => iniciarEdicion(n)} title="Editar" aria-label="Editar">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
-                    </button>
-                    <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--topo-claro)', padding: '2px 6px' }} onClick={() => borrar(n.id)} title="Borrar" aria-label="Borrar">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

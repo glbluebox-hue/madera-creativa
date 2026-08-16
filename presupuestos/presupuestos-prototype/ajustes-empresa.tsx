@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react';
 import type { Empresa } from './use-empresa.js';
 import { leerArchivoComoBase64 } from './archivos.js';
+import { TEMA_POR_DEFECTO } from './documento-modelo.js';
+import type { TemaMC } from './documento-modelo.js';
 import styles from './styles.module.css';
 
 /** Props del modal de ajustes de empresa. */
@@ -27,6 +29,9 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
   const [iban, setIban] = useState(empresa.iban);
   const [condicionesPagoDefecto, setCondicionesPagoDefecto] = useState(empresa.condicionesPagoDefecto);
   const [validezDiasDefecto, setValidezDiasDefecto] = useState(String(empresa.validezDiasDefecto));
+  const [tema, setTema] = useState<TemaMC>(empresa.temaPorDefecto ?? TEMA_POR_DEFECTO);
+  const [regionFiscal, setRegionFiscal] = useState(empresa.regionFiscal);
+  const [repepActivo, setRepepActivo] = useState(empresa.repepActivo);
 
   const subirLogo = (files: FileList | null) => {
     const file = files?.[0];
@@ -44,6 +49,9 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
       iban: iban.trim(),
       condicionesPagoDefecto: condicionesPagoDefecto.trim(),
       validezDiasDefecto: Number(validezDiasDefecto) || 30,
+      temaPorDefecto: tema,
+      regionFiscal,
+      repepActivo: regionFiscal === 'canarias' ? repepActivo : false,
     });
     onCerrar();
   };
@@ -117,6 +125,50 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
           <div className={styles.campo}>
             <label className={styles.campoLabel}>Validez del presupuesto (días)</label>
             <input className={styles.input} type="number" min="1" value={validezDiasDefecto} onChange={(e) => setValidezDiasDefecto(e.target.value)} />
+          </div>
+          <div className={`${styles.campo} ${styles.full}`}>
+            <label className={styles.campoLabel}>Región fiscal — determina si el Trimestral calcula IGIC (Canarias) o IVA (Península)</label>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button type="button" className={`${styles.btn} ${regionFiscal === 'canarias' ? styles.btnPrimario : styles.btnSecundario}`} style={{ flex: 1, justifyContent: 'center' }}
+                onClick={() => setRegionFiscal('canarias')}>Canarias (IGIC)</button>
+              <button type="button" className={`${styles.btn} ${regionFiscal === 'peninsula' ? styles.btnPrimario : styles.btnSecundario}`} style={{ flex: 1, justifyContent: 'center' }}
+                onClick={() => setRegionFiscal('peninsula')}>Península (IVA)</button>
+            </div>
+            {regionFiscal === 'canarias' && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.6rem', fontSize: '0.82rem', color: 'var(--topo)' }}>
+                <input type="checkbox" checked={repepActivo} onChange={(e) => setRepepActivo(e.target.checked)} />
+                Acogido al REPEP (exención de IGIC por facturación ≤50.000€/año)
+              </label>
+            )}
+          </div>
+          <div className={`${styles.campo} ${styles.full}`}>
+            <label className={styles.campoLabel}>Tema corporativo (Motor Documental) — con el que arranca todo documento nuevo</label>
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+              <label style={{ display: 'flex', flexDirection: 'column', fontSize: '0.72rem', color: 'var(--topo-claro)', gap: '0.2rem' }}>
+                Primario
+                <input type="color" value={tema.colores.primario} onChange={(e) => setTema({ ...tema, colores: { ...tema.colores, primario: e.target.value } })} />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', fontSize: '0.72rem', color: 'var(--topo-claro)', gap: '0.2rem' }}>
+                Secundario
+                <input type="color" value={tema.colores.secundario} onChange={(e) => setTema({ ...tema, colores: { ...tema.colores, secundario: e.target.value } })} />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', fontSize: '0.72rem', color: 'var(--topo-claro)', gap: '0.2rem' }}>
+                Fuente de títulos
+                <select className={styles.input} value={tema.tipografias.titulos} onChange={(e) => setTema({ ...tema, tipografias: { ...tema.tipografias, titulos: e.target.value } })}>
+                  <option value="Georgia">Georgia</option>
+                  <option value="Arial">Arial</option>
+                  <option value="'Times New Roman'">Times New Roman</option>
+                </select>
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', fontSize: '0.72rem', color: 'var(--topo-claro)', gap: '0.2rem' }}>
+                Fuente de cuerpo
+                <select className={styles.input} value={tema.tipografias.cuerpo} onChange={(e) => setTema({ ...tema, tipografias: { ...tema.tipografias, cuerpo: e.target.value } })}>
+                  <option value="Arial">Arial</option>
+                  <option value="Georgia">Georgia</option>
+                  <option value="Verdana">Verdana</option>
+                </select>
+              </label>
+            </div>
           </div>
         </div>
 

@@ -9,9 +9,22 @@
    `var(--fondo)` aquí: esa variable está declarada dentro de `.app`, que es
    descendiente de `body`, no al revés — las custom properties solo heredan
    hacia abajo. Mismo valor que `--fondo` (#f5f3ef), a mano.
-   Fase 5, reporte del usuario probando en móvil. */
+   Fase 5, reporte del usuario probando en móvil.
+
+   Modo oscuro: mismo problema, mismo motivo — `use-tema.ts` refleja
+   `data-theme` también en `<html>` (aparte de en `.app`) solo para que
+   estas dos reglas de aquí abajo puedan reaccionar; el resto de la app
+   nunca lee ese atributo en `<html>`, solo el de `.app`. */
 :global(html), :global(body) {
   background: #f5f3ef;
+}
+@media (prefers-color-scheme: dark) {
+  :global(html:not([data-theme="light"])), :global(html:not([data-theme="light"]) body) {
+    background: #241a10;
+  }
+}
+:global(html[data-theme="dark"]), :global(html[data-theme="dark"] body) {
+  background: #241a10;
 }
 :global(body) {
   margin: 0;
@@ -112,6 +125,68 @@
   font-size: 14px;
   line-height: 1.6;
   letter-spacing: -0.01em;
+
+  transition: background 0.2s var(--ease-suave), color 0.2s var(--ease-suave);
+}
+
+/* ===== MODO OSCURO ("Estudio Nocturno") =====
+   Redefine solo los tokens de color declarados arriba — todo lo que ya usa
+   var(--xxx) en el resto de la hoja de estilos y de los componentes hereda
+   el cambio automáticamente, sin tocar esas reglas una por una.
+
+   Dos vías, mismo resultado, con la preferencia explícita del usuario
+   ganando siempre sobre el sistema (mismo patrón en ambas direcciones):
+   - Sin elección explícita (`use-tema.ts` no ha fijado `data-theme` en
+     `.app`): sigue `prefers-color-scheme` del propio dispositivo.
+   - Con elección explícita: `[data-theme="dark"]`/`[data-theme="light"]`
+     manda, esté el sistema como esté.
+
+   Deliberadamente NO se tocan aquí `--login-*`: la pantalla de login usa
+   fotografías reales muestreadas para fondo claro (ver comentario más
+   arriba) y por ahora se queda fuera del modo oscuro — `use-tema.ts` nunca
+   fija `data-theme` en el `.app` de `login-page.tsx`, así que estas reglas
+   no llegan a aplicarse ahí. Revisar cuando el resto de la app ya use el
+   modo oscuro con normalidad. */
+@media (prefers-color-scheme: dark) {
+  .app:not([data-theme="light"]) {
+    /* Invertido a petición del usuario, probando en la app real: el fondo
+       general es marrón oscuro; las "ventanas" (ficha de cliente, tarjetas,
+       modales...) se quedan en un tostado claro — igual que en modo claro,
+       no un gris oscuro — para que destaquen de verdad sobre el fondo. Por
+       eso la mayoría de tokens de contenido (--topo, --topo-claro, los
+       colores semánticos) NO se redeclaran aquí: siguen siendo válidos tal
+       cual porque las tarjetas donde se usan vuelven a ser claras. */
+    --blanco: #f0e2c9;
+    --negro: #1f160e;
+    --topo-muy-claro: #9c9184;
+    --fondo: #241a10;
+    --fondo-panel: #f0e2c9;
+    --borde: #ddd0b4;
+    --borde-fino: #e6dbc0;
+    --topo-tinte: #e3d2ac;
+
+    --sombra-xs: 0 1px 2px rgba(0,0,0,0.35);
+    --sombra-sm: 0 1px 6px rgba(0,0,0,0.4), 0 2px 12px rgba(0,0,0,0.25);
+    --sombra: 0 4px 24px rgba(0,0,0,0.45), 0 1px 4px rgba(0,0,0,0.25);
+    --sombra-lg: 0 12px 48px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.3);
+    --sombra-modal: 0 32px 80px rgba(0,0,0,0.65), 0 4px 16px rgba(0,0,0,0.35);
+  }
+}
+.app[data-theme="dark"] {
+  --blanco: #f0e2c9;
+  --negro: #1f160e;
+  --topo-muy-claro: #9c9184;
+  --fondo: #241a10;
+  --fondo-panel: #f0e2c9;
+  --borde: #ddd0b4;
+  --borde-fino: #e6dbc0;
+  --topo-tinte: #e3d2ac;
+
+  --sombra-xs: 0 1px 2px rgba(0,0,0,0.35);
+  --sombra-sm: 0 1px 6px rgba(0,0,0,0.4), 0 2px 12px rgba(0,0,0,0.25);
+  --sombra: 0 4px 24px rgba(0,0,0,0.45), 0 1px 4px rgba(0,0,0,0.25);
+  --sombra-lg: 0 12px 48px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.3);
+  --sombra-modal: 0 32px 80px rgba(0,0,0,0.65), 0 4px 16px rgba(0,0,0,0.35);
 }
 
 /* ===== CABECERA ===== */
@@ -837,6 +912,7 @@
 .btnCirculoOscuro svg { width: 18px; height: 18px; }
 .btnCirculoOscuro:hover { background: var(--negro); transform: translateY(-1px); box-shadow: var(--sombra-sm); }
 .btnCirculoOscuro:active { transform: scale(0.94); }
+.btnCirculoOscuro:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
 
 /* ===== BARRA DE SECCIÓN ===== */
 .barraSeccion {
@@ -944,6 +1020,23 @@
   box-shadow: var(--sombra-xs);
   position: relative;
   overflow: hidden;
+}
+
+/* Fila de lista genérica (Presupuestos, Contratos, Plantillas, Notas…) —
+   mismo lenguaje visual que .tarjeta (radio, sombra, elevación al pasar el
+   ratón) para que ninguna lista de la app se vea de una "versión" distinta. */
+.filaLista {
+  background: var(--blanco);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-md);
+  box-shadow: var(--sombra-xs);
+  transition: var(--trans);
+}
+.filaListaClic { cursor: pointer; }
+.filaListaClic:hover {
+  border-color: var(--topo-muy-claro);
+  box-shadow: var(--sombra);
+  transform: translateY(-2px);
 }
 .tarjeta::before {
   content: '';
@@ -1368,15 +1461,15 @@
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(24,20,15,0.5);
+  background: rgba(24,20,15,0.55);
   display: flex;
   align-items: flex-start;
   justify-content: center;
   overflow-y: auto;
   z-index: 200;
   padding: 1.5rem;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   animation: fadeIn 0.15s ease;
 }
 
@@ -1547,7 +1640,7 @@
 .btnHerramientaTexto { border-color: var(--azul); color: var(--azul); }
 .btnHerramientaTexto.btnHerramientaActivo { background: var(--azul); color: #fff; }
 .btnHerramientaBorrador { border-color: var(--ocre); color: var(--ocre); }
-.btnHerramientaBorrador.btnHerramientaActivo { background: var(--ocre); color: #fff; }
+.btnHerramientaBorrador.btnHerramientaActivo { background: var(--ocre); color: var(--blanco); }
 .btnHerramientaLimpiar { border-color: var(--rojo); color: var(--rojo); }
 .btnHerramientaLimpiar:hover { background: var(--rojo); color: #fff; }
 .btnHerramientaLinea { border-color: var(--morado); color: var(--morado); }
@@ -1639,11 +1732,13 @@
   background: var(--blanco);
   border-right: 1px solid var(--borde);
   padding: 0.85rem 0.85rem 1.5rem;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   position: sticky;
   top: 0;
   height: 100vh;
+  max-height: 100vh;
 }
 /* En móvil el menú lateral deja de ocultarse: se convierte en un panel
    deslizante (mismo <aside>, mismos enlaces que en escritorio — pediste
@@ -1651,12 +1746,20 @@
    iconos). Cerrado por defecto (fuera de pantalla a la izquierda). */
 @media (max-width: 900px) {
   .appConSidebar { display: block; }
+  /* `.appConSidebar` deja de ser flex aquí, así que `.contenidoPrincipal`
+     (flex:1, pensado para un padre flex) deja de estirarse y se encoge a
+     la altura de su propio contenido — en páginas con poco contenido
+     (p. ej. Notas con una sola nota) el fondo cálido se cortaba a media
+     pantalla y el resto quedaba en el blanco por defecto de <body>, en
+     vez de rellenar toda la pantalla con el mismo color. */
+  .contenidoPrincipal { min-height: 100vh; }
   .sidebar {
     position: fixed;
     top: 0;
     left: 0;
     z-index: 200;
     height: 100dvh;
+    max-height: 100dvh;
     transform: translateX(-100%);
     transition: transform 0.25s var(--ease-suave);
     box-shadow: var(--sombra-lg);
@@ -1781,119 +1884,44 @@
   position: relative;
   z-index: 0;
   overflow: hidden;
-  background: var(--login-fondo);
-}
-
-/* ===== IDENTIDAD DE MADERA EN EL RESTO DE LA APP =====
-   Mismo lenguaje visual del login (misma foto real, sin hojas): un
-   acento de madera por sección, siempre detrás del contenido real
-   (z-index negativo) y sin interceptar clics — nunca tapa información,
-   solo vive en el margen alrededor de .main (max-width:1200px), y en
-   pantallas más estrechas queda confinado al padding de .main sin
-   invadir las tarjetas. */
-.maderaAcento {
-  position: absolute;
-  z-index: -1;
-  pointer-events: none;
-  background-size: cover;
-  background-repeat: no-repeat;
-}
-
-/* Inicio — franja izquierda, mismo borde orgánico que el login */
-.maderaAcentoIzq {
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: clamp(50px, 9vw, 180px);
-  background-position: left center;
-  -webkit-mask-image: linear-gradient(to right, #000 55%, transparent 100%);
-  mask-image: linear-gradient(to right, #000 55%, transparent 100%);
-  opacity: 0.9;
-}
-
-/* Clientes — misma franja, en el lado derecho (foto real reflejada) */
-.maderaAcentoDer {
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: clamp(50px, 9vw, 180px);
-  background-position: left center;
-  transform: scaleX(-1);
-  -webkit-mask-image: linear-gradient(to right, #000 55%, transparent 100%);
-  mask-image: linear-gradient(to right, #000 55%, transparent 100%);
-  opacity: 0.9;
-}
-
-/* Facturas — esquina superior derecha, transición suave */
-.maderaAcentoSupDer {
-  top: 0;
-  right: 0;
-  width: clamp(120px, 20vw, 320px);
-  height: clamp(90px, 16vw, 240px);
-  background-position: right top;
-  -webkit-mask-image: radial-gradient(ellipse at top right, #000 40%, transparent 75%);
-  mask-image: radial-gradient(ellipse at top right, #000 40%, transparent 75%);
-  opacity: 0.7;
-}
-
-/* Proveedores — esquina superior izquierda, transición suave */
-.maderaAcentoSupIzq {
-  top: 0;
-  left: 0;
-  width: clamp(120px, 20vw, 320px);
-  height: clamp(90px, 16vw, 240px);
-  background-position: left top;
-  transform: scaleX(-1);
-  -webkit-mask-image: radial-gradient(ellipse at top right, #000 40%, transparent 75%);
-  mask-image: radial-gradient(ellipse at top right, #000 40%, transparent 75%);
-  opacity: 0.7;
-}
-
-/* Presupuestos — onda inferior, madera "entrando" desde abajo */
-.maderaAcentoInf {
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: clamp(70px, 12vw, 200px);
-  background-position: center bottom;
-  -webkit-mask-image: linear-gradient(to top, #000 45%, transparent 100%);
-  mask-image: linear-gradient(to top, #000 45%, transparent 100%);
-  opacity: 0.8;
-}
-
-/* Notas — esquina inferior derecha, detalle discreto */
-.maderaAcentoInfDer {
-  right: 0;
-  bottom: 0;
-  width: clamp(110px, 18vw, 280px);
-  height: clamp(80px, 14vw, 220px);
-  background-position: right bottom;
-  -webkit-mask-image: radial-gradient(ellipse at bottom right, #000 40%, transparent 75%);
-  mask-image: radial-gradient(ellipse at bottom right, #000 40%, transparent 75%);
-  opacity: 0.6;
-}
-
-/* Dibujos (Fase 2.1) — esquina inferior izquierda, mismo criterio que InfDer reflejado */
-.maderaAcentoInfIzq {
-  left: 0;
-  bottom: 0;
-  width: clamp(110px, 18vw, 280px);
-  height: clamp(80px, 14vw, 220px);
-  background-position: left bottom;
-  transform: scaleX(-1);
-  -webkit-mask-image: radial-gradient(ellipse at bottom right, #000 40%, transparent 75%);
-  mask-image: radial-gradient(ellipse at bottom right, #000 40%, transparent 75%);
-  opacity: 0.6;
-}
-
-@media (max-width: 700px) {
-  .maderaAcentoSupDer, .maderaAcentoSupIzq, .maderaAcentoInfDer, .maderaAcentoInfIzq { opacity: 0.5; }
+  /* Era `var(--login-fondo)` — un tostado fijo pensado solo para la
+     pantalla de login (ver `--login-*` en el bloque de tokens), no para el
+     contenido de la app ya autenticada. Al ser este contenedor el que
+     realmente ocupa toda la zona de contenido (`.main` va dentro y no
+     tiene fondo propio), tapaba por completo el fondo oscuro de `.app` en
+     modo oscuro — encontrado inspeccionando la app real en el navegador,
+     tras varias rondas de capturas de móvil que no explicaban el problema. */
+  background: var(--fondo);
 }
 
 /* ===== PANEL PRINCIPAL — DASHBOARD (Dirección Creativa) ===== */
 .dashboard { display: flex; flex-direction: column; gap: 1.5rem; }
 .dashboardTop { margin-bottom: 0.25rem; }
 .dashboardSub { margin: 0.35rem 0 0; font-size: 0.86rem; color: var(--topo-claro); }
+/* El saludo de Inicio se pinta directo sobre --fondo, sin tarjeta debajo —
+   igual que el título de cada sección (`.barraSeccion`, p. ej. "Facturas",
+   "Presupuestos", el nombre del proveedor activo) y el de Notas
+   (`.tabPanel`): ninguno de los tres vive dentro de una "ventana" clara,
+   así que en modo oscuro necesitan su propio color en vez de heredar
+   --negro (pensado para texto sobre las tarjetas claras) — encontrado
+   inspeccionando la app real: el título "Notas" se veía prácticamente en
+   blanco (texto oscuro sobre fondo oscuro). Reglas oscuras SIEMPRE dentro
+   de su guarda (media query o `[data-theme="dark"]`) — nunca sueltas, para
+   no pintar este texto claro también en modo claro. Los botones e iconos
+   de estas cabeceras (Lista/Tarjetas, Editar…) no se tocan: ya tienen su
+   propio fondo (`.btn`) y siguen leyéndose bien tal cual. */
+.app[data-theme="dark"] .dashboardTop h2,
+.app[data-theme="dark"] .barraSeccion h2,
+.app[data-theme="dark"] .tabPanel > h2,
+.app[data-theme="dark"] .tabPanel > div > h2 { color: #f0e2c9; }
+.app[data-theme="dark"] .dashboardSub { color: #c9b89a; }
+@media (prefers-color-scheme: dark) {
+  .app:not([data-theme="light"]) .dashboardTop h2,
+  .app:not([data-theme="light"]) .barraSeccion h2,
+  .app:not([data-theme="light"]) .tabPanel > h2,
+  .app:not([data-theme="light"]) .tabPanel > div > h2 { color: #f0e2c9; }
+  .app:not([data-theme="light"]) .dashboardSub { color: #c9b89a; }
+}
 .kpiGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.9rem; }
 @media (max-width: 700px) { .kpiGrid { grid-template-columns: repeat(2, 1fr); } }
 .kpiCabecera { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.35rem; }
@@ -2311,7 +2339,13 @@
 
 .editorDibujoHerramientas {
   flex-shrink: 0;
-  width: 56px;
+  /* 132px, no 56px — el selector de grosor (línea ~838, `width: 104px` fijo
+     para que quepa "Extra fino" entero, texto más largo del desplegable)
+     es más ancho que los botones de icono y necesita su propio hueco; con
+     56px la columna lo recortaba por el lado derecho (reportado por el
+     usuario probando en tablet). 132 = 104 del select + 0.5rem de padding
+     a cada lado (16px) + margen de sobra. */
+  width: 132px;
   background: var(--blanco);
   border-right: 1px solid var(--borde);
   display: flex;
@@ -2340,6 +2374,51 @@
 .editorDibujoHerramientaBtnActivo, .editorDibujoHerramientaBtnActivo:hover {
   background: var(--topo);
   color: var(--blanco);
+}
+
+/* Aviso de que hay más herramientas por debajo (la Goma, Cota, deshacer...)
+   — `position: sticky` para que se quede pegado al borde inferior visible
+   de la columna mientras haya contenido sin scrollear, y desaparezca solo
+   al llegar al final. En táctil el scrollbar nativo no se ve, así que sin
+   esto no hay ninguna pista de que la columna se puede bajar más. */
+.editorDibujoScrollAviso {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: 14px;
+  flex-shrink: 0;
+  /* Se superpone al último botón en vez de sumar su propia altura al
+     scroll — si no, el aviso alargaría el contenido scrolleable con su
+     propio alto y nunca se detectaría "ya no queda más por bajar". */
+  margin-top: -14px;
+  /* Sin fondo opaco a propósito: en `position: sticky`, este aviso queda
+     pintado ENCIMA del botón que en cada momento esté en el borde inferior
+     visible (p. ej. la Goma) mientras el usuario hace scroll — con fondo
+     sólido lo tapaba/deslavaba y parecía no estar ahí (reportado en
+     tablet). Solo la flechita, sin nada detrás. */
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+}
+.editorDibujoScrollAviso::after {
+  content: '';
+  width: 12px;
+  height: 12px;
+  filter: drop-shadow(0 0 2px var(--blanco)) drop-shadow(0 0 2px var(--blanco));
+  background: var(--topo);
+  opacity: 0.55;
+  clip-path: polygon(20% 0%, 50% 60%, 80% 0%, 100% 25%, 50% 100%, 0% 25%);
+  animation: editorDibujoScrollAvisoRebote 1.4s ease-in-out infinite;
+}
+@keyframes editorDibujoScrollAvisoRebote {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .editorDibujoScrollAviso::after { animation: none; }
 }
 
 .editorDibujoDivisor { width: 28px; height: 1px; background: var(--borde); flex-shrink: 0; margin: 0.15rem 0; }
@@ -2432,7 +2511,20 @@
  * el Design System propio, no el de Excalidraw — así que se oculta toda su
  * interfaz nativa y solo queda el lienzo, controlado por nuestra barra de
  * herramientas y cabecera.
+ *
+ * `.layer-ui__wrapper` es el contenedor único que envuelve TODA esa
+ * interfaz nativa (confirmado inspeccionando el DOM real: dentro viven
+ * `.App-menu_top`, el footer, el panel de bloquear/mano, etc.) — ocultar
+ * ese contenedor entero es mucho más robusto que enumerar clases sueltas
+ * como se hacía antes (`.App-menu_top`, `.App-bottom-bar`...), porque
+ * Excalidraw renderiza una estructura interna distinta en su modo móvil
+ * (`useDevice().isMobile`) que esas clases sueltas no cubrían — reportado
+ * por el usuario: en el móvil seguía viéndose la barra nativa completa,
+ * con su propio borrador, encima de nuestra barra izquierda. Las reglas
+ * de abajo se mantienen igualmente por si acaso alguna vive fuera de ese
+ * wrapper en alguna versión futura.
  */
+.editorDibujoLienzo :global(.layer-ui__wrapper),
 .editorDibujoLienzo :global(.App-menu_top),
 .editorDibujoLienzo :global(.App-bottom-bar),
 .editorDibujoLienzo :global(.layer-ui__wrapper__footer),
@@ -2443,7 +2535,7 @@
 }
 
 @media (max-width: 700px) {
-  .editorDibujoHerramientas { width: 48px; padding: 0.5rem 0.35rem; }
+  .editorDibujoHerramientas { width: 124px; padding: 0.5rem 0.35rem; }
   .editorDibujoHerramientaBtn { width: 36px; height: 36px; }
   .editorDibujoCabecera { padding: 0.5rem 0.65rem; gap: 0.5rem; }
   .editorDibujoNombre { font-size: 0.85rem; }

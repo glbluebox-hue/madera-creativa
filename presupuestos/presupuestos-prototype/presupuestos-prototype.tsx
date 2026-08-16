@@ -18,42 +18,20 @@ import { useFacturas } from './use-facturas.js';
 import { useAuth } from './use-auth.js';
 import { LoginPage } from './login-page.js';
 import { AjustesAlmacenamiento } from './ajustes-almacenamiento.js';
+import { AjustesBiometria } from './ajustes-biometria.js';
 import { PanelAdmin } from './panel-admin.js';
 import { useLicencia } from './use-licencia.js';
 import { usePush } from './use-push.js';
+import { useTema } from './use-tema.js';
+import { usePerfil } from './use-perfil.js';
+import { AjustesPerfil } from './ajustes-perfil.js';
 import type { Cliente, Factura } from './types.js';
 import * as api from './api.js';
 import logoMadera from './assets/logo.png';
-import loginMadera from './assets/login-madera.jpg';
-import maderaTextura from './assets/madera-textura.jpg';
 import styles from './styles.module.css';
 
 /** Secciones principales de la app. */
 type Seccion = 'inicio' | 'clientes' | 'presupuestos' | 'facturas' | 'notas' | 'proveedores' | 'dibujos';
-
-/**
- * Identidad visual del login (Dirección Creativa) trasladada al resto de
- * la app: un detalle de madera distinto por sección — misma foto real que
- * el login, sin hojas — para que ninguna pantalla se sienta repetida pero
- * todas se sientan del mismo diseño. Puramente decorativo (pointer-events:
- * none, position:absolute) — no reorganiza ni oculta ningún componente.
- *
- * Los acentos de borde completo (izq/der) usan la foto recortada del login
- * (incluye el borde de corteza real). Los acentos de esquina/onda usan un
- * recorte distinto, solo veta limpia — el recorte del login incluye, más
- * allá de su propio borde, texto de interfaz "horneado" en el píxel que
- * solo queda oculto por la máscara exacta del login; con una máscara
- * genérica de esquina ese texto se veía por debajo de la madera.
- */
-const MADERA_POR_SECCION: Record<Seccion, { clase: string; imagen: string }> = {
-  inicio: { clase: 'maderaAcentoIzq', imagen: loginMadera },
-  clientes: { clase: 'maderaAcentoDer', imagen: loginMadera },
-  presupuestos: { clase: 'maderaAcentoInf', imagen: maderaTextura },
-  facturas: { clase: 'maderaAcentoSupDer', imagen: maderaTextura },
-  proveedores: { clase: 'maderaAcentoSupIzq', imagen: maderaTextura },
-  notas: { clase: 'maderaAcentoInfDer', imagen: maderaTextura },
-  dibujos: { clase: 'maderaAcentoInfIzq', imagen: maderaTextura },
-};
 
 /**
  * App de presupuestos de cliente para Madera Creativa.
@@ -88,30 +66,30 @@ export function PresupuestosPrototype() {
   const [creando, setCreando] = useState(false);
   const [ajustes, setAjustes] = useState(false);
   const [ajustesAlmac, setAjustesAlmac] = useState(false);
+  const [ajustesBiometria, setAjustesBiometria] = useState(false);
   const [panelAdmin, setPanelAdmin] = useState(false);
-  // Persistir la sección activa — al recargar se mantiene donde estaba el usuario
-  const [seccion, setSeccion] = useState<Seccion>(() => {
-    try { return (localStorage.getItem('mc_seccion') as Seccion) || 'inicio'; } catch { return 'inicio'; }
-  });
+  // Siempre se entra por "Inicio" — a petición del usuario, nunca se
+  // recuerda la última sección visitada entre sesiones (antes se
+  // persistía en localStorage; se quitó a propósito).
+  const [seccion, setSeccion] = useState<Seccion>('inicio');
   const cambiarSeccion = (s: Seccion) => {
-    try { localStorage.setItem('mc_seccion', s); } catch { /* noop */ }
     setSeccion(s);
     setMenuMovilAbierto(false);
   };
+  // Con un dibujo abierto a pantalla completa, la barra "← Inicio" móvil no
+  // debe ni existir en el DOM (ver `SeccionDibujosProps.onEditorAbierto`).
+  const [dibujoEditorAbierto, setDibujoEditorAbierto] = useState(false);
   // Menú lateral deslizante en móvil (sustituye a la barra inferior) —
   // reutiliza el mismo <aside> del menú de escritorio, solo cambia cómo se
   // muestra en pantallas estrechas (Dirección Creativa, ajuste móvil).
   const [menuMovilAbierto, setMenuMovilAbierto] = useState(false);
-  // "Crear presupuesto" del sidebar (fuera de la ficha de cliente): al
-  // entrar en la sección Presupuestos con esta bandera activa, se abre
-  // directamente la pestaña Documentos con el selector de cliente ya
-  // desplegado — sin esto, el usuario tendría que navegar Presupuestos →
-  // Documentos → "+ Crear presupuesto" a mano cada vez.
-  const [crearPresupuestoInicial, setCrearPresupuestoInicial] = useState(false);
   const [asistente, setAsistente] = useState(false);
   const { empresa, actualizar } = useEmpresa(listo, sesion?.esAdmin ?? false);
   // Proveedores aislados por usuario — admin usa clave original, usuarios nuevos tienen espacio propio
   const { proveedores, productos, crearProveedor, actualizarProveedor, borrarProveedor, crearProducto, actualizarProducto, borrarProducto } = useProveedores(listo);
+  const { dataTheme, tema, alternar: alternarTema } = useTema();
+  const { perfil, actualizar: actualizarPerfil } = usePerfil(listo);
+  const [ajustesPerfil, setAjustesPerfil] = useState(false);
 
   useLicencia(sesion, logout);
   usePush(sesion);
@@ -147,6 +125,7 @@ export function PresupuestosPrototype() {
 
   const crearCliente = (cliente: Cliente) => {
     crear(cliente);
+    setNombresClientes((prev) => [{ id: cliente.id, nombre: cliente.nombre }, ...prev]);
     setCreando(false);
     // Abrimos la ficha directamente con el objeto recién creado,
     // sin ir al servidor (que aún puede no tenerlo guardado).
@@ -155,10 +134,25 @@ export function PresupuestosPrototype() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const inicialAvatar = (sesion?.nombre || '?').trim().charAt(0).toUpperCase();
+  /**
+   * Crea un cliente nuevo SIN cambiar de sección ni abrir su ficha — usado
+   * por "+ Nuevo cliente" dentro del selector de "+ Crear presupuesto"
+   * (`PresupuestosListaGlobal`), para no obligar a salir de ese flujo. Es
+   * el mismo `crear()` real (misma ficha, mismo guardado) que usa
+   * `crearCliente`; la única diferencia es que aquí no se navega a la
+   * ficha del cliente porque quien llama sigue con la creación del
+   * presupuesto.
+   */
+  const crearClienteRapido = (cliente: Cliente) => {
+    crear(cliente);
+    setNombresClientes((prev) => [{ id: cliente.id, nombre: cliente.nombre }, ...prev]);
+  };
+
+  const nombreParaMostrar = perfil.nombreMostrar.trim() || sesion?.nombre || '';
+  const inicialAvatar = (nombreParaMostrar || '?').trim().charAt(0).toUpperCase();
 
   return (
-    <div className={styles.app}>
+    <div className={styles.app} data-theme={dataTheme}>
       <div className={styles.appConSidebar}>
         {/* ===== Botón de menú — solo móvil, abre el mismo menú lateral ===== */}
         <button
@@ -176,7 +170,7 @@ export function PresupuestosPrototype() {
         <aside className={`${styles.sidebar} ${menuMovilAbierto ? styles.sidebarMovilAbierto : ''}`}>
           <button
             className={styles.sidebarMarca}
-            onClick={() => setAjustes(true)}
+            onClick={() => { setAjustes(true); setMenuMovilAbierto(false); }}
             title={sesion?.esAdmin ? 'Ajustes de empresa' : empresa.logo ? 'Cambiar logo' : 'Añade el logo de tu empresa'}
           >
             {empresa.logo ? (
@@ -217,13 +211,9 @@ export function PresupuestosPrototype() {
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
               Presupuestos
             </button>
-            <button
-              className={styles.sidebarNavItem}
-              onClick={() => { cambiarSeccion('presupuestos'); volverALista(); setCrearPresupuestoInicial(true); }}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="12" y1="18" x2="12" y2="12" /><line x1="9" y1="15" x2="15" y2="15" /></svg>
-              Crear presupuesto
-            </button>
+            {/* "Crear presupuesto" del sidebar retirado en el Incremento 1 del
+                Motor Documental — vuelve en el Incremento 2 apuntando ya al
+                editor nuevo (ver ARQUITECTURA-MOTOR-DOCUMENTAL.md). */}
             <button
               className={`${styles.sidebarNavItem} ${seccion === 'facturas' ? styles.sidebarNavItemActivo : ''}`}
               onClick={() => cambiarSeccion('facturas')}
@@ -252,9 +242,19 @@ export function PresupuestosPrototype() {
 
           <div className={styles.sidebarUser}>
             <div className={styles.sidebarUserQuien}>
-              <div className={styles.sidebarAvatar}>{inicialAvatar}</div>
+              <button
+                className={styles.sidebarAvatar}
+                onClick={() => { setAjustesPerfil(true); setMenuMovilAbierto(false); }}
+                title="Mi perfil"
+                aria-label="Mi perfil"
+                style={{ border: 'none', cursor: 'pointer', padding: 0, overflow: 'hidden', fontFamily: 'inherit' }}
+              >
+                {perfil.foto
+                  ? <img src={perfil.foto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                  : inicialAvatar}
+              </button>
               <div>
-                <div className={styles.sidebarUserNombre}>{sesion?.nombre}</div>
+                <div className={styles.sidebarUserNombre}>{nombreParaMostrar}</div>
                 <div className={styles.sidebarUserRol}>{sesion?.esAdmin ? 'Administrador' : 'Usuario'}</div>
               </div>
             </div>
@@ -262,7 +262,7 @@ export function PresupuestosPrototype() {
               {!sesion?.esAdmin && (
                 <button
                   className={styles.sidebarAccionBtn}
-                  onClick={() => setAjustesAlmac(true)}
+                  onClick={() => { setAjustesAlmac(true); setMenuMovilAbierto(false); }}
                   title={sesion?.almacenamiento === 'supabase' ? 'Almacenamiento en la nube' : 'Almacenamiento local'}
                 >
                   {sesion?.almacenamiento === 'supabase' ? (
@@ -273,13 +273,34 @@ export function PresupuestosPrototype() {
                 </button>
               )}
               {sesion?.esAdmin && (
-                <button className={styles.sidebarAccionBtn} onClick={() => setPanelAdmin(true)} title="Panel de usuarios">
+                <button className={styles.sidebarAccionBtn} onClick={() => { setPanelAdmin(true); setMenuMovilAbierto(false); }} title="Panel de usuarios">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
                 </button>
               )}
               <button
+                className={styles.sidebarAccionBtn}
+                onClick={() => { setAjustesBiometria(true); setMenuMovilAbierto(false); }}
+                title="Acceso biométrico"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 11c0 3.5-1 6.5-2.5 9" /><path d="M8.5 21a25 25 0 0 0 1.8-4.5" />
+                  <path d="M15 3.5a9 9 0 0 1 5 8c0 2-0.5 3.5-1 5" /><path d="M12 3a9 9 0 0 0-9 9c0 1.5 0 2.5 0.3 4" />
+                  <path d="M6 21a13 13 0 0 0 1.8-4" /><path d="M9 3.5A9 9 0 0 1 21 12c0 0.8 0 1.5-0.1 2" />
+                  <path d="M12 7a5 5 0 0 1 5 5c0 1.2-0.1 2.4-0.4 3.5" /><path d="M12 7a5 5 0 0 0-5 5c0 1.5-0.2 3-0.7 4.5" />
+                </svg>
+              </button>
+              <button
+                className={styles.sidebarAccionBtn}
+                onClick={alternarTema}
+                title={tema === 'oscuro' ? 'Modo claro' : 'Modo oscuro'}
+              >
+                {tema === 'oscuro'
+                  ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>
+                  : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>}
+              </button>
+              <button
                 className={`${styles.sidebarAccionBtn} ${asistente ? styles.sidebarAccionBtnActivo : ''}`}
-                onClick={() => setAsistente((v) => !v)}
+                onClick={() => { setAsistente((v) => !v); setMenuMovilAbierto(false); }}
                 title="Asistente IA"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /><circle cx="9" cy="10" r="1" fill="currentColor" /><circle cx="12" cy="10" r="1" fill="currentColor" /><circle cx="15" cy="10" r="1" fill="currentColor" /></svg>
@@ -292,16 +313,8 @@ export function PresupuestosPrototype() {
         </aside>
 
         <div className={styles.contenidoPrincipal}>
-      {/* Acento de madera de fondo, distinto por sección (misma foto real
-          del login, sin hojas) — puramente decorativo, detrás de todo el
-          contenido real. */}
-      <div
-        className={`${styles.maderaAcento} ${styles[MADERA_POR_SECCION[seccion].clase]}`}
-        style={{ backgroundImage: `url(${MADERA_POR_SECCION[seccion].imagen})` }}
-        aria-hidden="true"
-      />
       {/* ===== BARRA ATRÁS MÓVIL — aparece en presupuestos, facturas, notas, proveedores y dibujos ===== */}
-      {(['presupuestos', 'facturas', 'notas', 'proveedores', 'dibujos'] as string[]).includes(seccion) && (
+      {(['presupuestos', 'facturas', 'notas', 'proveedores', 'dibujos'] as string[]).includes(seccion) && !(seccion === 'dibujos' && dibujoEditorAbierto) && (
         <div className={styles.barraVolver}>
           <button
             className={styles.barraVolverBtn}
@@ -321,7 +334,7 @@ export function PresupuestosPrototype() {
         {/* ── SECCIÓN INICIO ── */}
         {seccion === 'inicio' && (
           <Dashboard
-            nombre={sesion?.nombre || ''}
+            nombre={nombreParaMostrar}
             clientes={clientes}
             facturas={facturas}
             resumen={resumenFacturas}
@@ -335,7 +348,7 @@ export function PresupuestosPrototype() {
         {seccion === 'notas' && <NotasVista clientes={nombresClientes} />}
 
         {/* ── SECCIÓN DIBUJOS (Fase 2.1) ── */}
-        {seccion === 'dibujos' && <SeccionDibujos clientes={nombresClientes} />}
+        {seccion === 'dibujos' && <SeccionDibujos clientes={nombresClientes} onEditorAbierto={setDibujoEditorAbierto} />}
 
         {/* ── SECCIÓN PROVEEDORES ── */}
         {seccion === 'proveedores' && (
@@ -358,8 +371,7 @@ export function PresupuestosPrototype() {
             clientes={nombresClientes}
             empresa={empresa}
             onActualizarEmpresa={actualizar}
-            abrirCreadorAlEntrar={crearPresupuestoInicial}
-            onCreadorAbierto={() => setCrearPresupuestoInicial(false)}
+            onCrearCliente={crearClienteRapido}
           />
         )}
 
@@ -441,6 +453,20 @@ export function PresupuestosPrototype() {
 
       {ajustes && (
         <AjustesEmpresa empresa={empresa} onGuardar={actualizar} onCerrar={() => setAjustes(false)} />
+      )}
+
+      {ajustesBiometria && (
+        <AjustesBiometria onCerrar={() => setAjustesBiometria(false)} />
+      )}
+
+      {ajustesPerfil && (
+        <AjustesPerfil
+          perfil={perfil}
+          nombreAcceso={sesion?.nombre || ''}
+          onGuardar={actualizarPerfil}
+          onCambioAcceso={loginDirecto}
+          onCerrar={() => setAjustesPerfil(false)}
+        />
       )}
 
       {ajustesAlmac && sesion && (

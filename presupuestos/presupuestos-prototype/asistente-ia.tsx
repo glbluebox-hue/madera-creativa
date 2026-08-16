@@ -6,11 +6,14 @@ type MensajeChat = { role: 'user' | 'assistant' | 'system'; content: string };
 
 /** Una escritura propuesta por la IA, adjunta a un mensaje del chat, pendiente de confirmación explícita. */
 type PropuestaChat = {
+  /** Id de la llamada a herramienta tal como la propuso el modelo — necesario al confirmar, para que el servidor reconstruya una conversación válida. */
+  id: string;
   nombre: string;
   argumentos: Record<string, unknown>;
   /** Conversación tal como se envió a `/ia/generar` cuando se propuso — necesaria para que la IA redacte la confirmación final con el resultado real. */
   historial: MensajeChat[];
   estado: 'pendiente' | 'confirmando' | 'confirmada' | 'error';
+  errorTexto?: string;
 };
 
 /** Un mensaje del chat del asistente. */
@@ -47,7 +50,7 @@ export type AsistenteIAProps = {
   /** Solo id+nombre de todos los clientes, para resolver a quién se refiere el asistente al navegar. */
   clientes: { id: string; nombre: string }[];
   /** Navegar a una sección. */
-  onNavegar: (seccion: 'clientes' | 'presupuestos' | 'facturas') => void;
+  onNavegar: (seccion: 'clientes' | 'presupuestos' | 'facturas' | 'notas') => void;
   /** Abrir la ficha de un cliente. */
   onAbrirCliente: (id: string) => void;
   /** Iniciar creación de cliente. */
@@ -81,6 +84,12 @@ export function AsistenteIA({
   ]);
   const [input, setInput] = useState('');
   const [cargando, setCargando] = useState(false);
+  // OpenAI suele responder en pocos segundos, pero una pregunta con varias
+  // llamadas a herramientas encadenadas, o una red lenta, puede tardar más
+  // — sin ningún aviso, esa espera se percibe como que la IA "se ha
+  // quedado colgada" aunque esté trabajando de verdad. Pasados unos
+  // segundos se muestra un aviso explícito de que sigue en marcha.
+  const [esperaLarga, setEsperaLarga] = useState(false);
   const [escuchando, setEscuchando] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -135,6 +144,8 @@ export function AsistenteIA({
 
     setMensajes(prev => [...prev, msgUsuario, msgCargando]);
     setCargando(true);
+    setEsperaLarga(false);
+    const avisoEspera = setTimeout(() => setEsperaLarga(true), 8000);
 
     try {
       const historial: MensajeChat[] = [...mensajes, msgUsuario]
@@ -144,14 +155,22 @@ export function AsistenteIA({
 
       const data = await generarRespuestaIA({ capacidad: 'asistente-global', mensajes: historial, referencias: contexto });
       const primeraPropuesta = data.propuestas[0];
-      const raw = data.respuesta || (primeraPropuesta ? 'Antes de hacerlo, confírmamelo:' : 'No pude procesar tu solicitud.');
+      // Antes solo se comprobaba `respuesta`/`propuestas` — cuando la IA
+      // resuelve la petición con una simple navegación (p. ej. "abre
+      // facturas", "llévame a notas"), no genera texto ni propuesta
+      // alguna, solo una acción de interfaz — y el chat mostraba "No pude
+      // procesar tu solicitud" aunque SÍ la hubiera entendido y fuera a
+      // hacerlo un instante después.
+      const raw = data.respuesta
+        || (primeraPropuesta ? 'Antes de hacerlo, confírmamelo:' : null)
+        || (data.accionesInterfaz.length ? 'Hecho, un momento…' : 'No pude procesar tu solicitud.');
 
       setMensajes(prev => prev.map(m =>
         m.cargando
           ? {
               ...m, texto: raw, cargando: false,
               propuesta: primeraPropuesta
-                ? { nombre: primeraPropuesta.nombre, argumentos: primeraPropuesta.argumentos, historial, estado: 'pendiente' }
+                ? { id: primeraPropuesta.id, nombre: primeraPropuesta.nombre, argumentos: primeraPropuesta.argumentos, historial, estado: 'pendiente' }
                 : undefined,
             }
           : m
@@ -160,11 +179,20 @@ export function AsistenteIA({
       for (const accion of data.accionesInterfaz) {
         setTimeout(() => ejecutarAccion(accion), 400);
       }
-    } catch {
+    } catch (err) {
+      // Antes siempre decía "comprueba tu conexión a internet" incluso
+      // cuando el problema real era que el modelo local había tardado
+      // demasiado (o había fallado por otro motivo) — un mensaje engañoso
+      // que no ayuda nada a diagnosticar qué ha pasado de verdad.
+      const mensaje = err instanceof Error && err.message
+        ? err.message
+        : 'No se pudo contactar con el servicio de IA. Comprueba tu conexión.';
       setMensajes(prev => prev.map(m =>
-        m.cargando ? { ...m, texto: 'Error de conexión. Comprueba tu conexión a internet.', cargando: false } : m
+        m.cargando ? { ...m, texto: mensaje, cargando: false } : m
       ));
     } finally {
+      clearTimeout(avisoEspera);
+      setEsperaLarga(false);
       setCargando(false);
     }
   };
@@ -184,14 +212,24 @@ export function AsistenteIA({
         argumentos: propuesta.argumentos,
         mensajesPrevios: propuesta.historial,
         referencias: contexto,
+        toolCallId: propuesta.id,
       });
+      // Navegación determinista tras una escritura confirmada — no se deja
+      // a que el modelo "decida" llamar a otra herramienta para esto (no es
+      // fiable turno a turno): el usuario pidió expresamente que, al crear
+      // una nota, se le lleve directamente a verla, no solo confirmársela
+      // por texto en el chat.
+      if (propuesta.nombre === 'crearNota') {
+        setTimeout(() => onNavegar('notas'), 500);
+      }
       const textoFinal = respuestaFinal?.respuesta || `Hecho. ${JSON.stringify(resultado)}`;
       setMensajes(prev => [
         ...prev.map(m => m.id === msgId ? { ...m, propuesta: { ...propuesta, estado: 'confirmada' as const } } : m),
         { id: uid(), rol: 'asistente' as const, texto: textoFinal },
       ]);
-    } catch {
-      setMensajes(prev => prev.map(m => m.id === msgId ? { ...m, propuesta: { ...propuesta, estado: 'error' as const } } : m));
+    } catch (err) {
+      const errorTexto = err instanceof Error && err.message ? err.message : undefined;
+      setMensajes(prev => prev.map(m => m.id === msgId ? { ...m, propuesta: { ...propuesta, estado: 'error' as const, errorTexto } } : m));
     }
   };
 
@@ -276,9 +314,16 @@ export function AsistenteIA({
             {mensajes.map(m => (
               <div key={m.id} className={`${styles.msg} ${m.rol === 'usuario' ? styles.msgUsuario : styles.msgAsistente}`}>
                 {m.cargando ? (
-                  <span className={styles.typing}>
-                    <span /><span /><span />
-                  </span>
+                  <>
+                    <span className={styles.typing}>
+                      <span /><span /><span />
+                    </span>
+                    {esperaLarga && (
+                      <p style={{ margin: '0.4rem 0 0', fontSize: '0.72rem', color: 'var(--topo-claro)' }}>
+                        Está tardando más de lo normal, pero sigue trabajando — no se ha quedado colgada.
+                      </p>
+                    )}
+                  </>
                 ) : (
                   <>
                     <p className={styles.msgTexto}>{m.texto}</p>
@@ -288,7 +333,7 @@ export function AsistenteIA({
                           <button
                             onClick={() => confirmarPropuesta(m.id)}
                             style={{
-                              background: 'var(--verde, #2f9e44)', color: '#fff', border: 'none',
+                              background: 'var(--verde)', color: 'var(--blanco)', border: 'none',
                               borderRadius: 6, padding: '0.4rem 0.9rem', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer',
                             }}
                           >
@@ -299,10 +344,23 @@ export function AsistenteIA({
                           <span style={{ fontSize: '0.78rem', color: 'var(--topo-claro)' }}>Ejecutando…</span>
                         )}
                         {m.propuesta.estado === 'confirmada' && (
-                          <span style={{ fontSize: '0.78rem', color: 'var(--verde, #2f9e44)', fontWeight: 700 }}>✓ Confirmado</span>
+                          <span style={{ fontSize: '0.78rem', color: 'var(--verde)', fontWeight: 700 }}>✓ Confirmado</span>
                         )}
                         {m.propuesta.estado === 'error' && (
-                          <span style={{ fontSize: '0.78rem', color: 'var(--rojo, #c0392b)' }}>No se pudo confirmar. Inténtalo de nuevo.</span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'flex-start' }}>
+                            <span style={{ fontSize: '0.78rem', color: 'var(--rojo)' }}>
+                              {m.propuesta.errorTexto || 'No se pudo confirmar. Inténtalo de nuevo.'}
+                            </span>
+                            <button
+                              onClick={() => setMensajes(prev => prev.map(x => x.id === m.id && x.propuesta ? { ...x, propuesta: { ...x.propuesta, estado: 'pendiente', errorTexto: undefined } } : x))}
+                              style={{
+                                background: 'none', border: '1px solid var(--rojo)', color: 'var(--rojo)',
+                                borderRadius: 6, padding: '0.25rem 0.7rem', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
+                              }}
+                            >
+                              Reintentar
+                            </button>
+                          </div>
                         )}
                       </div>
                     )}

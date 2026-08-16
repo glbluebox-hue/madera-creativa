@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import * as api from './api.js';
 import type { PresupuestoMC, ElementoPresupuesto } from './presupuestos-modelo.js';
 import type { Empresa } from './use-empresa.js';
-import { EditorPresupuestoLienzo } from './editor-presupuesto-lienzo.js';
+import { AbrirDocumento } from './abrir-documento.js';
 import { generarId } from './mock.js';
 import { formatoEuro, formatoFecha } from './calculos.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
@@ -40,9 +40,11 @@ export function PresupuestosVista({ clienteId, clienteNombre, empresa, onActuali
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Editor de lienzo (Fase 6): 'nuevo' abre en blanco, un PresupuestoMC abre
-  // ese documento existente para seguir editándolo — null lo mantiene cerrado.
-  const [editorLienzo, setEditorLienzo] = useState<'nuevo' | PresupuestoMC | null>(null);
+  // Presupuesto con editor en pantalla completa abierto (formato 'lienzo'
+  // legado o 'documento') — null lo mantiene cerrado. Sin opción de "nuevo
+  // en blanco": la creación de documentos nuevos vive fuera de esta vista
+  // desde el Incremento 1 del Motor Documental (ver ARQUITECTURA-MOTOR-DOCUMENTAL.md).
+  const [documentoAbierto, setDocumentoAbierto] = useState<PresupuestoMC | null>(null);
 
   const [formAbierto, setFormAbierto] = useState(false);
   const [form, setForm] = useState<FormularioPresupuesto>(FORM_VACIO);
@@ -81,6 +83,7 @@ export function PresupuestosVista({ clienteId, clienteNombre, empresa, onActuali
       alcance: alcanceDesdeTexto(form.alcanceTexto),
       items: [],
       contenidoLienzo: {},
+      contenidoDocumento: {},
       condicionesPago: '',
       validezDias: 30,
       condicionesGenerales: '',
@@ -164,26 +167,26 @@ export function PresupuestosVista({ clienteId, clienteNombre, empresa, onActuali
     }
   };
 
-  const guardarLienzo = async (p: PresupuestoMC) => {
+  const guardarDocumentoAbierto = async (p: PresupuestoMC) => {
     const guardado = await api.guardarPresupuesto(p);
     setPresupuestos((prev) => {
       const existe = prev.some((x) => x.id === guardado.id);
       return existe ? prev.map((x) => (x.id === guardado.id ? guardado : x)) : [guardado, ...prev];
     });
-    setEditorLienzo(guardado);
+    setDocumentoAbierto(guardado);
   };
 
   if (cargando) return <p style={{ color: 'var(--topo-claro)', fontSize: '0.85rem' }}>Cargando presupuestos…</p>;
 
-  if (editorLienzo) {
+  if (documentoAbierto) {
     return (
-      <EditorPresupuestoLienzo
-        presupuesto={editorLienzo === 'nuevo' ? null : editorLienzo}
+      <AbrirDocumento
+        presupuesto={documentoAbierto}
         clienteId={clienteId}
         clienteNombre={clienteNombre}
         empresa={empresa}
-        onGuardar={guardarLienzo}
-        onVolver={() => setEditorLienzo(null)}
+        onGuardar={guardarDocumentoAbierto}
+        onVolver={() => setDocumentoAbierto(null)}
         onCambiarLogoEmpresa={(logo) => onActualizarEmpresa({ logo })}
       />
     );
@@ -191,7 +194,7 @@ export function PresupuestosVista({ clienteId, clienteNombre, empresa, onActuali
 
   return (
     <div>
-      {error && <p style={{ color: 'var(--rojo, #c0392b)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>{error}</p>}
+      {error && <p style={{ color: 'var(--rojo)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>{error}</p>}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
         <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--topo-claro)' }}>
@@ -199,20 +202,13 @@ export function PresupuestosVista({ clienteId, clienteNombre, empresa, onActuali
         </p>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <button className={styles.btn} onClick={cargar} style={{ fontSize: '0.78rem' }}>Actualizar</button>
-          <button
-            className={styles.btn}
-            onClick={() => setEditorLienzo('nuevo')}
-            style={{ fontSize: '0.78rem' }}
-            title="Plantilla libre por hojas — inspirada en canvas, con fotos y archivos"
-          >
-            + Crear presupuesto (plantilla)
-          </button>
-          <button
-            className={`${styles.btn} ${styles.btnPrimario}`}
-            onClick={() => setFormAbierto((v) => !v)}
-            style={{ fontSize: '0.78rem' }}
-          >
-            {formAbierto ? 'Cancelar' : '+ Crear presupuesto'}
+          {/* "+ Crear presupuesto (plantilla)" retirado en el Incremento 1 del
+              Motor Documental — la creación de documentos nuevos vuelve en el
+              Incremento 2, apuntando ya al editor nuevo (ver ARQUITECTURA-MOTOR-DOCUMENTAL.md). */}
+          <button className={styles.btnCirculoOscuro} onClick={() => setFormAbierto((v) => !v)} title={formAbierto ? 'Cancelar' : 'Crear presupuesto'}>
+            {formAbierto
+              ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>}
           </button>
         </div>
       </div>
@@ -259,27 +255,27 @@ export function PresupuestosVista({ clienteId, clienteNombre, empresa, onActuali
       )}
 
       {presupuestos.length === 0 && !formAbierto ? (
-        <p style={{ color: 'var(--topo-claro)', fontSize: '0.85rem' }}>
-          Este cliente todavía no tiene ningún presupuesto. Créalo con «+ Crear presupuesto» o pídeselo al asistente de IA.
-        </p>
+        <div className={styles.tabVacio}>
+          <div className={styles.tabVacioIcono} style={{ display: 'flex', justifyContent: 'center' }}>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
+          </div>
+          <p>Este cliente todavía no tiene ningún presupuesto. Créalo con «+ Crear presupuesto» o pídeselo al asistente de IA.</p>
+        </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           {presupuestos.map((p) => (
-            <div key={p.id} style={{
-              border: '1px solid var(--borde)', borderRadius: 8, padding: '1rem',
-              background: 'var(--fondo-panel)',
-            }}>
-              {p.formato === 'lienzo' ? (
+            <div key={p.id} className={styles.filaLista} style={{ padding: '1rem' }}>
+              {p.formato === 'lienzo' || p.formato === 'documento' ? (
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
                   <div>
                     <p style={{ margin: 0, fontWeight: 700, fontSize: '1rem' }}>{p.titulo}</p>
                     <p style={{ margin: '0.2rem 0 0', fontSize: '0.72rem', color: 'var(--topo-muy-claro)' }}>
-                      Plantilla libre · {((p.contenidoLienzo as any)?.elements as unknown[] | undefined)?.filter((e: any) => e.type === 'frame').length ?? 0} hoja(s) · Creado {formatoFecha(p.creado)}
+                      {p.formato === 'lienzo' ? 'Plantilla libre (legado)' : 'Documento'} · Creado {formatoFecha(p.creado)}
                     </p>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                     <span style={{ fontWeight: 800, fontSize: '1.1rem', whiteSpace: 'nowrap' }}>{formatoEuro(p.precioTotal)}</span>
-                    <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={() => setEditorLienzo(p)}>Abrir editor</button>
+                    <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={() => setDocumentoAbierto(p)}>Abrir editor</button>
                     <ConfirmarBorrado onConfirmar={() => borrar(p.id)} titulo="Borrar presupuesto" />
                   </div>
                 </div>

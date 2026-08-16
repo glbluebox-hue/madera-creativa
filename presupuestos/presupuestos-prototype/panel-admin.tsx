@@ -21,9 +21,9 @@ export type PanelAdminProps = {
 };
 
 const BADGE: Record<EstadoUsuario, { color: string; label: string }> = {
-  pendiente:  { color: '#f59e0b', label: 'Pendiente' },
-  activo:     { color: '#16a34a', label: 'Activo' },
-  suspendido: { color: '#dc2626', label: 'Suspendido' },
+  pendiente:  { color: 'var(--ocre)', label: 'Pendiente' },
+  activo:     { color: 'var(--verde)', label: 'Activo' },
+  suspendido: { color: 'var(--rojo)', label: 'Suspendido' },
 };
 
 // Iconos de línea (Dirección Creativa) — sustituyen a los emoji anteriores.
@@ -101,7 +101,7 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
               Panel de administración
             </h2>
             {pendientes > 0 && (
-              <span style={{ background: '#f59e0b', color: '#fff', borderRadius: 20, padding: '2px 9px', fontSize: '0.72rem', fontWeight: 700 }}>
+              <span style={{ background: 'var(--ocre)', color: 'var(--blanco)', borderRadius: 'var(--radio-xl)', padding: '2px 9px', fontSize: '0.72rem', fontWeight: 700 }}>
                 {pendientes} pendiente{pendientes > 1 ? 's' : ''}
               </span>
             )}
@@ -133,7 +133,7 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
           </div>
 
           {/* Errores */}
-          {error && <div style={{ background: '#ffebee', border: '1px solid #ef9a9a', borderRadius: 8, padding: '0.6rem 0.85rem', fontSize: '0.82rem', color: '#c62828', marginBottom: '1rem' }}>{error}</div>}
+          {error && <div style={{ background: 'var(--rojo-bg)', border: '1px solid var(--rojo)', borderRadius: 'var(--radio)', padding: '0.6rem 0.85rem', fontSize: '0.82rem', color: 'var(--rojo)', marginBottom: '1rem' }}>{error}</div>}
 
           {/* Lista */}
           {cargando ? (
@@ -149,14 +149,14 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
                 const badge = BADGE[u.estado];
                 return (
                   <div key={u.id} style={{
-                    background: u.estado === 'pendiente' ? '#fffbeb' : '#fff',
-                    border: `1px solid ${u.estado === 'pendiente' ? '#fcd34d' : 'var(--borde)'}`,
+                    background: u.estado === 'pendiente' ? 'var(--ocre-bg)' : 'var(--blanco)',
+                    border: `1px solid ${u.estado === 'pendiente' ? 'var(--ocre)' : 'var(--borde)'}`,
                     borderRadius: 10, padding: '0.85rem 1rem',
                     display: 'flex', flexDirection: 'column', gap: '0.5rem',
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                       {/* Avatar */}
-                      <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--topo)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: '1rem', flexShrink: 0 }}>
+                      <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--topo)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--blanco)', fontWeight: 700, fontSize: '1rem', flexShrink: 0 }}>
                         {u.nombre.charAt(0).toUpperCase()}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -168,7 +168,7 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
                       </div>
                       <span style={{
                         fontSize: '0.7rem', fontWeight: 700, padding: '2px 9px', borderRadius: 20,
-                        background: badge.color, color: '#fff', flexShrink: 0,
+                        background: badge.color, color: 'var(--blanco)', flexShrink: 0,
                       }}>
                         {iconoBadge(u.estado)} {badge.label}
                       </span>

@@ -12,4 +12,11 @@ describe('presupuestos service', () => {
     expect(typeof presupuestosService.guardarCliente).toBe('function');
     expect(typeof presupuestosService.borrarCliente).toBe('function');
   });
+
+  it('debería exponer los métodos de gestión de contratos (Motor Documental, Incremento 12)', () => {
+    const presupuestosService = PresupuestosService.from();
+    expect(typeof presupuestosService.listarContratosDeCliente).toBe('function');
+    expect(typeof presupuestosService.guardarContrato).toBe('function');
+    expect(typeof presupuestosService.borrarContrato).toBe('function');
+  });
 });

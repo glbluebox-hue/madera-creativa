@@ -23,6 +23,23 @@ export type MensajeIA = {
   content: string;
   toolCallId?: string;
   toolName?: string;
+  /**
+   * Imágenes adjuntas (data URL o URL pública) — solo se envían al
+   * proveedor cuando el perfil de la capacidad es `'vision'` (Fase
+   * Facturas Profesional). El resto de proveedores/perfiles las ignora.
+   */
+  imagenes?: string[];
+  /**
+   * Solo en mensajes de rol `'assistant'`: la(s) llamada(s) a herramienta
+   * que "hizo" ese turno — imprescindible al reconstruir la conversación
+   * tras confirmar una propuesta de escritura (`ia-rutas.ts`), para que el
+   * siguiente mensaje de rol `'tool'` sea una respuesta válida a una
+   * llamada real. La API de OpenAI rechaza un mensaje `'tool'` que no siga
+   * a un `'assistant'` con `tool_calls` — un `'assistant'` de contenido
+   * vacío sin esto provoca un 400 real (bug encontrado 12/08/2026, nunca
+   * antes visto porque Ollama, usado hasta entonces, no validaba esto).
+   */
+  toolCalls?: { id: string; nombre: string; argumentos: Record<string, unknown> }[];
 };
 
 /** Definición de una herramienta tal como la necesita el proveedor (JSON Schema de sus parámetros). */

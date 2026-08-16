@@ -6,14 +6,45 @@ import { generarId } from './mock.js';
 export type PuntoEscena = { x: number; y: number };
 
 /**
- * Snapshot de la escala del dibujo: cuántos milímetros reales representa
- * una unidad de escena. Se fija una sola vez al calibrar (ver
- * `calibrarDesdeCota`) y no vuelve a cambiar salvo que el usuario recalibre
- * — es un hecho físico del dibujo, no una preferencia de visualización
- * (para eso está `UnidadVisualizacion`, que se puede cambiar libremente sin
- * volver a calibrar).
+ * Matriz de homografía 3x3 (fila a fila, 9 números) — transforma un punto
+ * de escena en coordenadas homogéneas. Ver `aplicarMatriz`.
  */
-export type EscalaSnapshot = { factorMm: number };
+export type MatrizHomografia = readonly [number, number, number, number, number, number, number, number, number];
+
+/**
+ * Calibración simple: cuántos milímetros reales representa una unidad de
+ * escena, un único factor para todo el dibujo. Exacta solo si la foto no
+ * tiene perspectiva relevante (cámara perpendicular a lo fotografiado) o
+ * para medidas en la misma orientación/profundidad que la cota usada para
+ * calibrar — cualquier otra línea en un ángulo distinto sale desviada.
+ */
+export type EscalaLineal = { tipo: 'lineal'; factorMm: number };
+
+/**
+ * Calibración por rectángulo: corrige la perspectiva de la foto. Se
+ * calibra marcando las 4 esquinas (en la foto, ya distorsionadas por la
+ * perspectiva) de un rectángulo real conocido — `matriz` es la homografía
+ * que lleva cualquier punto de esa zona directamente a milímetros reales
+ * sobre el plano del rectángulo (ver `calibrarPorRectangulo`), así que
+ * medir la distancia entre dos puntos ya transformados da la medida real
+ * corregida, sea cual sea su orientación dentro de esa zona — a diferencia
+ * de `EscalaLineal`, que solo es exacta en una dirección.
+ */
+export type EscalaPerspectiva = {
+  tipo: 'perspectiva';
+  matriz: MatrizHomografia;
+  anchoMm: number;
+  altoMm: number;
+};
+
+/**
+ * Snapshot de la escala del dibujo. Se fija una sola vez al calibrar (ver
+ * `calibrarDesdeCota` / `calibrarPorRectangulo`) y no vuelve a cambiar salvo
+ * que el usuario recalibre — es un hecho físico del dibujo, no una
+ * preferencia de visualización (para eso está `UnidadVisualizacion`, que se
+ * puede cambiar libremente sin volver a calibrar).
+ */
+export type EscalaSnapshot = EscalaLineal | EscalaPerspectiva;
 
 /**
  * Escala del dibujo — `null` mientras no exista una calibración real. Con
@@ -85,8 +116,180 @@ function perpendicularUnitaria(a: PuntoEscena, b: PuntoEscena): PuntoEscena {
   return { x: -dy / len, y: dx / len };
 }
 
-function calcularLongitudMm(longitudInterna: number, escala: EscalaDibujo): number | null {
-  return escala ? longitudInterna * escala.factorMm : null;
+const MATRIZ_IDENTIDAD: MatrizHomografia = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+
+function multiplicarMatrices(a: MatrizHomografia, b: MatrizHomografia): MatrizHomografia {
+  const r: number[] = new Array(9).fill(0);
+  for (let i = 0; i < 3; i++) {
+    for (let j = 0; j < 3; j++) {
+      let s = 0;
+      for (let k = 0; k < 3; k++) s += a[i * 3 + k] * b[k * 3 + j];
+      r[i * 3 + j] = s;
+    }
+  }
+  return r as unknown as MatrizHomografia;
+}
+
+function invertirMatriz3x3(m: MatrizHomografia): MatrizHomografia {
+  const [a, b, c, d, e, f, g, h, i] = m;
+  const A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g;
+  const D = -(b * i - c * h), E = a * i - c * g, F = -(a * h - b * g);
+  const G = b * f - c * e, H = -(a * f - c * d), I = a * e - b * d;
+  const det = a * A + b * B + c * C;
+  if (Math.abs(det) < 1e-10) return MATRIZ_IDENTIDAD;
+  const inv = 1 / det;
+  return [A * inv, D * inv, G * inv, B * inv, E * inv, H * inv, C * inv, F * inv, I * inv];
+}
+
+/** Aplica una homografía a un punto de escena — divide por la coordenada homogénea `w` (proyección en perspectiva). */
+function aplicarMatriz(m: MatrizHomografia, p: PuntoEscena): PuntoEscena {
+  const x = m[0] * p.x + m[1] * p.y + m[2];
+  const y = m[3] * p.x + m[4] * p.y + m[5];
+  const w = m[6] * p.x + m[7] * p.y + m[8];
+  return { x: x / w, y: y / w };
+}
+
+/**
+ * Homografía que transforma el cuadrado unidad (0,0)-(1,0)-(1,1)-(0,1) en el
+ * cuadrilátero `q` (en el mismo orden: arriba-izq, arriba-der, abajo-der,
+ * abajo-izq) — método estándar de Heckbert ("Fundamentals of Texture
+ * Mapping and Image Warping", 1989): los coeficientes de perspectiva (g, h)
+ * salen de un sistema lineal 2x2 a partir de cuánto se aparta el
+ * cuadrilátero de ser un paralelogramo; el resto de coeficientes salen
+ * directos una vez conocidos esos dos.
+ */
+function homografiaCuadradoAQuad(q: readonly [PuntoEscena, PuntoEscena, PuntoEscena, PuntoEscena]): MatrizHomografia {
+  const [p0, p1, p2, p3] = q;
+  const dx1 = p1.x - p2.x, dy1 = p1.y - p2.y;
+  const dx2 = p3.x - p2.x, dy2 = p3.y - p2.y;
+  const dx3 = p0.x - p1.x + p2.x - p3.x;
+  const dy3 = p0.y - p1.y + p2.y - p3.y;
+  const det = dx1 * dy2 - dx2 * dy1;
+  const g = det === 0 ? 0 : (dx3 * dy2 - dx2 * dy3) / det;
+  const h = det === 0 ? 0 : (dx1 * dy3 - dx3 * dy1) / det;
+  const a = p1.x - p0.x + g * p1.x;
+  const b = p3.x - p0.x + h * p3.x;
+  const c = p0.x;
+  const d = p1.y - p0.y + g * p1.y;
+  const e = p3.y - p0.y + h * p3.y;
+  const f = p0.y;
+  return [a, b, c, d, e, f, g, h, 1];
+}
+
+/**
+ * Calibra corrigiendo la perspectiva a partir de las 4 esquinas (en la
+ * foto, en orden arriba-izq → arriba-der → abajo-der → abajo-izq) de un
+ * rectángulo real de medidas conocidas. La matriz resultante lleva
+ * cualquier punto de esa zona de la foto directamente a milímetros reales
+ * sobre el plano del rectángulo: primero deshace la perspectiva (homografía
+ * cuadrilátero → cuadrado unidad, la inversa de `homografiaCuadradoAQuad`)
+ * y luego escala el cuadrado unidad al ancho/alto reales — ambos pasos
+ * caben en una sola matriz porque componer dos homografías es multiplicar
+ * sus matrices.
+ */
+export function calibrarPorRectangulo(
+  esquinas: readonly [PuntoEscena, PuntoEscena, PuntoEscena, PuntoEscena],
+  anchoMm: number,
+  altoMm: number
+): EscalaPerspectiva {
+  const cuadradoAQuad = homografiaCuadradoAQuad(esquinas);
+  const quadACuadrado = invertirMatriz3x3(cuadradoAQuad);
+  const escalar: MatrizHomografia = [anchoMm, 0, 0, 0, altoMm, 0, 0, 0, 1];
+  return { tipo: 'perspectiva', matriz: multiplicarMatrices(escalar, quadACuadrado), anchoMm, altoMm };
+}
+
+/** Ids fijos de los elementos temporales que marcan las esquinas mientras se calibra por rectángulo — nunca se persisten, solo existen mientras dura la captura (ver `construirMarcadoresCalibracion` y `editor-dibujo.tsx`). */
+export const IDS_MARCADORES_CALIBRACION = ['__calib_esquina_0', '__calib_esquina_1', '__calib_esquina_2', '__calib_esquina_3'] as const;
+export const ID_LINEA_CALIBRACION = '__calib_linea_rectangulo';
+
+/**
+ * Construye los elementos visuales temporales (un círculo por esquina ya
+ * marcada + una línea que las va uniendo) que guían al usuario mientras
+ * toca las 4 esquinas del rectángulo de referencia. Se reconstruyen enteros
+ * en cada toque nuevo, igual que el resto del módulo — nunca se guardan en
+ * el dibujo ni entran en el registro de cotas.
+ */
+export function construirMarcadoresCalibracion(puntos: readonly PuntoEscena[]): ExcalidrawElement[] {
+  const radio = 7;
+  const marcadores = puntos.map((p, i) =>
+    convertToExcalidrawElements(
+      [
+        {
+          type: 'ellipse',
+          id: IDS_MARCADORES_CALIBRACION[i],
+          x: p.x - radio,
+          y: p.y - radio,
+          width: radio * 2,
+          height: radio * 2,
+          strokeColor: '#e03131',
+          backgroundColor: '#ffc9c9',
+          fillStyle: 'solid',
+          strokeWidth: 2,
+        } as any,
+      ],
+      { regenerateIds: false }
+    )[0]
+  );
+  if (puntos.length < 2) return marcadores;
+  const cerrado = puntos.length === 4 ? [...puntos, puntos[0]] : puntos;
+  const origen = cerrado[0];
+  const linea = convertToExcalidrawElements(
+    [
+      {
+        type: 'line',
+        id: ID_LINEA_CALIBRACION,
+        x: origen.x,
+        y: origen.y,
+        points: cerrado.map((p) => [p.x - origen.x, p.y - origen.y]),
+        strokeColor: '#e03131',
+        strokeWidth: 2,
+      } as any,
+    ],
+    { regenerateIds: false }
+  );
+  return [...marcadores, ...linea];
+}
+
+function calcularLongitudMm(puntoOrigen: PuntoEscena, puntoDestino: PuntoEscena, longitudInterna: number, escala: EscalaDibujo): number | null {
+  if (!escala) return null;
+  if (escala.tipo === 'lineal') return longitudInterna * escala.factorMm;
+  const a = aplicarMatriz(escala.matriz, puntoOrigen);
+  const b = aplicarMatriz(escala.matriz, puntoDestino);
+  return Math.hypot(b.x - a.x, b.y - a.y);
+}
+
+/**
+ * Busca, por búsqueda binaria, el punto a lo largo del rayo
+ * origen→direcciónActual cuya medida real (según `escala`) es exactamente
+ * `longitudMmObjetivo`. Con escala lineal habría fórmula cerrada (y se usa
+ * como atajo), pero con perspectiva la relación entre distancia en la
+ * escena y milímetros reales no es lineal — sí es monótona a lo largo de un
+ * mismo rayo dentro de la zona calibrada, así que la búsqueda binaria
+ * converge sin problema.
+ */
+function resolverPuntoParaLongitud(
+  origen: PuntoEscena,
+  direccionActual: PuntoEscena,
+  longitudMmObjetivo: number,
+  escala: EscalaSnapshot
+): PuntoEscena {
+  const dx = direccionActual.x - origen.x, dy = direccionActual.y - origen.y;
+  const largoDir = Math.hypot(dx, dy) || 1;
+  const ux = dx / largoDir, uy = dy / largoDir;
+  if (escala.tipo === 'lineal') {
+    const longitudInterna = longitudMmObjetivo / escala.factorMm;
+    return { x: origen.x + ux * longitudInterna, y: origen.y + uy * longitudInterna };
+  }
+  const medidaEn = (t: number) => calcularLongitudMm(origen, { x: origen.x + ux * t, y: origen.y + uy * t }, t, escala)!;
+  let lo = 0;
+  let hi = Math.max(largoDir * 4, 1000);
+  for (let i = 0; i < 30 && medidaEn(hi) < longitudMmObjetivo; i++) hi *= 2;
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) / 2;
+    if (medidaEn(mid) < longitudMmObjetivo) lo = mid; else hi = mid;
+  }
+  const t = (lo + hi) / 2;
+  return { x: origen.x + ux * t, y: origen.y + uy * t };
 }
 
 /** Convierte una longitud en milímetros a la unidad de visualización elegida. */
@@ -97,7 +300,7 @@ export function convertirDesdeMm(longitudMm: number, unidadVisualizacion: Unidad
 }
 
 /** Convierte un valor en la unidad dada a milímetros — inverso de `convertirDesdeMm`. */
-function convertirAMm(valor: number, unidad: UnidadVisualizacion): number {
+export function convertirAMm(valor: number, unidad: UnidadVisualizacion): number {
   if (unidad === 'mm') return valor;
   if (unidad === 'cm') return valor * 10;
   return valor * 1000;
@@ -256,7 +459,7 @@ function construirCota(
     puntoDestino,
     longitudInterna,
     escalaUtilizada: escala,
-    longitudMm: calcularLongitudMm(longitudInterna, escala),
+    longitudMm: calcularLongitudMm(puntoOrigen, puntoDestino, longitudInterna, escala),
     elementos: identidad.elementos,
     fecha: identidad.fecha,
     version: identidad.version,
@@ -333,8 +536,8 @@ export function calibrarDesdeCota(
   cotaReferencia: Pick<Cota, 'longitudInterna'>,
   valorReal: number,
   unidadReal: UnidadVisualizacion
-): EscalaSnapshot {
-  return { factorMm: convertirAMm(valorReal, unidadReal) / cotaReferencia.longitudInterna };
+): EscalaLineal {
+  return { tipo: 'lineal', factorMm: convertirAMm(valorReal, unidadReal) / cotaReferencia.longitudInterna };
 }
 
 /**
@@ -495,7 +698,7 @@ export function sincronizarCotas(
         puntoDestino: p2,
         longitudInterna,
         escalaUtilizada: escala,
-        longitudMm: calcularLongitudMm(longitudInterna, escala),
+        longitudMm: calcularLongitudMm(p1, p2, longitudInterna, escala),
         elementos: {
           flechaId: generarId(),
           extension1Id: generarId(),
@@ -539,7 +742,7 @@ export function sincronizarCotas(
         puntoDestino,
         longitudInterna,
         escalaUtilizada: escala,
-        longitudMm: calcularLongitudMm(longitudInterna, escala),
+        longitudMm: calcularLongitudMm(puntoOrigen, puntoDestino, longitudInterna, escala),
         version: cota.version + 1,
         fecha: new Date().toISOString(),
       };
@@ -593,14 +796,8 @@ export function ajustarLongitudCotaEnEscena(
   const estilo = flechaViva ? estiloDeFlecha(flechaViva) : ESTILO_POR_DEFECTO;
 
   const longitudMm = convertirAMm(longitudNueva, unidadNueva);
-  const longitudInterna = longitudMm / escala.factorMm;
-  const dx = cota.puntoDestino.x - cota.puntoOrigen.x;
-  const dy = cota.puntoDestino.y - cota.puntoOrigen.y;
-  const largoActual = Math.hypot(dx, dy) || 1;
-  const puntoDestino = {
-    x: cota.puntoOrigen.x + (dx / largoActual) * longitudInterna,
-    y: cota.puntoOrigen.y + (dy / largoActual) * longitudInterna,
-  };
+  const puntoDestino = resolverPuntoParaLongitud(cota.puntoOrigen, cota.puntoDestino, longitudMm, escala);
+  const longitudInterna = distancia(cota.puntoOrigen, puntoDestino);
 
   const actualizada: Cota = {
     ...cota,

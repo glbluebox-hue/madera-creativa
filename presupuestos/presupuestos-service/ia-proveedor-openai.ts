@@ -34,7 +34,7 @@ function obtenerCliente(): OpenAI {
   if (!apiKey) throw new ErrorProveedorNoConfigurado();
   // maxRetries:0 — ServicioCentralIA ya tiene su propia cadena de fallback
   // entre proveedores; dejar que el SDK reintente además por su cuenta solo
-  // alarga un fallo real sin aportar nada (ver ia-proveedor-ollama.ts).
+  // alarga un fallo real sin aportar nada.
   if (!clienteCache) clienteCache = new OpenAI({ apiKey, timeout: obtenerTimeoutMs(), maxRetries: 0 });
   return clienteCache;
 }

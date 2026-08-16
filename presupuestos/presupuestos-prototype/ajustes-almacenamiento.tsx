@@ -51,9 +51,9 @@ export function AjustesAlmacenamiento({ sesion, onActualizar, onCerrar }: Ajuste
 
             {/* Estado actual */}
             <div style={{
-              background: esLocal ? '#faf8f5' : '#e8f5e9',
-              border: `1px solid ${esLocal ? 'var(--borde)' : '#81c784'}`,
-              borderRadius: 10, padding: '1rem',
+              background: esLocal ? 'var(--fondo)' : 'var(--verde-bg)',
+              border: `1px solid ${esLocal ? 'var(--borde)' : 'var(--verde)'}`,
+              borderRadius: 'var(--radio-md)', padding: '1rem',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                 <span style={{ color: 'var(--topo)' }}>{esLocal ? <IconoMovil /> : <IconoNube />}</span>
@@ -69,7 +69,7 @@ export function AjustesAlmacenamiento({ sesion, onActualizar, onCerrar }: Ajuste
                 </div>
                 <span style={{
                   marginLeft: 'auto', fontSize: '0.7rem', fontWeight: 700,
-                  background: esLocal ? 'var(--topo)' : '#2e7d32', color: '#fff',
+                  background: esLocal ? 'var(--topo)' : 'var(--verde)', color: 'var(--blanco)',
                   borderRadius: 20, padding: '2px 10px',
                 }}>
                   ACTIVO
@@ -119,7 +119,7 @@ export function AjustesAlmacenamiento({ sesion, onActualizar, onCerrar }: Ajuste
 
             {/* Opción nube */}
             <div style={{
-              border: `2px solid ${esSupabase ? '#2e7d32' : 'var(--borde)'}`,
+              border: `2px solid ${esSupabase ? 'var(--verde)' : 'var(--borde)'}`,
               borderRadius: 10, padding: '1rem',
             }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>

@@ -20,6 +20,10 @@ export default defineConfig({
       '^/api/.*': {
         target: 'http://localhost:5000',
         changeOrigin: true,
+        // Reenvía la IP real del cliente (X-Forwarded-For) al backend —
+        // sin esto, `app.set('trust proxy', 1)` no tiene nada que leer y
+        // los limitadores por IP siguen viendo siempre 127.0.0.1.
+        xfwd: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
     },

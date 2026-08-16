@@ -172,7 +172,7 @@ export function SeccionPresupuestos({ onAbrirCliente }: SeccionPresupuestosProps
               marginLeft: '0.4rem',
               fontSize: '0.7rem',
               background: carpeta === f.id ? 'rgba(255,255,255,0.25)' : f.bg,
-              color: carpeta === f.id ? '#fff' : f.color,
+              color: carpeta === f.id ? 'var(--blanco)' : f.color,
               borderRadius: 3,
               padding: '0 5px',
               fontWeight: 700,

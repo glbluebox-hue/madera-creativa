@@ -1,7 +1,10 @@
-import type { Cliente, Factura, Proveedor, Producto, Dibujo, Carpeta } from './types.js';
+import type { Cliente, Factura, Proveedor, Producto, Dibujo, Carpeta, GastoPeriodico } from './types.js';
 import type { NotaMC } from './notas-modelo.js';
 import type { PresupuestoMC } from './presupuestos-modelo.js';
+import type { PlantillaMC, RecursoMC, ComponenteMC } from './documento-modelo.js';
+import type { ContratoMC } from './contratos-modelo.js';
 import type { Empresa } from './use-empresa.js';
+import type { Perfil } from './use-perfil.js';
 
 const BASE = '/api/presupuestos-service';
 
@@ -145,10 +148,13 @@ export async function obtenerFacturas(pagina = 1, limite = 30, tipo: 'ingreso' |
 
 /**
  * Todas las facturas de un año concreto, sin paginar — para el resumen
- * trimestral, que necesita el año completo para ser correcto.
+ * trimestral, que necesita el año completo para ser correcto. Con
+ * `trimestre` (1-4), acota además a ese trimestre — para navegar las
+ * facturas "por carpetas" en la lista.
  */
-export async function obtenerFacturasPorAnio(anio: number): Promise<Factura[]> {
-  const res = await fetchConAuth(`/facturas?anio=${anio}`);
+export async function obtenerFacturasPorAnio(anio: number, trimestre?: number): Promise<Factura[]> {
+  const qs = trimestre ? `anio=${anio}&trimestre=${trimestre}` : `anio=${anio}`;
+  const res = await fetchConAuth(`/facturas?${qs}`);
   await comprobarRespuesta(res, 'No se pudieron cargar las facturas del año');
   const datos: Pagina<Factura> = await res.json();
   return datos.items;
@@ -190,7 +196,7 @@ export async function obtenerFacturasDeProveedor(nombreProveedor: string): Promi
 }
 
 /** Total gastado y número de facturas por proveedor (texto), calculado en el servidor. */
-export async function obtenerResumenPorProveedor(): Promise<{ proveedor: string; totalGastado: number; numFacturas: number }[]> {
+export async function obtenerResumenPorProveedor(): Promise<{ proveedor: string; proveedorId: string; totalGastado: number; numFacturas: number }[]> {
   const res = await fetchConAuth('/facturas/resumen-proveedores');
   await comprobarRespuesta(res, 'No se pudo cargar el resumen de proveedores');
   return res.json();
@@ -227,6 +233,77 @@ export async function guardarFactura(f: Factura): Promise<Factura> {
 export async function borrarFactura(id: string): Promise<void> {
   const res = await fetchConAuth(`/facturas/${id}`, { method: 'DELETE' });
   await comprobarRespuesta(res, 'No se pudo borrar la factura');
+}
+
+/** Nombre de archivo sugerido por el servidor, leído de `Content-Disposition`. */
+function nombreDesdeContentDisposition(res: Response, porDefecto: string): string {
+  const cabecera = res.headers.get('Content-Disposition') ?? '';
+  const m = cabecera.match(/filename="?([^"]+)"?/);
+  return m?.[1] ?? porDefecto;
+}
+
+/** Descarga el archivo (PDF/ZIP) que devuelve `res` en el navegador, con el nombre indicado por el servidor. */
+function descargarBlobDelNavegador(blob: Blob, nombreArchivo: string): void {
+  const url = URL.createObjectURL(blob);
+  const enlace = document.createElement('a');
+  enlace.href = url;
+  enlace.download = nombreArchivo;
+  document.body.appendChild(enlace);
+  enlace.click();
+  enlace.remove();
+  URL.revokeObjectURL(url);
+}
+
+/** Descarga el PDF real de una factura (Fase Facturas Profesional). */
+export async function descargarPdfFactura(id: string): Promise<void> {
+  const res = await fetchConAuth(`/facturas/${id}/pdf`);
+  await comprobarRespuesta(res, 'No se pudo generar el PDF de la factura');
+  descargarBlobDelNavegador(await res.blob(), nombreDesdeContentDisposition(res, `factura-${id}.pdf`));
+}
+
+/**
+ * Descarga un ZIP con el PDF de varias facturas — por `ids` concretos
+ * (selección múltiple) o por filtro `anio`/`trimestre`/`tipo` ("Descargar
+ * todas").
+ */
+export async function descargarZipFacturas(opciones: { ids?: string[]; anio?: number; trimestre?: number; tipo?: 'ingreso' | 'gasto' }): Promise<void> {
+  const res = await fetchConAuth('/facturas/descargar-zip', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(opciones),
+  });
+  await comprobarRespuesta(res, 'No se pudo generar el paquete de facturas');
+  descargarBlobDelNavegador(await res.blob(), nombreDesdeContentDisposition(res, 'facturas.zip'));
+}
+
+/** Descarga la documentación completa para el asesor de un trimestre (resumen PDF + facturas en ZIP). */
+export async function descargarDocumentacionAsesor(anio: number, trimestre: number): Promise<void> {
+  const res = await fetchConAuth(`/facturas/documentacion-asesor?anio=${anio}&trimestre=${trimestre}`);
+  await comprobarRespuesta(res, 'No se pudo generar la documentación para el asesor');
+  descargarBlobDelNavegador(await res.blob(), nombreDesdeContentDisposition(res, `documentacion-T${trimestre}-${anio}.zip`));
+}
+
+/* ===== GASTOS PERIÓDICOS/ESTIMADOS (Fase Facturas Profesional) ===== */
+
+export async function obtenerGastosPeriodicos(): Promise<GastoPeriodico[]> {
+  const res = await fetchConAuth('/gastos-periodicos');
+  await comprobarRespuesta(res, 'No se pudieron cargar los gastos periódicos');
+  return res.json();
+}
+
+export async function guardarGastoPeriodico(g: GastoPeriodico): Promise<GastoPeriodico> {
+  const res = await fetchConAuth(`/gastos-periodicos/${g.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(g),
+  });
+  await comprobarRespuesta(res, 'No se pudo guardar el gasto periódico');
+  return res.json();
+}
+
+export async function borrarGastoPeriodico(id: string): Promise<void> {
+  const res = await fetchConAuth(`/gastos-periodicos/${id}`, { method: 'DELETE' });
+  await comprobarRespuesta(res, 'No se pudo borrar el gasto periódico');
 }
 
 /* ===== DIBUJOS (módulo profesional de dibujo, Fase 2.1) ===== */
@@ -493,7 +570,7 @@ export type RespuestaGenerarIA = {
   propuestas: PropuestaEscrituraIA[];
 };
 
-type MensajeChatIA = { role: 'user' | 'assistant' | 'system'; content: string };
+type MensajeChatIA = { role: 'user' | 'assistant' | 'system'; content: string; imagenes?: string[] };
 type EstadoTrabajoIA = 'pendiente' | 'completado' | 'error';
 type RespuestaTrabajoIA<T> = { estado: EstadoTrabajoIA; resultado?: T; error?: string };
 
@@ -555,14 +632,21 @@ export async function confirmarPropuestaIA(params: {
   argumentos: Record<string, unknown>;
   mensajesPrevios?: MensajeChatIA[];
   referencias?: Record<string, unknown>;
+  /** Id de la llamada a herramienta que propuso el modelo — imprescindible para que el servidor pueda reconstruir una conversación válida al redactar la respuesta final. */
+  toolCallId?: string;
 }): Promise<{ resultado: Record<string, unknown>; respuestaFinal?: RespuestaGenerarIA }> {
   const res = await fetchConAuth('/ia/herramientas/ejecutar', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
-  await comprobarRespuesta(res, 'No se pudo confirmar la acción');
+  // "con motivo": un 400 de validación (p. ej. faltan datos imprescindibles)
+  // trae un mensaje concreto del servidor — mostrarlo tal cual es mucho más
+  // útil que el genérico "no se pudo confirmar", que no da ninguna pista de
+  // qué ha fallado de verdad.
+  await comprobarRespuestaConMotivo(res, 'No se pudo confirmar la acción');
   const data = await res.json();
+  if (data.resultado?.error) throw new Error(data.resultado.error);
   if (!data.trabajoId) return { resultado: data.resultado };
   const respuestaFinal = await sondearTrabajoIA<RespuestaGenerarIA>(data.trabajoId);
   return { resultado: data.resultado, respuestaFinal };
@@ -604,6 +688,121 @@ export async function guardarPresupuesto(p: PresupuestoMC): Promise<PresupuestoM
 export async function borrarPresupuesto(id: string): Promise<void> {
   const res = await fetchConAuth(`/presupuestos/${id}`, { method: 'DELETE' });
   await comprobarRespuesta(res, 'No se pudo borrar el presupuesto');
+}
+
+/* ===== PLANTILLAS (Motor Documental, Incremento 4) ===== */
+
+/** Recupera todas las plantillas del usuario. */
+export async function obtenerPlantillas(): Promise<PlantillaMC[]> {
+  const res = await fetchConAuth('/plantillas');
+  await comprobarRespuesta(res, 'No se pudieron cargar las plantillas');
+  return res.json();
+}
+
+/** Crea o actualiza una plantilla. */
+export async function guardarPlantilla(p: PlantillaMC): Promise<PlantillaMC> {
+  const res = await fetchConAuth(`/plantillas/${p.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(p),
+  });
+  await comprobarRespuesta(res, 'No se pudo guardar la plantilla');
+  return res.json();
+}
+
+/** Borra una plantilla. */
+export async function borrarPlantilla(id: string): Promise<void> {
+  const res = await fetchConAuth(`/plantillas/${id}`, { method: 'DELETE' });
+  await comprobarRespuesta(res, 'No se pudo borrar la plantilla');
+}
+
+/* ===== BIBLIOTECA DE RECURSOS (Motor Documental, Incremento 5) ===== */
+
+/** Recupera todos los recursos de la biblioteca del usuario. */
+export async function obtenerRecursos(): Promise<RecursoMC[]> {
+  const res = await fetchConAuth('/recursos');
+  await comprobarRespuesta(res, 'No se pudieron cargar los recursos');
+  return res.json();
+}
+
+/** Sube un recurso nuevo (o recupera el existente si el mismo archivo ya estaba catalogado). */
+export async function subirRecurso(datos: { nombre: string; tipo: RecursoMC['tipo']; ambito: RecursoMC['ambito']; etiquetas: string[]; dataUrl: string }): Promise<RecursoMC> {
+  const res = await fetchConAuth('/recursos', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(datos),
+  });
+  await comprobarRespuesta(res, 'No se pudo subir el recurso');
+  return res.json();
+}
+
+/** Renombra o retagea un recurso. */
+export async function actualizarRecurso(id: string, cambios: { nombre?: string; etiquetas?: string[] }): Promise<RecursoMC> {
+  const res = await fetchConAuth(`/recursos/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(cambios),
+  });
+  await comprobarRespuesta(res, 'No se pudo actualizar el recurso');
+  return res.json();
+}
+
+/** Borra un recurso de la biblioteca. */
+export async function borrarRecurso(id: string): Promise<void> {
+  const res = await fetchConAuth(`/recursos/${id}`, { method: 'DELETE' });
+  await comprobarRespuesta(res, 'No se pudo borrar el recurso');
+}
+
+/* ===== COMPONENTES REUTILIZABLES (Motor Documental, Incremento 6) ===== */
+
+/** Recupera todos los componentes del usuario. */
+export async function obtenerComponentes(): Promise<ComponenteMC[]> {
+  const res = await fetchConAuth('/componentes');
+  await comprobarRespuesta(res, 'No se pudieron cargar los componentes');
+  return res.json();
+}
+
+/** Crea o actualiza un componente. */
+export async function guardarComponente(c: ComponenteMC): Promise<ComponenteMC> {
+  const res = await fetchConAuth(`/componentes/${c.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(c),
+  });
+  await comprobarRespuesta(res, 'No se pudo guardar el componente');
+  return res.json();
+}
+
+/** Borra un componente. */
+export async function borrarComponente(id: string): Promise<void> {
+  const res = await fetchConAuth(`/componentes/${id}`, { method: 'DELETE' });
+  await comprobarRespuesta(res, 'No se pudo borrar el componente');
+}
+
+/* ===== CONTRATOS (Motor Documental, Incremento 12 — segundo tipo de documento) ===== */
+
+/** Recupera los contratos de un cliente. */
+export async function obtenerContratos(clienteId: string): Promise<ContratoMC[]> {
+  const res = await fetchConAuth(`/contratos?clienteId=${encodeURIComponent(clienteId)}`);
+  await comprobarRespuesta(res, 'No se pudieron cargar los contratos');
+  return res.json();
+}
+
+/** Crea o actualiza un contrato. */
+export async function guardarContrato(c: ContratoMC): Promise<ContratoMC> {
+  const res = await fetchConAuth(`/contratos/${c.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(c),
+  });
+  await comprobarRespuesta(res, 'No se pudo guardar el contrato');
+  return res.json();
+}
+
+/** Borra un contrato por su id. */
+export async function borrarContrato(id: string): Promise<void> {
+  const res = await fetchConAuth(`/contratos/${id}`, { method: 'DELETE' });
+  await comprobarRespuesta(res, 'No se pudo borrar el contrato');
 }
 
 /* ===== PRODUCTOS / CATÁLOGO ===== */
@@ -649,6 +848,9 @@ export async function obtenerEmpresa(): Promise<Empresa> {
     iban: data.iban || '',
     condicionesPagoDefecto: data.condicionesPagoDefecto || '',
     validezDiasDefecto: data.validezDiasDefecto || 30,
+    temaPorDefecto: data.temaPorDefecto ?? null,
+    regionFiscal: data.regionFiscal || '',
+    repepActivo: !!data.repepActivo,
   };
 }
 
@@ -674,5 +876,55 @@ export async function guardarEmpresa(empresa: Partial<Empresa>): Promise<Empresa
     iban: data.iban || '',
     condicionesPagoDefecto: data.condicionesPagoDefecto || '',
     validezDiasDefecto: data.validezDiasDefecto || 30,
+    temaPorDefecto: data.temaPorDefecto ?? null,
+    regionFiscal: data.regionFiscal || '',
+    repepActivo: !!data.repepActivo,
   };
+}
+
+/* ===== MI PERFIL ===== */
+
+/** Recupera "Mi perfil" (nombre para mostrar y foto) del usuario autenticado. */
+export async function obtenerPerfil(): Promise<Perfil> {
+  const res = await fetchConAuth('/perfil');
+  await comprobarRespuesta(res, 'No se pudo cargar el perfil');
+  const data = await res.json();
+  return { nombreMostrar: data.nombreMostrar || '', foto: data.foto || '' };
+}
+
+/** Guarda "Mi perfil" (nombre para mostrar y foto) del usuario autenticado. */
+export async function guardarPerfil(perfil: Partial<Perfil>): Promise<void> {
+  const res = await fetchConAuth('/perfil', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nombreMostrar: perfil.nombreMostrar ?? '', foto: perfil.foto ?? '' }),
+  });
+  await comprobarRespuesta(res, 'No se pudo guardar el perfil');
+}
+
+/** Resultado de cambiar el usuario/contraseña de acceso. */
+export type ResultadoCambioAcceso =
+  | { ok: true; id: string; nombre: string; esAdmin: boolean; estado: string; accessToken: string }
+  | { ok: false; error: string };
+
+/**
+ * Cambia el usuario de acceso y/o la contraseña. Exige siempre la
+ * contraseña actual — se verifica en el servidor, nunca en el cliente. Si
+ * tiene éxito, el servidor revoca el resto de sesiones y devuelve un
+ * access token nuevo (se guarda aquí mismo, igual que en `loginEnServidor`).
+ */
+export async function cambiarAcceso(datos: { passwordActual: string; nombreNuevo?: string; passwordNueva?: string }): Promise<ResultadoCambioAcceso> {
+  try {
+    const res = await fetchConAuth('/perfil/acceso', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos),
+    });
+    const data = await res.json() as any;
+    if (!res.ok) return { ok: false, error: data.error || data.detalles?.[0]?.mensaje || 'No se pudo cambiar el acceso.' };
+    establecerAccessToken(data.accessToken);
+    return { ok: true, id: data.id, nombre: data.nombre, esAdmin: !!data.esAdmin, estado: data.estado, accessToken: data.accessToken };
+  } catch {
+    return { ok: false, error: 'Sin conexión con el servidor.' };
+  }
 }

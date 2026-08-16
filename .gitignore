@@ -2,6 +2,11 @@
 # Se reconstruyen con `pnpm install` — nunca deben versionarse (monorepo:
 # hay un node_modules en la raíz y uno por cada componente de Bit).
 node_modules/
+# El workspace usa pnpm (pnpm-lock.yaml en la raíz), nunca npm — un
+# package-lock.json en cualquier subcarpeta es un artefacto accidental de
+# haber ejecutado npm ahí (ver informe de auditoría del Incremento 1 del
+# Motor Documental), nunca una fuente real de reproducibilidad.
+package-lock.json
 
 # ── Caché de Bit ──
 # Estado local reconstruible (`bit install`/`bit compile`), no historial de

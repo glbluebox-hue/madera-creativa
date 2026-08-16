@@ -187,9 +187,9 @@ export function BtnMicrofono({
       onClick={onClick}
       title={activo ? 'Detener' : 'Hablar'}
       style={{
-        background: activo ? '#c0392b' : 'var(--fondo)',
-        border: `1.5px solid ${activo ? '#c0392b' : 'var(--borde)'}`,
-        borderRadius: 8,
+        background: activo ? 'var(--rojo)' : 'var(--fondo)',
+        border: `1.5px solid ${activo ? 'var(--rojo)' : 'var(--borde)'}`,
+        borderRadius: 'var(--radio)',
         cursor: 'pointer',
         width: 36,
         height: 36,

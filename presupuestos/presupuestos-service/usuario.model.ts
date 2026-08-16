@@ -48,18 +48,34 @@ const UsuarioSchema = new Schema({
   creadoEn:     { type: String, required: true },
   ultimoAcceso: { type: String, default: '' },
   pushSubs:     { type: [PushSubscriptionSchema], default: [] },
+  /**
+   * Nombre para mostrar (barra lateral, saludo de Inicio) — independiente
+   * de `nombre`, que es el identificador de acceso (login) y no debería
+   * cambiar a la ligera. Vacío hasta que el usuario lo configura desde
+   * "Mi perfil"; el frontend usa `nombre` como reserva mientras tanto.
+   */
+  nombreMostrar: { type: String, default: '' },
+  /** Foto de perfil en formato data URL (base64) — mismo patrón que `Empresa.logo`. Vacía si no se ha subido ninguna. */
+  foto:         { type: String, default: '' },
 });
 
 /** Modelo Mongoose de Usuario. */
 export const UsuarioModel: Model<any> = models.Usuario || model('Usuario', UsuarioSchema);
 
 /**
- * Conecta a MongoDB (reutiliza conexión existente).
+ * Conecta a MongoDB (reutiliza conexión existente). Mismo pool acotado que
+ * `conectar()` en `cliente.model.ts` — ver el comentario allí (auditoría
+ * 12/08/2026, alerta real de Atlas por límite de conexiones). En la
+ * práctica solo una de las dos funciones llega a llamar a
+ * `mongoose.connect()` de verdad (ambas comparten la misma conexión por
+ * defecto de mongoose, protegidas por el mismo `readyState === 1`) — se
+ * mantienen los mismos valores en ambas para que el resultado no dependa
+ * de cuál se invoque primero.
  */
 export async function conectarUsuarios(): Promise<void> {
   if (mongoose.connection.readyState === 1) return;
   const url = process.env.MONGO_URL || 'mongodb://localhost:27017/madera-creativa';
-  await mongoose.connect(url);
+  await mongoose.connect(url, { maxPoolSize: 10, minPoolSize: 0, maxIdleTimeMS: 30_000 });
 }
 
 /**

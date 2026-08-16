@@ -108,7 +108,7 @@ export function PanelAdjuntos({ adjuntos, onAnadir, onBorrar }: PanelAdjuntosPro
                 onClick={() => pedirBorrar(a.id)}
                 title={confirmandoId === a.id ? '¿Confirmar borrado?' : 'Borrar'}
                 aria-label={confirmandoId === a.id ? '¿Confirmar borrado? Pulsa de nuevo para borrar' : 'Borrar adjunto'}
-                style={confirmandoId === a.id ? { background: 'var(--rojo)', color: '#fff', borderColor: 'var(--rojo)' } : undefined}
+                style={confirmandoId === a.id ? { background: 'var(--rojo)', color: 'var(--blanco)', borderColor: 'var(--rojo)' } : undefined}
               >
                 {confirmandoId === a.id ? '✓' : '✕'}
               </button>

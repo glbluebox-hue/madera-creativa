@@ -5,6 +5,7 @@ import loginHojas from './assets/login-hojas.jpg';
 import type { TipoAlmacenamiento } from './use-auth.js';
 import { GuiaSupabase } from './guia-supabase.js';
 import { registrarEnServidor, loginEnServidor } from './use-registro.js';
+import { soportaWebAuthn, iniciarSesionBiometrica } from './use-biometria.js';
 import styles from './styles.module.css';
 
 /** Props de la página de login / registro. */
@@ -25,6 +26,14 @@ const IconoCandado = ({ s = 18 }: { s?: number }) => (
 const IconoCorreo = ({ s = 18 }: { s?: number }) => (
   <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 6-10 7L2 6" /></svg>
 );
+const IconoHuella = ({ s = 18 }: { s?: number }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 11c0 3.5-1 6.5-2.5 9" /><path d="M8.5 21a25 25 0 0 0 1.8-4.5" />
+    <path d="M15 3.5a9 9 0 0 1 5 8c0 2-0.5 3.5-1 5" /><path d="M12 3a9 9 0 0 0-9 9c0 1.5 0 2.5 0.3 4" />
+    <path d="M6 21a13 13 0 0 0 1.8-4" /><path d="M9 3.5A9 9 0 0 1 21 12c0 0.8 0 1.5-0.1 2" />
+    <path d="M12 7a5 5 0 0 1 5 5c0 1.2-0.1 2.4-0.4 3.5" /><path d="M12 7a5 5 0 0 0-5 5c0 1.5-0.2 3-0.7 4.5" />
+  </svg>
+);
 
 /**
  * Pantalla de inicio de sesión y registro de Madera Creativa.
@@ -40,6 +49,15 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
   const [loginCargando, setLoginCargando] = useState(false);
   const [mostrarPassLogin, setMostrarPassLogin] = useState(false);
   const [mostrarAyuda, setMostrarAyuda] = useState(false);
+
+  // Acceso biométrico (WebAuthn/passkeys) — alternativa a la contraseña,
+  // nunca la sustituye. `soportaWebAuthn()` es una comprobación síncrona
+  // del navegador: no hace falta esperar a saber si el dispositivo tiene
+  // realmente un autenticador configurado para mostrar el botón — si no lo
+  // tiene, la propia ceremonia lo dirá con un mensaje claro.
+  const soportaBiometria = soportaWebAuthn();
+  const [bioCargando, setBioCargando] = useState(false);
+  const [bioError, setBioError] = useState('');
 
   // Registro
   const [regNombre, setRegNombre] = useState('');
@@ -77,6 +95,15 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
     // Login válido en servidor — establecer sesión directamente con datos del servidor
     onLoginDirecto(srv.id!, srv.nombre!, !!srv.esAdmin);
     setLoginCargando(false);
+  };
+
+  const entrarConBiometria = async () => {
+    setBioCargando(true);
+    setBioError('');
+    const resultado = await iniciarSesionBiometrica();
+    setBioCargando(false);
+    if (!resultado.ok) { setBioError(resultado.error); return; }
+    onLoginDirecto(resultado.id, resultado.nombre, resultado.esAdmin);
   };
 
   const registrar = async (e: React.FormEvent) => {
@@ -201,13 +228,38 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
 
               {loginError && <div className={styles.loginError}><span style={{ display: 'inline-flex' }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12" y2="17" /></svg></span> {loginError}</div>}
 
-              <button
-                type="submit"
-                className={`${styles.btn} ${styles.btnPrimario} ${styles.btnLoginSubmit}`}
-                disabled={loginCargando || !loginUsuario.trim() || !loginPass.trim()}
-              >
-                {loginCargando ? <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center' }}><span className={styles.loginSpinner} /> Entrando…</span> : 'Entrar'}
-              </button>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  type="submit"
+                  className={`${styles.btn} ${styles.btnPrimario} ${styles.btnLoginSubmit}`}
+                  style={{ flex: 1, width: 'auto' }}
+                  disabled={loginCargando || !loginUsuario.trim() || !loginPass.trim()}
+                >
+                  {loginCargando ? <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center' }}><span className={styles.loginSpinner} /> Entrando…</span> : 'Entrar'}
+                </button>
+
+                {/* ── Acceso biométrico — solo el icono, sin caja ni fondo, mismo flujo WebAuthn de siempre ── */}
+                {soportaBiometria && (
+                  <button
+                    type="button"
+                    style={{
+                      flex: '0 0 auto', width: 56,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      background: 'none', border: 'none', padding: 0, margin: 0,
+                      color: 'var(--negro)', cursor: 'pointer',
+                    }}
+                    onClick={entrarConBiometria}
+                    disabled={bioCargando}
+                    title="Entrar con huella"
+                    aria-label="Entrar con huella"
+                  >
+                    {bioCargando
+                      ? <span className={styles.loginSpinner} style={{ width: 18, height: 18 }} />
+                      : <IconoHuella s={24} />}
+                  </button>
+                )}
+              </div>
+              {bioError && <div className={styles.loginError} style={{ marginTop: '0.5rem' }}><span style={{ display: 'inline-flex' }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12" y2="17" /></svg></span> {bioError}</div>}
 
               <button type="button" className={styles.loginRecuperar} onClick={() => setMostrarAyuda(v => !v)}>
                 ¿Olvidaste tu contraseña?
@@ -278,7 +330,7 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
                   onClick={() => setAlmacenamiento('local')}
                   style={{
                     flex: 1, padding: '0.65rem 0.5rem', border: `2px solid ${almacenamiento === 'local' ? 'var(--topo)' : 'var(--borde)'}`,
-                    borderRadius: 8, cursor: 'pointer', background: almacenamiento === 'local' ? '#f5f1eb' : '#fff',
+                    borderRadius: 'var(--radio)', cursor: 'pointer', background: almacenamiento === 'local' ? 'var(--topo-tinte)' : 'var(--blanco)',
                     fontWeight: almacenamiento === 'local' ? 700 : 400, fontSize: '0.8rem',
                     color: 'var(--negro)', transition: 'all 0.15s',
                   }}
@@ -291,8 +343,8 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
                   type="button"
                   onClick={() => setAlmacenamiento('supabase')}
                   style={{
-                    flex: 1, padding: '0.65rem 0.5rem', border: `2px solid ${almacenamiento === 'supabase' ? '#2e7d32' : 'var(--borde)'}`,
-                    borderRadius: 8, cursor: 'pointer', background: almacenamiento === 'supabase' ? '#e8f5e9' : '#fff',
+                    flex: 1, padding: '0.65rem 0.5rem', border: `2px solid ${almacenamiento === 'supabase' ? 'var(--verde)' : 'var(--borde)'}`,
+                    borderRadius: 'var(--radio)', cursor: 'pointer', background: almacenamiento === 'supabase' ? 'var(--verde-bg)' : 'var(--blanco)',
                     fontWeight: almacenamiento === 'supabase' ? 700 : 400, fontSize: '0.8rem',
                     color: 'var(--negro)', transition: 'all 0.15s',
                   }}
@@ -305,10 +357,10 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
 
               {/* Botón guía Supabase */}
               {almacenamiento === 'supabase' && (
-                <div style={{ background: '#e8f5e9', border: '1px solid #81c784', borderRadius: 8, padding: '0.65rem 0.85rem', fontSize: '0.82rem' }}>
+                <div style={{ background: 'var(--verde-bg)', border: '1px solid var(--verde)', borderRadius: 'var(--radio)', padding: '0.65rem 0.85rem', fontSize: '0.82rem' }}>
                   {supabaseUrl ? (
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ color: '#2e7d32', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <span style={{ color: 'var(--verde-dark)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                         Supabase configurado
                       </span>
@@ -316,7 +368,7 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
                     </div>
                   ) : (
                     <div>
-                      <p style={{ margin: '0 0 0.4rem', color: '#1b5e20', fontWeight: 600 }}>Necesitas configurar tu Supabase</p>
+                      <p style={{ margin: '0 0 0.4rem', color: 'var(--verde-dark)', fontWeight: 600 }}>Necesitas configurar tu Supabase</p>
                       <button type="button" className={`${styles.btn} ${styles.btnPrimario}`} style={{ fontSize: '0.82rem', width: '100%', justifyContent: 'center' }} onClick={() => setGuiaAbierta(true)}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ verticalAlign: -2, marginRight: 4 }}><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" /></svg>
                         Ver guía paso a paso

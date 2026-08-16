@@ -42,4 +42,15 @@ export interface AlmacenamientoArchivos {
    * sitio propio donde conservar la clave por separado (p. ej. `Factura.imagen`).
    */
   claveDesdeUrl(url: string): string | null;
+
+  /**
+   * Recupera el contenido de un archivo por su clave interna, o `null` si no
+   * existe. Solo lo usa `GET /almacenamiento/:carpeta/:id` — la ruta que
+   * sirve los archivos de `AlmacenamientoMemoria` (que no tiene una URL
+   * pública real). `AlmacenamientoR2` ya devuelve URLs públicas directamente
+   * servibles desde `subir()`, así que esta ruta nunca se ejercita para R2 en
+   * la práctica, pero implementa el método igualmente por completitud del
+   * contrato.
+   */
+  obtener(clave: string): Promise<{ datos: Buffer; contentType: string } | null>;
 }

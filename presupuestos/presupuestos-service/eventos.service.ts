@@ -24,17 +24,27 @@ import { logger } from './logger.service.js';
  * y `tarea.finalizada` siguen reservados: no existe todavía un estado de
  * aprobación de presupuesto ni una entidad "Tarea" propia — nadie los
  * publica hoy. No asumas que ya funcionan solo porque el nombre está en el tipo.
+ *
+ * `NOMBRES_EVENTO` es la lista en tiempo de ejecución de los mismos
+ * nombres — fuente única (Motor Documental, Incremento 11: la usa
+ * `esquemaAutomatizacionMC` para validar contra qué eventos puede
+ * suscribirse una `AutomatizacionMC`, sin duplicar la lista a mano).
  */
-export type NombreEvento =
-  | 'cliente.creado'
-  | 'cliente.actualizado'
-  | 'presupuesto.creado'
-  | 'presupuesto.aprobado'
-  | 'factura.guardada'
-  | 'dibujo.modificado'
-  | 'nota.creada'
-  | 'tarea.finalizada'
-  | 'proveedor.actualizado';
+export const NOMBRES_EVENTO = [
+  'cliente.creado',
+  'cliente.actualizado',
+  'presupuesto.creado',
+  'presupuesto.aprobado',
+  'factura.guardada',
+  'dibujo.modificado',
+  'nota.creada',
+  'tarea.finalizada',
+  'proveedor.actualizado',
+  /** Contrato (Motor Documental, Incremento 12 — segundo tipo de documento). Se publica en cada `guardarContrato`, mismo criterio que `presupuesto.creado`. */
+  'contrato.guardado',
+] as const;
+
+export type NombreEvento = typeof NOMBRES_EVENTO[number];
 
 export type EventoDominio<T = Record<string, unknown>> = {
   nombre: NombreEvento;

@@ -1,21 +1,27 @@
 import type { PerfilModeloRequerido, ConfiguracionModelo } from './ia-modelo-perfil.js';
-import { obtenerModeloOllama } from './ia-proveedor-ollama.js';
 
 /**
  * Tabla de candidatos por perfil, en el orden en que se prueban por defecto
  * si `AI_PROVIDER` no dice lo contrario — `ServicioCentralIA` recorre esta
- * lista hasta que uno responda (cadena de fallback). Deliberadamente
- * incompleta: `vision`/`ocr`/`voz` no tienen entrada, y `razonamiento` no
- * incluye Ollama todavía — un modelo local de 7B por CPU no es un candidato
- * razonable para tareas de razonamiento pesado.
+ * lista hasta que uno responda (cadena de fallback).
+ *
+ * IMPORTANTE (12/08/2026): se probó Ollama en local (sin GPU) como
+ * proveedor gratuito, pero en pruebas reales tardaba 40-180s por
+ * respuesta (a veces agotando el tiempo de espera) — inviable para un
+ * asistente conversacional. El usuario decidió pasar a OpenAI de pago
+ * (gpt-4o-mini, barato: del orden de 0,1-0,3 céntimos por interacción) y
+ * desinstalar Ollama del equipo — ver `ia-proveedor-openai.ts`. Todos los
+ * perfiles usan solo OpenAI; no hay proveedor local de reserva.
+ *
+ * `razonamiento` no tiene ningún candidato hoy — ninguna capacidad
+ * registrada lo usa todavía.
  */
 const MAPA_PERFILES: Partial<Record<PerfilModeloRequerido, ConfiguracionModelo[]>> = {
-  razonamiento: [
-    { proveedor: 'openai', modelo: 'gpt-4o' },
-  ],
   rapido_economico: [
     { proveedor: 'openai', modelo: 'gpt-4o-mini' },
-    { proveedor: 'ollama', modelo: obtenerModeloOllama() },
+  ],
+  vision: [
+    { proveedor: 'openai', modelo: 'gpt-4o-mini' },
   ],
 };
 

@@ -456,11 +456,11 @@ export function PizarraMedidas({ dibujos = [], onGuardar }: PizarraMedidasProps)
 
   // Estilos pantalla completa: wrapper fijo, fondo BLANCO, 90% canvas / 10% toolbar
   const estiloWrapper = pantallaCompleta
-    ? { position: 'fixed' as const, inset: 0, zIndex: Z_PANTALLA_COMPLETA, background: '#ffffff', display: 'flex', flexDirection: 'column' as const, borderRadius: 0, boxShadow: 'none' }
+    ? { position: 'fixed' as const, inset: 0, zIndex: Z_PANTALLA_COMPLETA, background: 'var(--blanco)', display: 'flex', flexDirection: 'column' as const, borderRadius: 0, boxShadow: 'none' }
     : {};
 
   const estiloToolbar = pantallaCompleta
-    ? { flexShrink: 0, background: '#f5f3ef', borderRadius: 0, border: 'none', borderTop: '1px solid #e8e4de', marginBottom: 0, padding: '0.3rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'nowrap' as const, overflowX: 'auto' as const }
+    ? { flexShrink: 0, background: 'var(--fondo)', borderRadius: 0, border: 'none', borderTop: '1px solid var(--borde-fino)', marginBottom: 0, padding: '0.3rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'nowrap' as const, overflowX: 'auto' as const }
     : {};
 
   const estiloContenedor = pantallaCompleta
@@ -511,7 +511,7 @@ export function PizarraMedidas({ dibujos = [], onGuardar }: PizarraMedidasProps)
 
       {/* Feedback guardado */}
       {guardadoOk && (
-        <div style={{ background: '#3d7a52', color: '#fff', fontSize: '0.78rem', padding: '0.35rem 1rem', textAlign: 'center', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}>
+        <div style={{ background: 'var(--verde)', color: 'var(--blanco)', fontSize: '0.78rem', padding: '0.35rem 1rem', textAlign: 'center', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
           Dibujo guardado correctamente en la ficha
         </div>
@@ -553,7 +553,7 @@ export function PizarraMedidas({ dibujos = [], onGuardar }: PizarraMedidasProps)
               background: 'rgba(24,20,12,0.72)',
               backdropFilter: 'blur(8px)',
               WebkitBackdropFilter: 'blur(8px)',
-              color: '#f8f7f4',
+              color: 'var(--blanco)',
               borderRadius: 16,
               padding: '1rem 1.75rem',
               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.4rem',
@@ -593,23 +593,23 @@ export function PizarraMedidas({ dibujos = [], onGuardar }: PizarraMedidasProps)
           ] as { id: Herramienta; icono: import('react').ReactNode; label: string }[]).map(h => (
             <button key={h.id} title={h.label}
               className={[styles.btnHerramienta, herramienta === h.id ? styles.btnHerramientaActivo : ''].filter(Boolean).join(' ')}
-              style={pantallaCompleta ? { color: herramienta === h.id ? '#fff' : '#bbb', background: herramienta === h.id ? 'var(--topo)' : 'rgba(255,255,255,0.07)', borderColor: 'transparent' } : {}}
+              style={pantallaCompleta ? { color: herramienta === h.id ? 'var(--blanco)' : '#bbb', background: herramienta === h.id ? 'var(--topo)' : 'rgba(255,255,255,0.07)', borderColor: 'transparent' } : {}}
               onClick={() => setHerramienta(h.id)}>{h.icono}</button>
           ))}
         </div>
 
-        <span style={{ width: 1, height: 22, background: pantallaCompleta ? '#d8d4ce' : 'var(--borde)', margin: '0 2px', flexShrink: 0 }} />
+        <span style={{ width: 1, height: 22, background: 'var(--borde)', margin: '0 2px', flexShrink: 0 }} />
 
         <button title="Deshacer (Ctrl+Z)" disabled={!puedeDeshacer}
           className={[styles.btnHerramienta, styles.btnHerramientaDeshacer, !puedeDeshacer ? styles.btnHerramientaDesactivado : ''].filter(Boolean).join(' ')}
-          style={pantallaCompleta ? { color: '#6a5a4a', background: '#ede9e3', borderColor: 'transparent' } : {}}
+          style={pantallaCompleta ? { color: 'var(--topo)', background: 'var(--borde-fino)', borderColor: 'transparent' } : {}}
           onClick={deshacer}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></svg></button>
         <button title="Limpiar todo"
           className={[styles.btnHerramienta, styles.btnHerramientaLimpiar].filter(Boolean).join(' ')}
-          style={pantallaCompleta ? { color: '#c0392b', background: '#ede9e3', borderColor: 'transparent' } : {}}
+          style={pantallaCompleta ? { color: 'var(--rojo)', background: 'var(--borde-fino)', borderColor: 'transparent' } : {}}
           onClick={limpiarCanvas}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></button>
 
-        <span style={{ width: 1, height: 22, background: pantallaCompleta ? '#d8d4ce' : 'var(--borde)', margin: '0 2px', flexShrink: 0 }} />
+        <span style={{ width: 1, height: 22, background: 'var(--borde)', margin: '0 2px', flexShrink: 0 }} />
 
         {/* Selector de color — pastilla que despliega paleta */}
         <div style={{ position: 'relative', flexShrink: 0 }}>
@@ -620,28 +620,28 @@ export function PizarraMedidas({ dibujos = [], onGuardar }: PizarraMedidasProps)
           />
           {paletaAbierta && (
             <div
-              style={{ position: 'absolute', bottom: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)', background: '#fff', border: '1px solid #e0dbd4', borderRadius: 12, padding: '0.5rem', display: 'flex', gap: '0.35rem', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', zIndex: Z_BARRA_FLOTANTE, flexWrap: 'wrap', width: 156 }}
+              style={{ position: 'absolute', bottom: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)', background: 'var(--blanco)', border: '1px solid var(--borde)', borderRadius: 12, padding: '0.5rem', display: 'flex', gap: '0.35rem', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', zIndex: Z_BARRA_FLOTANTE, flexWrap: 'wrap', width: 156 }}
             >
               {coloresPaleta.map(c => (
                 <button key={c} onClick={() => { setColor(c); setPaletaAbierta(false); }}
-                  style={{ width: 28, height: 28, borderRadius: 6, background: c, border: color === c ? '3px solid #3a342c' : '2px solid rgba(0,0,0,0.1)', cursor: 'pointer', transform: color === c ? 'scale(1.15)' : 'scale(1)', transition: 'transform 0.12s' }}
+                  style={{ width: 28, height: 28, borderRadius: 6, background: c, border: color === c ? '3px solid var(--negro)' : '2px solid rgba(0,0,0,0.1)', cursor: 'pointer', transform: color === c ? 'scale(1.15)' : 'scale(1)', transition: 'transform 0.12s' }}
                 />
               ))}
             </div>
           )}
         </div>
 
-        <span style={{ width: 1, height: 22, background: pantallaCompleta ? '#d8d4ce' : 'var(--borde)', margin: '0 2px', flexShrink: 0 }} />
+        <span style={{ width: 1, height: 22, background: 'var(--borde)', margin: '0 2px', flexShrink: 0 }} />
 
         <div className={styles.pizarraGrosor} style={pantallaCompleta ? { borderLeft: 'none', paddingLeft: 0 } : {}}>
-          <label className={styles.campoLabel} style={pantallaCompleta ? { color: '#888', fontSize: '0.68rem' } : {}}>Grosor</label>
+          <label className={styles.campoLabel} style={pantallaCompleta ? { color: 'var(--topo-claro)', fontSize: '0.68rem' } : {}}>Grosor</label>
           <input type="range" min={0.5} max={5} step={0.5} value={grosor} onChange={e => setGrosor(Number(e.target.value))} className={styles.rangeGrosor} />
         </div>
 
         {/* Controles extra solo en pantalla completa */}
         {pantallaCompleta && (
           <>
-            <span style={{ width: 1, height: 22, background: '#d8d4ce', margin: '0 2px', flexShrink: 0 }} />
+            <span style={{ width: 1, height: 22, background: 'var(--borde)', margin: '0 2px', flexShrink: 0 }} />
             <button className={`${styles.btn} ${cotasActivas ? styles.btnVerde : styles.btnSecundario}`}
               style={{ padding: '0.25rem 0.6rem', fontSize: '0.7rem', flexShrink: 0 }}
               onClick={() => setCotasActivas(v => !v)}>
@@ -650,7 +650,7 @@ export function PizarraMedidas({ dibujos = [], onGuardar }: PizarraMedidasProps)
             </button>
             {cotasActivas && (
               <button className={styles.btn} onClick={() => setUnidad(u => u === 'mm' ? 'cm' : 'mm')}
-                style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem', background: '#ede9e3', color: '#5a4a3a', border: '1px solid #d8d4ce', borderRadius: 'var(--radio)', flexShrink: 0 }}>
+                style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem', background: 'var(--borde-fino)', color: 'var(--topo)', border: '1px solid var(--borde)', borderRadius: 'var(--radio)', flexShrink: 0 }}>
                 {unidad}
               </button>
             )}
@@ -664,10 +664,10 @@ export function PizarraMedidas({ dibujos = [], onGuardar }: PizarraMedidasProps)
             )}
             {onGuardar && (
               <button
-                style={{ padding: '0.25rem 0.6rem', fontSize: '0.7rem', background: 'var(--verde)', color: '#fff', border: 'none', borderRadius: 'var(--radio)', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
+                style={{ padding: '0.25rem 0.6rem', fontSize: '0.7rem', background: 'var(--verde)', color: 'var(--blanco)', border: 'none', borderRadius: 'var(--radio)', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
                 onClick={nuevaHoja}>+ Hoja nueva</button>
             )}
-            <button style={{ marginLeft: 'auto', padding: '0.25rem 0.9rem', fontSize: '0.7rem', background: 'none', color: '#888', border: '1px solid #d8d4ce', borderRadius: 'var(--radio)', cursor: 'pointer', flexShrink: 0, fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+            <button style={{ marginLeft: 'auto', padding: '0.25rem 0.9rem', fontSize: '0.7rem', background: 'none', color: 'var(--topo-claro)', border: '1px solid var(--borde)', borderRadius: 'var(--radio)', cursor: 'pointer', flexShrink: 0, fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
               onClick={togglePantallaCompleta}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
               Salir

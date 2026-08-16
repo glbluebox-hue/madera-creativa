@@ -4,20 +4,20 @@
       "scope": "madera-creativa.presupuestos",
       "name": "presupuestos-platform"
     },
-    "head": "62c16045639cbd42871d4bbe615ff8af6ffce119"
+    "head": "bf61e1e6baeee972db79cb1b03eddcd6eb09b0ef"
   },
   {
     "id": {
       "scope": "madera-creativa.presupuestos",
       "name": "presupuestos-prototype"
     },
-    "head": "421e29c25d94d48dba6e6b65e829de7090254b26"
+    "head": "a0d27c3b399a6baee91f62588c2a6d6a772a1bd6"
   },
   {
     "id": {
       "scope": "madera-creativa.presupuestos",
       "name": "presupuestos-service"
     },
-    "head": "421ae89ac0b64d4d9fc4ac59e9f88a3be9154a46"
+    "head": "8d8cbe600011aadf470616fee44e28d41ff14ab5"
   }
 ]

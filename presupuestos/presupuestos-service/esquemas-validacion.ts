@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import { validarDocumentoMC, validarElementoMC } from './documento-registro-tipos.js';
+import { esquemaTema } from './documento-modelo.js';
+import { NOMBRES_EVENTO } from './eventos.service.js';
+// El registro de tipos del Motor Documental (Texto, Imagen...) se inicializa
+// explícitamente en el bootstrap del servidor — ver
+// documento-motor-inicializar.ts / presupuestos-service.app-root.ts. Este
+// archivo solo consume `validarDocumentoMC`, nunca inicializa el registro.
 
 /**
  * Esquemas Zod para validar el cuerpo/parámetros de cada endpoint de
@@ -35,11 +42,76 @@ export const esquemaVerificarSesion = z.object({
   usuarioId: z.string().min(1).max(128),
 });
 
+// ── Acceso biométrico (WebAuthn/passkeys) ───────────────────────────────────────
+// Verifica solo la forma del payload (tamaños razonables, campos presentes) —
+// la seguridad real de la ceremonia (firma, challenge, origin, RP ID) la
+// comprueba `@simplewebauthn/server` en `webauthn-rutas.ts`, nunca aquí.
+
+const esquemaBase64URL = z.string().min(1).max(4000);
+
+const esquemaRespuestaAtestacionWebAuthn = z.object({
+  clientDataJSON: esquemaBase64URL,
+  attestationObject: esquemaBase64URL,
+  authenticatorData: esquemaBase64URL.optional(),
+  transports: z.array(z.string().max(30)).max(10).optional(),
+  publicKeyAlgorithm: z.number().optional(),
+  publicKey: esquemaBase64URL.optional(),
+});
+
+const esquemaRespuestaAsercionWebAuthn = z.object({
+  clientDataJSON: esquemaBase64URL,
+  authenticatorData: esquemaBase64URL,
+  signature: esquemaBase64URL,
+  userHandle: esquemaBase64URL.optional(),
+});
+
+/** Body de `POST /auth/webauthn/registro/verificar` — registra un autenticador nuevo para la sesión ya iniciada. */
+export const esquemaWebAuthnRegistroVerificar = z.object({
+  nombreDispositivo: z.string().trim().min(1, 'Falta el nombre del dispositivo.').max(80),
+  respuesta: z.object({
+    id: esquemaBase64URL,
+    rawId: esquemaBase64URL,
+    response: esquemaRespuestaAtestacionWebAuthn,
+    authenticatorAttachment: z.string().max(30).optional(),
+    clientExtensionResults: z.record(z.string(), z.unknown()).default({}),
+    type: z.literal('public-key'),
+  }),
+});
+
+/** Body de `POST /auth/webauthn/login/verificar` — sin sesión previa: el usuario se resuelve por `credentialId`. */
+export const esquemaWebAuthnLoginVerificar = z.object({
+  respuesta: z.object({
+    id: esquemaBase64URL,
+    rawId: esquemaBase64URL,
+    response: esquemaRespuestaAsercionWebAuthn,
+    authenticatorAttachment: z.string().max(30).optional(),
+    clientExtensionResults: z.record(z.string(), z.unknown()).default({}),
+    type: z.literal('public-key'),
+  }),
+});
+
 // ── Admin ─────────────────────────────────────────────────────────────────────
 
 export const esquemaCambiarEstadoUsuario = z.object({
   estado: z.enum(['pendiente', 'activo', 'suspendido']),
 });
+
+/** "Mi perfil" — nombre para mostrar y foto, siempre del propio usuario autenticado (nunca de otro). */
+export const esquemaPerfil = z.object({
+  nombreMostrar: z.string().trim().max(200).optional().default(''),
+  foto: z.string().optional().default(''),
+});
+
+/**
+ * Cambiar usuario de acceso y/o contraseña — exige siempre la contraseña
+ * actual (verificada en el servidor antes de tocar nada) y al menos uno de
+ * los dos cambios; no tiene sentido llamar a esta ruta sin ninguno.
+ */
+export const esquemaCambiarAcceso = z.object({
+  passwordActual: z.string().min(1, 'Falta tu contraseña actual.').max(256),
+  nombreNuevo: z.string().trim().min(3, 'El usuario debe tener al menos 3 caracteres.').max(254).optional(),
+  passwordNueva: z.string().min(8, 'La contraseña nueva debe tener al menos 8 caracteres.').max(256).optional(),
+}).refine((d) => d.nombreNuevo || d.passwordNueva, { message: 'Indica un usuario nuevo, una contraseña nueva, o ambos.' });
 
 // ── Subdocumentos de Cliente ──────────────────────────────────────────────────
 
@@ -205,6 +277,39 @@ export const esquemaFactura = z.object({
   imagen: z.string().optional().default(''),
   imagenes: z.array(z.string()).optional(),
   creado: z.string().min(1).max(64),
+
+  // ── Ampliación documental/fiscal (Fase Facturas Profesional) ──
+  numeroFactura: z.string().max(100).optional().default(''),
+  cifNif: z.string().max(20).optional().default(''),
+  baseImponible: z.number().finite().optional(),
+  tipoImpuesto: z.enum(['igic', 'iva', '']).optional().default(''),
+  porcentajeImpuesto: z.number().finite().optional(),
+  importeImpuesto: z.number().finite().optional(),
+  categoria: z.string().max(100).optional().default(''),
+  proyectoId: z.string().max(128).optional().default(''),
+  proveedorId: z.string().max(128).optional().default(''),
+  origen: z.enum(['escaner', 'foto', 'pdf', 'manual', '']).optional().default(''),
+  pdfUrl: z.string().optional().default(''),
+  pdfOriginalUrl: z.string().optional().default(''),
+  paginas: z.array(z.object({ tipo: z.enum(['imagen', 'pdf']), url: z.string() })).optional(),
+});
+
+// ── Gastos periódicos/estimados (Fase Facturas Profesional) ────────────────────
+
+export const esquemaGastoPeriodico = z.object({
+  id: z.string().min(1).max(128),
+  tipo: z.enum(['amortizacion', 'reta', 'suministro', 'provision', 'otro']),
+  descripcion: z.string().min(1).max(300),
+  importe: z.number().finite(),
+  periodicidad: z.enum(['mensual', 'trimestral']).optional().default('mensual'),
+  valorAdquisicion: z.number().finite().optional(),
+  categoriaBien: z.string().max(100).optional().default(''),
+  coeficiente: z.number().finite().optional(),
+  fechaInicio: z.string().max(32).optional().default(''),
+  afectacionExclusiva: z.boolean().nullable().optional().default(null),
+  nota: z.string().max(500).optional().default(''),
+  activo: z.boolean().optional().default(true),
+  creado: z.string().min(1).max(64),
 });
 
 // ── Proveedores y productos (Fase "Integración completa") ──────────────────────
@@ -266,12 +371,14 @@ export const esquemaPresupuestoMC = z.object({
   id: z.string().min(1).max(64),
   clienteId: z.string().min(1).max(128),
   titulo: z.string().trim().min(1).max(200),
-  formato: z.enum(['simple', 'lienzo']).optional().default('simple'),
+  formato: z.enum(['simple', 'lienzo', 'documento']).optional().default('simple'),
   descripcion: z.string().max(10000).optional().default(''),
   alcance: z.array(z.string().max(300)).max(50).optional().default([]),
   items: z.array(esquemaElementoPresupuesto).max(100).optional().default([]),
-  /** Escena de Excalidraw ({ elements, files }) — estructura interna de la librería, no se valida campo a campo. */
+  /** LEGADO — escena de Excalidraw ({ elements, files }), estructura interna de la librería, no se valida campo a campo. Ver ARQUITECTURA-MOTOR-DOCUMENTAL.md. */
   contenidoLienzo: z.record(z.string(), z.unknown()).optional().default({}),
+  /** `DocumentoMC` real cuando `formato === 'documento'` — validado estrictamente más abajo, a diferencia de `contenidoLienzo`. */
+  contenidoDocumento: z.record(z.string(), z.unknown()).optional().default({}),
   condicionesPago: z.string().max(2000).optional().default(''),
   validezDias: z.number().int().min(1).max(365).optional().default(30),
   condicionesGenerales: z.string().max(5000).optional().default(''),
@@ -281,7 +388,132 @@ export const esquemaPresupuestoMC = z.object({
 }).refine(
   (p) => tamanoBytesAlmacenados(JSON.stringify(p.contenidoLienzo)) <= LIMITE_CONTENIDO_PRESUPUESTO_BYTES,
   { message: `El contenido del presupuesto supera el límite de ${LIMITE_CONTENIDO_PRESUPUESTO_BYTES / (1024 * 1024)} MB.` }
+).refine(
+  (p) => tamanoBytesAlmacenados(JSON.stringify(p.contenidoDocumento)) <= LIMITE_CONTENIDO_PRESUPUESTO_BYTES,
+  { message: `El contenido del documento supera el límite de ${LIMITE_CONTENIDO_PRESUPUESTO_BYTES / (1024 * 1024)} MB.` }
+).superRefine((p, ctx) => {
+  if (p.formato !== 'documento') return;
+  try {
+    validarDocumentoMC(p.contenidoDocumento);
+  } catch (err) {
+    ctx.addIssue({ code: 'custom', path: ['contenidoDocumento'], message: err instanceof Error ? err.message : 'contenidoDocumento no es un DocumentoMC válido.' });
+  }
+});
+
+/** Límite defensivo de una plantilla — mismo criterio que un presupuesto en formato documento. */
+export const LIMITE_CONTENIDO_PLANTILLA_BYTES = 4 * 1024 * 1024;
+
+export const esquemaPlantillaMC = z.object({
+  id: z.string().min(1).max(64),
+  nombre: z.string().trim().min(1).max(200),
+  ambito: z.enum(['corporativa', 'usuario', 'compartida', 'ia']).optional().default('usuario'),
+  documentoBase: z.record(z.string(), z.unknown()),
+  creadoEn: z.string().min(1).max(64),
+  actualizadoEn: z.string().min(1).max(64),
+}).refine(
+  (p) => tamanoBytesAlmacenados(JSON.stringify(p.documentoBase)) <= LIMITE_CONTENIDO_PLANTILLA_BYTES,
+  { message: `El contenido de la plantilla supera el límite de ${LIMITE_CONTENIDO_PLANTILLA_BYTES / (1024 * 1024)} MB.` }
+).superRefine((p, ctx) => {
+  try {
+    validarDocumentoMC(p.documentoBase);
+  } catch (err) {
+    ctx.addIssue({ code: 'custom', path: ['documentoBase'], message: err instanceof Error ? err.message : 'documentoBase no es un DocumentoMC válido.' });
+  }
+});
+
+/** Límite defensivo de un recurso subido a la biblioteca — mismo criterio que el logo de Empresa (Incremento 5). */
+export const LIMITE_RECURSO_BYTES = 8 * 1024 * 1024;
+
+export const esquemaSubidaRecurso = z.object({
+  nombre: z.string().trim().min(1).max(200),
+  tipo: z.enum(['logo', 'icono', 'imagen', 'fondo', 'sello', 'otro']).optional().default('otro'),
+  ambito: z.enum(['corporativa', 'usuario']).optional().default('usuario'),
+  etiquetas: z.array(z.string().max(50)).max(20).optional().default([]),
+  dataUrl: z.string().refine((v) => /^data:[^;]+;base64,/.test(v), 'dataUrl debe ser un data URL en base64.'),
+}).refine(
+  (r) => tamanoBytesAlmacenados(r.dataUrl) <= LIMITE_RECURSO_BYTES,
+  { message: `El archivo supera el límite de ${LIMITE_RECURSO_BYTES / (1024 * 1024)} MB.` }
 );
+
+export const esquemaActualizarRecurso = z.object({
+  nombre: z.string().trim().min(1).max(200).optional(),
+  etiquetas: z.array(z.string().max(50)).max(20).optional(),
+});
+
+/** Límite defensivo de un componente — mismo criterio que una plantilla (Incremento 6). */
+export const LIMITE_CONTENIDO_COMPONENTE_BYTES = 4 * 1024 * 1024;
+
+export const esquemaComponenteMC = z.object({
+  id: z.string().min(1).max(64),
+  nombre: z.string().trim().min(1).max(200),
+  tipo: z.enum(['cabecera', 'pie', 'firma', 'condiciones', 'bloqueCorporativo', 'libre']).optional().default('libre'),
+  elementos: z.array(z.record(z.string(), z.unknown())).default([]),
+  ambito: z.enum(['corporativa', 'usuario']).optional().default('usuario'),
+  creadoEn: z.string().min(1).max(64),
+  actualizadoEn: z.string().min(1).max(64),
+}).refine(
+  (c) => tamanoBytesAlmacenados(JSON.stringify(c.elementos)) <= LIMITE_CONTENIDO_COMPONENTE_BYTES,
+  { message: `El contenido del componente supera el límite de ${LIMITE_CONTENIDO_COMPONENTE_BYTES / (1024 * 1024)} MB.` }
+).superRefine((c, ctx) => {
+  for (let i = 0; i < c.elementos.length; i++) {
+    try {
+      validarElementoMC(c.elementos[i]);
+    } catch (err) {
+      ctx.addIssue({ code: 'custom', path: ['elementos', i], message: err instanceof Error ? err.message : 'Elemento no válido.' });
+    }
+  }
+});
+
+/**
+ * `AutomatizacionMC` (Motor Documental, Incremento 11, sección 11.2) — se
+ * suscribe a un evento ya existente del bus (`NOMBRES_EVENTO`), y si
+ * `condicion` coincide con `evento.datos` (igualdad exacta por clave;
+ * `{}` coincide siempre), ejecuta `accion`. `crearDocumento` está aceptada
+ * en el tipo por completitud con la arquitectura, pero no tiene
+ * implementación todavía (ver `automatizaciones-listener.ts`) — la propia
+ * arquitectura la deja como "ejemplo de uso futuro, no se implementa
+ * ahora", así que una automatización con esa acción se registra pero no
+ * hace nada hasta un incremento futuro (se avisa en el log, nunca falla
+ * en silencio).
+ */
+export const esquemaAutomatizacionMC = z.object({
+  id: z.string().min(1).max(64),
+  nombre: z.string().trim().min(1).max(200),
+  evento: z.enum(NOMBRES_EVENTO),
+  activa: z.boolean().optional().default(true),
+  /** Coincidencia exacta por clave contra `EventoDominio.datos` — `{}` (por defecto) coincide con cualquier evento de ese nombre. */
+  condicion: z.record(z.string(), z.unknown()).optional().default({}),
+  accion: z.enum(['crearDocumento', 'modificarElemento', 'notificar']),
+  configuracionAccion: z.record(z.string(), z.unknown()).optional().default({}),
+  creadoEn: z.string().min(1).max(64),
+  actualizadoEn: z.string().min(1).max(64),
+});
+
+/**
+ * Contrato (Motor Documental, Incremento 12 — segundo tipo de documento) —
+ * a diferencia de `esquemaPresupuestoMC`, nace ya como `DocumentoMC` puro:
+ * sin `formato` ni `contenidoLienzo` (esa dualidad es transición histórica
+ * propia de Presupuesto), `contenidoDocumento` se valida siempre, no solo
+ * condicionalmente. Mismo límite defensivo de tamaño que un presupuesto en
+ * modo documento.
+ */
+export const esquemaContratoMC = z.object({
+  id: z.string().min(1).max(64),
+  clienteId: z.string().min(1).max(128),
+  titulo: z.string().trim().min(1).max(200),
+  contenidoDocumento: z.record(z.string(), z.unknown()).optional().default({}),
+  creado: z.string().min(1).max(64),
+  actualizado: z.string().min(1).max(64),
+}).refine(
+  (c) => tamanoBytesAlmacenados(JSON.stringify(c.contenidoDocumento)) <= LIMITE_CONTENIDO_PRESUPUESTO_BYTES,
+  { message: `El contenido del contrato supera el límite de ${LIMITE_CONTENIDO_PRESUPUESTO_BYTES / (1024 * 1024)} MB.` }
+).superRefine((c, ctx) => {
+  try {
+    validarDocumentoMC(c.contenidoDocumento);
+  } catch (err) {
+    ctx.addIssue({ code: 'custom', path: ['contenidoDocumento'], message: err instanceof Error ? err.message : 'contenidoDocumento no es un DocumentoMC válido.' });
+  }
+});
 
 export const esquemaProducto = z.object({
   id: z.string().min(1).max(64),
@@ -369,6 +601,8 @@ export const esquemaPaginacionFacturas = z.object({
   limite: z.coerce.number().int().min(1).max(TAMANO_PAGINA_MAXIMO).optional().default(TAMANO_PAGINA_DEFECTO),
   tipo: z.enum(['ingreso', 'gasto', 'todas']).optional().default('todas'),
   anio: z.coerce.number().int().min(2000).max(2200).optional(),
+  /** Junto con `anio`, acota el año completo a un único trimestre (1-4) — para navegar las facturas por carpetas. */
+  trimestre: z.coerce.number().int().min(1).max(4).optional(),
   /** Devuelve, sin paginar, las facturas de un cliente concreto (p. ej. los gastos de un proyecto en su ficha). */
   clienteId: z.string().max(128).optional(),
   /** Devuelve, sin paginar, las facturas cuyo proveedor coincide (búsqueda difusa) con este nombre. */
@@ -386,6 +620,9 @@ export const esquemaEmpresa = z.object({
   iban: z.string().max(34).optional().default(''),
   condicionesPagoDefecto: z.string().max(2000).optional().default('60% al aceptar el presupuesto / 40% al finalizar el trabajo.'),
   validezDiasDefecto: z.number().int().min(1).max(365).optional().default(30),
+  temaPorDefecto: esquemaTema.nullable().optional().default(null),
+  regionFiscal: z.enum(['canarias', 'peninsula', '']).optional().default(''),
+  repepActivo: z.boolean().optional().default(false),
 });
 
 // ── Notificaciones push ───────────────────────────────────────────────────────
@@ -406,6 +643,8 @@ export const esquemaPushSubscribe = z.object({
 export const esquemaMensajeChat = z.object({
   role: z.enum(['user', 'assistant', 'system']),
   content: z.string().max(4000),
+  /** Imágenes adjuntas (data URL) — solo las usa la capacidad `extraer-datos-factura` (perfil `vision`, Fase Facturas Profesional). */
+  imagenes: z.array(z.string()).max(5).optional(),
 });
 
 /** Body de `POST /ia/generar` — parametrizado por `capacidad`, nunca un endpoint por capacidad. */
@@ -430,4 +669,6 @@ export const esquemaEjecutarHerramientaIA = z.object({
   argumentos: z.record(z.string(), z.unknown()).optional().default({}),
   mensajesPrevios: z.array(esquemaMensajeChat).max(50).optional().default([]),
   referencias: z.record(z.string(), z.unknown()).optional().default({}),
+  /** Id de la llamada a herramienta original (la que propuso el modelo) — necesario para reconstruir una conversación válida al pedir la redacción final. */
+  toolCallId: z.string().max(200).optional(),
 });

@@ -4,6 +4,7 @@ import { contextoAsistenteGlobal } from './asistente-global.contexto-ia.js';
 import { construirSystemPromptAsistenteGlobal } from './asistente-global.prompt-ia.js';
 import { herramientasAsistenteGlobal } from './ia-herramientas-asistente-global.js';
 import { herramientasPresupuestos } from './ia-herramientas-presupuestos.js';
+import { herramientasNotas } from './ia-herramientas-notas.js';
 
 /**
  * Manifiesto de la capacidad `asistente-global` — sustituye al endpoint
@@ -23,7 +24,7 @@ export const capacidadAsistenteGlobal: CapacidadIA = {
   descripcion: 'Asistente conversacional general: responde preguntas sobre clientes/proyectos/facturas, navega por la aplicación y puede crear/modificar presupuestos.',
   promptSistema: construirSystemPromptAsistenteGlobal,
   constructorContexto: contextoAsistenteGlobal,
-  herramientas: [...herramientasAsistenteGlobal, ...herramientasPresupuestos],
+  herramientas: [...herramientasAsistenteGlobal, ...herramientasPresupuestos, ...herramientasNotas],
   permisosRequeridos: ['interfaz', 'escritura'],
   perfilModelo: 'rapido_economico',
   activa: true,

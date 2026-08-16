@@ -6,13 +6,17 @@ import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { cargarVariablesEntornoLocal } from './entorno-local.js';
+import { almacenamiento } from './almacenamiento.service.js';
 import { logger } from './logger.service.js';
+import { inicializarMotorDocumental } from './documento-motor-inicializar.js';
+import { inicializarAutomatizaciones } from './automatizaciones-listener.js';
 import { PresupuestosService, ErrorDeNegocio } from './presupuestos-service.js';
 import { UsuarioModel, conectarUsuarios, migrarNombresNormalizados, asegurarIndiceNombreNormalizado } from './usuario.model.js';
 import { configurarVapid, enviarNotificacion } from './push.service.js';
 import type { PushSub } from './push.service.js';
 import { limitadorGeneral, limitadorAuth } from './rate-limit.middleware.js';
 import { crearRouterIA } from './ia-rutas.js';
+import { crearRouterWebAuthn } from './webauthn-rutas.js';
 import { validar } from './validacion.middleware.js';
 import { hashPassword, verificarPassword, verificarPasswordLegado } from './password.service.js';
 import { firmarAccessToken, verificarAccessToken } from './token.service.js';
@@ -22,6 +26,8 @@ import {
   esquemaRegistro,
   esquemaVerificarSesion,
   esquemaCambiarEstadoUsuario,
+  esquemaPerfil,
+  esquemaCambiarAcceso,
   esquemaCliente,
   esquemaFactura,
   esquemaEmpresa,
@@ -32,14 +38,30 @@ import {
   esquemaProducto,
   esquemaNotaMC,
   esquemaPresupuestoMC,
+  esquemaPlantillaMC,
+  esquemaSubidaRecurso,
+  esquemaActualizarRecurso,
+  esquemaComponenteMC,
+  esquemaAutomatizacionMC,
+  esquemaContratoMC,
   esquemaDibujo,
   esquemaCarpeta,
   esquemaRenombrarCarpeta,
+  esquemaGastoPeriodico,
 } from './esquemas-validacion.js';
 
 // Debe ejecutarse antes de leer cualquier process.env.* de este módulo —
 // ver entorno-local.ts para la explicación completa (sin efecto en producción).
 cargarVariablesEntornoLocal();
+
+// Bootstrap del Motor Documental — debe ejecutarse antes de que cualquier
+// ruta pueda validar un `DocumentoMC` (ver documento-motor-inicializar.ts).
+inicializarMotorDocumental();
+
+// Bootstrap de automatización por eventos (Incremento 11) — se suscribe al
+// bus de eventos ya existente; debe ejecutarse antes de que se publique
+// cualquier evento (ver automatizaciones-listener.ts).
+inicializarAutomatizaciones();
 
 /**
  * Fuerza servidores DNS públicos y fiables antes de cualquier conexión a
@@ -153,7 +175,7 @@ function middlewareLogPeticion(req: express.Request, res: express.Response, next
  * navegador nunca reenviara la cookie. `path: '/'` evita ese desajuste en
  * cualquier capa de proxy, presente o futura.
  */
-function opcionesCookieRefresh(maxAgeMs?: number) {
+export function opcionesCookieRefresh(maxAgeMs?: number) {
   return {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
@@ -163,7 +185,7 @@ function opcionesCookieRefresh(maxAgeMs?: number) {
   };
 }
 
-const REFRESH_TTL_MS = (Number(process.env.REFRESH_TOKEN_TTL_DIAS) || 30) * 24 * 60 * 60 * 1000;
+export const REFRESH_TTL_MS = (Number(process.env.REFRESH_TOKEN_TTL_DIAS) || 30) * 24 * 60 * 60 * 1000;
 
 /**
  * Middleware de autenticación: valida el access token (JWT firmado) y
@@ -273,6 +295,18 @@ export function run() {
   const app = express();
   const svc = PresupuestosService.from();
   const port = process.env.PORT || 3000;
+
+  // Toda petición real llega a este proceso a través de varios saltos
+  // locales (proxy de Vite → gateway de la plataforma, ambos en
+  // localhost) — sin esto, `req.ip` es siempre la IP del último proxy
+  // (127.0.0.1) para TODAS las peticiones sin importar el dispositivo
+  // real, y los limitadores por IP (`limitadorAuth`, etc.) comparten un
+  // único cupo entre todos los usuarios en vez de aplicarse por
+  // dispositivo. 'loopback' confía en cualquier número de saltos que
+  // vengan de 127.0.0.1/::1 (nuestros propios proxies internos) y se
+  // detiene en la primera IP de la cadena que no sea loopback — la real
+  // del cliente — sin depender de contar saltos a mano.
+  app.set('trust proxy', 'loopback');
 
   configurarVapid();
   asegurarAdmin()
@@ -462,6 +496,19 @@ export function run() {
     } catch (err) { responderError(req, res, err); }
   });
 
+  /**
+   * Acceso biométrico (WebAuthn/passkeys) — registro y login mediante el
+   * autenticador seguro del dispositivo (huella, Face ID, PIN del sistema).
+   * Router aparte (mismo patrón que `crearRouterIA()`): cada ruta decide su
+   * propia necesidad de `requireAuth` (el registro exige sesión ya iniciada
+   * por contraseña; el login, no — es la propia forma de entrar) y su propio
+   * límite de peticiones (ver `webauthn-rutas.ts` — `limitadorAuth` solo se
+   * aplica ahí a `/login/*`, nunca a `/credenciales`, para no compartir el
+   * mismo budget de 10 peticiones/15min entre "gestionar dispositivos" e
+   * "intentos de login", que son superficies de abuso muy distintas).
+   */
+  app.use('/auth/webauthn', crearRouterWebAuthn());
+
   /** Verifica si una sesión sigue activa. */
   app.post('/auth/verificar', validar(esquemaVerificarSesion), async (req, res) => {
     try {
@@ -604,6 +651,71 @@ export function run() {
     catch (err) { responderError(req, res, err); }
   });
 
+  // ── Mi perfil — nombre para mostrar y foto, siempre del propio usuario ──
+
+  app.get('/perfil', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      await conectarUsuarios();
+      const u = await UsuarioModel.findOne({ id: req.usuarioId }).lean().exec() as any;
+      if (!u) { res.status(404).json({ error: 'No encontrado' }); return; }
+      res.json({ nombreMostrar: u.nombreMostrar || '', foto: u.foto || '' });
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  app.put('/perfil', requireAuth, validar(esquemaPerfil), async (req: AuthRequest, res) => {
+    try {
+      await conectarUsuarios();
+      await UsuarioModel.updateOne({ id: req.usuarioId }, { nombreMostrar: req.body.nombreMostrar, foto: req.body.foto });
+      res.json({ ok: true });
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /**
+   * Cambia el usuario de acceso y/o la contraseña — nunca sin verificar la
+   * contraseña actual primero (por si la sesión sigue abierta en un
+   * dispositivo que ya no es de confianza). Al terminar, revoca todas las
+   * sesiones existentes del usuario (incluida esta) y emite una sesión
+   * nueva — mismo motivo que al suspender una cuenta (`revocarTodosDeUsuario`
+   * más abajo): si alguien más tenía una sesión abierta con las credenciales
+   * antiguas, deja de poder renovarla. La petición actual no se queda
+   * desconectada porque se le entrega el access token + refresh token
+   * nuevos en la misma respuesta, igual que `/auth/login`.
+   */
+  app.put('/perfil/acceso', limitadorAuth, requireAuth, validar(esquemaCambiarAcceso), async (req: AuthRequest, res) => {
+    try {
+      await conectarUsuarios();
+      const u = await UsuarioModel.findOne({ id: req.usuarioId }).exec() as any;
+      if (!u) { res.status(404).json({ error: 'No encontrado' }); return; }
+
+      const { passwordActual, nombreNuevo, passwordNueva } = req.body;
+      const passwordValida = u.hashAlgo === 'bcrypt'
+        ? await verificarPassword(passwordActual, u.passwordHash)
+        : verificarPasswordLegado(passwordActual, u.passwordHash);
+      if (!passwordValida) { res.status(401).json({ error: 'La contraseña actual no es correcta.' }); return; }
+
+      if (nombreNuevo) {
+        const normalizado = nombreNuevo.toLowerCase();
+        if (normalizado !== u.nombreNormalizado) {
+          const yaExiste = await UsuarioModel.findOne({ nombreNormalizado: normalizado }).lean().exec();
+          if (yaExiste) { res.status(409).json({ error: 'Ese nombre de usuario ya existe.' }); return; }
+          u.nombre = nombreNuevo;
+          u.nombreNormalizado = normalizado;
+        }
+      }
+      if (passwordNueva) {
+        u.passwordHash = await hashPassword(passwordNueva);
+        u.hashAlgo = 'bcrypt';
+      }
+      await u.save();
+
+      await revocarTodosDeUsuario(u.id);
+      const accessToken = firmarAccessToken({ sub: u.id, esAdmin: u.esAdmin });
+      const refreshToken = await crearRefreshToken(u.id);
+      res.cookie('mc_refresh', refreshToken, opcionesCookieRefresh(REFRESH_TTL_MS));
+      res.json({ ok: true, id: u.id, nombre: u.nombre, esAdmin: u.esAdmin, estado: u.estado, accessToken });
+    } catch (err) { responderError(req, res, err); }
+  });
+
   // ── Facturas — aisladas por usuarioId ──
 
   /**
@@ -614,8 +726,8 @@ export function run() {
    */
   app.get('/facturas', requireAuth, validar(esquemaPaginacionFacturas, 'query'), async (req: AuthRequest, res) => {
     try {
-      const { pagina, limite, tipo, anio, clienteId, proveedor } = req.query as unknown as {
-        pagina: number; limite: number; tipo: 'ingreso' | 'gasto' | 'todas'; anio?: number;
+      const { pagina, limite, tipo, anio, trimestre, clienteId, proveedor } = req.query as unknown as {
+        pagina: number; limite: number; tipo: 'ingreso' | 'gasto' | 'todas'; anio?: number; trimestre?: number;
         clienteId?: string; proveedor?: string;
       };
       // clienteId/proveedor/anio devuelven un conjunto completo sin paginar
@@ -633,7 +745,9 @@ export function run() {
         return;
       }
       if (anio !== undefined) {
-        const items = await svc.listarFacturasPorAnio(req.usuarioId!, anio);
+        const items = trimestre !== undefined
+          ? await svc.listarFacturasPorTrimestre(req.usuarioId!, anio, trimestre)
+          : await svc.listarFacturasPorAnio(req.usuarioId!, anio);
         res.json({ items, pagina: 1, limite: items.length, total: items.length, totalPaginas: 1 });
         return;
       }
@@ -676,11 +790,54 @@ export function run() {
     } catch (err) { responderError(req, res, err); }
   });
 
+  /**
+   * ZIP con el PDF de varias facturas — por `ids` concretos (descarga
+   * múltiple con selección) o por filtro `anio`/`trimestre`/`tipo`
+   * (descargar todas). Debe registrarse antes de `/facturas/:id` para no
+   * colisionar con él (mismo motivo que `resumen`/`resumen-proveedores`/`anios`).
+   */
+  app.post('/facturas/descargar-zip', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { ids, anio, trimestre, tipo } = req.body as { ids?: string[]; anio?: number; trimestre?: number; tipo?: 'ingreso' | 'gasto' };
+      const zip = await svc.obtenerZipFacturas(req.usuarioId!, { ids, anio, trimestre, tipo });
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', 'attachment; filename="facturas.zip"');
+      res.send(Buffer.from(zip));
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /**
+   * Documentación completa para el asesor de un trimestre (resumen + ZIP
+   * de facturas organizadas). Debe registrarse antes de `/facturas/:id`.
+   */
+  app.get('/facturas/documentacion-asesor', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const anio = Number(req.query.anio);
+      const trimestre = Number(req.query.trimestre);
+      if (!anio || !trimestre || trimestre < 1 || trimestre > 4) { res.status(400).json({ error: 'anio y trimestre (1-4) son obligatorios' }); return; }
+      const zip = await svc.obtenerDocumentacionAsesor(req.usuarioId!, anio, trimestre);
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename="documentacion-T${trimestre}-${anio}.zip"`);
+      res.send(Buffer.from(zip));
+    } catch (err) { responderError(req, res, err); }
+  });
+
   app.get('/facturas/:id', requireAuth, async (req: AuthRequest, res) => {
     try {
       const f = await svc.obtenerFactura(req.params.id, req.usuarioId!);
       if (!f) { res.status(404).json({ error: 'No encontrada' }); return; }
       res.json(f);
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /** PDF real de una factura individual — descarga directa. */
+  app.get('/facturas/:id/pdf', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const resultado = await svc.obtenerPdfFactura(req.params.id, req.usuarioId!);
+      if (!resultado) { res.status(404).json({ error: 'No encontrada' }); return; }
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${resultado.nombreArchivo.replace(/"/g, '')}"`);
+      res.send(Buffer.from(resultado.bytes));
     } catch (err) { responderError(req, res, err); }
   });
 
@@ -695,6 +852,23 @@ export function run() {
   });
 
   // ── Proveedores — aislados por usuarioId (Fase "Integración completa") ──
+
+  // ── Gastos periódicos/estimados (Fase Facturas Profesional) ──
+
+  app.get('/gastos-periodicos', requireAuth, async (req: AuthRequest, res) => {
+    try { res.json(await svc.listarGastosPeriodicos(req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.put('/gastos-periodicos/:id', requireAuth, validar(esquemaGastoPeriodico), async (req: AuthRequest, res) => {
+    try { res.json(await svc.guardarGastoPeriodico({ ...req.body, id: req.params.id }, req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.delete('/gastos-periodicos/:id', requireAuth, async (req: AuthRequest, res) => {
+    try { await svc.borrarGastoPeriodico(req.params.id, req.usuarioId!); res.json({ ok: true }); }
+    catch (err) { responderError(req, res, err); }
+  });
 
   app.get('/proveedores', requireAuth, async (req: AuthRequest, res) => {
     try { res.json(await svc.listarProveedores(req.usuarioId!)); }
@@ -748,6 +922,99 @@ export function run() {
 
   app.delete('/presupuestos/:id', requireAuth, async (req: AuthRequest, res) => {
     try { await svc.borrarPresupuesto(req.params.id, req.usuarioId!); res.json({ ok: true }); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  // ── Plantillas (Motor Documental, Incremento 4) — aisladas por usuarioId ──
+
+  app.get('/plantillas', requireAuth, async (req: AuthRequest, res) => {
+    try { res.json(await svc.listarPlantillas(req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.put('/plantillas/:id', requireAuth, validar(esquemaPlantillaMC), async (req: AuthRequest, res) => {
+    try { res.json(await svc.guardarPlantilla({ ...req.body, id: req.params.id }, req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.delete('/plantillas/:id', requireAuth, async (req: AuthRequest, res) => {
+    try { await svc.borrarPlantilla(req.params.id, req.usuarioId!); res.json({ ok: true }); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  // ── Biblioteca de recursos (Motor Documental, Incremento 5) — aislada por usuarioId ──
+
+  app.get('/recursos', requireAuth, async (req: AuthRequest, res) => {
+    try { res.json(await svc.listarRecursos(req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.post('/recursos', requireAuth, validar(esquemaSubidaRecurso), async (req: AuthRequest, res) => {
+    try { res.json(await svc.subirRecursoBiblioteca(req.body, req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.put('/recursos/:id', requireAuth, validar(esquemaActualizarRecurso), async (req: AuthRequest, res) => {
+    try { res.json(await svc.actualizarRecurso(req.params.id, req.body, req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.delete('/recursos/:id', requireAuth, async (req: AuthRequest, res) => {
+    try { await svc.borrarRecurso(req.params.id, req.usuarioId!); res.json({ ok: true }); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  // ── Componentes reutilizables (Motor Documental, Incremento 6) — aislados por usuarioId ──
+
+  app.get('/componentes', requireAuth, async (req: AuthRequest, res) => {
+    try { res.json(await svc.listarComponentes(req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.put('/componentes/:id', requireAuth, validar(esquemaComponenteMC), async (req: AuthRequest, res) => {
+    try { res.json(await svc.guardarComponente({ ...req.body, id: req.params.id }, req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.delete('/componentes/:id', requireAuth, async (req: AuthRequest, res) => {
+    try { await svc.borrarComponente(req.params.id, req.usuarioId!); res.json({ ok: true }); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  // ── Automatización por eventos (Motor Documental, Incremento 11) — aislada por usuarioId ──
+
+  app.get('/automatizaciones', requireAuth, async (req: AuthRequest, res) => {
+    try { res.json(await svc.listarAutomatizaciones(req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.put('/automatizaciones/:id', requireAuth, validar(esquemaAutomatizacionMC), async (req: AuthRequest, res) => {
+    try { res.json(await svc.guardarAutomatizacion({ ...req.body, id: req.params.id }, req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.delete('/automatizaciones/:id', requireAuth, async (req: AuthRequest, res) => {
+    try { await svc.borrarAutomatizacion(req.params.id, req.usuarioId!); res.json({ ok: true }); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  // ── Contratos (Motor Documental, Incremento 12 — segundo tipo de documento) — aislados por usuarioId ──
+
+  app.get('/contratos', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const clienteId = typeof req.query.clienteId === 'string' ? req.query.clienteId : '';
+      if (!clienteId) { res.status(400).json({ error: 'Falta clienteId.' }); return; }
+      res.json(await svc.listarContratosDeCliente(req.usuarioId!, clienteId));
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  app.put('/contratos/:id', requireAuth, validar(esquemaContratoMC), async (req: AuthRequest, res) => {
+    try { res.json(await svc.guardarContrato({ ...req.body, id: req.params.id }, req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.delete('/contratos/:id', requireAuth, async (req: AuthRequest, res) => {
+    try { await svc.borrarContrato(req.params.id, req.usuarioId!); res.json({ ok: true }); }
     catch (err) { responderError(req, res, err); }
   });
 
@@ -837,6 +1104,20 @@ export function run() {
   app.delete('/carpetas/:id', requireAuth, async (req: AuthRequest, res) => {
     try { await svc.borrarCarpeta(req.params.id, req.usuarioId!); res.json({ ok: true }); }
     catch (err) { responderError(req, res, err); }
+  });
+
+  // ── Archivos de AlmacenamientoMemoria (solo desarrollo) ──
+  // Sin autenticación a propósito: las claves son UUIDs aleatorios
+  // impredecibles, igual que las URLs públicas de R2 en producción — un
+  // `<img src>` del navegador no puede adjuntar el token de sesión, así que
+  // esta ruta necesita ser accesible igual que lo sería un objeto público de
+  // R2. No expone ningún dato salvo el propio archivo subido.
+  app.get('/almacenamiento/:carpeta/:id', async (req, res) => {
+    const archivo = await almacenamiento.obtener(`${req.params.carpeta}/${req.params.id}`);
+    if (!archivo) { res.status(404).end(); return; }
+    res.setHeader('Content-Type', archivo.contentType);
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.send(archivo.datos);
   });
 
   // ── Núcleo de IA (Fase 3) ──

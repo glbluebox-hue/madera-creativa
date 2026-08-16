@@ -10,51 +10,30 @@ Aplicación SaaS de gestión de clientes, presupuestos, facturas y contabilidad 
 
 ## Descargar el proyecto completo
 
-Todo el código, imágenes y configuración están versionados en Bit Cloud.
+El código fuente vive en GitHub (repositorio privado). El histórico de versiones interno de cada componente Bit (`.bit/objects`) no tiene todavía un Scope remoto configurado — por eso viaja versionado dentro del propio repositorio de Git, no por separado en Bit Cloud.
 
-### Opción rápida — script automático
-
-Descarga `setup.sh` (Mac/Linux) o `setup.ps1` (Windows) de este mismo componente y ejecútalo. Hace todo el proceso de un tirón: instala Bit, crea el workspace, inicia sesión, importa los 3 componentes, configura `workspace.jsonc`, instala dependencias, verifica que todo está presente y prueba el arranque.
-
-**Mac / Linux:**
-```bash
-chmod +x setup.sh
-./setup.sh
-```
-
-**Windows (PowerShell):**
-```powershell
-.\setup.ps1
-```
-
-Ambos aceptan un nombre de carpeta opcional (por defecto `madera-creativa`):
-```bash
-./setup.sh mi-carpeta
-```
-
-Al terminar, solo falta rellenar `.env` con tus credenciales reales (el script lo crea vacío a partir de `env.example`) y arrancar con `bit run presupuestos-platform`.
-
-### Opción manual — paso a paso
+### Instalación limpia — paso a paso
 
 ```bash
-# 1. Instalar Bit (una sola vez)
-npx @teambit/bvm install
+# 1. Clonar el repositorio
+git clone https://github.com/glbluebox-hue/madera-creativa.git
+cd madera-creativa
 
-# 2. Crear una carpeta de trabajo e inicializarla
-mkdir madera-creativa && cd madera-creativa
-bit init
-
-# 3. Iniciar sesión en tu cuenta de Bit Cloud
-bit login
-
-# 4. Descargar los tres componentes con su código fuente
-bit import "madera-creativa.presupuestos/**"
-
-# 5. Instalar dependencias
+# 2. Instalar dependencias
 bit install
 ```
 
-Esto descarga el 100 %: código fuente, assets, configuración e historial de versiones. Los archivos quedan en `presupuestos/` como carpetas normales, editables en VS Code, Cursor o cualquier editor.
+**Importante**: el paso 2 es `bit install`, no `pnpm install`. Mientras el workspace dependa de paquetes con scope `@teambit`/`@bitdev` (resueltos por el propio registro de Bit), un `pnpm install` suelto falla con un 404 en el registro público de npm — verificado directamente clonando en una carpeta limpia. `bit install` resuelve el registro correcto internamente y de paso compila los componentes.
+
+```bash
+# 3. Configurar el archivo .env
+cp presupuestos/presupuestos-platform/env.example presupuestos/presupuestos-platform/.env
+# rellenar los valores reales (ver tabla más abajo)
+
+# 4. Compilar o arrancar
+bit compile
+bit run presupuestos-platform
+```
 
 ---
 
@@ -161,7 +140,7 @@ bit tag -m "mensaje"  # Versionar
 bit export            # Publicar en Bit Cloud
 ```
 
-> Este proyecto usa el control de versiones de Bit, no Git.
+> El control de versiones del código es Git/GitHub. Bit gestiona además su propio historial interno por componente (`.bit/objects`, sin Scope remoto configurado todavía) — de ahí que estos comandos convivan con los de Git.
 
 ---
 

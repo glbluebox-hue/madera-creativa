@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import logoMadera from './assets/logo.png';
 import * as api from './api.js';
+import type { TemaMC } from './documento-modelo.js';
 
 /** Datos de marca / empresa configurables por el usuario. */
 export type Empresa = {
@@ -20,6 +21,12 @@ export type Empresa = {
   condicionesPagoDefecto: string;
   /** Validez en días por defecto — se copia (y queda congelada) al crear un presupuesto en modo lienzo. */
   validezDiasDefecto: number;
+  /** Tema por defecto del Motor Documental (Incremento 3) — identidad corporativa; `null` hasta que se personalice. */
+  temaPorDefecto: TemaMC | null;
+  /** Región fiscal (Fase Facturas Profesional) — determina si el Trimestral calcula IGIC (Canarias) o IVA (Península). Vacío hasta que se configura. */
+  regionFiscal: 'canarias' | 'peninsula' | '';
+  /** REPEP activo (exención de IGIC por bajo volumen, solo relevante en Canarias) — decisión del usuario, nunca inferida. */
+  repepActivo: boolean;
 };
 
 /** Datos por defecto para el admin — marca Madera Creativa. */
@@ -32,6 +39,12 @@ const EMPRESA_ADMIN: Empresa = {
   iban: '',
   condicionesPagoDefecto: '60% al aceptar el presupuesto / 40% al finalizar el trabajo.',
   validezDiasDefecto: 30,
+  temaPorDefecto: null,
+  // Cuenta real de Madera Creativa: Canarias con REPEP activo (confirmado
+  // por el usuario 11/08/2026) — ver auditoría fiscal de la Fase Facturas
+  // Profesional.
+  regionFiscal: 'canarias',
+  repepActivo: true,
 };
 
 /** Datos vacíos para usuarios normales — cada uno pone su propia marca. */
@@ -44,6 +57,12 @@ const EMPRESA_USUARIO: Empresa = {
   iban: '',
   condicionesPagoDefecto: '60% al aceptar el presupuesto / 40% al finalizar el trabajo.',
   validezDiasDefecto: 30,
+  temaPorDefecto: null,
+  // Sin configurar por defecto — cada negocio debe elegir su región fiscal
+  // explícitamente antes de que el Trimestral calcule ningún impuesto
+  // indirecto (nunca se asume Canarias/Península por defecto).
+  regionFiscal: '',
+  repepActivo: false,
 };
 
 /**
@@ -77,6 +96,9 @@ export function useEmpresa(autenticado = false, esAdmin = false): {
           iban: datos.iban || inicial.iban,
           condicionesPagoDefecto: datos.condicionesPagoDefecto || inicial.condicionesPagoDefecto,
           validezDiasDefecto: datos.validezDiasDefecto || inicial.validezDiasDefecto,
+          temaPorDefecto: datos.temaPorDefecto ?? null,
+          regionFiscal: datos.regionFiscal ?? inicial.regionFiscal,
+          repepActivo: datos.repepActivo ?? inicial.repepActivo,
         });
       })
       .catch(() => { /* sin conexión: mantener valores por defecto */ });

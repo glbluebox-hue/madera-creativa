@@ -6,6 +6,7 @@ import { ImporteInput } from './importe-input.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
 import { useAvisoGuardado, AvisoGuardado } from './aviso-guardado.js';
 import { colorAvatar } from './avatar-utils.js';
+import { VisorFactura } from './visor-factura.js';
 import styles from './styles.module.css';
 
 /** Props de la sección de proveedores. */
@@ -34,6 +35,8 @@ const IconoEmail = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} vie
 const IconoUbicacion = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 1 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>;
 const IconoFactura = ({ s = 16 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" /><line x1="1" y1="10" x2="23" y2="10" /></svg>;
 const IconoBuscar = ({ s = 14 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>;
+const IconoOjo = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>;
+const IconoDescargar = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>;
 
 const CATEGORIAS = ['Tableros', 'Herrajes', 'Barnices y pinturas', 'Cantos', 'Perfiles', 'Vidrio', 'Iluminación', 'Otros'];
 const UNIDADES = ['ud', 'm²', 'ml', 'm³', 'kg', 'litro', 'caja', 'rollo'];
@@ -180,12 +183,19 @@ export function SeccionProveedores({
   const [editandoProducto, setEditandoProducto] = useState<Producto | null>(null);
   const [busqueda, setBusqueda] = useState('');
   const [categoriaFiltro, setCategoriaFiltro] = useState('');
+  const [viendoFacturaId, setViendoFacturaId] = useState<string | null>(null);
+  const [descargandoPdf, setDescargandoPdf] = useState(false);
   const avisoGuardado = useAvisoGuardado();
+
+  const descargarPdfProveedor = async (id: string) => {
+    setDescargandoPdf(true);
+    try { await api.descargarPdfFactura(id); } finally { setDescargandoPdf(false); }
+  };
 
   // Total gastado y nº de facturas por proveedor (texto), agregado en el
   // servidor (Incremento 1.5) — antes se calculaba recorriendo el array
   // completo de facturas en memoria, que ya no está disponible entero aquí.
-  const [resumenProveedores, setResumenProveedores] = useState<{ proveedor: string; totalGastado: number; numFacturas: number }[]>([]);
+  const [resumenProveedores, setResumenProveedores] = useState<{ proveedor: string; proveedorId?: string; totalGastado: number; numFacturas: number }[]>([]);
   useEffect(() => { api.obtenerResumenPorProveedor().then(setResumenProveedores); }, []);
 
   // Facturas del proveedor abierto en la ficha — se piden solo para ese
@@ -196,9 +206,14 @@ export function SeccionProveedores({
     api.obtenerFacturasDeProveedor(proveedorActivo.nombre).then(setFacturasProveedorActivo);
   }, [proveedorActivo]);
 
-  /** Filas del resumen que coinciden (misma búsqueda difusa que antes) con un proveedor. */
+  /**
+   * Filas del resumen que corresponden a un proveedor — prioriza la
+   * relación real por `proveedorId` (Fase Facturas Profesional) cuando la
+   * fila ya la tiene; si no, cae en la búsqueda difusa por texto de antes,
+   * para las facturas creadas antes de que existiera la relación.
+   */
   const resumenDeProveedor = useCallback((p: Proveedor) =>
-    resumenProveedores.filter(r => r.proveedor?.toLowerCase().includes(p.nombre.toLowerCase()) || r.proveedor === p.nombre),
+    resumenProveedores.filter(r => (r.proveedorId ? r.proveedorId === p.id : (r.proveedor?.toLowerCase().includes(p.nombre.toLowerCase()) || r.proveedor === p.nombre))),
     [resumenProveedores]);
 
   /** Total comprado a un proveedor, ya agregado en el servidor. */
@@ -276,18 +291,34 @@ export function SeccionProveedores({
         ) : (
           <div style={{ overflowX: 'auto', marginBottom: '1.5rem' }}>
             <table className={styles.tabla} style={{ width: '100%' }}>
-              <thead><tr><th>Fecha</th><th>Concepto</th><th style={{ textAlign: 'right' }}>Importe</th></tr></thead>
+              <thead><tr><th>Fecha</th><th>Concepto</th><th style={{ textAlign: 'right' }}>Importe</th><th></th></tr></thead>
               <tbody>
                 {factProv.map(f => (
                   <tr key={f.id}>
                     <td style={{ whiteSpace: 'nowrap', fontSize: '0.8rem' }}>{formatoFecha(f.fecha)}</td>
                     <td style={{ fontSize: '0.82rem' }}>{f.concepto || '—'}</td>
                     <td style={{ textAlign: 'right', fontWeight: 700, color: f.tipo === 'gasto' ? 'var(--rojo)' : 'var(--verde)', whiteSpace: 'nowrap' }}>{formatoEuro(f.importe)}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      {f.tieneDocumento && (
+                        <span style={{ display: 'flex', gap: '0.25rem', justifyContent: 'flex-end' }}>
+                          <button className={styles.btnIcono} title="Ver factura" aria-label="Ver factura" onClick={() => setViendoFacturaId(f.id)}><IconoOjo /></button>
+                          <button className={styles.btnIcono} title="Descargar PDF" aria-label="Descargar PDF" onClick={() => descargarPdfProveedor(f.id)} disabled={descargandoPdf}><IconoDescargar /></button>
+                        </span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+        )}
+
+        {viendoFacturaId && (
+          <VisorFactura
+            facturaId={viendoFacturaId}
+            onCerrar={() => setViendoFacturaId(null)}
+            onDescargarPdf={descargarPdfProveedor}
+          />
         )}
 
         {/* Productos de este proveedor */}
@@ -303,11 +334,11 @@ export function SeccionProveedores({
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
             {prodProv.map(p => (
-              <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--fondo)', border: '1px solid var(--borde)', borderRadius: 8, padding: '0.6rem 0.85rem' }}>
+              <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--fondo)', border: '1px solid var(--borde)', borderRadius: 'var(--radio-md)', padding: '0.6rem 0.85rem' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p style={{ margin: 0, fontWeight: 700, fontSize: '0.85rem' }}>{p.nombre}</p>
                   {p.descripcion && <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--topo-claro)' }}>{p.descripcion}</p>}
-                  {p.categoria && <span style={{ fontSize: '0.65rem', background: '#ede9e3', color: 'var(--topo)', padding: '1px 6px', borderRadius: 10 }}>{p.categoria}</span>}
+                  {p.categoria && <span style={{ fontSize: '0.65rem', background: 'var(--borde-fino)', color: 'var(--topo)', padding: '1px 6px', borderRadius: 'var(--radio-full, 999px)' }}>{p.categoria}</span>}
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
                   <p style={{ margin: 0, fontWeight: 800, color: 'var(--topo)', fontSize: '0.95rem' }}>{formatoEuro(p.precio)}</p>
@@ -353,7 +384,9 @@ export function SeccionProveedores({
         <AvisoGuardado visible={avisoGuardado.visible} />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1.25rem' }}>
           <h2 className={styles.h2} style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}><IconoProducto /> Catálogo de materiales</h2>
-          <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={() => { setEditandoProducto(null); setModalProducto(true); }}>+ Nuevo material</button>
+          <button className={styles.btnCirculoOscuro} title="Nuevo material" onClick={() => { setEditandoProducto(null); setModalProducto(true); }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+          </button>
         </div>
 
         {/* Filtros */}
@@ -421,26 +454,37 @@ export function SeccionProveedores({
       <AvisoGuardado visible={avisoGuardado.visible} />
       {/* Tabs */}
       <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: '0.25rem', background: '#f0ede8', borderRadius: 10, padding: '3px' }}>
+        <div style={{ display: 'flex', gap: '0.25rem', background: 'var(--borde-fino)', borderRadius: 'var(--radio-md)', padding: '3px' }}>
           <button className={`${styles.btn} ${vista === 'lista' ? styles.btnPrimario : ''}`} style={{ fontSize: '0.82rem' }} onClick={() => setVista('lista')}><IconoProveedor s={14} /> Proveedores</button>
           <button className={`${styles.btn} ${vista === 'catalogo' ? styles.btnPrimario : ''}`} style={{ fontSize: '0.82rem' }} onClick={() => setVista('catalogo')}><IconoProducto s={14} /> Catálogo</button>
         </div>
-        <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ marginLeft: 'auto' }} onClick={() => { setEditandoProveedor(null); setModalProveedor(true); }}>+ Proveedor</button>
+        <button className={styles.btnCirculoOscuro} style={{ marginLeft: 'auto' }} title="Nuevo proveedor" onClick={() => { setEditandoProveedor(null); setModalProveedor(true); }}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+        </button>
       </div>
 
       {/* Resumen global */}
       {proveedores.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem', marginBottom: '1.5rem' }}>
-          <div className={styles.kpiTarjeta} style={{ borderTop: '3px solid var(--topo)' }}>
-            <span className={styles.kpiLabel}>Proveedores</span>
+          <div className={styles.kpiTarjeta}>
+            <div className={styles.kpiCabecera}>
+              <div className={styles.kpiIconoChipTopo} style={{ width: 32, height: 32, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><IconoProveedor s={16} /></div>
+              <span className={styles.kpiLabel} style={{ textTransform: 'none', fontSize: '0.86rem', color: 'var(--topo-claro)' }}>Proveedores</span>
+            </div>
             <span className={styles.kpiValor}>{proveedores.length}</span>
           </div>
-          <div className={styles.kpiTarjeta} style={{ borderTop: '3px solid var(--rojo)' }}>
-            <span className={styles.kpiLabel}>Total compras</span>
-            <span className={styles.kpiValor}>{formatoEuro(proveedores.reduce((s, p) => s + totalProveedor(p), 0))}</span>
+          <div className={styles.kpiTarjeta}>
+            <div className={styles.kpiCabecera}>
+              <div className={styles.kpiIconoChipRojo} style={{ width: 32, height: 32, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><IconoFactura s={16} /></div>
+              <span className={styles.kpiLabel} style={{ textTransform: 'none', fontSize: '0.86rem', color: 'var(--topo-claro)' }}>Total compras</span>
+            </div>
+            <span className={`${styles.kpiValor}`} style={{ color: 'var(--rojo)' }}>{formatoEuro(proveedores.reduce((s, p) => s + totalProveedor(p), 0))}</span>
           </div>
-          <div className={styles.kpiTarjeta} style={{ borderTop: '3px solid var(--ocre)' }}>
-            <span className={styles.kpiLabel}>Materiales</span>
+          <div className={styles.kpiTarjeta}>
+            <div className={styles.kpiCabecera}>
+              <div className={styles.kpiIconoChipOcre} style={{ width: 32, height: 32, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><IconoProducto s={16} /></div>
+              <span className={styles.kpiLabel} style={{ textTransform: 'none', fontSize: '0.86rem', color: 'var(--topo-claro)' }}>Materiales</span>
+            </div>
             <span className={styles.kpiValor}>{productos.length}</span>
             <span className={styles.kpiSub}>en catálogo</span>
           </div>
@@ -462,10 +506,11 @@ export function SeccionProveedores({
             const nProductos = productosDeProveedor(p).length;
             return (
               <div key={p.id}
-                style={{ background: '#fff', border: '1px solid var(--borde)', borderRadius: 10, padding: '0.85rem 1rem', cursor: 'pointer', transition: 'box-shadow 0.15s', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+                className={`${styles.filaLista} ${styles.filaListaClic}`}
+                style={{ padding: '0.85rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
                 onClick={() => { setProveedorActivo(p); setVista('ficha'); }}
               >
-                <div style={{ width: 42, height: 42, borderRadius: '50%', background: colorAvatar(p.id), display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff' }}>
+                <div style={{ width: 42, height: 42, borderRadius: '50%', background: colorAvatar(p.id), display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--blanco)' }}>
                   <IconoProveedor s={18} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -506,12 +551,12 @@ export function SeccionProveedores({
 /** Fila de producto en el catálogo. */
 function ProductoFila({ p, prov, onEditar, onBorrar }: { p: Producto; prov?: Proveedor; onEditar: () => void; onBorrar: () => void }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#fff', border: '1px solid var(--borde)', borderRadius: 8, padding: '0.6rem 0.85rem' }}>
+    <div className={styles.filaLista} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem 0.85rem' }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <p style={{ margin: 0, fontWeight: 700, fontSize: '0.85rem', color: 'var(--negro)' }}>{p.nombre}</p>
         {p.descripcion && <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--topo-claro)' }}>{p.descripcion}</p>}
         {prov && <p style={{ margin: '2px 0 0', fontSize: '0.68rem', color: 'var(--topo-claro)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><IconoProveedor s={11} /> {prov.nombre}</p>}
-        {p.fechaPrecio && <p style={{ margin: 0, fontSize: '0.65rem', color: 'var(--topo-muy-claro, #bbb)' }}>Precio actualizado: {formatoFecha(p.fechaPrecio)}</p>}
+        {p.fechaPrecio && <p style={{ margin: 0, fontSize: '0.65rem', color: 'var(--topo-muy-claro)' }}>Precio actualizado: {formatoFecha(p.fechaPrecio)}</p>}
       </div>
       <div style={{ textAlign: 'right', flexShrink: 0 }}>
         <p style={{ margin: 0, fontWeight: 800, color: 'var(--topo)', fontSize: '0.95rem' }}>{formatoEuro(p.precio)}</p>

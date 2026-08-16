@@ -17,7 +17,12 @@ export class AlmacenamientoMemoria implements AlmacenamientoArchivos {
     const clave = `${opciones.carpeta}/${randomUUID()}`;
     this.archivos.set(clave, { datos, contentType: opciones.contentType });
     return {
-      url: `memoria://${clave}`,
+      // No hay CDN externo en memoria — se sirve desde el propio backend
+      // mediante `GET /almacenamiento/:carpeta/:id` (ver `obtener()` más
+      // abajo). Ruta relativa con el mismo prefijo `/api/presupuestos-service`
+      // que usa el resto del frontend para llegar a este servicio, tanto en
+      // el proxy de Vite en desarrollo como a través del túnel en producción.
+      url: `/api/presupuestos-service/almacenamiento/${clave}`,
       clave,
       metadatos: { tamano: datos.length, tipoMime: opciones.contentType, subidoEn: new Date().toISOString() },
     };
@@ -28,8 +33,17 @@ export class AlmacenamientoMemoria implements AlmacenamientoArchivos {
   }
 
   claveDesdeUrl(url: string): string | null {
-    const prefijo = 'memoria://';
-    return url.startsWith(prefijo) ? url.slice(prefijo.length) : null;
+    const prefijo = '/api/presupuestos-service/almacenamiento/';
+    if (url.startsWith(prefijo)) return url.slice(prefijo.length);
+    // Compatibilidad con documentos guardados antes de servir estas URLs por
+    // HTTP (esquema interno `memoria://`, nunca servible desde el navegador).
+    const prefijoAntiguo = 'memoria://';
+    return url.startsWith(prefijoAntiguo) ? url.slice(prefijoAntiguo.length) : null;
+  }
+
+  async obtener(clave: string): Promise<{ datos: Buffer; contentType: string } | null> {
+    const archivo = this.archivos.get(clave);
+    return archivo ? { datos: archivo.datos, contentType: archivo.contentType } : null;
   }
 
   /** Solo para pruebas: comprueba si una clave sigue almacenada. */

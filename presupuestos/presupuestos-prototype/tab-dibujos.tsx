@@ -324,7 +324,7 @@ export function TabDibujos({ cliente }: TabDibujosProps) {
 
       {cargandoCompleto && (
         <div className={styles.overlay}>
-          <p style={{ color: '#fff' }}>Abriendo dibujo…</p>
+          <p style={{ color: 'var(--blanco)' }}>Abriendo dibujo…</p>
         </div>
       )}
     </div>

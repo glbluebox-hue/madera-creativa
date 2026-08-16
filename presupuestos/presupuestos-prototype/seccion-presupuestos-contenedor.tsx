@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { SeccionPresupuestos } from './seccion-presupuestos.js';
 import { PresupuestosListaGlobal } from './presupuestos-lista-global.js';
+import { PlantillasVista } from './plantillas-vista.js';
 import type { Empresa } from './use-empresa.js';
+import type { Cliente } from './types.js';
 import styles from './styles.module.css';
 
 export type SeccionPresupuestosContenedorProps = {
@@ -9,27 +11,28 @@ export type SeccionPresupuestosContenedorProps = {
   clientes: { id: string; nombre: string }[];
   empresa: Empresa;
   onActualizarEmpresa: (cambios: Partial<Empresa>) => void;
-  /** Al entrar con esta bandera activa, salta directo a "Documentos" con el selector de cliente abierto (nav "Crear presupuesto" del sidebar). */
-  abrirCreadorAlEntrar?: boolean;
-  /** Se llama una vez consumida la bandera anterior, para que no se repita en la siguiente visita a esta sección. */
-  onCreadorAbierto?: () => void;
+  /** Crea una ficha de cliente real sin salir de esta sección — usado por "+ Nuevo cliente" dentro del selector de "+ Crear presupuesto". */
+  onCrearCliente: (cliente: Cliente) => void;
 };
 
-type SubPestana = 'resumen' | 'documentos';
+type SubPestana = 'resumen' | 'documentos' | 'plantillas';
 
 /**
  * Contenedor de la sección global "Presupuestos" (Fase 6) — envuelve dos
  * vistas independientes que ya existían por separado: el resumen financiero
  * (`SeccionPresupuestos`, derivado de `Cliente.presupuesto`/`estado`, sin
  * tocar) y la lista de documentos reales (`PresupuestosListaGlobal`,
- * `PresupuestoMC` de todos los clientes, con el editor de lienzo).
+ * `PresupuestoMC` de todos los clientes, con el editor correspondiente
+ * abierto a través de `AbrirDocumento`).
+ *
+ * Pestaña por defecto: "Documentos", no "Resumen financiero" — es donde
+ * vive "+ Crear presupuesto" y la lista real de documentos. Antes de este
+ * cambio, entrar en "Presupuestos" desde el menú lateral aterrizaba en el
+ * resumen (de solo lectura, sin ningún botón de creación), dejando el
+ * editor del Motor Documental sin punto de entrada visible.
  */
-export function SeccionPresupuestosContenedor({ onAbrirCliente, clientes, empresa, onActualizarEmpresa, abrirCreadorAlEntrar, onCreadorAbierto }: SeccionPresupuestosContenedorProps) {
-  const [pestana, setPestana] = useState<SubPestana>(abrirCreadorAlEntrar ? 'documentos' : 'resumen');
-
-  useEffect(() => {
-    if (abrirCreadorAlEntrar) setPestana('documentos');
-  }, [abrirCreadorAlEntrar]);
+export function SeccionPresupuestosContenedor({ onAbrirCliente, clientes, empresa, onActualizarEmpresa, onCrearCliente }: SeccionPresupuestosContenedorProps) {
+  const [pestana, setPestana] = useState<SubPestana>('documentos');
 
   return (
     <div>
@@ -46,6 +49,12 @@ export function SeccionPresupuestosContenedor({ onAbrirCliente, clientes, empres
         >
           Documentos
         </button>
+        <button
+          className={`${styles.fichaTab} ${pestana === 'plantillas' ? styles.fichaTabActiva : ''}`}
+          onClick={() => setPestana('plantillas')}
+        >
+          Plantillas
+        </button>
       </div>
 
       {pestana === 'resumen' && <SeccionPresupuestos onAbrirCliente={onAbrirCliente} />}
@@ -55,9 +64,11 @@ export function SeccionPresupuestosContenedor({ onAbrirCliente, clientes, empres
           empresa={empresa}
           onActualizarEmpresa={onActualizarEmpresa}
           onAbrirCliente={onAbrirCliente}
-          abrirSelectorInicial={abrirCreadorAlEntrar}
-          onSelectorInicialAbierto={onCreadorAbierto}
+          onCrearCliente={onCrearCliente}
         />
+      )}
+      {pestana === 'plantillas' && (
+        <PlantillasVista empresa={empresa} onActualizarEmpresa={onActualizarEmpresa} />
       )}
     </div>
   );

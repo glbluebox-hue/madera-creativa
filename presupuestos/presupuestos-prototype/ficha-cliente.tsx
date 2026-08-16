@@ -21,6 +21,7 @@ import { TabTareas } from './tab-tareas.js';
 import { TabNotas } from './tab-notas.js';
 import { TabDibujos } from './tab-dibujos.js';
 import { TabPresupuestosIA } from './tab-presupuestos-ia.js';
+import { TabContratos } from './tab-contratos.js';
 import type { Empresa } from './use-empresa.js';
 import styles from './styles.module.css';
 
@@ -48,13 +49,14 @@ export type FichaClienteProps = {
   onCrearProveedor?: (p: Omit<Proveedor, 'id' | 'creado'>) => Proveedor;
 };
 
-type Pestana = 'resumen' | 'proyectos' | 'presupuestos' | 'presupuestosIA' | 'facturas' | 'notas' | 'dibujos';
+type Pestana = 'resumen' | 'proyectos' | 'presupuestos' | 'presupuestosIA' | 'contratos' | 'facturas' | 'notas' | 'dibujos';
 
 const PESTANAS: { id: Pestana; label: string }[] = [
   { id: 'resumen', label: 'Resumen' },
   { id: 'proyectos', label: 'Proyectos' },
   { id: 'presupuestos', label: 'Presupuestos' },
   { id: 'presupuestosIA', label: 'Presupuestos IA' },
+  { id: 'contratos', label: 'Contratos' },
   { id: 'facturas', label: 'Facturas' },
   { id: 'notas', label: 'Notas' },
   { id: 'dibujos', label: 'Dibujos' },
@@ -371,6 +373,13 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa
       {pestana === 'presupuestosIA' && (
         <div className={styles.tabPanel}>
           <TabPresupuestosIA cliente={cliente} empresa={empresa} onActualizarEmpresa={onActualizarEmpresa} />
+        </div>
+      )}
+
+      {/* ── CONTRATOS: segundo tipo de documento del Motor Documental (Incremento 12) — mismo editor, mismo núcleo ── */}
+      {pestana === 'contratos' && (
+        <div className={styles.tabPanel}>
+          <TabContratos cliente={cliente} empresa={empresa} onActualizarEmpresa={onActualizarEmpresa} />
         </div>
       )}
 

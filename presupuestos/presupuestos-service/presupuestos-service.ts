@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { ClienteModel, EmpresaModel, FacturaModel, ProveedorModel, ProductoModel, DibujoModel, CarpetaModel, NotaModel, PresupuestoModel, conectar } from './cliente.model.js';
+import { ClienteModel, EmpresaModel, FacturaModel, ProveedorModel, ProductoModel, DibujoModel, CarpetaModel, NotaModel, PresupuestoModel, PlantillaModel, RecursoModel, ComponenteModel, AutomatizacionModel, ContratoModel, GastoPeriodicoModel, conectar } from './cliente.model.js';
 import { almacenamiento } from './almacenamiento.service.js';
 import { busEventos } from './eventos.service.js';
+import { procesarRecursosDocumento, borrarRecursosDocumentoHuerfanos } from './documento-procesar-recursos.js';
+import { subirORecuperarRecurso } from './documento-recursos-biblioteca.js';
+import type { DocumentoMC, TemaMC, RecursoMC } from './documento-modelo.js';
 
 /** Estructura de una ficha de cliente tal como la maneja el servicio. */
 export type ClienteDoc = Record<string, unknown> & { id: string };
@@ -121,6 +124,12 @@ export type EmpresaDoc = {
   iban: string;
   condicionesPagoDefecto: string;
   validezDiasDefecto: number;
+  /** Tema por defecto del Motor Documental (Incremento 3) — `null` hasta que el usuario personalice uno. */
+  temaPorDefecto: TemaMC | null;
+  /** Región fiscal (Fase Facturas Profesional) — determina si el Trimestral calcula IGIC (Canarias) o IVA (Península). */
+  regionFiscal: 'canarias' | 'peninsula' | '';
+  /** REPEP activo (exención de IGIC por bajo volumen, solo Canarias) — decisión del usuario, nunca inferida. */
+  repepActivo: boolean;
 };
 
 /**
@@ -306,6 +315,9 @@ export class PresupuestosService {
       iban: (doc as any).iban || '',
       condicionesPagoDefecto: (doc as any).condicionesPagoDefecto || '',
       validezDiasDefecto: (doc as any).validezDiasDefecto || 30,
+      temaPorDefecto: (doc as any).temaPorDefecto ?? null,
+      regionFiscal: (doc as any).regionFiscal || '',
+      repepActivo: !!(doc as any).repepActivo,
     };
   }
 
@@ -330,6 +342,9 @@ export class PresupuestosService {
       iban: (doc as any).iban || '',
       condicionesPagoDefecto: (doc as any).condicionesPagoDefecto || '',
       validezDiasDefecto: (doc as any).validezDiasDefecto || 30,
+      temaPorDefecto: (doc as any).temaPorDefecto ?? null,
+      regionFiscal: (doc as any).regionFiscal || '',
+      repepActivo: !!(doc as any).repepActivo,
     };
   }
 
@@ -352,10 +367,27 @@ export class PresupuestosService {
       FacturaModel.countDocuments(filtro).exec(),
     ]);
     const items = docs.map((d) => {
-      const { imagen: _img, ...rest } = this.limpiar(d as Record<string, unknown>);
-      return rest;
+      const limpio = this.limpiar(d as Record<string, unknown>) as Record<string, unknown>;
+      const tieneDocumento = this.tieneDocumentoFactura(limpio);
+      const { imagen: _img, ...rest } = limpio;
+      return { ...rest, tieneDocumento };
     });
     return { items, total };
+  }
+
+  /**
+   * Indica si una factura tiene algún documento adjunto (imagen/PDF, en
+   * cualquiera de sus formatos históricos), sin exponer el contenido en sí
+   * — usado en el listado paginado, donde `imagen` se omite por peso pero
+   * la lista sigue necesitando saber si mostrar los botones de Ver/Descargar.
+   */
+  private tieneDocumentoFactura(d: Record<string, unknown>): boolean {
+    return Boolean(
+      (Array.isArray(d.paginas) && d.paginas.length) ||
+      (Array.isArray(d.imagenes) && d.imagenes.length) ||
+      d.imagen ||
+      d.pdfOriginalUrl
+    );
   }
 
   /**
@@ -373,8 +405,36 @@ export class PresupuestosService {
       fecha: { $gte: `${anio}-01-01`, $lte: `${anio}-12-31` },
     }).sort({ creado: -1 }).lean().exec();
     return docs.map((d) => {
-      const { imagen: _img, ...rest } = this.limpiar(d as Record<string, unknown>);
-      return rest;
+      const limpio = this.limpiar(d as Record<string, unknown>) as Record<string, unknown>;
+      const tieneDocumento = this.tieneDocumentoFactura(limpio);
+      const { imagen: _img, ...rest } = limpio;
+      return { ...rest, tieneDocumento };
+    });
+  }
+
+  /**
+   * Facturas de un único trimestre de un año, sin paginar — para navegar
+   * las facturas "por carpetas" (T1-T4), pensado como complemento visual a
+   * `Trimestres` (que calcula totales fiscales para el mismo período).
+   * Mismo cálculo de rango de meses que ya usa `obtenerZipFacturas` para la
+   * descarga filtrada por trimestre, para que ambas vistas coincidan.
+   * @param usuarioId Propietario.
+   * @param anio Año a consultar.
+   * @param trimestre Trimestre (1-4).
+   */
+  async listarFacturasPorTrimestre(usuarioId: string, anio: number, trimestre: number): Promise<Record<string, unknown>[]> {
+    await conectar();
+    const mesInicio = (trimestre - 1) * 3 + 1;
+    const mesFin = mesInicio + 2;
+    const docs = await FacturaModel.find({
+      usuarioId,
+      fecha: { $gte: `${anio}-${String(mesInicio).padStart(2, '0')}-01`, $lte: `${anio}-${String(mesFin).padStart(2, '0')}-31` },
+    }).sort({ creado: -1 }).lean().exec();
+    return docs.map((d) => {
+      const limpio = this.limpiar(d as Record<string, unknown>) as Record<string, unknown>;
+      const tieneDocumento = this.tieneDocumentoFactura(limpio);
+      const { imagen: _img, ...rest } = limpio;
+      return { ...rest, tieneDocumento };
     });
   }
 
@@ -391,8 +451,10 @@ export class PresupuestosService {
     await conectar();
     const docs = await FacturaModel.find({ usuarioId, clienteId }).sort({ creado: -1 }).lean().exec();
     return docs.map((d) => {
-      const { imagen: _img, ...rest } = this.limpiar(d as Record<string, unknown>);
-      return rest;
+      const limpio = this.limpiar(d as Record<string, unknown>) as Record<string, unknown>;
+      const tieneDocumento = this.tieneDocumentoFactura(limpio);
+      const { imagen: _img, ...rest } = limpio;
+      return { ...rest, tieneDocumento };
     });
   }
 
@@ -412,8 +474,10 @@ export class PresupuestosService {
       $or: [{ proveedor: { $regex: escapado, $options: 'i' } }, { proveedor: nombreProveedor }],
     }).sort({ creado: -1 }).lean().exec();
     return docs.map((d) => {
-      const { imagen: _img, ...rest } = this.limpiar(d as Record<string, unknown>);
-      return rest;
+      const limpio = this.limpiar(d as Record<string, unknown>) as Record<string, unknown>;
+      const tieneDocumento = this.tieneDocumentoFactura(limpio);
+      const { imagen: _img, ...rest } = limpio;
+      return { ...rest, tieneDocumento };
     });
   }
 
@@ -426,13 +490,25 @@ export class PresupuestosService {
    * facturas.
    * @param usuarioId Propietario.
    */
-  async resumenPorProveedorTexto(usuarioId: string): Promise<{ proveedor: string; totalGastado: number; numFacturas: number }[]> {
+  async resumenPorProveedorTexto(usuarioId: string): Promise<{ proveedor: string; proveedorId: string; totalGastado: number; numFacturas: number }[]> {
     await conectar();
+    // Agrupa por `proveedorId` cuando la factura ya tiene la relación real
+    // (Fase Facturas Profesional); si no la tiene (facturas antiguas, o
+    // proveedor sin vincular todavía), agrupa por el texto libre como antes
+    // — así conviven ambos casos sin migrar datos ni duplicar el total.
     const filas = await FacturaModel.aggregate([
       { $match: { usuarioId, tipo: 'gasto', proveedor: { $nin: ['', null] } } },
-      { $group: { _id: '$proveedor', totalGastado: { $sum: '$importe' }, numFacturas: { $sum: 1 } } },
+      {
+        $group: {
+          _id: { $cond: [{ $and: [{ $ne: ['$proveedorId', null] }, { $ne: ['$proveedorId', ''] }] }, '$proveedorId', '$proveedor'] },
+          proveedor: { $first: '$proveedor' },
+          proveedorId: { $first: '$proveedorId' },
+          totalGastado: { $sum: '$importe' },
+          numFacturas: { $sum: 1 },
+        },
+      },
     ]).exec();
-    return (filas as any[]).map((f) => ({ proveedor: f._id, totalGastado: f.totalGastado, numFacturas: f.numFacturas }));
+    return (filas as any[]).map((f) => ({ proveedor: f.proveedor, proveedorId: f.proveedorId || '', totalGastado: f.totalGastado, numFacturas: f.numFacturas }));
   }
 
   /**
@@ -517,9 +593,24 @@ export class PresupuestosService {
         }))
       : imagenesOriginal;
 
+    // Igual tratamiento para el PDF original (si la factura se subió
+    // directamente como PDF) y para `paginas` (el documento completo en
+    // orden, mezclando imagen/PDF) — ambos campos nuevos de la Fase
+    // Facturas Profesional, mismo patrón que `imagen`/`imagenes`.
+    const resultadoPdfOriginal = await subirSiEsBase64((factura as any).pdfOriginalUrl, 'facturas');
+    const pdfOriginalUrl = resultadoPdfOriginal ? resultadoPdfOriginal.url : (factura as any).pdfOriginalUrl;
+
+    const paginasOriginal = (factura as any).paginas;
+    const paginas = Array.isArray(paginasOriginal)
+      ? await Promise.all(paginasOriginal.map(async (p: { tipo: string; url: string }) => {
+          const r = await subirSiEsBase64(p.url, 'facturas');
+          return r ? { ...p, url: r.url } : p;
+        }))
+      : paginasOriginal;
+
     const doc = await FacturaModel.findOneAndUpdate(
       { id: factura.id, usuarioId },
-      { ...factura, imagen, imagenes, usuarioId },
+      { ...factura, imagen, imagenes, pdfOriginalUrl, paginas, usuarioId },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     ).lean().exec();
 
@@ -528,10 +619,21 @@ export class PresupuestosService {
         const claveVieja = almacenamiento.claveDesdeUrl(anterior.imagen);
         if (claveVieja) await almacenamiento.borrar(claveVieja).catch(() => {});
       }
+      if (anterior.pdfOriginalUrl && anterior.pdfOriginalUrl !== pdfOriginalUrl) {
+        const claveVieja = almacenamiento.claveDesdeUrl(anterior.pdfOriginalUrl);
+        if (claveVieja) await almacenamiento.borrar(claveVieja).catch(() => {});
+      }
       const imagenesNuevas = new Set(imagenes ?? []);
       for (const img of anterior.imagenes ?? []) {
         if (!imagenesNuevas.has(img)) {
           const clave = almacenamiento.claveDesdeUrl(img);
+          if (clave) await almacenamiento.borrar(clave).catch(() => {});
+        }
+      }
+      const paginasNuevasUrls = new Set((paginas ?? []).map((p: { url: string }) => p.url));
+      for (const p of anterior.paginas ?? []) {
+        if (!paginasNuevasUrls.has(p.url)) {
+          const clave = almacenamiento.claveDesdeUrl(p.url);
           if (clave) await almacenamiento.borrar(clave).catch(() => {});
         }
       }
@@ -556,13 +658,138 @@ export class PresupuestosService {
     await conectar();
     const doc = await FacturaModel.findOne({ id, usuarioId }).lean().exec() as any;
     if (doc) {
-      const urls = [doc.imagen, ...(doc.imagenes ?? [])].filter(Boolean);
+      const urls = [
+        doc.imagen, doc.pdfOriginalUrl,
+        ...(doc.imagenes ?? []),
+        ...((doc.paginas ?? []) as { url: string }[]).map((p) => p.url),
+      ].filter(Boolean);
       for (const url of urls) {
         const clave = almacenamiento.claveDesdeUrl(url);
         if (clave) await almacenamiento.borrar(clave).catch(() => {});
       }
     }
     await FacturaModel.deleteOne({ id, usuarioId }).exec();
+  }
+
+  /** PDF real de una factura (descarga individual, Fase Facturas Profesional). */
+  async obtenerPdfFactura(id: string, usuarioId: string): Promise<{ bytes: Uint8Array; nombreArchivo: string } | null> {
+    const factura = await this.obtenerFactura(id, usuarioId);
+    if (!factura) return null;
+    const { generarPdfFactura, nombreArchivoFactura } = await import('./documentos-factura.service.js');
+    let bytes: Uint8Array;
+    try {
+      bytes = await generarPdfFactura(factura);
+    } catch (err) {
+      // "Sin documento adjunto" es un estado esperado (factura creada a
+      // mano, sin foto/PDF) — 400, no un 500 de servidor.
+      throw new ErrorDeNegocio(err instanceof Error ? err.message : 'No se pudo generar el PDF de esta factura.');
+    }
+    return { bytes, nombreArchivo: nombreArchivoFactura(factura) };
+  }
+
+  /**
+   * ZIP con el PDF de varias facturas — por ids concretos (descarga
+   * múltiple con selección) o por filtro de año/trimestre/tipo (descargar
+   * todas). Si se pasan `ids`, tienen prioridad sobre el filtro.
+   */
+  async obtenerZipFacturas(
+    usuarioId: string,
+    opciones: { ids?: string[]; anio?: number; trimestre?: number; tipo?: 'ingreso' | 'gasto' }
+  ): Promise<Uint8Array> {
+    await conectar();
+    let idsAUsar: string[];
+    if (opciones.ids?.length) {
+      idsAUsar = opciones.ids;
+    } else {
+      const filtro: Record<string, unknown> = { usuarioId };
+      if (opciones.tipo) filtro.tipo = opciones.tipo;
+      if (opciones.anio) {
+        if (opciones.trimestre) {
+          const mesInicio = (opciones.trimestre - 1) * 3 + 1;
+          const mesFin = mesInicio + 2;
+          filtro.fecha = { $gte: `${opciones.anio}-${String(mesInicio).padStart(2, '0')}-01`, $lte: `${opciones.anio}-${String(mesFin).padStart(2, '0')}-31` };
+        } else {
+          filtro.fecha = { $gte: `${opciones.anio}-01-01`, $lte: `${opciones.anio}-12-31` };
+        }
+      }
+      const docs = await FacturaModel.find(filtro).select('id').lean().exec();
+      idsAUsar = (docs as any[]).map((d) => d.id);
+    }
+    const facturas = (await Promise.all(idsAUsar.map((id) => this.obtenerFactura(id, usuarioId)))).filter(Boolean) as Record<string, unknown>[];
+    const { generarZipFacturas } = await import('./documentos-factura.service.js');
+    return generarZipFacturas(facturas);
+  }
+
+  /**
+   * Documentación completa para el asesor de un trimestre: RESUMEN.pdf
+   * (empresa, período, totales, listados) + carpetas Ingresos/Gastos con el
+   * PDF de cada factura, todo en un único ZIP.
+   */
+  async obtenerDocumentacionAsesor(usuarioId: string, anio: number, trimestre: number): Promise<Uint8Array> {
+    await conectar();
+    const mesInicio = (trimestre - 1) * 3 + 1;
+    const mesFin = mesInicio + 2;
+    const filtro = { usuarioId, fecha: { $gte: `${anio}-${String(mesInicio).padStart(2, '0')}-01`, $lte: `${anio}-${String(mesFin).padStart(2, '0')}-31` } };
+    const docs = await FacturaModel.find(filtro).lean().exec();
+    const facturas = (docs as any[]).map((d) => this.limpiar(d as Record<string, unknown>));
+
+    const [empresa, gastosPeriodicos] = await Promise.all([
+      EmpresaModel.findOne({ usuarioId }).lean().exec() as Promise<any>,
+      GastoPeriodicoModel.find({ usuarioId, activo: true }).lean().exec() as Promise<any[]>,
+    ]);
+
+    const ingresos = facturas.filter((f) => f.tipo === 'ingreso');
+    const gastos = facturas.filter((f) => f.tipo === 'gasto');
+    const NOMBRES_TRIMESTRE = ['1.er', '2.º', '3.er', '4.º'];
+    const periodoLabel = `${NOMBRES_TRIMESTRE[trimestre - 1]} trimestre ${anio}`;
+
+    const gastosPeriodicosDelTrimestre = (gastosPeriodicos ?? []).map((g) => ({
+      descripcion: g.descripcion, tipo: g.tipo,
+      importe: g.periodicidad === 'mensual' ? g.importe * 3 : g.importe,
+    }));
+
+    const avisoFiscal = [
+      'Documento generado automáticamente por Madera Creativa a partir de los datos introducidos por el usuario.',
+      'Los importes de IRPF/IGIC/IVA son una estimación orientativa (fórmula oficial aplicada a estos datos), no una liquidación definitiva.',
+      'Los gastos periódicos/estimados reflejan los valores introducidos por el usuario, que declara haberlos confirmado con su asesor.',
+      'Requiere revisión y confirmación de un asesor fiscal antes de presentar cualquier modelo ante la Agencia Tributaria.',
+    ];
+
+    const { generarResumenPdf, generarZipFacturas } = await import('./documentos-factura.service.js');
+    const resumenBytes = await generarResumenPdf({
+      empresaNombre: empresa?.nombre || 'Empresa',
+      periodoLabel,
+      ingresos, gastos, gastosPeriodicos: gastosPeriodicosDelTrimestre, avisoFiscal,
+    });
+    return generarZipFacturas(facturas, {
+      agruparPorTipo: true,
+      archivoExtra: { nombre: `RESUMEN_${periodoLabel.replace(/\s+/g, '_')}.pdf`, datos: resumenBytes },
+    });
+  }
+
+  // ── Gastos periódicos/estimados (Fase Facturas Profesional) ──
+
+  /** Lista los gastos periódicos activos del usuario — el Trimestral solo prorratea los `activo: true`. */
+  async listarGastosPeriodicos(usuarioId: string): Promise<Record<string, unknown>[]> {
+    await conectar();
+    const docs = await GastoPeriodicoModel.find({ usuarioId }).sort({ creado: -1 }).lean().exec();
+    return docs.map((d) => this.limpiar(d as Record<string, unknown>));
+  }
+
+  async guardarGastoPeriodico(gasto: Record<string, unknown>, usuarioId: string): Promise<Record<string, unknown>> {
+    await conectar();
+    const ahora = new Date().toISOString();
+    const doc = await GastoPeriodicoModel.findOneAndUpdate(
+      { id: gasto.id, usuarioId },
+      { ...gasto, usuarioId, creado: (gasto as any).creado ?? ahora },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).lean().exec();
+    return this.limpiar(doc as Record<string, unknown>);
+  }
+
+  async borrarGastoPeriodico(id: string, usuarioId: string): Promise<void> {
+    await conectar();
+    await GastoPeriodicoModel.deleteOne({ id, usuarioId }).exec();
   }
 
   // ── Proveedores — aislados por usuarioId (Fase "Integración completa") ──
@@ -691,6 +918,20 @@ export class PresupuestosService {
   }
 
   /**
+   * Devuelve un presupuesto por id, o `null` si no existe o no pertenece
+   * al usuario. Usado hoy por `automatizaciones-listener.ts` (Incremento
+   * 11 — acción `modificarElemento`, que necesita cargar el `DocumentoMC`
+   * objetivo antes de aplicarle el comando).
+   * @param id Id del presupuesto.
+   * @param usuarioId Propietario.
+   */
+  async obtenerPresupuesto(id: string, usuarioId: string): Promise<Record<string, unknown> | null> {
+    await conectar();
+    const doc = await PresupuestoModel.findOne({ id, usuarioId }).lean().exec();
+    return doc ? this.limpiar(doc as Record<string, unknown>) : null;
+  }
+
+  /**
    * Devuelve el presupuesto más reciente de un cliente, o `null` si no
    * tiene ninguno — usado por la herramienta de IA `anadirElementoPresupuesto`
    * para resolver "el presupuesto de Juan" sin que el modelo necesite
@@ -712,13 +953,23 @@ export class PresupuestosService {
   async guardarPresupuesto(presupuesto: Record<string, unknown>, usuarioId: string): Promise<Record<string, unknown>> {
     await conectar();
     const anterior = await PresupuestoModel.findOne({ id: presupuesto.id, usuarioId }).lean().exec();
+    // LEGADO — solo se sigue procesando para formato:'lienzo' ya existentes; no crea documentos nuevos (ver ARQUITECTURA-MOTOR-DOCUMENTAL.md).
     const contenidoLienzo = await procesarArchivosLienzo(presupuesto.contenidoLienzo);
+    // Motor Documental — independiente de lo anterior, solo se procesa cuando el propio presupuesto es formato:'documento'.
+    const contenidoDocumento = presupuesto.formato === 'documento'
+      ? await procesarRecursosDocumento(presupuesto.contenidoDocumento as DocumentoMC)
+      : presupuesto.contenidoDocumento;
     const doc = await PresupuestoModel.findOneAndUpdate(
       { id: presupuesto.id, usuarioId },
-      { ...presupuesto, contenidoLienzo, usuarioId },
+      { ...presupuesto, contenidoLienzo, contenidoDocumento, usuarioId },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     ).lean().exec();
-    if (anterior) await borrarArchivosLienzoHuerfanos((anterior as any).contenidoLienzo, contenidoLienzo);
+    if (anterior) {
+      await borrarArchivosLienzoHuerfanos((anterior as any).contenidoLienzo, contenidoLienzo);
+      if (presupuesto.formato === 'documento') {
+        await borrarRecursosDocumentoHuerfanos((anterior as any).contenidoDocumento, contenidoDocumento as DocumentoMC);
+      }
+    }
     busEventos.publicar({
       nombre: 'presupuesto.creado',
       usuarioId,
@@ -736,6 +987,183 @@ export class PresupuestosService {
   async borrarPresupuesto(id: string, usuarioId: string): Promise<void> {
     await conectar();
     await PresupuestoModel.deleteOne({ id, usuarioId }).exec();
+  }
+
+  // ── Plantillas (Motor Documental, Incremento 4) — aisladas por usuarioId ──
+
+  /** Lista las plantillas del usuario, más recientes primero. */
+  async listarPlantillas(usuarioId: string): Promise<Record<string, unknown>[]> {
+    await conectar();
+    const docs = await PlantillaModel.find({ usuarioId }).sort({ creadoEn: -1 }).lean().exec();
+    return docs.map((d) => this.limpiar(d as Record<string, unknown>));
+  }
+
+  /** Crea o actualiza una plantilla. */
+  async guardarPlantilla(plantilla: Record<string, unknown>, usuarioId: string): Promise<Record<string, unknown>> {
+    await conectar();
+    const doc = await PlantillaModel.findOneAndUpdate(
+      { id: plantilla.id, usuarioId },
+      { ...plantilla, usuarioId },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).lean().exec();
+    return this.limpiar(doc as Record<string, unknown>);
+  }
+
+  /** Borra una plantilla. */
+  async borrarPlantilla(id: string, usuarioId: string): Promise<void> {
+    await conectar();
+    await PlantillaModel.deleteOne({ id, usuarioId }).exec();
+  }
+
+  // ── Biblioteca de recursos (Motor Documental, Incremento 5) — aislada por usuarioId ──
+
+  /** Lista los recursos del usuario, más recientes primero. */
+  async listarRecursos(usuarioId: string): Promise<RecursoMC[]> {
+    await conectar();
+    const docs = await RecursoModel.find({ usuarioId }).sort({ creadoEn: -1 }).lean().exec();
+    return docs.map((d) => this.limpiar(d as Record<string, unknown>)) as unknown as RecursoMC[];
+  }
+
+  /**
+   * Sube un recurso nuevo o reutiliza uno ya catalogado con el mismo
+   * contenido (deduplicación por hash — ver `documento-recursos-biblioteca.ts`).
+   */
+  async subirRecursoBiblioteca(datos: { nombre: string; tipo: RecursoMC['tipo']; ambito: RecursoMC['ambito']; etiquetas: string[]; dataUrl: string }, usuarioId: string): Promise<RecursoMC> {
+    await conectar();
+    const coincide = datos.dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+    if (!coincide) throw new ErrorDeNegocio('El archivo no es un data URL en base64 válido.');
+    const [, mimeType, base64] = coincide;
+    const buffer = Buffer.from(base64, 'base64');
+    const repositorio = {
+      buscarPorHash: async (uid: string, hash: string) =>
+        (await RecursoModel.findOne({ usuarioId: uid, hashContenido: hash }).lean().exec()) as unknown as RecursoMC | null,
+    };
+    const { recurso, nuevo } = await subirORecuperarRecurso(buffer, { nombre: datos.nombre, tipo: datos.tipo, mimeType, ambito: datos.ambito, etiquetas: datos.etiquetas }, usuarioId, repositorio);
+    if (nuevo) await RecursoModel.create({ ...recurso, usuarioId });
+    return recurso;
+  }
+
+  /** Renombra o retagea un recurso — no toca el archivo ni el hash. */
+  async actualizarRecurso(id: string, cambios: { nombre?: string; etiquetas?: string[] }, usuarioId: string): Promise<RecursoMC> {
+    await conectar();
+    const doc = await RecursoModel.findOneAndUpdate({ id, usuarioId }, { $set: cambios }, { new: true }).lean().exec();
+    if (!doc) throw new ErrorDeNegocio('Recurso no encontrado.');
+    return this.limpiar(doc as Record<string, unknown>) as unknown as RecursoMC;
+  }
+
+  /** Borra un recurso del catálogo y de almacenamiento externo. */
+  async borrarRecurso(id: string, usuarioId: string): Promise<void> {
+    await conectar();
+    const doc = await RecursoModel.findOne({ id, usuarioId }).lean().exec();
+    if (!doc) return;
+    await RecursoModel.deleteOne({ id, usuarioId }).exec();
+    await almacenamiento.borrar((doc as any).claveAlmacenamiento).catch(() => {});
+  }
+
+  // ── Componentes reutilizables (Motor Documental, Incremento 6) — aislados por usuarioId ──
+
+  /** Lista los componentes del usuario, más recientes primero. */
+  async listarComponentes(usuarioId: string): Promise<Record<string, unknown>[]> {
+    await conectar();
+    const docs = await ComponenteModel.find({ usuarioId }).sort({ creadoEn: -1 }).lean().exec();
+    return docs.map((d) => this.limpiar(d as Record<string, unknown>));
+  }
+
+  /** Crea o actualiza un componente. */
+  async guardarComponente(componente: Record<string, unknown>, usuarioId: string): Promise<Record<string, unknown>> {
+    await conectar();
+    const doc = await ComponenteModel.findOneAndUpdate(
+      { id: componente.id, usuarioId },
+      { ...componente, usuarioId },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).lean().exec();
+    return this.limpiar(doc as Record<string, unknown>);
+  }
+
+  /** Borra un componente. Las instancias que lo referencian en documentos existentes no se tocan — quedarán sin poder resolverse hasta que el editor las desvincule o el usuario las elimine (comportamiento a pulir si hace falta en un incremento futuro). */
+  async borrarComponente(id: string, usuarioId: string): Promise<void> {
+    await conectar();
+    await ComponenteModel.deleteOne({ id, usuarioId }).exec();
+  }
+
+  // ── Automatización por eventos (Motor Documental, Incremento 11) — aislada por usuarioId ──
+
+  /** Lista las automatizaciones del usuario, más recientes primero. */
+  async listarAutomatizaciones(usuarioId: string): Promise<Record<string, unknown>[]> {
+    await conectar();
+    const docs = await AutomatizacionModel.find({ usuarioId }).sort({ creadoEn: -1 }).lean().exec();
+    return docs.map((d) => this.limpiar(d as Record<string, unknown>));
+  }
+
+  /** Crea o actualiza una automatización. */
+  async guardarAutomatizacion(automatizacion: Record<string, unknown>, usuarioId: string): Promise<Record<string, unknown>> {
+    await conectar();
+    const doc = await AutomatizacionModel.findOneAndUpdate(
+      { id: automatizacion.id, usuarioId },
+      { ...automatizacion, usuarioId },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).lean().exec();
+    return this.limpiar(doc as Record<string, unknown>);
+  }
+
+  /** Borra una automatización. */
+  async borrarAutomatizacion(id: string, usuarioId: string): Promise<void> {
+    await conectar();
+    await AutomatizacionModel.deleteOne({ id, usuarioId }).exec();
+  }
+
+  /**
+   * Todas las automatizaciones activas de un usuario suscritas a un
+   * evento concreto — usado por `automatizaciones-listener.ts`, nunca por
+   * una ruta HTTP.
+   */
+  async listarAutomatizacionesActivasPorEvento(usuarioId: string, evento: string): Promise<Record<string, unknown>[]> {
+    await conectar();
+    const docs = await AutomatizacionModel.find({ usuarioId, evento, activa: true }).lean().exec();
+    return docs.map((d) => this.limpiar(d as Record<string, unknown>));
+  }
+
+  // ── Contratos (Motor Documental, Incremento 12 — segundo tipo de documento) — aislados por usuarioId ──
+
+  /**
+   * Lista los contratos de un cliente, más recientes primero. A
+   * diferencia de Presupuesto, un Contrato es siempre `DocumentoMC` puro
+   * (sin `formato`/`contenidoLienzo`) — prueba real de que el núcleo del
+   * Motor Documental (validación, procesado de recursos, mismo editor) se
+   * reutiliza sin cambios para un tipo de documento distinto.
+   */
+  async listarContratosDeCliente(usuarioId: string, clienteId: string): Promise<Record<string, unknown>[]> {
+    await conectar();
+    const docs = await ContratoModel.find({ usuarioId, clienteId }).sort({ creado: -1 }).lean().exec();
+    return docs.map((d) => this.limpiar(d as Record<string, unknown>));
+  }
+
+  /** Crea o actualiza un contrato — mismo procesado de recursos (Base64 → almacenamiento externo) que un presupuesto en modo documento. */
+  async guardarContrato(contrato: Record<string, unknown>, usuarioId: string): Promise<Record<string, unknown>> {
+    await conectar();
+    const anterior = await ContratoModel.findOne({ id: contrato.id, usuarioId }).lean().exec();
+    const contenidoDocumento = await procesarRecursosDocumento(contrato.contenidoDocumento as DocumentoMC);
+    const doc = await ContratoModel.findOneAndUpdate(
+      { id: contrato.id, usuarioId },
+      { ...contrato, contenidoDocumento, usuarioId },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).lean().exec();
+    if (anterior) {
+      await borrarRecursosDocumentoHuerfanos((anterior as any).contenidoDocumento, contenidoDocumento as DocumentoMC);
+    }
+    busEventos.publicar({
+      nombre: 'contrato.guardado',
+      usuarioId,
+      entidadId: String(contrato.id),
+      datos: { titulo: (contrato as any).titulo, clienteId: (contrato as any).clienteId },
+    });
+    return this.limpiar(doc as Record<string, unknown>);
+  }
+
+  /** Borra un contrato. */
+  async borrarContrato(id: string, usuarioId: string): Promise<void> {
+    await conectar();
+    await ContratoModel.deleteOne({ id, usuarioId }).exec();
   }
 
   /**

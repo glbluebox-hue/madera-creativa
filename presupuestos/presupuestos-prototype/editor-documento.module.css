@@ -1,0 +1,270 @@
+/* Editor del Motor Documental (Incremento 2) — chrome del editor (barra,
+   paneles, lienzo). El aspecto de cada TIPO de elemento vive en sus propios
+   componentes de render (documento-tipos-iniciales-render.tsx), con estilo
+   en línea porque depende de datos dinámicos (ElementoMC.estilo) — este
+   módulo solo cubre la interfaz fija alrededor. */
+
+.raiz {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background: var(--fondo);
+  display: flex;
+  flex-direction: column;
+  /* Color de las asas/líneas de selección de react-moveable (variable CSS
+     propia de la librería) — negro en vez del azul por defecto, a
+     petición del usuario. */
+  --moveable-color: var(--negro);
+}
+
+.barraSuperior {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--borde);
+  background: var(--fondo-panel);
+  flex-wrap: wrap;
+}
+
+.titulo {
+  font-weight: 700;
+  font-size: 0.9rem;
+  border: none;
+  background: transparent;
+  min-width: 8rem;
+  flex: 1 1 auto;
+}
+
+.separador {
+  width: 1px;
+  align-self: stretch;
+  background: var(--borde);
+  margin: 0 0.2rem;
+}
+
+.barraHerramientas {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid var(--borde-fino);
+  background: var(--fondo-panel);
+  flex-wrap: wrap;
+}
+
+.btnHerramienta {
+  border: 1px solid var(--borde);
+  background: var(--fondo-panel);
+  border-radius: var(--radio);
+  padding: 0.35rem 0.6rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  color: var(--topo);
+}
+.btnHerramienta:hover { background: var(--topo-tinte); }
+.btnHerramienta:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.cuerpo {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.panelIzquierdo {
+  width: 200px;
+  border-right: 1px solid var(--borde);
+  background: var(--fondo-panel);
+  overflow-y: auto;
+  padding: 0.6rem;
+  flex-shrink: 0;
+}
+
+.lienzoContenedor {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 2rem;
+  background: var(--fondo);
+}
+
+.pagina {
+  position: relative;
+  background: #ffffff;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+  flex-shrink: 0;
+  outline: 2px solid transparent;
+}
+.paginaActiva { outline-color: var(--topo-tinte); }
+
+.elemento {
+  position: absolute;
+  box-sizing: border-box;
+  /* Recorta el contenido al tamaño real del elemento — sin esto, un
+     elemento con más contenido del que cabe (ej. una tabla con filas que
+     no caben en el alto guardado) se sale visualmente de su propio
+     recuadro, mientras que el cuadro de selección/mover/redimensionar
+     sigue reflejando el tamaño real y pequeño: parece una "segunda caja"
+     suelta debajo, que no se puede tocar porque no pertenece a ningún
+     control (fallo real reportado por el usuario). Con overflow:hidden el
+     contenido visible nunca puede ser más grande que el propio cuadro. */
+  overflow: hidden;
+}
+.elementoSeleccionado { outline: 1px solid var(--negro); }
+.elementoBloqueado { cursor: not-allowed; }
+
+.panelDerecho {
+  width: 260px;
+  border-left: 1px solid var(--borde);
+  background: var(--fondo-panel);
+  overflow-y: auto;
+  padding: 0.75rem;
+  flex-shrink: 0;
+}
+
+.panelTituloSeccion {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--topo-claro);
+  margin: 0.9rem 0 0.4rem;
+}
+.panelTituloSeccion:first-child { margin-top: 0; }
+
+.panelSeccion {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.panelCampo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.72rem;
+  color: var(--topo-claro);
+}
+.panelCampo input, .panelCampo select {
+  font-family: inherit;
+  font-size: 0.8rem;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  background: var(--fondo-panel);
+  color: var(--topo);
+}
+.panelCampo input[type="color"] { padding: 0; height: 1.8rem; }
+
+.panelFila {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.toggle, .toggleActivo {
+  border: 1px solid var(--borde);
+  background: var(--fondo-panel);
+  border-radius: 6px;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  color: var(--topo);
+}
+.toggleActivo { background: var(--topo); color: #fff; border-color: var(--topo); }
+
+.btnPanel {
+  border: 1px solid var(--borde);
+  background: var(--fondo-panel);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+  color: var(--topo);
+}
+.btnPanel:hover { background: var(--topo-tinte); }
+
+.panelNota { font-size: 0.72rem; color: var(--topo-claro); margin: 0; word-break: break-all; }
+
+.marcadorVacio {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--topo-tinte); color: var(--topo-claro);
+  font-size: 0.75rem; border-radius: 4px;
+}
+
+.chipArchivo {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; gap: 0.4rem;
+  background: var(--topo-tinte); border-radius: 6px;
+  padding: 0 0.6rem; font-size: 0.78rem; color: var(--topo);
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+
+.capaFila {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.4rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.capaFila:hover { background: var(--topo-tinte); }
+.capaFilaActiva { background: var(--topo-tinte); font-weight: 600; }
+
+.paginaFila {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  margin-bottom: 0.25rem;
+}
+.paginaFilaActiva { background: var(--topo); color: #fff; }
+
+.miniBtn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: inherit;
+  padding: 0 0.2rem;
+}
+
+@media (max-width: 720px) {
+  .panelIzquierdo, .panelDerecho { position: fixed; top: 0; bottom: 0; z-index: 10; box-shadow: 0 0 12px rgba(0,0,0,0.2); }
+  .panelIzquierdo { left: 0; }
+  .panelDerecho { right: 0; }
+  .lienzoContenedor { padding: 1rem; }
+}
+
+/* Marcador sin estilo propio — solo existe para poder localizar en el DOM
+   cuándo el editor está en modoImpresion, si hiciera falta en el futuro. */
+.modoImpresion {}
+
+/* Exportación a PDF (Incremento 8) — misma jerarquía de render que en
+   pantalla (sección 9 de la arquitectura), solo se oculta el "chrome" del
+   editor (barras, paneles) y se ajusta el lienzo para que cada página
+   ocupe una hoja física completa. El filtro de `restricciones.visibilidad`
+   se resuelve en React (`modoImpresion`, editor-documento.tsx), no aquí. */
+@media print {
+  @page { margin: 0; }
+  .barraSuperior, .barraHerramientas, .panelIzquierdo, .panelDerecho { display: none !important; }
+  .raiz { position: static; inset: auto; }
+  .cuerpo { display: block; }
+  .lienzoContenedor { padding: 0; gap: 0; overflow: visible; background: #fff; }
+  .pagina {
+    box-shadow: none;
+    outline: none;
+    page-break-after: always;
+    break-after: page;
+    margin: 0 auto;
+  }
+  .elementoSeleccionado { outline: none; }
+}
+

@@ -1,6 +1,5 @@
 import type { ProveedorIA } from './ia-proveedor.js';
 import { ProveedorOpenAI } from './ia-proveedor-openai.js';
-import { ProveedorOllama } from './ia-proveedor-ollama.js';
 
 /**
  * Registro de proveedores de IA disponibles, por nombre. `ServicioCentralIA`
@@ -11,7 +10,6 @@ import { ProveedorOllama } from './ia-proveedor-ollama.js';
  */
 const proveedores = new Map<string, ProveedorIA>([
   ['openai', new ProveedorOpenAI()],
-  ['ollama', new ProveedorOllama()],
 ]);
 
 /** Se lanza cuando se pide un proveedor que no está registrado. */

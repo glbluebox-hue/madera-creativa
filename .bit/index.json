@@ -39,6 +39,14 @@
       },
       "isSymlink": false,
       "hash": "332d61722e10572fbaef5995407ebdce773c6a7e"
+    },
+    {
+      "id": {
+        "scope": "bitdev.platforms",
+        "name": "backend/gateway-server"
+      },
+      "isSymlink": false,
+      "hash": "1547bfb70aacb3fdc11449388fd73ffc164a00e9"
     }
   ],
   "lanes": []
