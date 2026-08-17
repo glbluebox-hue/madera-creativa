@@ -680,7 +680,7 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
                   border: `1px solid ${c.activo ? 'var(--borde)' : 'var(--borde)'}`, opacity: c.activo ? 1 : 0.7,
                   borderRadius: 10, padding: '0.85rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.4rem',
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
                     <span style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: '0.95rem', letterSpacing: '0.03em' }}>{c.codigo}</span>
                     <span style={{
                       fontSize: '0.68rem', fontWeight: 700, padding: '2px 8px', borderRadius: 20,
@@ -688,24 +688,6 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
                     }}>
                       {c.activo ? 'Activo' : 'Desactivado'}
                     </span>
-                    <div style={{ display: 'flex', gap: '0.4rem', marginLeft: 'auto' }}>
-                      <button
-                        className={`${styles.btn} ${c.activo ? styles.btnPeligro : styles.btnVerde}`}
-                        style={{ fontSize: '0.74rem' }}
-                        onClick={() => alternarActivoCodigo(c.id, !c.activo)}
-                      >
-                        {c.activo ? 'Desactivar' : 'Reactivar'}
-                      </button>
-                      <button
-                        className={styles.btnIcono} style={{ fontSize: '0.74rem', width: 'auto', padding: '2px 8px' }}
-                        onClick={() => editandoCodigo === c.id ? setEditandoCodigo(null) : iniciarEdicionCodigo(c)}
-                      >
-                        {editandoCodigo === c.id ? 'Cancelar' : 'Editar'}
-                      </button>
-                      <button className={styles.btnIcono} style={{ color: 'var(--rojo)' }} title="Eliminar" aria-label="Eliminar" onClick={() => eliminarCodigo(c.id)}>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
-                      </button>
-                    </div>
                   </div>
                   <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--topo-claro)' }}>
                     {ETIQUETA_TIPO[c.tipoAccesoConcedido]} · {ETIQUETA_PLAN[c.planConcedido]}
@@ -714,6 +696,25 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
                     {c.fechaExpiracion ? ` · Canjeable hasta ${formatoFecha(c.fechaExpiracion)}` : ''}
                   </p>
                   {c.notas && <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--topo-claro)', fontStyle: 'italic' }}>{c.notas}</p>}
+
+                  <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                    <button
+                      className={`${styles.btn} ${c.activo ? styles.btnPeligro : styles.btnVerde}`}
+                      style={{ fontSize: '0.74rem' }}
+                      onClick={() => alternarActivoCodigo(c.id, !c.activo)}
+                    >
+                      {c.activo ? 'Desactivar' : 'Reactivar'}
+                    </button>
+                    <button
+                      className={styles.btnIcono} style={{ fontSize: '0.74rem', width: 'auto', padding: '2px 8px' }}
+                      onClick={() => editandoCodigo === c.id ? setEditandoCodigo(null) : iniciarEdicionCodigo(c)}
+                    >
+                      {editandoCodigo === c.id ? 'Cancelar' : 'Editar'}
+                    </button>
+                    <button className={styles.btnIcono} style={{ color: 'var(--rojo)' }} title="Eliminar" aria-label="Eliminar" onClick={() => eliminarCodigo(c.id)}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                    </button>
+                  </div>
 
                   {editandoCodigo === c.id && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', background: 'var(--topo-tinte)', borderRadius: 8, padding: '0.6rem' }}>
