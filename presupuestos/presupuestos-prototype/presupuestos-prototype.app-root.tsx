@@ -1,6 +1,7 @@
-import { BrowserRouter } from 'react-router-dom';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { createRoot } from 'react-dom/client';
 import { PresupuestosPrototype } from './presupuestos-prototype.js';
+import { PortalPresupuesto } from './portal-presupuesto.js';
 import { ErrorBoundary } from './error-boundary.js';
 
 // El manifest y los apple-touch-icon se sirven ESTÁTICOS desde index.html
@@ -47,7 +48,14 @@ if (container) {
   root.render(
     <BrowserRouter>
       <ErrorBoundary>
-        <PresupuestosPrototype />
+        {/* `/portal/:token` es la única ruta pública real de la app — el
+            resto sigue navegando por estado interno (`seccion`), sin URLs
+            propias. El catch-all ('*') es intencional: preserva el
+            comportamiento de siempre para cualquier otra ruta. */}
+        <Routes>
+          <Route path="/portal/:token" element={<PortalPresupuesto />} />
+          <Route path="*" element={<PresupuestosPrototype />} />
+        </Routes>
       </ErrorBoundary>
     </BrowserRouter>
   );

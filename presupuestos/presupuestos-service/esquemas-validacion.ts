@@ -504,6 +504,18 @@ export const esquemaPresupuestoMC = z.object({
   }
 });
 
+/**
+ * Cuerpo de POST /portal/presupuestos/:token/aceptar (Portal del cliente) —
+ * la firma es obligatoria (aceptar = firmar). Límite de longitud del propio
+ * data URL en base64 (~400 KB de imagen decodificada) como primera defensa
+ * barata contra un payload enorme, antes de gastar trabajo decodificándolo
+ * o subiéndolo a almacenamiento — ver `aceptarPresupuestoPublico`, que
+ * además comprueba la cabecera PNG real tras decodificar.
+ */
+export const esquemaAceptarPortalPublico = z.object({
+  firma: z.string().min(100).max(600_000).regex(/^data:image\/png;base64,/, 'La firma debe ser una imagen PNG.'),
+});
+
 /** Límite defensivo de una plantilla — mismo criterio que un presupuesto en formato documento. */
 export const LIMITE_CONTENIDO_PLANTILLA_BYTES = 4 * 1024 * 1024;
 

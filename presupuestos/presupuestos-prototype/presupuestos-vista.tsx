@@ -70,6 +70,11 @@ export function PresupuestosVista({ clienteId, clienteNombre, empresa, onActuali
 
   const [aceptandoId, setAceptandoId] = useState<string | null>(null);
 
+  const [generandoEnlaceId, setGenerandoEnlaceId] = useState<string | null>(null);
+  /** Enlace ya generado por presupuesto, listo para copiar — vive solo en memoria, se pierde al recargar la página (no hace falta persistirlo: "Generar enlace" siempre se puede volver a pulsar). */
+  const [enlaces, setEnlaces] = useState<Record<string, string>>({});
+  const [enlaceCopiadoId, setEnlaceCopiadoId] = useState<string | null>(null);
+
   const cargar = useCallback(() => {
     setCargando(true);
     api.obtenerPresupuestos(clienteId)
@@ -180,6 +185,32 @@ export function PresupuestosVista({ clienteId, clienteNombre, empresa, onActuali
     }
   };
 
+  /**
+   * Genera el enlace del Portal del cliente y lo deja listo para copiar
+   * (Sección 8). No hace falta refrescar `presupuestos` — el enlace vive
+   * aparte, en su propia colección, no es un campo del presupuesto.
+   */
+  const generarEnlace = async (id: string) => {
+    setGenerandoEnlaceId(id);
+    setError(null);
+    try {
+      const { token } = await api.generarEnlacePresupuesto(id);
+      setEnlaces((prev) => ({ ...prev, [id]: `${window.location.origin}/portal/${token}` }));
+    } catch (e) {
+      setError(String(e).replace(/^Error:\s*/, ''));
+    } finally {
+      setGenerandoEnlaceId(null);
+    }
+  };
+
+  const copiarEnlace = async (url: string, id: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setEnlaceCopiadoId(id);
+      setTimeout(() => setEnlaceCopiadoId((actual) => (actual === id ? null : actual)), 2000);
+    } catch { /* portapapeles no disponible — el enlace ya se ve en el campo, se puede seleccionar a mano */ }
+  };
+
   const anadirItem = async (p: PresupuestoMC) => {
     const precio = Number(itemPrecio);
     if (!itemConcepto.trim() || !Number.isFinite(precio)) return;
@@ -234,6 +265,39 @@ export function PresupuestosVista({ clienteId, clienteNombre, empresa, onActuali
       >
         {aceptandoId === p.id ? 'Aceptando…' : 'Marcar como aceptado'}
       </button>
+    );
+  };
+
+  /**
+   * Botón "Generar enlace" (Portal del cliente, Sección 8) — solo para el
+   * formato vigente; el legado 'lienzo' no tiene vista pública (el backend
+   * lo rechazaría igualmente, pero mejor no ofrecer el botón). Una vez
+   * generado, muestra el enlace en un campo de solo lectura con "Copiar" en
+   * vez de intentar compartirlo automáticamente — el carpintero decide por
+   * dónde enviarlo (WhatsApp, email…).
+   */
+  const accionEnlace = (p: PresupuestoMC) => {
+    if (p.formato === 'lienzo') return null;
+    const url = enlaces[p.id];
+    if (!url) {
+      return (
+        <button
+          className={`${styles.btn} ${styles.btnSecundario}`}
+          onClick={() => generarEnlace(p.id)}
+          disabled={generandoEnlaceId === p.id}
+          title="Genera un enlace para que el cliente vea y acepte este presupuesto sin registrarse"
+        >
+          {generandoEnlaceId === p.id ? 'Generando…' : 'Generar enlace'}
+        </button>
+      );
+    }
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+        <input className={styles.input} value={url} readOnly onFocus={(e) => e.target.select()} style={{ fontSize: '0.78rem', width: '180px' }} />
+        <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={() => copiarEnlace(url, p.id)}>
+          {enlaceCopiadoId === p.id ? '✓ Copiado' : 'Copiar'}
+        </button>
+      </div>
     );
   };
 
@@ -337,6 +401,7 @@ export function PresupuestosVista({ clienteId, clienteNombre, empresa, onActuali
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
                     <span style={{ fontWeight: 800, fontSize: '1.1rem', whiteSpace: 'nowrap' }}>{formatoEuro(p.precioTotal)}</span>
                     {accionAceptar(p)}
+                    {accionEnlace(p)}
                     <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={() => setDocumentoAbierto(p)}>Abrir editor</button>
                     <ConfirmarBorrado onConfirmar={() => borrar(p.id)} titulo="Borrar presupuesto" />
                   </div>
@@ -391,7 +456,7 @@ export function PresupuestosVista({ clienteId, clienteNombre, empresa, onActuali
                     </div>
                   </div>
 
-                  <div style={{ marginTop: '0.6rem' }}>{accionAceptar(p)}</div>
+                  <div style={{ marginTop: '0.6rem', display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>{accionAceptar(p)}{accionEnlace(p)}</div>
 
                   {p.descripcion && (
                     <p style={{ margin: '0.75rem 0 0', fontSize: '0.85rem', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{p.descripcion}</p>

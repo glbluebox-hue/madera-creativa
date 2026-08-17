@@ -312,6 +312,14 @@ const PresupuestoSchema = new Schema({
   precioTotal: { type: Number, default: 0 },
   creado: { type: String, required: true },
   actualizado: { type: String, required: true },
+  /**
+   * Firma del cliente al aceptar desde el Portal del cliente (enlace
+   * público). Deliberadamente EXCLUIDOS de `esquemaPresupuestoMC` (Zod) —
+   * mismo patrón que `estado` — así un guardado normal del carpintero
+   * nunca puede pisarlos; solo los escribe `aceptarPresupuestoPublico`.
+   */
+  firmaClienteUrl: { type: String, default: '' },
+  firmaClienteFecha: { type: String, default: '' },
 });
 PresupuestoSchema.index({ usuarioId: 1, clienteId: 1, creado: -1 });
 

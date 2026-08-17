@@ -1,6 +1,7 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { ClienteModel, EmpresaModel, FacturaModel, ProveedorModel, ProductoModel, DibujoModel, CarpetaModel, NotaModel, PresupuestoModel, PlantillaModel, RecursoModel, ComponenteModel, AutomatizacionModel, ContratoModel, GastoPeriodicoModel, conectar } from './cliente.model.js';
 import { UsuarioModel, conectarUsuarios } from './usuario.model.js';
+import { crearEnlacePresupuesto, buscarEnlacePorToken, marcarEnlaceAceptado, formatoTokenValido } from './enlace-presupuesto.model.js';
 import { almacenamiento } from './almacenamiento.service.js';
 import { busEventos } from './eventos.service.js';
 import { enviarNotificacion } from './push.service.js';
@@ -150,6 +151,45 @@ export type EmpresaDoc = {
   /** REPEP activo (exención de IGIC por bajo volumen, solo Canarias) — decisión del usuario, nunca inferida. */
   repepActivo: boolean;
 };
+
+// ── Portal del cliente (enlace público de un presupuesto) ──────────────────────
+
+/**
+ * Proyección explícita del presupuesto que puede llegar a la vista pública
+ * (Portal del cliente) — lista blanca, nunca `limpiar()` (ese sí deja pasar
+ * `usuarioId`, confirmado al auditar esta función; aquí no puede ocurrir).
+ * Deliberadamente NO incluye: `usuarioId`, `clienteId` en crudo,
+ * `contenidoLienzo` (legado, no soportado en el portal), ni el IBAN de la
+ * empresa (no hace falta para ver/aceptar, y es un dato bancario que no debe
+ * viajar en una URL reenviable por WhatsApp — hallazgo de la revisión de
+ * seguridad, 17/08/2026).
+ *
+ * Se usa TANTO para lo que ve el cliente COMO para calcular
+ * `contenidoHash` — así "lo que ves es lo que firmas" por construcción, no
+ * por disciplina de mantener dos listas de campos sincronizadas a mano.
+ */
+function proyeccionPublicaPresupuesto(p: Record<string, unknown>) {
+  return {
+    titulo: p.titulo,
+    formato: p.formato,
+    descripcion: p.descripcion,
+    alcance: p.alcance,
+    items: p.items,
+    contenidoDocumento: p.formato === 'documento' ? p.contenidoDocumento : undefined,
+    condicionesPago: p.condicionesPago,
+    validezDias: p.validezDias,
+    condicionesGenerales: p.condicionesGenerales,
+    precioTotal: p.precioTotal,
+  };
+}
+
+/** Hash de integridad del contenido visible del presupuesto — ver `proyeccionPublicaPresupuesto`. */
+function hashContenidoPublico(p: Record<string, unknown>): string {
+  return createHash('sha256').update(JSON.stringify(proyeccionPublicaPresupuesto(p))).digest('hex');
+}
+
+/** Cabecera real de un PNG (los primeros 8 bytes) — ver `aceptarPresupuestoPublico`. */
+const CABECERA_PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 /**
  * Servicio de presupuestos: gestiona la persistencia de clientes, facturas y
@@ -1327,6 +1367,149 @@ export class PresupuestosService {
     // Ya estaba aceptado — idempotente: se responde con éxito y el estado
     // actual, sin repetir ninguna consecuencia.
     return { presupuesto: this.limpiar(existente as Record<string, unknown>), transicionOcurrioAhora: false };
+  }
+
+  /**
+   * Genera un enlace público nuevo para un presupuesto (Portal del
+   * cliente). Solo disponible para el formato vigente (`'simple'` o
+   * `'documento'`) — el legado `'lienzo'` (editor Excalidraw) no tiene vista
+   * pública, no vale la pena duplicar ese renderizador para un formato que
+   * ya no se usa para presupuestos nuevos.
+   */
+  async generarEnlacePresupuesto(id: string, usuarioId: string): Promise<{ token: string; expiraEn: string }> {
+    await conectar();
+    const presupuesto = await PresupuestoModel.findOne({ id, usuarioId }).lean().exec() as any;
+    if (!presupuesto) throw new ErrorDeNegocio('Presupuesto no encontrado', 400);
+    if (presupuesto.formato === 'lienzo') {
+      throw new ErrorDeNegocio('Este presupuesto usa el editor antiguo — no tiene enlace público disponible.', 400);
+    }
+    const { token, expiraEn } = await crearEnlacePresupuesto({
+      presupuestoId: id,
+      usuarioId,
+      contenidoHash: hashContenidoPublico(presupuesto),
+      validezDias: presupuesto.validezDias || 30,
+    });
+    return { token, expiraEn: expiraEn.toISOString() };
+  }
+
+  /**
+   * Vista pública de un presupuesto (Portal del cliente) — sin sesión, solo
+   * el token del enlace. Nunca usa `limpiar()` (deja pasar `usuarioId`, ver
+   * comentario de `proyeccionPublicaPresupuesto`) ni el objeto completo del
+   * presupuesto: solo la lista blanca.
+   */
+  async obtenerPresupuestoPublico(tokenPlano: string): Promise<Record<string, unknown>> {
+    if (!formatoTokenValido(tokenPlano)) throw new ErrorDeNegocio('Enlace no válido.', 400);
+    await conectar();
+    const enlace = await buscarEnlacePorToken(tokenPlano);
+    if (!enlace) throw new ErrorDeNegocio('Enlace no válido.', 400);
+    if (enlace.revocadoEn || enlace.expiraEn.getTime() < Date.now()) {
+      throw new ErrorDeNegocio('Este enlace ya no está disponible. Pide uno nuevo.', 409);
+    }
+    const presupuesto = await PresupuestoModel.findOne({ id: enlace.presupuestoId, usuarioId: enlace.usuarioId }).lean().exec() as any;
+    if (!presupuesto) throw new ErrorDeNegocio('Enlace no válido.', 400);
+
+    const cliente = await ClienteModel.findOne({ id: presupuesto.clienteId, usuarioId: enlace.usuarioId }).select('nombre').lean().exec() as any;
+    const empresa = await EmpresaModel.findOne({ usuarioId: enlace.usuarioId }).lean().exec() as any;
+
+    return {
+      ...proyeccionPublicaPresupuesto(presupuesto),
+      estado: presupuesto.estado || 'borrador',
+      clienteNombre: cliente?.nombre || '',
+      empresa: {
+        nombre: empresa?.nombre || '',
+        eslogan: empresa?.eslogan || '',
+        logo: empresa?.logo || '',
+        telefono: empresa?.telefono || '',
+        email: empresa?.email || '',
+      },
+      expiraEn: enlace.expiraEn.toISOString(),
+      // Si ya está aceptado, el propio Presupuesto ya lleva la firma (se
+      // escribe ahí en `aceptarPresupuestoPublico`) — la vista pública la
+      // muestra desde aquí, no desde el enlace.
+      firmaClienteUrl: presupuesto.firmaClienteUrl || '',
+      firmaClienteFecha: presupuesto.firmaClienteFecha || '',
+    };
+  }
+
+  /**
+   * Acepta un presupuesto desde el Portal del cliente — aceptar = firmar,
+   * la firma es obligatoria. Reutiliza `aceptarPresupuesto` sin
+   * modificarlo (mismo evento, misma atomicidad/idempotencia); esta función
+   * solo resuelve `{presupuestoId, usuarioId}` a partir del token, valida
+   * la integridad del contenido, sube la firma, y dispara el mismo método
+   * de siempre.
+   *
+   * Orden deliberado (revisión de seguridad, 17/08/2026): la firma se
+   * guarda ANTES de llamar a `aceptarPresupuesto`, así el documento ya la
+   * lleva en el momento en que se publica `presupuesto.aprobado` — un
+   * futuro consumidor del evento que relea el Presupuesto ya la encuentra.
+   * `marcarEnlaceAceptado` usa `aceptadoEn: null` como guarda atómica
+   * contra un doble envío concurrente del mismo enlace.
+   */
+  async aceptarPresupuestoPublico(tokenPlano: string, evidencia: { ip: string; userAgent: string; firmaDataUrl: string }): Promise<{ ok: true; yaEstabaAceptado: boolean }> {
+    if (!formatoTokenValido(tokenPlano)) throw new ErrorDeNegocio('Enlace no válido.', 400);
+    await conectar();
+    const enlace = await buscarEnlacePorToken(tokenPlano);
+    if (!enlace) throw new ErrorDeNegocio('Enlace no válido.', 400);
+    if (enlace.revocadoEn || enlace.expiraEn.getTime() < Date.now()) {
+      throw new ErrorDeNegocio('Este enlace ya no está disponible. Pide uno nuevo.', 409);
+    }
+
+    const presupuesto = await PresupuestoModel.findOne({ id: enlace.presupuestoId, usuarioId: enlace.usuarioId }).lean().exec() as any;
+    if (!presupuesto) throw new ErrorDeNegocio('Enlace no válido.', 400);
+
+    // Ya aceptado (por este mismo enlace, o por otro) — no se puede volver a
+    // firmar. Sin esto, generar un enlace nuevo para un presupuesto ya
+    // aceptado permitiría sustituir la firma original (hallazgo de la
+    // revisión de seguridad).
+    if (presupuesto.estado === 'aceptado') {
+      return { ok: true, yaEstabaAceptado: true };
+    }
+
+    if (enlace.aceptadoEn) {
+      // Este enlace concreto ya se usó pero el presupuesto todavía no
+      // refleja 'aceptado' (carrera con otra petición en curso) —
+      // idempotente, no se repite el trabajo.
+      return { ok: true, yaEstabaAceptado: true };
+    }
+
+    // Integridad: el presupuesto no puede haber cambiado desde que se
+    // generó el enlace — si el carpintero editó precios/alcance mientras el
+    // cliente tenía la página abierta, la firma no significaría lo que el
+    // cliente vio.
+    if (hashContenidoPublico(presupuesto) !== enlace.contenidoHash) {
+      throw new ErrorDeNegocio('El presupuesto ha cambiado desde que se generó este enlace. Pide uno nuevo.', 409);
+    }
+
+    const coincide = evidencia.firmaDataUrl.match(/^data:image\/png;base64,(.+)$/);
+    if (!coincide) throw new ErrorDeNegocio('La firma no es una imagen válida.', 400);
+    const bufferFirma = Buffer.from(coincide[1], 'base64');
+    if (bufferFirma.subarray(0, 8).compare(CABECERA_PNG) !== 0) {
+      throw new ErrorDeNegocio('La firma no es una imagen PNG válida.', 400);
+    }
+
+    const subida = await almacenamiento.subir(bufferFirma, { contentType: 'image/png', carpeta: 'firmas' });
+
+    // Guarda atómica contra doble envío concurrente del mismo enlace.
+    const enlaceActualizado = await marcarEnlaceAceptado(tokenPlano, {
+      ip: evidencia.ip, userAgent: evidencia.userAgent, firmaUrl: subida.url,
+    });
+    if (!enlaceActualizado) {
+      // Perdió la carrera contra otra petición concurrente con el mismo
+      // enlace — esa otra ya está aceptando (o ya aceptó); no repetir el
+      // trabajo aquí.
+      return { ok: true, yaEstabaAceptado: true };
+    }
+
+    const ahora = new Date().toISOString();
+    await PresupuestoModel.updateOne(
+      { id: enlace.presupuestoId, usuarioId: enlace.usuarioId },
+      { $set: { firmaClienteUrl: subida.url, firmaClienteFecha: ahora } }
+    ).exec();
+
+    const { transicionOcurrioAhora } = await this.aceptarPresupuesto(enlace.presupuestoId, enlace.usuarioId);
+    return { ok: true, yaEstabaAceptado: !transicionOcurrioAhora };
   }
 
   /**

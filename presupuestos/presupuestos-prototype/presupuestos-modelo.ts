@@ -43,4 +43,28 @@ export type PresupuestoMC = {
    * que un valor vacío significa "aceptado".
    */
   estado?: 'borrador' | 'enviado' | 'aceptado' | 'rechazado';
+  /** URL de la firma del cliente al aceptar desde el Portal del cliente — vacío si no se aceptó (o se aceptó antes de esta función) desde ahí. */
+  firmaClienteUrl?: string;
+  /** Fecha ISO de la firma — vacío si no hay firma. */
+  firmaClienteFecha?: string;
+};
+
+/** Vista pública de un presupuesto (Portal del cliente) — lista blanca, ver `obtenerPresupuestoPublico` en el backend. */
+export type PresupuestoPublico = {
+  titulo: string;
+  formato: 'simple' | 'lienzo' | 'documento';
+  descripcion: string;
+  alcance: string[];
+  items: ElementoPresupuesto[];
+  contenidoDocumento?: Record<string, unknown>;
+  condicionesPago: string;
+  validezDias: number;
+  condicionesGenerales: string;
+  precioTotal: number;
+  estado: 'borrador' | 'enviado' | 'aceptado' | 'rechazado';
+  clienteNombre: string;
+  empresa: { nombre: string; eslogan: string; logo: string; telefono: string; email: string };
+  expiraEn: string;
+  firmaClienteUrl: string;
+  firmaClienteFecha: string;
 };

@@ -22,6 +22,7 @@ import type { PushSub } from './push.service.js';
 import { limitadorGeneral, limitadorAuth } from './rate-limit.middleware.js';
 import { crearRouterIA } from './ia-rutas.js';
 import { crearRouterWebAuthn } from './webauthn-rutas.js';
+import { crearRouterPortal } from './portal-rutas.js';
 import { validar } from './validacion.middleware.js';
 import { hashPassword, verificarPassword, verificarPasswordLegado } from './password.service.js';
 import { firmarAccessToken, verificarAccessToken } from './token.service.js';
@@ -599,6 +600,13 @@ export function run() {
    * "intentos de login", que son superficies de abuso muy distintas).
    */
   app.use('/auth/webauthn', crearRouterWebAuthn());
+
+  /**
+   * Portal del cliente (enlace público para ver/aceptar un presupuesto) —
+   * montado sin `requireAuth`, mismo patrón que WebAuthn: el token del
+   * enlace es la autorización, no una sesión. Ver `portal-rutas.ts`.
+   */
+  app.use('/portal', crearRouterPortal());
 
   /**
    * Verifica si una sesión sigue activa. El id sale siempre de la sesión ya
@@ -1241,6 +1249,17 @@ export function run() {
     try {
       const { presupuesto, transicionOcurrioAhora } = await svc.aceptarPresupuesto(req.params.id, req.usuarioId!);
       res.json({ ok: true, presupuesto, yaEstabaAceptado: !transicionOcurrioAhora });
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /**
+   * Genera el enlace público del Portal del cliente (Sección 8). Revoca
+   * cualquier enlace anterior todavía activo del mismo presupuesto — ver
+   * `crearEnlacePresupuesto` en `enlace-presupuesto.model.ts`.
+   */
+  app.post('/presupuestos/:id/enlace', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      res.json(await svc.generarEnlacePresupuesto(req.params.id, req.usuarioId!));
     } catch (err) { responderError(req, res, err); }
   });
 

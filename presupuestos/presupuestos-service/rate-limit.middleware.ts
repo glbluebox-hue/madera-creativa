@@ -80,3 +80,34 @@ export const limitadorSondeoIA = rateLimit({
   legacyHeaders: false,
   message: { error: 'Demasiadas peticiones. Inténtalo de nuevo en unos minutos.' },
 });
+
+/**
+ * Ver un presupuesto público (Portal del cliente) — por IP, generoso: la
+ * vista previa de enlaces de WhatsApp/redes la dispara automáticamente
+ * (bots que "visitan" el enlace para generar la miniatura), y eso no debe
+ * agotar el cupo del cliente real.
+ */
+export const limitadorPortalVer = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiadas peticiones. Inténtalo de nuevo en unos minutos.' },
+});
+
+/**
+ * Aceptar un presupuesto público — por TOKEN, no por IP: el cliente firma
+ * desde el móvil, casi siempre detrás de CGNAT (IP compartida con otros
+ * clientes de la misma operadora) — un límite por IP bloquearía a
+ * desconocidos entre sí. Un cupo bajo por token es suficiente: aceptar es
+ * una sola acción, no algo que se reintente decenas de veces de forma
+ * legítima.
+ */
+export const limitadorPortalAceptar = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => String(req.params.token || req.ip),
+  message: { error: 'Demasiados intentos. Inténtalo de nuevo en unos minutos.' },
+});

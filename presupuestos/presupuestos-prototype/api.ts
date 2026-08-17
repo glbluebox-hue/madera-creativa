@@ -1,6 +1,6 @@
 import type { Cliente, Factura, Proveedor, Producto, Dibujo, Carpeta, GastoPeriodico, Movimiento, Tarea } from './types.js';
 import type { NotaMC } from './notas-modelo.js';
-import type { PresupuestoMC } from './presupuestos-modelo.js';
+import type { PresupuestoMC, PresupuestoPublico } from './presupuestos-modelo.js';
 import type { PlantillaMC, RecursoMC, ComponenteMC } from './documento-modelo.js';
 import type { ContratoMC } from './contratos-modelo.js';
 import type { Empresa } from './use-empresa.js';
@@ -767,6 +767,35 @@ export async function aceptarPresupuesto(id: string): Promise<{ presupuesto: Pre
   await comprobarRespuesta(res, 'No se pudo aceptar el presupuesto');
   const data = await res.json();
   return { presupuesto: data.presupuesto, yaEstabaAceptado: data.yaEstabaAceptado };
+}
+
+/** Genera (o regenera, revocando el anterior) el enlace público del Portal del cliente para este presupuesto. */
+export async function generarEnlacePresupuesto(id: string): Promise<{ token: string; expiraEn: string }> {
+  const res = await fetchConAuth(`/presupuestos/${id}/enlace`, { method: 'POST' });
+  await comprobarRespuestaConMotivo(res, 'No se pudo generar el enlace');
+  return res.json();
+}
+
+/**
+ * Vista pública de un presupuesto (Portal del cliente) — sin sesión, por
+ * eso usa `fetch` directo en vez de `fetchConAuth` (que exige un access
+ * token en memoria, algo que el navegador del cliente final nunca tiene).
+ */
+export async function obtenerPresupuestoPublico(token: string): Promise<PresupuestoPublico> {
+  const res = await fetch(`${BASE}/portal/presupuestos/${token}`);
+  await comprobarRespuestaConMotivo(res, 'No se pudo cargar el presupuesto');
+  return res.json();
+}
+
+/** Acepta (firma) un presupuesto desde el Portal del cliente — sin sesión. */
+export async function aceptarPresupuestoPublico(token: string, firma: string): Promise<{ ok: true; yaEstabaAceptado: boolean }> {
+  const res = await fetch(`${BASE}/portal/presupuestos/${token}/aceptar`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ firma }),
+  });
+  await comprobarRespuestaConMotivo(res, 'No se pudo aceptar el presupuesto');
+  return res.json();
 }
 
 /* ===== PLANTILLAS (Motor Documental, Incremento 4) ===== */
