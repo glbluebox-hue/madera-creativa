@@ -172,7 +172,11 @@ export function PresupuestosPrototype() {
             title={sesion?.esAdmin ? 'Ajustes de empresa' : empresa.logo ? 'Cambiar logo' : 'Añade el logo de tu empresa'}
           >
             {empresa.logo ? (
-              <img src={empresa.logo} alt={empresa.nombre || 'Logo empresa'} className={styles.sidebarLogoImg} />
+              // Tamaño ajustable a mano (Ajustes de empresa) en vez del
+              // máximo fijo de la clase CSS — el `max-width` inline siempre
+              // gana sobre el de `.sidebarLogoImg` (mayor especificidad que
+              // cualquier selector de clase), sin tener que tocar la clase.
+              <img src={empresa.logo} alt={empresa.nombre || 'Logo empresa'} className={styles.sidebarLogoImg} style={{ maxWidth: `${empresa.logoTamano || 187}px` }} />
             ) : sesion?.esAdmin ? (
               <img src={logoMadera} alt="Madera Creativa" className={styles.sidebarLogoImg} />
             ) : (

@@ -33,6 +33,7 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
   const [tema, setTema] = useState<TemaMC>(empresa.temaPorDefecto ?? TEMA_POR_DEFECTO);
   const [regionFiscal, setRegionFiscal] = useState(empresa.regionFiscal);
   const [repepActivo, setRepepActivo] = useState(empresa.repepActivo);
+  const [logoTamano, setLogoTamano] = useState(empresa.logoTamano || 187);
   const [guardando, setGuardando] = useState(false);
   const [errorGuardar, setErrorGuardar] = useState('');
 
@@ -58,6 +59,7 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
       temaPorDefecto: tema,
       regionFiscal,
       repepActivo: regionFiscal === 'canarias' ? repepActivo : false,
+      logoTamano,
     });
     setGuardando(false);
     if (!ok) { setErrorGuardar('No se pudo guardar. Comprueba tu conexión e inténtalo de nuevo.'); return; }
@@ -104,6 +106,28 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
             <p className={styles.logoAyuda}>Formatos: PNG, JPG o SVG.</p>
           </div>
         </div>
+
+        {logo && (
+          <div className={styles.campo} style={{ marginBottom: '1.25rem' }}>
+            <label className={styles.campoLabel}>Tamaño del logo en el menú lateral</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <input
+                type="range"
+                min={60}
+                max={320}
+                step={1}
+                value={logoTamano}
+                onChange={(e) => setLogoTamano(Number(e.target.value))}
+                style={{ flex: 1 }}
+              />
+              <span style={{ fontSize: '0.78rem', color: 'var(--topo-claro)', width: '38px', textAlign: 'right' }}>{logoTamano}px</span>
+            </div>
+            {/* Vista previa en vivo — mismo fondo/recorte que la barra lateral real, para que el ajuste no sea a ciegas. */}
+            <div style={{ marginTop: '0.6rem', padding: '0.75rem', background: 'var(--blanco)', border: '1px solid var(--borde)', borderRadius: 'var(--radio)', textAlign: 'center' }}>
+              <img src={logo} alt="Vista previa del logo" style={{ width: '100%', maxWidth: `${logoTamano}px`, height: 'auto', objectFit: 'contain' }} />
+            </div>
+          </div>
+        )}
 
         <div className={styles.formGrid}>
           <div className={`${styles.campo} ${styles.full}`}>

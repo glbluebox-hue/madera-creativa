@@ -191,6 +191,8 @@ const EmpresaSchema = new Schema({
   repepActivo: { type: Boolean, default: false },
   /** Tema por defecto del Motor Documental (Incremento 3) — identidad corporativa: todo documento nuevo sin tema propio hereda este. `null` hasta que el usuario personalice uno. */
   temaPorDefecto: { type: Schema.Types.Mixed, default: null },
+  /** Ancho en píxeles del logo en la barra lateral — ajustable a mano por el usuario (antes fijo a 187px en CSS). */
+  logoTamano: { type: Number, default: 187 },
 });
 
 /**

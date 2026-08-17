@@ -960,6 +960,7 @@ export async function obtenerEmpresa(): Promise<Empresa> {
     temaPorDefecto: data.temaPorDefecto ?? null,
     regionFiscal: data.regionFiscal || '',
     repepActivo: !!data.repepActivo,
+    logoTamano: data.logoTamano || 187,
   };
 }
 
@@ -989,6 +990,7 @@ export async function guardarEmpresa(empresa: Partial<Empresa>): Promise<Empresa
     temaPorDefecto: data.temaPorDefecto ?? null,
     regionFiscal: data.regionFiscal || '',
     repepActivo: !!data.repepActivo,
+    logoTamano: data.logoTamano || 187,
   };
 }
 

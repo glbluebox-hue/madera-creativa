@@ -29,6 +29,8 @@ export type Empresa = {
   regionFiscal: 'canarias' | 'peninsula' | '';
   /** REPEP activo (exención de IGIC por bajo volumen, solo relevante en Canarias) — decisión del usuario, nunca inferida. */
   repepActivo: boolean;
+  /** Ancho en píxeles del logo en la barra lateral — ajustable a mano por el usuario (Ajustes de empresa). */
+  logoTamano: number;
 };
 
 /** Datos por defecto para el admin — marca Madera Creativa. */
@@ -48,6 +50,7 @@ const EMPRESA_ADMIN: Empresa = {
   // Profesional.
   regionFiscal: 'canarias',
   repepActivo: true,
+  logoTamano: 187,
 };
 
 /** Datos vacíos para usuarios normales — cada uno pone su propia marca. */
@@ -67,6 +70,7 @@ const EMPRESA_USUARIO: Empresa = {
   // indirecto (nunca se asume Canarias/Península por defecto).
   regionFiscal: '',
   repepActivo: false,
+  logoTamano: 187,
 };
 
 /**
@@ -114,6 +118,7 @@ export function useEmpresa(autenticado = false, esAdmin = false): {
           temaPorDefecto: datos.temaPorDefecto ?? null,
           regionFiscal: datos.regionFiscal ?? inicial.regionFiscal,
           repepActivo: datos.repepActivo ?? inicial.repepActivo,
+          logoTamano: datos.logoTamano ?? inicial.logoTamano,
         });
       })
       .catch(() => { /* sin conexión: mantener valores por defecto */ });

@@ -740,6 +740,8 @@ export const esquemaEmpresa = z.object({
   temaPorDefecto: esquemaTema.nullable().optional().default(null),
   regionFiscal: z.enum(['canarias', 'peninsula', '']).optional().default(''),
   repepActivo: z.boolean().optional().default(false),
+  /** Ancho en píxeles del logo en la barra lateral — ajustable a mano por el usuario, ver `sidebarLogoImg`. */
+  logoTamano: z.number().min(40).max(400).optional().default(187),
 });
 
 // ── Notificaciones push ───────────────────────────────────────────────────────

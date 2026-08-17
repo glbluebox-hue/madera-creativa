@@ -150,6 +150,8 @@ export type EmpresaDoc = {
   regionFiscal: 'canarias' | 'peninsula' | '';
   /** REPEP activo (exención de IGIC por bajo volumen, solo Canarias) — decisión del usuario, nunca inferida. */
   repepActivo: boolean;
+  /** Ancho en píxeles del logo en la barra lateral — ajustable a mano por el usuario. */
+  logoTamano: number;
 };
 
 // ── Portal del cliente (enlace público de un presupuesto) ──────────────────────
@@ -490,6 +492,7 @@ export class PresupuestosService {
       temaPorDefecto: (doc as any).temaPorDefecto ?? null,
       regionFiscal: (doc as any).regionFiscal || '',
       repepActivo: !!(doc as any).repepActivo,
+      logoTamano: (doc as any).logoTamano || 187,
     };
   }
 
@@ -518,6 +521,7 @@ export class PresupuestosService {
       temaPorDefecto: (doc as any).temaPorDefecto ?? null,
       regionFiscal: (doc as any).regionFiscal || '',
       repepActivo: !!(doc as any).repepActivo,
+      logoTamano: (doc as any).logoTamano || 187,
     };
   }
 
