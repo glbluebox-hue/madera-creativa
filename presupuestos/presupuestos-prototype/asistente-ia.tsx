@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { generarRespuestaIA, confirmarPropuestaIA, type AccionInterfazIA } from './api.js';
+import { useDictado } from './use-dictado.js';
 import styles from './asistente-ia.module.css';
 
 type MensajeChat = { role: 'user' | 'assistant' | 'system'; content: string };
@@ -90,10 +91,23 @@ export function AsistenteIA({
   // quedado colgada" aunque esté trabajando de verdad. Pasados unos
   // segundos se muestra un aviso explícito de que sigue en marcha.
   const [esperaLarga, setEsperaLarga] = useState(false);
-  const [escuchando, setEscuchando] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const recognitionRef = useRef<any>(null);
+  /**
+   * Dicta AL CAMPO DE TEXTO (para revisar/editar antes de enviar), nunca
+   * envía solo — antes esta pantalla tenía su propia implementación de
+   * reconocimiento de voz, separada de `useDictado`, con `continuous:
+   * false` y sin encadenar sesiones: se cortaba nada más terminar la
+   * primera frase, sin dar tiempo a pausas naturales al hablar (bug
+   * reportado 17/08/2026). `useDictado` ya resuelve esto en el resto de
+   * la app (notas) encadenando sesiones cortas mientras el usuario no
+   * pulse "Detener" — se reutiliza aquí en vez de mantener una segunda
+   * implementación con el mismo fallo ya corregido en otro sitio.
+   */
+  const onDictado = useCallback((t: string) => {
+    setInput((prev) => (prev ? prev + ' ' : '') + t.trim());
+  }, []);
+  const dictado = useDictado(onDictado);
 
   // Auto-scroll al último mensaje
   useEffect(() => {
@@ -233,34 +247,6 @@ export function AsistenteIA({
     }
   };
 
-  /** Activa reconocimiento de voz. */
-  const toggleVoz = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert('Tu navegador no soporta reconocimiento de voz.');
-      return;
-    }
-    if (escuchando) {
-      recognitionRef.current?.stop();
-      setEscuchando(false);
-      return;
-    }
-    const rec = new SpeechRecognition();
-    rec.lang = 'es-ES';
-    rec.continuous = false;
-    rec.interimResults = false;
-    rec.onresult = (e: any) => {
-      const transcript = e.results[0][0].transcript;
-      setEscuchando(false);
-      enviar(transcript);
-    };
-    rec.onerror = () => setEscuchando(false);
-    rec.onend = () => setEscuchando(false);
-    rec.start();
-    recognitionRef.current = rec;
-    setEscuchando(true);
-  };
-
   // Sugerencias rápidas
   const sugerencias = [
     '¿Cuánto beneficio llevo este mes?',
@@ -385,9 +371,10 @@ export function AsistenteIA({
           {/* Input */}
           <div className={styles.inputArea}>
             <button
-              className={`${styles.btnVoz} ${escuchando ? styles.btnVozActivo : ''}`}
-              onClick={toggleVoz}
-              title={escuchando ? 'Detener voz' : 'Hablar'}
+              className={`${styles.btnVoz} ${dictado.estado === 'escuchando' ? styles.btnVozActivo : ''}`}
+              onClick={dictado.toggleDictado}
+              title={dictado.estado === 'escuchando' ? 'Detener' : 'Hablar'}
+              disabled={dictado.estado === 'no-soportado'}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
@@ -398,10 +385,10 @@ export function AsistenteIA({
             <input
               ref={inputRef}
               className={styles.input}
-              value={input}
+              value={dictado.estado === 'escuchando' && dictado.interino ? `${input}${input ? ' ' : ''}${dictado.interino}` : input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && !e.shiftKey && enviar()}
-              placeholder={escuchando ? 'Escuchando...' : 'Escribe o habla...'}
+              placeholder={dictado.estado === 'escuchando' ? 'Escuchando… pulsa el micrófono cuando termines' : 'Escribe o habla...'}
               disabled={cargando}
             />
             <button
