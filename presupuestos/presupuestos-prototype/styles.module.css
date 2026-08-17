@@ -1745,7 +1745,7 @@
    de alinear con ella. Solo en escritorio: en móvil el panel deslizante ya
    tiene su propio espaciado ajustado por separado, más abajo. */
 @media (min-width: 901px) {
-  .sidebar { padding-top: 3.5rem; }
+  .sidebar { padding-top: 2rem; }
 }
 /* En móvil el menú lateral deja de ocultarse: se convierte en un panel
    deslizante (mismo <aside>, mismos enlaces que en escritorio — pediste
@@ -1806,7 +1806,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0.75rem 0.15rem 1.25rem;
+  padding: 0.5rem 0.15rem 1.25rem;
   margin-bottom: 1.5rem;
   border-bottom: 1px solid var(--borde-fino);
   background: none;
