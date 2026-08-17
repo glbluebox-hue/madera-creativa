@@ -136,6 +136,8 @@ export type EmpresaDoc = {
   nombre: string;
   eslogan: string;
   logo: string;
+  /** CIF/NIF de la propia empresa — para las facturas/presupuestos que ella emite. */
+  nifCif: string;
   telefono: string;
   email: string;
   iban: string;
@@ -327,6 +329,7 @@ export class PresupuestosService {
       nombre: (doc as any).nombre || '',
       eslogan: (doc as any).eslogan || '',
       logo: (doc as any).logo || '',
+      nifCif: (doc as any).nifCif || '',
       telefono: (doc as any).telefono || '',
       email: (doc as any).email || '',
       iban: (doc as any).iban || '',
@@ -354,6 +357,7 @@ export class PresupuestosService {
       nombre: (doc as any).nombre || '',
       eslogan: (doc as any).eslogan || '',
       logo: (doc as any).logo || '',
+      nifCif: (doc as any).nifCif || '',
       telefono: (doc as any).telefono || '',
       email: (doc as any).email || '',
       iban: (doc as any).iban || '',
@@ -625,9 +629,24 @@ export class PresupuestosService {
         }))
       : paginasOriginal;
 
+    // Una factura de GASTO nunca puede llevar el propio CIF/NIF del usuario
+    // como dato fiscal — es del proveedor (quien la emite), no del
+    // destinatario. Muchas facturas muestran ambos NIF impresos, y tanto la
+    // IA del escáner como un despiste al escribir a mano pueden confundirlos.
+    // Se comprueba aquí (al guardar), no solo en la propuesta de la IA, para
+    // que la protección cubra cualquier origen del dato, presente o futuro.
+    let cifNif = (factura as any).cifNif;
+    if ((factura as any).tipo === 'gasto' && cifNif) {
+      const empresa = await EmpresaModel.findOne({ usuarioId }).lean().exec() as any;
+      const nifPropio = (empresa?.nifCif || '').trim().toUpperCase();
+      if (nifPropio && String(cifNif).trim().toUpperCase() === nifPropio) {
+        cifNif = '';
+      }
+    }
+
     const doc = await FacturaModel.findOneAndUpdate(
       { id: factura.id, usuarioId },
-      { ...factura, imagen, imagenes, pdfOriginalUrl, paginas, usuarioId },
+      { ...factura, imagen, imagenes, pdfOriginalUrl, paginas, cifNif, usuarioId },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     ).lean().exec();
 
