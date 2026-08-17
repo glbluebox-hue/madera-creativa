@@ -1,9 +1,11 @@
-import { useState, type ReactNode } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import type { Cliente, Factura } from './types.js';
 import type { ResumenFacturas } from './use-facturas.js';
+import type { PresupuestoMC } from './presupuestos-modelo.js';
 import { calcularMetricas } from './dashboard-calculos.js';
 import { formatoEuro, formatoFecha } from './calculos.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
+import { obtenerTodosLosPresupuestos } from './api.js';
 import styles from './styles.module.css';
 
 /** Props del panel principal (dashboard). */
@@ -57,10 +59,37 @@ function Kpi({
  * inventados: lo que no hay todavía se muestra vacío, no relleno con
  * ejemplos (Dirección Creativa).
  */
+/** Un elemento de "Actividad reciente": una factura o un presupuesto recién aceptado. */
+type ItemActividad =
+  | { tipo: 'factura'; fecha: string; factura: Factura }
+  | { tipo: 'presupuestoAceptado'; fecha: string; presupuesto: PresupuestoMC };
+
 export function Dashboard({ nombre, clientes, facturas, resumen, onAbrir, onBorrarFactura, onActualizarCliente }: DashboardProps) {
   const m = calcularMetricas(clientes);
-  const actividad = facturas.slice(0, 4);
   const primerNombre = (nombre || '').split(' ')[0];
+
+  /**
+   * "Registrar la actividad correspondiente" (Fase 1, detalle pendiente) —
+   * no hace falta ningún registro nuevo: la fecha de aceptación ya vive en
+   * `Presupuesto.actualizado` desde que se acepta (ver `aceptarPresupuesto`
+   * en el backend). Solo faltaba traerla aquí y mezclarla con las facturas
+   * en el mismo panel que ya existía, reutilizando `obtenerTodosLosPresupuestos`
+   * (ya usado por la sección global de Documentos) — sin colección ni ruta
+   * nuevas.
+   */
+  const [presupuestosAceptados, setPresupuestosAceptados] = useState<PresupuestoMC[]>([]);
+  useEffect(() => {
+    obtenerTodosLosPresupuestos()
+      .then((todos) => setPresupuestosAceptados(todos.filter((p) => p.estado === 'aceptado')))
+      .catch(() => setPresupuestosAceptados([]));
+  }, []);
+
+  const actividad: ItemActividad[] = [
+    ...facturas.map((f): ItemActividad => ({ tipo: 'factura', fecha: f.fecha, factura: f })),
+    ...presupuestosAceptados.map((p): ItemActividad => ({ tipo: 'presupuestoAceptado', fecha: p.actualizado, presupuesto: p })),
+  ]
+    .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())
+    .slice(0, 4);
 
   const [agregando, setAgregando] = useState(false);
   const [nuevoClienteId, setNuevoClienteId] = useState('');
@@ -106,25 +135,41 @@ export function Dashboard({ nombre, clientes, facturas, resumen, onAbrir, onBorr
             <h3 className={styles.panelTitulo}>Actividad reciente</h3>
           </div>
           {actividad.length === 0 ? (
-            <p className={styles.dashboardVacio}>Todavía no hay facturas registradas.</p>
+            <p className={styles.dashboardVacio}>Todavía no hay actividad registrada.</p>
           ) : (
-            actividad.map((f) => (
-              <div key={f.id} className={styles.actividadItem}>
-                <div className={`${styles.kpiIconoChip} ${f.tipo === 'ingreso' ? styles.kpiIconoChipVerde : styles.kpiIconoChipRojo}`} style={{ width: 34, height: 34 }}>
-                  {ICONOS[f.tipo]}
+            actividad.map((item) => item.tipo === 'factura' ? (
+              <div key={`f-${item.factura.id}`} className={styles.actividadItem}>
+                <div className={`${styles.kpiIconoChip} ${item.factura.tipo === 'ingreso' ? styles.kpiIconoChipVerde : styles.kpiIconoChipRojo}`} style={{ width: 34, height: 34 }}>
+                  {ICONOS[item.factura.tipo]}
                 </div>
                 <div className={styles.actividadCuerpo}>
-                  <span className={styles.actividadTitulo}>{f.concepto}</span>
-                  <span className={styles.actividadSub}>{f.proveedor}</span>
+                  <span className={styles.actividadTitulo}>{item.factura.concepto}</span>
+                  <span className={styles.actividadSub}>{item.factura.proveedor}</span>
                 </div>
                 <div className={styles.actividadDerecha} style={{ flexDirection: 'row', alignItems: 'center', gap: '0.6rem' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                    <span className={styles.actividadFecha}>{formatoFecha(f.fecha)}</span>
-                    <span className={f.tipo === 'ingreso' ? styles.valorVerde : styles.valorRojo}>
-                      {f.tipo === 'gasto' ? '-' : ''}{formatoEuro(f.importe)}
+                    <span className={styles.actividadFecha}>{formatoFecha(item.factura.fecha)}</span>
+                    <span className={item.factura.tipo === 'ingreso' ? styles.valorVerde : styles.valorRojo}>
+                      {item.factura.tipo === 'gasto' ? '-' : ''}{formatoEuro(item.factura.importe)}
                     </span>
                   </div>
-                  <ConfirmarBorrado titulo="Borrar factura" onConfirmar={() => onBorrarFactura(f.id)} />
+                  <ConfirmarBorrado titulo="Borrar factura" onConfirmar={() => onBorrarFactura(item.factura.id)} />
+                </div>
+              </div>
+            ) : (
+              <div key={`p-${item.presupuesto.id}`} className={styles.actividadItem} onClick={() => onAbrir(item.presupuesto.clienteId)} style={{ cursor: 'pointer' }}>
+                <div className={styles.kpiIconoChipTopo} style={{ width: 34, height: 34 }}>
+                  {ICONOS.presupuestos}
+                </div>
+                <div className={styles.actividadCuerpo}>
+                  <span className={styles.actividadTitulo}>Presupuesto aceptado</span>
+                  <span className={styles.actividadSub}>{clientes.find((c) => c.id === item.presupuesto.clienteId)?.nombre || item.presupuesto.titulo}</span>
+                </div>
+                <div className={styles.actividadDerecha} style={{ flexDirection: 'row', alignItems: 'center', gap: '0.6rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                    <span className={styles.actividadFecha}>{formatoFecha(item.presupuesto.actualizado)}</span>
+                    <span className={styles.valorVerde}>{formatoEuro(item.presupuesto.precioTotal)}</span>
+                  </div>
                 </div>
               </div>
             ))
