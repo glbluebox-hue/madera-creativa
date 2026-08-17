@@ -588,6 +588,92 @@ export class PresupuestosService {
   }
 
   /**
+   * Sincroniza el Movimiento del cliente ligado a una factura (Fase 2 —
+   * hoy Factura y Cliente.movimientos están completamente desconectados,
+   * así que el margen de ganancia no refleja facturas ya escaneadas). El
+   * movimiento se localiza por `facturaId`, nunca por posición ni
+   * recreando el array — eso es lo que hace la operación idempotente:
+   * reguardar la misma factura actualiza el mismo movimiento, nunca
+   * duplica. La actualización es una única operación atómica por
+   * documento (pipeline update de Mongo), sin ventana de carrera entre
+   * "comprobar si existe" y "crear".
+   *
+   * No lanza si el cliente ya no existe (factura huérfana tras borrar el
+   * cliente) — se registra y se continúa, igual que en
+   * `ejecutarConsecuenciasAceptacion`; la factura nunca debe dejar de
+   * guardarse por un fallo en esta sincronización derivada.
+   */
+  private async sincronizarMovimientoFactura(params: {
+    usuarioId: string;
+    facturaId: string;
+    /** Cliente al que estaba vinculada la factura antes de este guardado ('' si no tenía o es nueva). */
+    clienteIdAnterior: string;
+    /** Cliente al que queda vinculada tras este guardado ('' si se quita el cliente). */
+    clienteIdNuevo: string;
+    fecha: string;
+    concepto: string;
+    categoria: string;
+    tipo: 'gasto' | 'ingreso';
+    importe: number;
+  }): Promise<void> {
+    const { usuarioId, facturaId, clienteIdAnterior, clienteIdNuevo, fecha, concepto, categoria, tipo, importe } = params;
+    if (!facturaId) return; // Nunca vincular/retirar por un facturaId vacío — coincidiría con movimientos manuales (que lo tienen '' por defecto).
+    try {
+      // El cliente cambió (o se quitó) respecto al guardado anterior:
+      // retirar el movimiento del cliente que ya no corresponde.
+      if (clienteIdAnterior && clienteIdAnterior !== clienteIdNuevo) {
+        await ClienteModel.updateOne(
+          { id: clienteIdAnterior, usuarioId },
+          { $pull: { movimientos: { facturaId } } }
+        ).exec();
+      }
+
+      if (!clienteIdNuevo) return;
+
+      const resultado = await ClienteModel.updateOne(
+        { id: clienteIdNuevo, usuarioId },
+        [
+          {
+            $set: {
+              movimientos: {
+                $cond: [
+                  { $in: [facturaId, { $ifNull: [{ $map: { input: '$movimientos', as: 'm', in: '$$m.facturaId' } }, []] }] },
+                  {
+                    $map: {
+                      input: '$movimientos',
+                      as: 'm',
+                      in: {
+                        $cond: [
+                          { $eq: ['$$m.facturaId', facturaId] },
+                          { $mergeObjects: ['$$m', { fecha, concepto, categoria, tipo, importe }] },
+                          '$$m',
+                        ],
+                      },
+                    },
+                  },
+                  {
+                    $concatArrays: [
+                      { $ifNull: ['$movimientos', []] },
+                      [{ id: randomUUID(), facturaId, fecha, concepto, categoria, tipo, importe }],
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+        ],
+        { updatePipeline: true }
+      ).exec();
+
+      if (resultado.matchedCount === 0) {
+        logger.warn({ facturaId, clienteId: clienteIdNuevo, usuarioId }, '[factura.sincronizarMovimiento] El cliente de la factura ya no existe — se omite la sincronización.');
+      }
+    } catch (err) {
+      logger.error({ err, facturaId, clienteIdAnterior, clienteIdNuevo, usuarioId }, '[factura.sincronizarMovimiento] Fallo sincronizando el movimiento — la factura se guarda igualmente.');
+    }
+  }
+
+  /**
    * Crea o actualiza una factura del usuario.
    * @param factura Datos de la factura.
    * @param usuarioId Propietario.
@@ -682,6 +768,21 @@ export class PresupuestosService {
       datos: { tipo: (factura as any).tipo, importe: (factura as any).importe, clienteId: (factura as any).clienteId },
     });
 
+    // Fase 2 — mantiene Cliente.movimientos (y por tanto el margen de
+    // ganancia, que se calcula a partir de él) en sincronía con la
+    // factura, sin duplicar la fórmula de margen existente.
+    await this.sincronizarMovimientoFactura({
+      usuarioId,
+      facturaId: String(factura.id),
+      clienteIdAnterior: (anterior?.clienteId as string) || '',
+      clienteIdNuevo: ((doc as any).clienteId as string) || '',
+      fecha: (doc as any).fecha,
+      concepto: (doc as any).concepto || (doc as any).proveedor || 'Factura',
+      categoria: (doc as any).categoria || 'General',
+      tipo: (doc as any).tipo,
+      importe: (doc as any).importe,
+    });
+
     return this.limpiar(doc as Record<string, unknown>);
   }
 
@@ -702,6 +803,14 @@ export class PresupuestosService {
       for (const url of urls) {
         const clave = almacenamiento.claveDesdeUrl(url);
         if (clave) await almacenamiento.borrar(clave).catch(() => {});
+      }
+      // Fase 2 — evita un movimiento huérfano que siguiera afectando al
+      // margen de ganancia de un cliente tras borrar la factura de origen.
+      if (doc.clienteId && id) {
+        await ClienteModel.updateOne(
+          { id: doc.clienteId, usuarioId },
+          { $pull: { movimientos: { facturaId: id } } }
+        ).exec().catch((err) => logger.error({ err, facturaId: id, clienteId: doc.clienteId, usuarioId }, '[factura.borrar] No se pudo retirar el movimiento vinculado — la factura se borra igualmente.'));
       }
     }
     await FacturaModel.deleteOne({ id, usuarioId }).exec();

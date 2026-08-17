@@ -9,6 +9,14 @@ const MovimientoSchema = new Schema(
     categoria: { type: String, default: 'General' },
     tipo: { type: String, enum: ['gasto', 'ingreso'], required: true },
     importe: { type: Number, required: true },
+    /**
+     * Id de la Factura que generó este movimiento (Fase 2 — sincronización
+     * Factura→Movimiento). Vacío/ausente en movimientos creados a mano desde
+     * la tabla de gastos e ingresos — nunca migra datos antiguos. Es la
+     * clave para que la sincronización sea idempotente: al reguardar la
+     * misma factura se busca por este campo en vez de crear una fila nueva.
+     */
+    facturaId: { type: String, default: '' },
   },
   { _id: false }
 );

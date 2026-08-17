@@ -191,6 +191,12 @@ const esquemaMovimiento = z.object({
   categoria: z.string().max(120).default('General'),
   tipo: z.enum(['gasto', 'ingreso']),
   importe: z.number().finite(),
+  /**
+   * Id de la Factura que generó este movimiento (Fase 2). Sin esto, Zod lo
+   * quita en silencio de cualquier guardado genérico del cliente (p. ej.
+   * editar la pestaña Datos), rompiendo el vínculo con la factura.
+   */
+  facturaId: z.string().max(128).optional().default(''),
 });
 
 const esquemaRegistroHoras = z.object({

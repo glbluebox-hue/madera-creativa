@@ -81,6 +81,12 @@ export type Movimiento = {
   tipo: TipoMovimiento;
   /** Importe en euros. */
   importe: number;
+  /**
+   * Id de la Factura que generó este movimiento automáticamente (Fase 2).
+   * Ausente en movimientos creados a mano desde la tabla de gastos e
+   * ingresos — no asumir que siempre está presente.
+   */
+  facturaId?: string;
 };
 
 /** Un archivo adjunto al proyecto (diseño técnico, foto, medidas). */
