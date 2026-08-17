@@ -6,6 +6,8 @@ export type TabPresupuestosIAProps = {
   cliente: Cliente;
   empresa: Empresa;
   onActualizarEmpresa: (cambios: Partial<Empresa>) => void;
+  /** Refresca el cliente en la ficha tras aceptar un presupuesto (Fase 1) — ver `PresupuestosVista`. */
+  onActualizarCliente: (cliente: Cliente) => void;
 };
 
 /**
@@ -17,13 +19,14 @@ export type TabPresupuestosIAProps = {
  * real de una orden en lenguaje natural. Desde Fase 6 también incluye los
  * presupuestos en modo lienzo (plantilla libre por hojas).
  */
-export function TabPresupuestosIA({ cliente, empresa, onActualizarEmpresa }: TabPresupuestosIAProps) {
+export function TabPresupuestosIA({ cliente, empresa, onActualizarEmpresa, onActualizarCliente }: TabPresupuestosIAProps) {
   return (
     <PresupuestosVista
       clienteId={cliente.id}
       clienteNombre={cliente.nombre}
       empresa={empresa}
       onActualizarEmpresa={onActualizarEmpresa}
+      onClienteActualizado={onActualizarCliente}
     />
   );
 }

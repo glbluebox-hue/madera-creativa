@@ -372,7 +372,7 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa
       {/* ── PRESUPUESTOS IA: presupuestos narrativos creados/modificados por el asistente (Fase 5) ── */}
       {pestana === 'presupuestosIA' && (
         <div className={styles.tabPanel}>
-          <TabPresupuestosIA cliente={cliente} empresa={empresa} onActualizarEmpresa={onActualizarEmpresa} />
+          <TabPresupuestosIA cliente={cliente} empresa={empresa} onActualizarEmpresa={onActualizarEmpresa} onActualizarCliente={onActualizar} />
         </div>
       )}
 

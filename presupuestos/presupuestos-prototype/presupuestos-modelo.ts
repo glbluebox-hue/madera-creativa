@@ -36,4 +36,11 @@ export type PresupuestoMC = {
   precioTotal: number;
   creado: string;
   actualizado: string;
+  /**
+   * Estado de aceptación (Fase 1 — automatización "presupuesto aceptado").
+   * Opcional: los presupuestos creados antes de esta fase no lo tienen
+   * guardado — tratar como 'borrador' cuando esté ausente, nunca asumir
+   * que un valor vacío significa "aceptado".
+   */
+  estado?: 'borrador' | 'enviado' | 'aceptado' | 'rechazado';
 };

@@ -695,6 +695,19 @@ export async function borrarPresupuesto(id: string): Promise<void> {
   await comprobarRespuesta(res, 'No se pudo borrar el presupuesto');
 }
 
+/**
+ * Marca un presupuesto como aceptado (Fase 1 — automatización "presupuesto
+ * aceptado"): pone en marcha el proyecto (estado del cliente, checklist de
+ * tareas, cobro pendiente, notificación) en el servidor. Idempotente — si
+ * ya estaba aceptado, no falla ni repite nada, `yaEstabaAceptado` lo indica.
+ */
+export async function aceptarPresupuesto(id: string): Promise<{ presupuesto: PresupuestoMC; yaEstabaAceptado: boolean }> {
+  const res = await fetchConAuth(`/presupuestos/${id}/aceptar`, { method: 'POST' });
+  await comprobarRespuesta(res, 'No se pudo aceptar el presupuesto');
+  const data = await res.json();
+  return { presupuesto: data.presupuesto, yaEstabaAceptado: data.yaEstabaAceptado };
+}
+
 /* ===== PLANTILLAS (Motor Documental, Incremento 4) ===== */
 
 /** Recupera todas las plantillas del usuario. */
@@ -848,6 +861,7 @@ export async function obtenerEmpresa(): Promise<Empresa> {
     nombre: data.nombre,
     eslogan: data.eslogan,
     logo: data.logo || null,
+    nifCif: data.nifCif || '',
     telefono: data.telefono || '',
     email: data.email || '',
     iban: data.iban || '',
@@ -876,6 +890,7 @@ export async function guardarEmpresa(empresa: Partial<Empresa>): Promise<Empresa
     nombre: data.nombre,
     eslogan: data.eslogan,
     logo: data.logo || null,
+    nifCif: data.nifCif || '',
     telefono: data.telefono || '',
     email: data.email || '',
     iban: data.iban || '',

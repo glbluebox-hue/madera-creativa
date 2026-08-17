@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as api from './api.js';
 import type { PresupuestoMC, ElementoPresupuesto } from './presupuestos-modelo.js';
+import type { Cliente } from './types.js';
 import type { Empresa } from './use-empresa.js';
 import { AbrirDocumento } from './abrir-documento.js';
 import { generarId } from './mock.js';
@@ -16,6 +17,16 @@ export type PresupuestosVistaProps = {
   empresa: Empresa;
   /** Persiste cambios de empresa — usado para el clic-en-el-logo del editor de lienzo. */
   onActualizarEmpresa: (cambios: Partial<Empresa>) => void;
+  /**
+   * Se llama con el cliente ya actualizado justo después de aceptar un
+   * presupuesto (Fase 1) — el servidor es quien decide el nuevo estado, el
+   * checklist de tareas y el cobro pendiente, así que se vuelve a pedir el
+   * cliente completo en vez de adivinar esos cambios aquí. Opcional: si no
+   * se pasa, la aceptación funciona igual, solo que el resto de la ficha
+   * (pestaña de tareas, estado del proyecto) no se refresca sola hasta
+   * recargar.
+   */
+  onClienteActualizado?: (cliente: Cliente) => void;
 };
 
 type FormularioPresupuesto = {
@@ -35,7 +46,7 @@ const FORM_VACIO: FormularioPresupuesto = { titulo: '', descripcion: '', alcance
  * colección a través del mismo `guardarPresupuesto`, así que lo creado por
  * uno se puede seguir editando por el otro sin ninguna diferencia.
  */
-export function PresupuestosVista({ clienteId, clienteNombre, empresa, onActualizarEmpresa }: PresupuestosVistaProps) {
+export function PresupuestosVista({ clienteId, clienteNombre, empresa, onActualizarEmpresa, onClienteActualizado }: PresupuestosVistaProps) {
   const [presupuestos, setPresupuestos] = useState<PresupuestoMC[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +67,8 @@ export function PresupuestosVista({ clienteId, clienteNombre, empresa, onActuali
   const [anadiendoItemA, setAnadiendoItemA] = useState<string | null>(null);
   const [itemConcepto, setItemConcepto] = useState('');
   const [itemPrecio, setItemPrecio] = useState('');
+
+  const [aceptandoId, setAceptandoId] = useState<string | null>(null);
 
   const cargar = useCallback(() => {
     setCargando(true);
@@ -143,6 +156,30 @@ export function PresupuestosVista({ clienteId, clienteNombre, empresa, onActuali
     }
   };
 
+  /**
+   * Marca un presupuesto como aceptado (Fase 1). El servidor decide todo lo
+   * que cambia en el cliente (estado, checklist, cobro pendiente) — aquí
+   * solo se refleja el nuevo estado del propio presupuesto y se vuelve a
+   * pedir el cliente completo para que el resto de la ficha (pestaña de
+   * tareas, estado del proyecto) se refresque sin recargar la página.
+   */
+  const aceptar = async (id: string) => {
+    setAceptandoId(id);
+    setError(null);
+    try {
+      const { presupuesto: actualizado } = await api.aceptarPresupuesto(id);
+      setPresupuestos((prev) => prev.map((x) => (x.id === actualizado.id ? actualizado : x)));
+      if (onClienteActualizado) {
+        const clienteFresco = await api.obtenerCliente(clienteId);
+        onClienteActualizado(clienteFresco);
+      }
+    } catch (e) {
+      setError(String(e).replace(/^Error:\s*/, ''));
+    } finally {
+      setAceptandoId(null);
+    }
+  };
+
   const anadirItem = async (p: PresupuestoMC) => {
     const precio = Number(itemPrecio);
     if (!itemConcepto.trim() || !Number.isFinite(precio)) return;
@@ -174,6 +211,30 @@ export function PresupuestosVista({ clienteId, clienteNombre, empresa, onActuali
       return existe ? prev.map((x) => (x.id === guardado.id ? guardado : x)) : [guardado, ...prev];
     });
     setDocumentoAbierto(guardado);
+  };
+
+  /** Insignia "Aceptado" o botón "Marcar como aceptado", según el estado actual del presupuesto (Fase 1). */
+  const accionAceptar = (p: PresupuestoMC) => {
+    if (p.estado === 'aceptado') {
+      return (
+        <span style={{
+          fontSize: '0.7rem', fontWeight: 700, padding: '3px 10px', borderRadius: 20,
+          background: 'var(--verde)', color: 'var(--blanco)', whiteSpace: 'nowrap',
+        }}>
+          ✓ Aceptado
+        </span>
+      );
+    }
+    return (
+      <button
+        className={`${styles.btn} ${styles.btnVerde}`}
+        onClick={() => aceptar(p.id)}
+        disabled={aceptandoId === p.id}
+        title="El cliente ha dicho que sí — pone el proyecto en marcha (tareas, cobro pendiente, aviso)"
+      >
+        {aceptandoId === p.id ? 'Aceptando…' : 'Marcar como aceptado'}
+      </button>
+    );
   };
 
   if (cargando) return <p style={{ color: 'var(--topo-claro)', fontSize: '0.85rem' }}>Cargando presupuestos…</p>;
@@ -273,8 +334,9 @@ export function PresupuestosVista({ clienteId, clienteNombre, empresa, onActuali
                       {p.formato === 'lienzo' ? 'Plantilla libre (legado)' : 'Documento'} · Creado {formatoFecha(p.creado)}
                     </p>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
                     <span style={{ fontWeight: 800, fontSize: '1.1rem', whiteSpace: 'nowrap' }}>{formatoEuro(p.precioTotal)}</span>
+                    {accionAceptar(p)}
                     <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={() => setDocumentoAbierto(p)}>Abrir editor</button>
                     <ConfirmarBorrado onConfirmar={() => borrar(p.id)} titulo="Borrar presupuesto" />
                   </div>
@@ -328,6 +390,8 @@ export function PresupuestosVista({ clienteId, clienteNombre, empresa, onActuali
                       <ConfirmarBorrado onConfirmar={() => borrar(p.id)} titulo="Borrar presupuesto" />
                     </div>
                   </div>
+
+                  <div style={{ marginTop: '0.6rem' }}>{accionAceptar(p)}</div>
 
                   {p.descripcion && (
                     <p style={{ margin: '0.75rem 0 0', fontSize: '0.85rem', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{p.descripcion}</p>
