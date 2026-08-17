@@ -243,9 +243,31 @@ export class PresupuestosService {
     const adjuntos = await procesarAdjuntos((cliente as any).adjuntos);
     const dibujos = await procesarDibujos((cliente as any).dibujos);
 
+    // Hardening (Fase 2) — `movimientos`, `tareas`, `estado` y `presupuesto`
+    // ya no se tocan en una edición: el navegador siempre reenvía el
+    // cliente completo tal como lo tenía en memoria, y estos cuatro campos
+    // también los escriben de forma automática y quirúrgica otras rutas
+    // (aceptar presupuesto, sincronizar factura). Guardar aquí el valor
+    // desactualizado del formulario borraba en silencio esas escrituras —
+    // detectado por Opus 5 al revisar la sincronización de facturas. Ahora
+    // solo se aceptan en la CREACIÓN (`anterior` nulo); después, únicamente
+    // las rutas dedicadas (`/clientes/:id/movimientos`, `/tareas`,
+    // `/estado`, `/presupuesto`) pueden cambiarlos — mismo patrón que ya
+    // usa `Presupuesto.estado`.
+    const { movimientos: _movimientos, tareas: _tareas, estado: _estado, presupuesto: _presupuesto, ...clienteSinCamposProtegidos } = cliente as any;
+
     const doc = await ClienteModel.findOneAndUpdate(
       { id: cliente.id, usuarioId },
-      { ...cliente, fotos, adjuntos, dibujos, usuarioId },
+      {
+        ...clienteSinCamposProtegidos,
+        fotos, adjuntos, dibujos, usuarioId,
+        ...(anterior ? {} : {
+          movimientos: _movimientos ?? [],
+          tareas: _tareas ?? [],
+          estado: _estado ?? 'presupuestado',
+          presupuesto: _presupuesto ?? 0,
+        }),
+      },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     ).lean().exec();
 
@@ -259,9 +281,99 @@ export class PresupuestosService {
       nombre: anterior ? 'cliente.actualizado' : 'cliente.creado',
       usuarioId,
       entidadId: cliente.id,
-      datos: { nombre: (cliente as any).nombre, estado: (cliente as any).estado },
+      datos: { nombre: (cliente as any).nombre, estado: (doc as any).estado },
     });
 
+    return this.limpiar(doc);
+  }
+
+  /**
+   * Añade un movimiento manual (Hardening Fase 2) — ruta quirúrgica
+   * dedicada; `guardarCliente` ya no acepta cambios en `movimientos` tras
+   * la creación. Nunca lleva `facturaId`: los movimientos vinculados a una
+   * factura solo los crea `sincronizarMovimientoFactura`.
+   */
+  async anadirMovimientoCliente(clienteId: string, usuarioId: string, datos: { fecha: string; concepto: string; categoria: string; tipo: 'gasto' | 'ingreso'; importe: number }): Promise<ClienteDoc> {
+    await conectar();
+    const movimiento = { id: randomUUID(), facturaId: '', ...datos };
+    const doc = await ClienteModel.findOneAndUpdate(
+      { id: clienteId, usuarioId },
+      { $push: { movimientos: movimiento } },
+      { new: true }
+    ).lean().exec();
+    if (!doc) throw new ErrorDeNegocio('Cliente no encontrado', 400);
+    return this.limpiar(doc);
+  }
+
+  /** Edita un movimiento existente (manual o vinculado a factura) por su id. Hardening Fase 2. */
+  async editarMovimientoCliente(clienteId: string, usuarioId: string, movimientoId: string, datos: { fecha: string; concepto: string; categoria: string; tipo: 'gasto' | 'ingreso'; importe: number }): Promise<ClienteDoc> {
+    await conectar();
+    const doc = await ClienteModel.findOneAndUpdate(
+      { id: clienteId, usuarioId, 'movimientos.id': movimientoId },
+      { $set: {
+          'movimientos.$.fecha': datos.fecha,
+          'movimientos.$.concepto': datos.concepto,
+          'movimientos.$.categoria': datos.categoria,
+          'movimientos.$.tipo': datos.tipo,
+          'movimientos.$.importe': datos.importe,
+        } },
+      { new: true }
+    ).lean().exec();
+    if (!doc) throw new ErrorDeNegocio('Movimiento no encontrado', 400);
+    return this.limpiar(doc);
+  }
+
+  /** Borra un movimiento por su id. Hardening Fase 2. */
+  async borrarMovimientoCliente(clienteId: string, usuarioId: string, movimientoId: string): Promise<ClienteDoc> {
+    await conectar();
+    const doc = await ClienteModel.findOneAndUpdate(
+      { id: clienteId, usuarioId },
+      { $pull: { movimientos: { id: movimientoId } } },
+      { new: true }
+    ).lean().exec();
+    if (!doc) throw new ErrorDeNegocio('Cliente no encontrado', 400);
+    return this.limpiar(doc);
+  }
+
+  /**
+   * Reemplaza la lista completa de tareas (Hardening Fase 2) — la pestaña
+   * de tareas ya gestiona el array entero en el propio navegador (marcar
+   * hecha, reordenar, añadir, borrar) y lo reenvía completo; esta ruta solo
+   * garantiza que ese reenvío nunca pisa `movimientos`/`estado`/
+   * `presupuesto`, que ya no viajan en el mismo guardado.
+   */
+  async guardarTareasCliente(clienteId: string, usuarioId: string, tareas: { id: string; texto: string; hecha: boolean }[]): Promise<ClienteDoc> {
+    await conectar();
+    const doc = await ClienteModel.findOneAndUpdate(
+      { id: clienteId, usuarioId },
+      { $set: { tareas } },
+      { new: true }
+    ).lean().exec();
+    if (!doc) throw new ErrorDeNegocio('Cliente no encontrado', 400);
+    return this.limpiar(doc);
+  }
+
+  /** Cambia el estado del cliente/proyecto a mano. Hardening Fase 2. */
+  async cambiarEstadoCliente(clienteId: string, usuarioId: string, estado: string): Promise<ClienteDoc> {
+    await conectar();
+    const doc = await ClienteModel.findOneAndUpdate(
+      { id: clienteId, usuarioId },
+      { $set: { estado } },
+      { new: true }
+    ).lean().exec();
+    if (!doc) throw new ErrorDeNegocio('Cliente no encontrado', 400);
+    return this.limpiar(doc);
+  }
+
+  /** Cambia el presupuesto acordado a mano. Hardening Fase 2. */
+  async cambiarPresupuestoCliente(clienteId: string, usuarioId: string, presupuesto: number): Promise<ClienteDoc> {
+    await conectar();
+    const doc = await ClienteModel.findOneAndUpdate(
+      { id: clienteId, usuarioId },
+      { $set: { presupuesto } },
+      { new: true }
+    ).lean().exec();
+    if (!doc) throw new ErrorDeNegocio('Cliente no encontrado', 400);
     return this.limpiar(doc);
   }
 

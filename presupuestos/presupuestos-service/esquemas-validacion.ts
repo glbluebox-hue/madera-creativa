@@ -199,6 +199,20 @@ const esquemaMovimiento = z.object({
   facturaId: z.string().max(128).optional().default(''),
 });
 
+/**
+ * Cuerpo de las rutas dedicadas para añadir/editar un movimiento manual
+ * (POST/PUT /clientes/:id/movimientos...) — Hardening (Fase 2). Sin `id` ni
+ * `facturaId`: el id lo genera el servidor, y un movimiento creado por
+ * estas rutas nunca lleva factura de origen.
+ */
+export const esquemaMovimientoEntrada = z.object({
+  fecha: z.string().min(1).max(32),
+  concepto: z.string().max(500),
+  categoria: z.string().max(120).optional().default('General'),
+  tipo: z.enum(['gasto', 'ingreso']),
+  importe: z.number().finite(),
+});
+
 const esquemaRegistroHoras = z.object({
   id: z.string().min(1).max(64),
   fecha: z.string().min(1).max(32),
@@ -257,10 +271,25 @@ const esquemaNota = z.object({
   texto: z.string().max(5000),
 });
 
-const esquemaTarea = z.object({
+export const esquemaTarea = z.object({
   id: z.string().min(1).max(64),
   texto: z.string().max(500),
   hecha: z.boolean(),
+});
+
+/** Cuerpo de PUT /clientes/:id/tareas — Hardening (Fase 2). */
+export const esquemaTareasEntrada = z.object({
+  tareas: z.array(esquemaTarea),
+});
+
+/** Cuerpo de PUT /clientes/:id/estado — Hardening (Fase 2). */
+export const esquemaEstadoClienteEntrada = z.object({
+  estado: z.enum(['presupuestado', 'en_curso', 'finalizado', 'rechazado']),
+});
+
+/** Cuerpo de PUT /clientes/:id/presupuesto — Hardening (Fase 2). */
+export const esquemaPresupuestoClienteEntrada = z.object({
+  presupuesto: z.number().finite(),
 });
 
 const esquemaDibujoGuardado = z.object({

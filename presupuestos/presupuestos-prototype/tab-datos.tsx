@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Cliente } from './types.js';
 import { formatoEuro } from './calculos.js';
 import { ImporteInput } from './importe-input.js';
+import * as api from './api.js';
 import styles from './styles.module.css';
 
 /** Props del panel de datos del cliente. */
@@ -24,6 +25,12 @@ export function TabDatos({ cliente, onActualizar }: TabDatosProps) {
     setForm((f) => ({ ...f, [campo]: valor }));
 
   const guardar = () => {
+    // El presupuesto usa su propia ruta quirúrgica (Hardening Fase 2) —
+    // `onActualizar` (guardado genérico del cliente) ya no persiste este
+    // campo tras la creación, ver comentario en `ficha-cliente.tsx`.
+    if (form.presupuesto !== cliente.presupuesto) {
+      api.cambiarPresupuestoCliente(cliente.id, form.presupuesto || 0);
+    }
     onActualizar(form);
     setEdit(false);
   };

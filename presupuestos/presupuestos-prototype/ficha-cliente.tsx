@@ -103,14 +103,27 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa
     cargarFacturasCliente();
   };
 
-  const anadirMovimiento = (m: Movimiento) =>
-    onActualizar({ ...cliente, movimientos: [...cliente.movimientos, m] });
+  /**
+   * Movimientos, tareas, estado y presupuesto usan sus propias rutas
+   * quirúrgicas (Hardening Fase 2) en vez de reenviar el cliente completo
+   * — así una edición en esta ficha nunca puede pisar una escritura
+   * automática (aceptar presupuesto, sincronizar factura) hecha mientras
+   * esta pantalla estaba abierta con datos desactualizados. `onActualizar`
+   * sigue llamándose con la respuesta fresca del servidor para refrescar
+   * la lista/caché local, igual que ya hace el resto de la app.
+   */
+  const anadirMovimiento = (m: Movimiento) => {
+    const { id: _id, facturaId: _facturaId, ...datos } = m;
+    api.anadirMovimientoCliente(cliente.id, datos).then(onActualizar);
+  };
 
   const borrarMovimiento = (id: string) =>
-    onActualizar({ ...cliente, movimientos: cliente.movimientos.filter((x) => x.id !== id) });
+    api.borrarMovimientoCliente(cliente.id, id).then(onActualizar);
 
-  const editarMovimiento = (m: Movimiento) =>
-    onActualizar({ ...cliente, movimientos: cliente.movimientos.map((x) => x.id === m.id ? m : x) });
+  const editarMovimiento = (m: Movimiento) => {
+    const { id, facturaId: _facturaId, ...datos } = m;
+    api.editarMovimientoCliente(cliente.id, id, datos).then(onActualizar);
+  };
 
   const anadirHoras = (h: RegistroHoras) =>
     onActualizar({ ...cliente, horas: [...cliente.horas, h] });
@@ -131,7 +144,7 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa
   };
 
   const cambiarEstado = (estado: Cliente['estado']) =>
-    onActualizar({ ...cliente, estado });
+    api.cambiarEstadoCliente(cliente.id, estado).then(onActualizar);
 
   return (
     <div>

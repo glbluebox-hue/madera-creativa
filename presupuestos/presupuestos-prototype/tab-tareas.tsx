@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Cliente, Tarea } from './types.js';
 import { generarId } from './mock.js';
+import * as api from './api.js';
 import styles from './styles.module.css';
 
 /** Tareas por defecto del flujo de carpintería. */
@@ -25,7 +26,9 @@ export function TabTareas({ cliente, onActualizar }: TabTareasProps) {
   const tareas = cliente.tareas ?? [];
   const [nueva, setNueva] = useState('');
 
-  const guardar = (nuevas: Tarea[]) => onActualizar({ ...cliente, tareas: nuevas });
+  // Ruta quirúrgica dedicada (Hardening Fase 2) — ver comentario en
+  // `ficha-cliente.tsx`.
+  const guardar = (nuevas: Tarea[]) => api.guardarTareasCliente(cliente.id, nuevas).then(onActualizar);
 
   const crearBase = () =>
     guardar(TAREAS_BASE.map((t) => ({ id: generarId(), texto: t, hecha: false })));

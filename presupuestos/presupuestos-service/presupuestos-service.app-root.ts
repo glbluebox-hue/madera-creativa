@@ -58,6 +58,10 @@ import {
   esquemaCarpeta,
   esquemaRenombrarCarpeta,
   esquemaGastoPeriodico,
+  esquemaMovimientoEntrada,
+  esquemaTareasEntrada,
+  esquemaEstadoClienteEntrada,
+  esquemaPresupuestoClienteEntrada,
 } from './esquemas-validacion.js';
 
 // Debe ejecutarse antes de leer cualquier process.env.* de este módulo —
@@ -907,6 +911,42 @@ export function run() {
       await svc.borrarCliente(req.params.id, req.usuarioId!);
       res.json({ ok: true });
     } catch (err) { responderError(req, res, err); }
+  });
+
+  /**
+   * Rutas quirúrgicas dedicadas para movimientos/tareas/estado/presupuesto
+   * (Hardening Fase 2) — desde ahora son la ÚNICA forma de cambiar estos
+   * campos tras crear el cliente; `guardarCliente` ya los ignora en
+   * cualquier edición (ver comentario en `presupuestos-service.ts`).
+   */
+  app.post('/clientes/:id/movimientos', requireAuth, validar(esquemaMovimientoEntrada), async (req: AuthRequest, res) => {
+    try { res.json(await svc.anadirMovimientoCliente(req.params.id, req.usuarioId!, req.body)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.put('/clientes/:id/movimientos/:movId', requireAuth, validar(esquemaMovimientoEntrada), async (req: AuthRequest, res) => {
+    try { res.json(await svc.editarMovimientoCliente(req.params.id, req.usuarioId!, req.params.movId, req.body)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.delete('/clientes/:id/movimientos/:movId', requireAuth, async (req: AuthRequest, res) => {
+    try { res.json(await svc.borrarMovimientoCliente(req.params.id, req.usuarioId!, req.params.movId)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.put('/clientes/:id/tareas', requireAuth, validar(esquemaTareasEntrada), async (req: AuthRequest, res) => {
+    try { res.json(await svc.guardarTareasCliente(req.params.id, req.usuarioId!, req.body.tareas)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.put('/clientes/:id/estado', requireAuth, validar(esquemaEstadoClienteEntrada), async (req: AuthRequest, res) => {
+    try { res.json(await svc.cambiarEstadoCliente(req.params.id, req.usuarioId!, req.body.estado)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.put('/clientes/:id/presupuesto', requireAuth, validar(esquemaPresupuestoClienteEntrada), async (req: AuthRequest, res) => {
+    try { res.json(await svc.cambiarPresupuestoCliente(req.params.id, req.usuarioId!, req.body.presupuesto)); }
+    catch (err) { responderError(req, res, err); }
   });
 
   // ── Empresa — una por usuario ──

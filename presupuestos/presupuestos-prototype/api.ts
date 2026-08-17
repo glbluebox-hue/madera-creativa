@@ -1,4 +1,4 @@
-import type { Cliente, Factura, Proveedor, Producto, Dibujo, Carpeta, GastoPeriodico } from './types.js';
+import type { Cliente, Factura, Proveedor, Producto, Dibujo, Carpeta, GastoPeriodico, Movimiento, Tarea } from './types.js';
 import type { NotaMC } from './notas-modelo.js';
 import type { PresupuestoMC } from './presupuestos-modelo.js';
 import type { PlantillaMC, RecursoMC, ComponenteMC } from './documento-modelo.js';
@@ -497,6 +497,67 @@ export async function guardarCliente(cliente: Cliente): Promise<Cliente> {
     body: JSON.stringify(cliente),
   });
   await comprobarRespuesta(res, 'No se pudo guardar el cliente');
+  return res.json();
+}
+
+/**
+ * Rutas quirúrgicas dedicadas (Hardening Fase 2) — `guardarCliente` ya no
+ * acepta cambios en movimientos/tareas/estado/presupuesto tras la
+ * creación; estas son ahora la única forma de cambiarlos.
+ */
+export async function anadirMovimientoCliente(clienteId: string, m: Omit<Movimiento, 'id' | 'facturaId'>): Promise<Cliente> {
+  const res = await fetchConAuth(`/clientes/${clienteId}/movimientos`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(m),
+  });
+  await comprobarRespuesta(res, 'No se pudo añadir el movimiento');
+  return res.json();
+}
+
+export async function editarMovimientoCliente(clienteId: string, movimientoId: string, m: Omit<Movimiento, 'id' | 'facturaId'>): Promise<Cliente> {
+  const res = await fetchConAuth(`/clientes/${clienteId}/movimientos/${movimientoId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(m),
+  });
+  await comprobarRespuesta(res, 'No se pudo editar el movimiento');
+  return res.json();
+}
+
+export async function borrarMovimientoCliente(clienteId: string, movimientoId: string): Promise<Cliente> {
+  const res = await fetchConAuth(`/clientes/${clienteId}/movimientos/${movimientoId}`, { method: 'DELETE' });
+  await comprobarRespuesta(res, 'No se pudo borrar el movimiento');
+  return res.json();
+}
+
+export async function guardarTareasCliente(clienteId: string, tareas: Tarea[]): Promise<Cliente> {
+  const res = await fetchConAuth(`/clientes/${clienteId}/tareas`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tareas }),
+  });
+  await comprobarRespuesta(res, 'No se pudieron guardar las tareas');
+  return res.json();
+}
+
+export async function cambiarEstadoCliente(clienteId: string, estado: Cliente['estado']): Promise<Cliente> {
+  const res = await fetchConAuth(`/clientes/${clienteId}/estado`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ estado }),
+  });
+  await comprobarRespuesta(res, 'No se pudo cambiar el estado');
+  return res.json();
+}
+
+export async function cambiarPresupuestoCliente(clienteId: string, presupuesto: number): Promise<Cliente> {
+  const res = await fetchConAuth(`/clientes/${clienteId}/presupuesto`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ presupuesto }),
+  });
+  await comprobarRespuesta(res, 'No se pudo cambiar el presupuesto');
   return res.json();
 }
 
