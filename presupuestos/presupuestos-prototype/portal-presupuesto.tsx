@@ -45,7 +45,18 @@ export function PortalPresupuesto() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--crema, var(--topo-tinte))', display: 'flex', justifyContent: 'center', padding: '1.25rem 1rem 3rem' }}>
+    // La clase `app` es imprescindible, no solo estética: TODOS los tokens
+    // de color de la aplicación (--blanco, --topo, --borde, --verde, --rojo…)
+    // están declarados dentro de `.app` en styles.module.css, no en `:root`
+    // — sin esta clase aquí, cada `var(--algo)` de esta página (y de las
+    // clases reutilizadas como `styles.panel`) no resuelve a nada, y el
+    // texto (negro por defecto del navegador) queda ilegible sobre el fondo
+    // oscuro global de <body> en modo oscuro (bug real, reportado por un
+    // cliente probando el enlace desde el móvil, 17/08/2026). Sin
+    // `data-theme` propio a propósito: esta página nunca tiene sesión ni
+    // preferencia de tema guardada, así que sigue `prefers-color-scheme`
+    // del dispositivo del cliente automáticamente.
+    <div className={styles.app} style={{ minHeight: '100vh', background: 'var(--fondo)', display: 'flex', justifyContent: 'center', padding: '1.25rem 1rem 3rem' }}>
       <div style={{ width: '100%', maxWidth: '560px' }}>
         {estado === 'cargando' && (
           <p style={{ textAlign: 'center', color: 'var(--topo-claro)', marginTop: '3rem' }}>Cargando…</p>
@@ -62,7 +73,11 @@ export function PortalPresupuesto() {
           <>
             <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
               {presupuesto.empresa.logo && (
-                <img src={presupuesto.empresa.logo} alt={presupuesto.empresa.nombre} style={{ maxWidth: '180px', maxHeight: '90px', objectFit: 'contain' }} />
+                // Mismo tamaño que el logo de la barra lateral
+                // (`.sidebarLogoImg`) — la referencia de "cómo se veía
+                // antes" que ya usa el resto de la aplicación, en vez de un
+                // tamaño inventado aparte para esta página.
+                <img src={presupuesto.empresa.logo} alt={presupuesto.empresa.nombre} style={{ width: '100%', maxWidth: '140px', height: 'auto', objectFit: 'contain' }} />
               )}
               {!presupuesto.empresa.logo && presupuesto.empresa.nombre && (
                 <p style={{ fontWeight: 800, fontSize: '1.1rem' }}>{presupuesto.empresa.nombre}</p>
