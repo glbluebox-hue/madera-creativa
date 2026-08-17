@@ -99,7 +99,22 @@ export function Facturas({
 
   const abrirCarpeta = (t: number) => setCarpetaTrimestre((prev) => (prev === t ? null : t));
 
-  const abrirEdicion = (f: Factura) => { setFacturaEditar(f); setEscaner(true); setViendoId(null); };
+  /**
+   * Pide la factura completa antes de abrir el editor — `f` puede venir del
+   * listado paginado, que quita el campo `imagen` a propósito por peso
+   * (`listarFacturas` en el backend); usarlo tal cual dejaba la
+   * previsualización vacía al editar una factura ya guardada (bug
+   * reportado 17/08/2026). Mismo patrón que ya usa `VisorFactura`.
+   */
+  const abrirEdicion = async (f: Factura) => {
+    setEscaner(true);
+    setViendoId(null);
+    try {
+      setFacturaEditar(await api.obtenerFactura(f.id));
+    } catch {
+      setFacturaEditar(f); // Al menos abre con lo que ya había, en vez de quedarse sin abrir nada.
+    }
+  };
   const guardarYCerrar = (f: Factura) => {
     autoCrearProveedorDeFactura(f, proveedores, onCrearProveedor);
     onGuardar(f);
