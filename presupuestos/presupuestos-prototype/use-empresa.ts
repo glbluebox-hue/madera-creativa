@@ -11,6 +11,8 @@ export type Empresa = {
   eslogan: string;
   /** Logo en formato data URL (base64), o null si no hay logo. */
   logo: string | null;
+  /** CIF/NIF de la propia empresa, para las facturas/presupuestos que ella emite — no confundir con el CIF/NIF de cada factura de gasto, que es del proveedor. */
+  nifCif: string;
   /** Teléfono mostrado en la cabecera de presupuestos con plantilla. */
   telefono: string;
   /** Email mostrado en la cabecera de presupuestos con plantilla. */
@@ -34,6 +36,7 @@ const EMPRESA_ADMIN: Empresa = {
   nombre: 'Madera Creativa',
   eslogan: 'Presupuestos y seguimiento de proyectos',
   logo: logoMadera,
+  nifCif: '',
   telefono: '671737663',
   email: 'Holamaderacreativa@gmail.com',
   iban: '',
@@ -52,6 +55,7 @@ const EMPRESA_USUARIO: Empresa = {
   nombre: '',
   eslogan: '',
   logo: null,
+  nifCif: '',
   telefono: '',
   email: '',
   iban: '',
@@ -101,6 +105,7 @@ export function useEmpresa(autenticado = false, esAdmin = false): {
           nombre: datos.nombre || inicial.nombre,
           eslogan: datos.eslogan || inicial.eslogan,
           logo: datos.logo || inicial.logo,
+          nifCif: datos.nifCif || inicial.nifCif,
           telefono: datos.telefono || inicial.telefono,
           email: datos.email || inicial.email,
           iban: datos.iban || inicial.iban,

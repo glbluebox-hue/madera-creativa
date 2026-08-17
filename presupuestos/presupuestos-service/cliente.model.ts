@@ -155,6 +155,8 @@ const EmpresaSchema = new Schema({
   nombre: { type: String, default: '' },
   eslogan: { type: String, default: '' },
   logo: { type: String, default: '' },
+  /** CIF/NIF de la propia empresa — para que aparezca en las facturas/presupuestos que ella misma emite. No confundir con el `cifNif` de cada Factura de gasto, que es del proveedor, no de esta empresa. */
+  nifCif: { type: String, default: '' },
   /** Datos de contacto mostrados en la cabecera de los presupuestos con plantilla (Fase 6). */
   telefono: { type: String, default: '' },
   email: { type: String, default: '' },
@@ -278,6 +280,16 @@ const PresupuestoSchema = new Schema({
   clienteId: { type: String, required: true, index: true },
   titulo: { type: String, required: true },
   formato: { type: String, enum: ['simple', 'lienzo', 'documento'], default: 'simple' },
+  /**
+   * Estado de aceptación del presupuesto (Fase 1 — automatización
+   * "presupuesto aceptado"). Campo nuevo, con default — no migra ni
+   * afecta a presupuestos ya guardados. Aviso: `.lean()` NO aplica este
+   * default a documentos antiguos que no tengan el campo en absoluto (ya
+   * confirmado con `Usuario.acceso` en esta misma base de código) — el
+   * código que lo lee nunca debe asumir que viene poblado, ver
+   * `aceptarPresupuesto` en `presupuestos-service.ts`.
+   */
+  estado: { type: String, enum: ['borrador', 'enviado', 'aceptado', 'rechazado'], default: 'borrador' },
   descripcion: { type: String, default: '' },
   alcance: { type: [String], default: [] },
   items: { type: [ElementoPresupuestoSchema], default: [] },

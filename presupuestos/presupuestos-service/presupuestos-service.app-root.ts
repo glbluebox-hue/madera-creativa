@@ -1190,6 +1190,20 @@ export function run() {
     catch (err) { responderError(req, res, err); }
   });
 
+  /**
+   * Acepta un presupuesto (Fase 1 — "presupuesto aceptado"). Ruta de acción
+   * dedicada en vez de una escritura implícita dentro del PUT genérico —
+   * mismo patrón ya usado en la aplicación para acciones explícitas (ver
+   * `/dibujos/:id/duplicar`). Toda la lógica (atomicidad, idempotencia,
+   * evento, consecuencias) vive en `svc.aceptarPresupuesto`.
+   */
+  app.post('/presupuestos/:id/aceptar', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { presupuesto, transicionOcurrioAhora } = await svc.aceptarPresupuesto(req.params.id, req.usuarioId!);
+      res.json({ ok: true, presupuesto, yaEstabaAceptado: !transicionOcurrioAhora });
+    } catch (err) { responderError(req, res, err); }
+  });
+
   app.delete('/presupuestos/:id', requireAuth, async (req: AuthRequest, res) => {
     try { await svc.borrarPresupuesto(req.params.id, req.usuarioId!); res.json({ ok: true }); }
     catch (err) { responderError(req, res, err); }

@@ -1,10 +1,27 @@
 import { randomUUID } from 'node:crypto';
 import { ClienteModel, EmpresaModel, FacturaModel, ProveedorModel, ProductoModel, DibujoModel, CarpetaModel, NotaModel, PresupuestoModel, PlantillaModel, RecursoModel, ComponenteModel, AutomatizacionModel, ContratoModel, GastoPeriodicoModel, conectar } from './cliente.model.js';
+import { UsuarioModel, conectarUsuarios } from './usuario.model.js';
 import { almacenamiento } from './almacenamiento.service.js';
 import { busEventos } from './eventos.service.js';
+import { enviarNotificacion } from './push.service.js';
+import type { PushSub } from './push.service.js';
+import { logger } from './logger.service.js';
 import { procesarRecursosDocumento, borrarRecursosDocumentoHuerfanos } from './documento-procesar-recursos.js';
 import { subirORecuperarRecurso } from './documento-recursos-biblioteca.js';
 import type { DocumentoMC, TemaMC, RecursoMC } from './documento-modelo.js';
+
+/**
+ * Checklist base de carpintería (Fase 1 — "presupuesto aceptado") —
+ * duplicado a propósito de `TAREAS_BASE` en `tab-tareas.tsx`: backend y
+ * frontend son proyectos Node independientes sin ningún paquete
+ * compartido, así que no hay una única fuente real posible sin crear
+ * infraestructura nueva solo para 10 strings. Si se cambia uno, cambiar
+ * el otro.
+ */
+const TAREAS_BASE_PRESUPUESTO_ACEPTADO = [
+  'Medir', 'Diseñar', 'Presupuesto', 'Cobro inicial', 'Comprar material',
+  'Fabricar', 'Lijar', 'Pintar', 'Montar', 'Cobro final',
+];
 
 /** Estructura de una ficha de cliente tal como la maneja el servicio. */
 export type ClienteDoc = Record<string, unknown> & { id: string };
@@ -961,7 +978,19 @@ export class PresupuestosService {
       : presupuesto.contenidoDocumento;
     const doc = await PresupuestoModel.findOneAndUpdate(
       { id: presupuesto.id, usuarioId },
-      { ...presupuesto, contenidoLienzo, contenidoDocumento, usuarioId },
+      {
+        ...presupuesto, contenidoLienzo, contenidoDocumento, usuarioId,
+        // `estado` no está en `esquemaPresupuestoMC` a propósito (Fase 1 —
+        // solo `aceptarPresupuesto` puede cambiarlo, nunca este PUT
+        // genérico), así que `presupuesto.estado` siempre llega `undefined`
+        // aquí — y `setDefaultsOnInsert` no lo suple (confirmado probando
+        // en local: solo cubre valores por defecto de Zod, `esquemaPresupuestoMC`,
+        // no los de Mongoose para un campo ausente del todo del esquema
+        // de validación). Se fija explícitamente solo al CREAR (nunca al
+        // editar uno ya existente, para no resetear un presupuesto ya
+        // aceptado de vuelta a 'borrador' en una edición posterior).
+        ...(anterior ? {} : { estado: 'borrador' }),
+      },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     ).lean().exec();
     if (anterior) {
@@ -977,6 +1006,136 @@ export class PresupuestosService {
       datos: { titulo: (presupuesto as any).titulo, clienteId: (presupuesto as any).clienteId, precioTotal: (presupuesto as any).precioTotal },
     });
     return this.limpiar(doc as Record<string, unknown>);
+  }
+
+  /**
+   * Acepta un presupuesto (Fase 1 — "presupuesto aceptado"). Manejador de
+   * negocio dedicado, separado a propósito del motor de automatizaciones
+   * del Motor Documental (`AutomatizacionModel`/`automatizaciones-listener.ts`):
+   * ese motor solo sabe editar documentos (`crearDocumento` sin
+   * implementar, `modificarElemento` limitado a `DocumentoMC`, `notificar`
+   * que solo escribe en el log) — no tiene ninguna acción capaz de tocar
+   * `Cliente.estado`/`tareas`, y no existe ninguna interfaz para
+   * configurarlo. Forzar esta cadena de negocio dentro de esa pieza
+   * significaría ampliar un vocabulario pensado para otra cosa.
+   *
+   * Idempotente por diseño: la transición ocurre en una única operación
+   * atómica (`findOneAndUpdate` con la condición de estado en el propio
+   * filtro, mismo patrón que la rotación de refresh tokens y el canje de
+   * códigos promocionales) — dos peticiones simultáneas sobre el mismo
+   * presupuesto nunca pueden aceptar dos veces ni disparar dos veces las
+   * consecuencias. Reaceptar un presupuesto ya aceptado es un no-op seguro.
+   *
+   * El evento `presupuesto.aprobado` se publica ÚNICAMENTE después de que
+   * esa transición atómica haya tenido éxito — nunca antes, nunca de forma
+   * optimista.
+   *
+   * @param id Identificador del presupuesto.
+   * @param usuarioId Propietario — nunca se confía en ningún `usuarioId` que
+   * pudiera venir del cliente; siempre el de la sesión autenticada.
+   * @returns El presupuesto actualizado, y si la petición fue la que causó
+   * la transición o si ya estaba aceptado de antes (para que la ruta HTTP
+   * pueda responder igual de bien en ambos casos, sin duplicar nada).
+   */
+  async aceptarPresupuesto(id: string, usuarioId: string): Promise<{ presupuesto: Record<string, unknown>; transicionOcurrioAhora: boolean }> {
+    await conectar();
+    const ahora = new Date().toISOString();
+
+    // Paso atómico único que decide éxito/fracaso de la aceptación en sí:
+    // `estado: { $ne: 'aceptado' }` en el FILTRO (no en una comprobación
+    // previa de lectura+escritura, que sería vulnerable a una carrera)
+    // coincide también con presupuestos antiguos que no tienen el campo en
+    // absoluto (Mongo trata "campo ausente" como distinto de 'aceptado'),
+    // así que un presupuesto creado antes de esta fase se puede aceptar
+    // con normalidad.
+    const recienAceptado = await PresupuestoModel.findOneAndUpdate(
+      { id, usuarioId, estado: { $ne: 'aceptado' } },
+      { $set: { estado: 'aceptado', actualizado: ahora } },
+      { new: true }
+    ).lean().exec();
+
+    if (recienAceptado) {
+      // A partir de aquí la transición YA es un hecho consumado y
+      // confirmado — el evento se publica solo ahora, nunca antes.
+      busEventos.publicar({
+        nombre: 'presupuesto.aprobado',
+        usuarioId,
+        entidadId: id,
+        datos: { clienteId: (recienAceptado as any).clienteId, precioTotal: (recienAceptado as any).precioTotal },
+      });
+
+      // Consecuencias — "mejor esfuerzo": la aceptación del presupuesto ya
+      // quedó guardada pase lo que pase aquí abajo. Un fallo en cualquiera
+      // de estos pasos se registra con detalle (trazable) pero nunca
+      // deshace ni corrompe la transición ya confirmada, ni hace fallar la
+      // respuesta al usuario que aceptó el presupuesto.
+      this.ejecutarConsecuenciasAceptacion(recienAceptado as Record<string, unknown>, usuarioId)
+        .catch((err) => logger.error({ err, presupuestoId: id, usuarioId }, '[presupuesto.aceptar] Fallo en las consecuencias posteriores a la aceptación'));
+
+      return { presupuesto: this.limpiar(recienAceptado as Record<string, unknown>), transicionOcurrioAhora: true };
+    }
+
+    // No hubo transición: o el presupuesto no existe (o no es de este
+    // usuario — mismo filtro por usuarioId que el resto del servicio,
+    // nunca se distingue "no existe" de "no es tuyo" para no filtrar esa
+    // información), o ya estaba aceptado de antes. Se distinguen con una
+    // lectura aparte, sin volver a escribir nada.
+    const existente = await PresupuestoModel.findOne({ id, usuarioId }).lean().exec();
+    if (!existente) {
+      throw new ErrorDeNegocio('Presupuesto no encontrado', 400);
+    }
+    // Ya estaba aceptado — idempotente: se responde con éxito y el estado
+    // actual, sin repetir ninguna consecuencia.
+    return { presupuesto: this.limpiar(existente as Record<string, unknown>), transicionOcurrioAhora: false };
+  }
+
+  /**
+   * Consecuencias de negocio de aceptar un presupuesto — cada paso
+   * reutiliza una estructura ya existente en la aplicación, a propósito:
+   * ninguna de estas es una tabla/colección nueva.
+   * - `Cliente.estado` → 'en_curso': ya es el campo que lee el Dashboard
+   *   (`dashboard-calculos.ts`) para "Presupuestos en curso".
+   * - `Cliente.tareas[]` → checklist base: mismo campo y misma forma que ya
+   *   rellena a mano `tab-tareas.tsx`; solo se crea si el cliente NO tiene
+   *   ya ninguna tarea, para no pisar un checklist que el artesano ya
+   *   estuviera usando/modificando.
+   * - `Cliente.presupuesto` → importe del presupuesto aceptado: es el
+   *   mismo campo que ya usa `TablaMargen` para calcular "pendiente de
+   *   cobrar" (`presupuesto - totalIngresos`) — no existe ninguna entidad
+   *   "Cobro" separada en la aplicación, así que no se crea una ahora. Solo
+   *   se rellena si estaba vacío, para no sobrescribir un importe que el
+   *   usuario ya hubiera ajustado a mano.
+   * - Notificación push al propio dueño del presupuesto (no al admin —
+   *   este evento es sobre el negocio del propio usuario).
+   */
+  private async ejecutarConsecuenciasAceptacion(presupuesto: Record<string, unknown>, usuarioId: string): Promise<void> {
+    const clienteId = presupuesto.clienteId as string;
+    const cliente = await ClienteModel.findOne({ id: clienteId, usuarioId }).lean().exec() as any;
+    if (!cliente) {
+      logger.warn({ presupuestoId: presupuesto.id, clienteId }, '[presupuesto.aceptar] El cliente del presupuesto ya no existe — se omiten las consecuencias sobre el proyecto.');
+      return;
+    }
+
+    const cambios: Record<string, unknown> = { estado: 'en_curso' };
+    if (!cliente.tareas || cliente.tareas.length === 0) {
+      cambios.tareas = TAREAS_BASE_PRESUPUESTO_ACEPTADO.map((texto) => ({ id: randomUUID(), texto, hecha: false }));
+    }
+    if (!cliente.presupuesto) {
+      cambios.presupuesto = (presupuesto.precioTotal as number) || 0;
+    }
+    await ClienteModel.findOneAndUpdate({ id: clienteId, usuarioId }, { $set: cambios }).exec();
+
+    await conectarUsuarios();
+    const propietario = await UsuarioModel.findOne({ id: usuarioId }).lean().exec() as any;
+    const subs = (propietario?.pushSubs ?? []) as PushSub[];
+    for (const sub of subs) {
+      await enviarNotificacion(
+        sub,
+        'Presupuesto aceptado',
+        `${cliente.nombre || 'Un cliente'} ha aceptado el presupuesto "${presupuesto.titulo ?? ''}".`,
+        { clienteId }
+      ).catch((err) => logger.error({ err, presupuestoId: presupuesto.id, usuarioId }, '[presupuesto.aceptar] Error enviando notificación push'));
+    }
   }
 
   /**
