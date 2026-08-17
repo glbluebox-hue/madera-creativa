@@ -1813,6 +1813,15 @@
 }
 .sidebarLogoImg { width: 100%; max-width: 187px; height: auto; object-fit: contain; display: block; }
 
+/* El logo quedaba muy pegado al borde superior y a "Inicio" justo debajo,
+   en el panel deslizante móvil — más aire arriba y abajo. Va DESPUÉS de la
+   regla base de `.sidebarMarca` a propósito: un `@media` no da más
+   especificidad, así que puesto antes (como estaba) la regla base, al
+   venir después en el archivo, ganaba igualmente y anulaba esta. */
+@media (max-width: 900px) {
+  .sidebarMarca { padding-top: 0.9rem; padding-bottom: 1.1rem; margin-bottom: 0.6rem; }
+}
+
 /* `flex:1 1 auto` + `min-height:0` (imprescindible: sin esto, un flex-item
    con overflow no se encoge nunca por debajo de su contenido, y el scroll
    interno no llega a activarse) hace que SOLO la lista de secciones haga
