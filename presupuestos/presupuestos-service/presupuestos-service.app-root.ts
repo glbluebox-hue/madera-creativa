@@ -1411,6 +1411,17 @@ export function run() {
     const dir = resolve(process.cwd(), frontendDistDir);
     const indexHtml = resolve(dir, 'index.html');
     if (existsSync(indexHtml)) {
+      // El service worker vive en /assets/sw.js — por defecto un navegador
+      // solo le deja controlar (`scope`) el directorio donde está el propio
+      // script (/assets/), aunque el código de registro pida un scope más
+      // amplio (rechaza la llamada con SecurityError, en silencio si el
+      // registro va envuelto en un `.catch`). Sin esta cabecera, el service
+      // worker nunca controla la raíz de la app y el navegador no la
+      // reconoce como PWA instalable — solo ofrece un acceso directo simple.
+      app.get('/assets/sw.js', (req, res, next) => {
+        res.setHeader('Service-Worker-Allowed', '/');
+        next();
+      });
       app.use(express.static(dir));
       app.get('*', (req, res) => res.sendFile(indexHtml));
       logger.info({ dir }, 'Sirviendo frontend estático');
