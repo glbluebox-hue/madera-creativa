@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Cliente } from './types.js';
 import { formatoEuro } from './calculos.js';
 import { ImporteInput } from './importe-input.js';
@@ -11,15 +11,31 @@ export type TabDatosProps = {
   cliente: Cliente;
   /** Guarda los cambios del cliente. */
   onActualizar: (cliente: Cliente) => void;
+  /**
+   * Cambia (cualquier valor distinto del anterior) para forzar la apertura
+   * en modo edición desde fuera — usado por el botón "Editar" de la
+   * cabecera de la ficha, para no obligar a venir primero a esta pestaña y
+   * pulsar Editar otra vez.
+   */
+  abrirEdicion?: number;
 };
 
 /**
  * Pestaña "Datos": muestra y permite editar todos los datos de contacto,
  * acceso a la obra y fechas clave del proyecto.
  */
-export function TabDatos({ cliente, onActualizar }: TabDatosProps) {
+export function TabDatos({ cliente, onActualizar, abrirEdicion }: TabDatosProps) {
   const [edit, setEdit] = useState(false);
   const [form, setForm] = useState<Cliente>(cliente);
+
+  useEffect(() => {
+    if (abrirEdicion) { setForm(cliente); setEdit(true); }
+    // Solo debe reaccionar a que `abrirEdicion` cambie (un "disparador"),
+    // nunca a que cambien `cliente`/`abrirEdicion` fuente — si `cliente` se
+    // añadiera a las dependencias, cualquier guardado en segundo plano
+    // reabriría el formulario solo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abrirEdicion]);
 
   const set = (campo: keyof Cliente, valor: unknown) =>
     setForm((f) => ({ ...f, [campo]: valor }));

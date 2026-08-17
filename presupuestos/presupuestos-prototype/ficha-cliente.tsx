@@ -54,7 +54,7 @@ type Pestana = 'resumen' | 'proyectos' | 'presupuestos' | 'presupuestosIA' | 'co
 const PESTANAS: { id: Pestana; label: string }[] = [
   { id: 'resumen', label: 'Resumen' },
   { id: 'proyectos', label: 'Proyectos' },
-  { id: 'presupuestos', label: 'Presupuestos' },
+  { id: 'presupuestos', label: 'Control de gasto' },
   { id: 'presupuestosIA', label: 'Presupuestos IA' },
   { id: 'contratos', label: 'Contratos' },
   { id: 'facturas', label: 'Facturas' },
@@ -70,6 +70,9 @@ const PESTANAS: { id: Pestana; label: string }[] = [
  */
 export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa, onActualizarEmpresa, onVolver, onActualizar, onBorrar, onGuardarFactura, onCrearProveedor }: FichaClienteProps) {
   const [pestana, setPestana] = useState<Pestana>('resumen');
+  /** Contador-disparador: cada incremento fuerza `TabDatos` a abrirse en modo edición (botón "Editar" de la cabecera, ver más abajo). */
+  const [abrirEdicionDatos, setAbrirEdicionDatos] = useState(0);
+  const editarDatos = () => { setPestana('proyectos'); setAbrirEdicionDatos((n) => n + 1); };
   const [escanerAbierto, setEscanerAbierto] = useState(false);
   const [facturasCliente, setFacturasCliente] = useState<Factura[]>([]);
   // Los adjuntos ya no llegan con la ficha (ver comentario en api.ts) — se
@@ -192,6 +195,10 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa
               <option value="finalizado">{etiquetaEstado.finalizado}</option>
               <option value="rechazado">{etiquetaEstado.rechazado}</option>
             </select>
+            <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={editarDatos}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
+              Editar
+            </button>
             {onBorrar && (
               <ConfirmarBorrado
                 label="Eliminar"
@@ -263,7 +270,7 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa
             onBorrar={borrarAdjunto}
           />
           <TabMediciones cliente={cliente} onActualizar={onActualizar} />
-          <TabDatos cliente={cliente} onActualizar={onActualizar} />
+          <TabDatos cliente={cliente} onActualizar={onActualizar} abrirEdicion={abrirEdicionDatos} />
         </div>
       )}
 
