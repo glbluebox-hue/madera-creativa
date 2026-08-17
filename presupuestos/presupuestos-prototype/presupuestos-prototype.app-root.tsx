@@ -50,7 +50,14 @@ if (appleIcon) appleIcon.href = _icon180;
 // llamar dos veces: si `use-push.ts` ya lo registró, devuelve el mismo
 // registro sin duplicar nada.
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/assets/sw.js').catch(() => { /* no crítico */ });
+  // `scope: '/'` es imprescindible: el script vive en /assets/sw.js, y sin
+  // scope explícito el navegador lo limita por defecto al directorio del
+  // propio archivo (/assets/) — un service worker que no controla la raíz
+  // de la app no cumple los requisitos de instalación como PWA, así que
+  // Chrome ofrecía solo "Añadir a pantalla de inicio" (un acceso directo
+  // simple) en vez de "Instalar", con un icono de repuesto genérico en vez
+  // del icono real del manifest.
+  navigator.serviceWorker.register('/assets/sw.js', { scope: '/' }).catch(() => { /* no crítico */ });
 }
 
 if (import.meta.hot) {

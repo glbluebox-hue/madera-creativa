@@ -31,8 +31,11 @@ export function usePush(sesion: SesionActiva | null): void {
       const permiso = await Notification.requestPermission();
       if (permiso !== 'granted') return;
 
-      // Registrar service worker desde assets
-      const registro = await navigator.serviceWorker.register('/assets/sw.js');
+      // Registrar service worker desde assets — mismo scope explícito que
+      // presupuestos-prototype.app-root.tsx, para que ambas llamadas
+      // resuelvan siempre al mismo registro (controlando toda la app, no
+      // solo /assets/).
+      const registro = await navigator.serviceWorker.register('/assets/sw.js', { scope: '/' });
       await navigator.serviceWorker.ready;
 
       // Suscribirse al push
