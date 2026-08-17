@@ -105,15 +105,24 @@ export function Facturas({
    * (`listarFacturas` en el backend); usarlo tal cual dejaba la
    * previsualización vacía al editar una factura ya guardada (bug
    * reportado 17/08/2026). Mismo patrón que ya usa `VisorFactura`.
+   *
+   * `setEscaner(true)` va DESPUÉS de tener ya la factura completa, no
+   * antes: `EscanerFactura` construye su lista de páginas con un
+   * `useState(() => ...)` perezoso que solo se ejecuta en el montaje
+   * inicial — si el modal se monta primero (con `facturaEditar` todavía
+   * vacío) y `setFacturaEditar` llega después, ese estado inicial ya se
+   * calculó vacío y no se vuelve a recalcular aunque la prop cambie
+   * (bug real, detectado al probarlo en el navegador: la petición al
+   * servidor sí llegaba a tiempo, pero la previsualización seguía vacía).
    */
   const abrirEdicion = async (f: Factura) => {
-    setEscaner(true);
     setViendoId(null);
     try {
       setFacturaEditar(await api.obtenerFactura(f.id));
     } catch {
       setFacturaEditar(f); // Al menos abre con lo que ya había, en vez de quedarse sin abrir nada.
     }
+    setEscaner(true);
   };
   const guardarYCerrar = (f: Factura) => {
     autoCrearProveedorDeFactura(f, proveedores, onCrearProveedor);
