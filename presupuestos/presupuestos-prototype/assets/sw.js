@@ -75,13 +75,20 @@ self.addEventListener('push', (event) => {
     self.registration.showNotification(datos.titulo || 'Madera Creativa', {
       body: datos.cuerpo || '',
       // `logo.png` es el rótulo horizontal de la marca (1540×554) — pensado
-      // para la barra lateral, no para un icono. Un icono/badge de
-      // notificación se ve cuadrado; con el rótulo ancho salía recortado o
-      // deformado. `icon-512`/`icon-192` son los iconos cuadrados que ya
-      // existían para la PWA (manifest, iOS) — reutilizados aquí en vez de
-      // generar unos nuevos (18/08/2026).
+      // para la barra lateral, no para un icono. `icon-512` es el icono
+      // grande a color que se ve dentro de la notificación ya desplegada.
+      //
+      // `badge` es distinto: es el icono pequeño de la barra de estado de
+      // Android, y el sistema lo pinta SIEMPRE monocromo a partir del canal
+      // alfa — cualquier píxel opaco se vuelve blanco sólido, sea cual sea
+      // su color, y lo transparente desaparece. `icon-192.png` tiene fondo
+      // opaco (crema), así que ahí ese fondo entero se pintaba blanco sólido
+      // — un cuadrado en blanco sin forma reconocible (reportado 18/08/2026,
+      // captura de la barra de estado en una tablet). `icono-huella.png` es
+      // justo la huella de madera sola, con fondo transparente de verdad —
+      // con esa transparencia, Android sí puede recortar la silueta.
       icon: '/assets/icon-512.png',
-      badge: '/assets/icon-192.png',
+      badge: '/assets/icono-huella.png',
       data: datos.datos || {},
     })
   );
