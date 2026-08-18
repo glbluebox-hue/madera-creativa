@@ -1743,9 +1743,12 @@
 /* En escritorio el menú quedaba muy pegado al borde superior — "Inicio"
    empezaba más arriba que la primera tarjeta del panel principal, en vez
    de alinear con ella. Solo en escritorio: en móvil el panel deslizante ya
-   tiene su propio espaciado ajustado por separado, más abajo. */
+   tiene su propio espaciado ajustado por separado, más abajo.
+   Reducido de 2rem a 1rem (18/08/2026): con el logo más grande ya sobraba
+   este hueco — sin la reducción, "Inicio" quedaba muy por debajo de la
+   tarjeta con la que se pretendía alinear. */
 @media (min-width: 901px) {
-  .sidebar { padding-top: 2rem; }
+  .sidebar { padding-top: 1rem; }
 }
 /* En móvil el menú lateral deja de ocultarse: se convierte en un panel
    deslizante (mismo <aside>, mismos enlaces que en escritorio — pediste
@@ -1812,8 +1815,13 @@
      disponible dentro de un `.sidebar` de ancho fijo (petición del
      usuario de poder verlo más grande, 18/08/2026, sin ensanchar el menú
      entero). */
-  padding: 0.5rem 0 1.25rem;
-  margin-bottom: 1.5rem;
+  /* Vertical reducido (0.5rem/0.75rem, antes 0.5rem/1.25rem) para
+     compensar el alto extra que el logo más grande (228px, antes 187px)
+     añadió por debajo — sin esto "Inicio" quedaba muy por debajo de la
+     primera tarjeta del panel (petición del usuario, 18/08/2026: "sube la
+     ventana un poco, llévalo todo un poco más arriba"). */
+  padding: 0.5rem 0 0.75rem;
+  margin-bottom: 0.75rem;
   border-bottom: 1px solid var(--borde-fino);
   background: none;
   border-left: none;
