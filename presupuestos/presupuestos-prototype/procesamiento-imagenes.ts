@@ -187,7 +187,7 @@ export async function comprimirImagen(
  * seguro no arriesgarse a comerse parte del logo que forzar una detección
  * dudosa.
  */
-export function quitarFondoClaro(canvas: HTMLCanvasElement, tolerancia = 26): void {
+export function quitarFondoClaro(canvas: HTMLCanvasElement, tolerancia = 40): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
   const w = canvas.width;
@@ -206,14 +206,20 @@ export function quitarFondoClaro(canvas: HTMLCanvasElement, tolerancia = 26): vo
   const desviacionMaxima = Math.max(...esquinas.map(([x, y]) => distanciaFondo(indice(x, y))));
   if (desviacionMaxima > 40) return; // Esquinas demasiado distintas entre sí — no es un fondo plano fiable.
 
+  // Degradado en TODO el rango [0, tolerancia*2]: transparente del todo
+  // pegado al color de fondo, subiendo a opaco según se aleja, hasta quedar
+  // intacto a partir de tolerancia*2 — evita un borde duro tipo "recortado
+  // con tijera". (La versión anterior solo degradaba hasta `tolerancia` y
+  // luego dejaba el resto del rango sin tocar por error, así que los
+  // píxeles suavizados/antialiased de agujeros pequeños —el interior de una
+  // A o una R a tamaño reducido— nunca llegaban a aclararse del todo:
+  // reporte real, 18/08/2026, "sigo viendo los agujeros blancos".)
+  const rango = tolerancia * 2;
   for (let p = 0; p < w * h; p++) {
     const i = p * 4;
     const d = distanciaFondo(i);
-    if (d > tolerancia * 2) continue; // Claramente parte del dibujo — no se toca.
-    // Degradado: totalmente transparente pegado al color de fondo, subiendo
-    // hacia opaco a medida que se acerca al límite de tolerancia — evita un
-    // borde duro tipo "recortado con tijera" alrededor del logo.
-    datos[i + 3] = Math.round(datos[i + 3] * Math.min(1, d / tolerancia));
+    if (d > rango) continue; // Claramente parte del dibujo — no se toca.
+    datos[i + 3] = Math.round(datos[i + 3] * Math.min(1, d / rango));
   }
 
   ctx.putImageData(imagen, 0, 0);
