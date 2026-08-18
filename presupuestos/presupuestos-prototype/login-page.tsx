@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import logoImg from './assets/logo.png';
 import loginMadera from './assets/login-madera.jpg';
 import loginHojas from './assets/login-hojas.jpg';
@@ -371,6 +372,9 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
           <p className={styles.loginPiePequeno}>
             Desarrollado por Madera Creativa
           </p>
+          <Link to="/privacidad" className={styles.loginPiePequeno} style={{ display: 'block', marginTop: '0.15rem' }}>
+            Política de privacidad
+          </Link>
         </div>
       </div>
     </div>
