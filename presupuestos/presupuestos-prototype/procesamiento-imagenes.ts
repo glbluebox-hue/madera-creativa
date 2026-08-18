@@ -127,7 +127,7 @@ export async function codificarCanvas(canvas: HTMLCanvasElement, calidad: number
 /** Comprime una imagen (foto o adjunto de imagen) sin ningún filtro adicional. */
 export async function comprimirImagen(
   file: File | Blob,
-  opciones: { maxDim?: number; calidad?: number; forzarJpeg?: boolean } = {}
+  opciones: { maxDim?: number; calidad?: number; forzarJpeg?: boolean; quitarFondoClaro?: boolean } = {}
 ): Promise<ImagenProcesada> {
   const inicio = performance.now();
   const bytesOriginal = file.size;
@@ -135,7 +135,22 @@ export async function comprimirImagen(
   // texto (ver `decodificarFuente`), que para una foto de cámara real
   // duplicaría en memoria varios MB justo antes de decodificarla.
   const { canvas, anchoOriginal, altoOriginal } = await prepararCanvas(file, opciones.maxDim ?? DIMENSION_MAXIMA_PX);
-  const blob = await codificarCanvas(canvas, opciones.calidad ?? CALIDAD_COMPRESION, opciones.forzarJpeg);
+  let blob: Blob;
+  if (opciones.quitarFondoClaro) {
+    quitarFondoClaro(canvas);
+    // PNG siempre, sin pasar por la detección de WebP: el logo es pequeño
+    // (unos cientos de KB como mucho a `DIMENSION_MAXIMA_LOGO_PX`) y lo que
+    // importa aquí es que el canal alfa que acabamos de generar llegue
+    // intacto en el 100% de los navegadores, no ahorrar los KB extra que
+    // WebP conseguiría — un fallback a JPEG (que no admite alfa) borraría
+    // justo la transparencia que se pide quitar el fondo.
+    blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png')).then((b) => {
+      if (!b) throw new Error('No se pudo codificar la imagen');
+      return b;
+    });
+  } else {
+    blob = await codificarCanvas(canvas, opciones.calidad ?? CALIDAD_COMPRESION, opciones.forzarJpeg);
+  }
   return {
     blob,
     formato: blob.type,
@@ -147,4 +162,67 @@ export async function comprimirImagen(
     bytesFinal: blob.size,
     tiempoMs: performance.now() - inicio,
   };
+}
+
+/**
+ * Vacía a transparente el fondo de un logo con un fondo plano (blanco, crema,
+ * gris claro…), directamente sobre el canvas ya redimensionado — pensado
+ * para logos subidos "tal cual" desde otra herramienta (Canva, Word, una
+ * captura...), que casi nunca traen ya el fondo transparente aunque el
+ * archivo sea PNG (reporte real, 18/08/2026: "el logo se ve con un fondo
+ * blanco" en el menú lateral en modo oscuro).
+ *
+ * Expansión desde el borde de la imagen hacia dentro (flood-fill), no un
+ * simple "todo lo que se parezca a este color se borra" — así un logo con
+ * partes internas claras (una letra blanca, un detalle gris) no pierde esos
+ * píxeles solo por parecerse al fondo; únicamente se toca lo que está
+ * conectado de verdad con el borde.
+ *
+ * Si las 4 esquinas no son razonablemente parecidas entre sí (fondo con
+ * textura, foto en vez de logo con fondo plano…) no se toca nada — más
+ * seguro no arriesgarse a comerse parte del logo que forzar una detección
+ * dudosa.
+ */
+export function quitarFondoClaro(canvas: HTMLCanvasElement, tolerancia = 26): void {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const w = canvas.width;
+  const h = canvas.height;
+  if (w < 2 || h < 2) return;
+  const imagen = ctx.getImageData(0, 0, w, h);
+  const datos = imagen.data;
+  const indice = (x: number, y: number) => (y * w + x) * 4;
+
+  const esquinas: Array<[number, number]> = [[0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1]];
+  let r0 = 0, g0 = 0, b0 = 0;
+  for (const [x, y] of esquinas) { const i = indice(x, y); r0 += datos[i]; g0 += datos[i + 1]; b0 += datos[i + 2]; }
+  r0 /= 4; g0 /= 4; b0 /= 4;
+
+  const distanciaFondo = (i: number) => Math.hypot(datos[i] - r0, datos[i + 1] - g0, datos[i + 2] - b0);
+  const desviacionMaxima = Math.max(...esquinas.map(([x, y]) => distanciaFondo(indice(x, y))));
+  if (desviacionMaxima > 40) return; // Esquinas demasiado distintas entre sí — no es un fondo plano fiable.
+
+  const visitado = new Uint8Array(w * h);
+  const pila: number[] = [];
+  for (let x = 0; x < w; x++) { pila.push(x, 0, x, h - 1); }
+  for (let y = 0; y < h; y++) { pila.push(0, y, w - 1, y); }
+
+  while (pila.length) {
+    const y = pila.pop()!;
+    const x = pila.pop()!;
+    if (x < 0 || y < 0 || x >= w || y >= h) continue;
+    const p = y * w + x;
+    if (visitado[p]) continue;
+    visitado[p] = 1;
+    const i = indice(x, y);
+    const d = distanciaFondo(i);
+    if (d > tolerancia * 2) continue; // Ya es claramente parte del dibujo — ni se toca ni se sigue expandiendo por aquí.
+    // Degradado: totalmente transparente pegado al color de fondo, subiendo
+    // hacia opaco a medida que se acerca al límite de tolerancia — evita un
+    // borde duro tipo "recortado con tijera" alrededor del logo.
+    datos[i + 3] = Math.round(datos[i + 3] * Math.min(1, d / tolerancia));
+    pila.push(x + 1, y, x - 1, y, x, y + 1, x, y - 1);
+  }
+
+  ctx.putImageData(imagen, 0, 0);
 }

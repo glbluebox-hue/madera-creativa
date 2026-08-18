@@ -57,7 +57,7 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
   const subirLogo = (files: FileList | null) => {
     const file = files?.[0];
     if (!file || !file.type.startsWith('image/')) return;
-    comprimirImagen(file, { maxDim: DIMENSION_MAXIMA_LOGO_PX, calidad: 0.9 })
+    comprimirImagen(file, { maxDim: DIMENSION_MAXIMA_LOGO_PX, calidad: 0.9, quitarFondoClaro: true })
       .then(({ blob }) => leerArchivoComoBase64(blob))
       .then(setLogo);
   };
