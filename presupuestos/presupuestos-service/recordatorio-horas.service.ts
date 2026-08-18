@@ -14,9 +14,10 @@ import { logger } from './logger.service.js';
  * explícitamente evitar avisos innecesarios.
  *
  * Hora de disparo configurable vía `RECORDATORIO_HORAS_HORA` (0-23, hora
- * del propio servidor — la app no guarda huso horario por usuario). Por
- * defecto 20 (las 20:00), una hora razonable de "fin de la jornada" para
- * un oficio manual.
+ * UTC — la app no guarda huso horario por usuario, y "hoy" también se
+ * calcula en UTC más abajo, así que la comparación usa el mismo reloj en
+ * los dos sitios a propósito). Por defecto 20 (las 20:00 UTC), una hora
+ * razonable de "fin de la jornada" para un oficio manual.
  *
  * Implementación deliberada sin librería de cron nueva: un único
  * `setInterval` que comprueba cada pocos minutos si ya es la hora
@@ -89,7 +90,13 @@ export function iniciarRecordatorioHorasDiario(): void {
   setInterval(() => {
     const ahora = new Date();
     const hoy = hoyComoFecha();
-    if (ahora.getHours() !== HORA_OBJETIVO || ultimaFechaEjecutada === hoy) return;
+    // `getUTCHours()`, no `getHours()` — `hoyComoFecha()` ya usa
+    // `toISOString()` (UTC); si se comparara la hora objetivo con la hora
+    // LOCAL del proceso, "qué hora es" y "qué día es hoy" usarían dos
+    // relojes distintos, coincidiendo solo porque el servidor de Render
+    // corre en UTC hoy (fragilidad detectada en la auditoría de
+    // seguridad, 18/08/2026, antes de que llegara a ser un fallo real).
+    if (ahora.getUTCHours() !== HORA_OBJETIVO || ultimaFechaEjecutada === hoy) return;
     ultimaFechaEjecutada = hoy;
     ejecutarRecordatorioHorasDiario().catch((err) => logger.error({ err }, '[recordatorio-horas] Error ejecutando el recordatorio diario'));
   }, INTERVALO_COMPROBACION_MS);

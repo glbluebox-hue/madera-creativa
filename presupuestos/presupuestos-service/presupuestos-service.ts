@@ -1,7 +1,7 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { ClienteModel, EmpresaModel, FacturaModel, ProveedorModel, ProductoModel, DibujoModel, CarpetaModel, NotaModel, PresupuestoModel, PlantillaModel, RecursoModel, ComponenteModel, AutomatizacionModel, ContratoModel, GastoPeriodicoModel, conectar } from './cliente.model.js';
 import { UsuarioModel, conectarUsuarios } from './usuario.model.js';
-import { crearEnlacePresupuesto, buscarEnlacePorToken, marcarEnlaceAceptado, formatoTokenValido } from './enlace-presupuesto.model.js';
+import { crearEnlacePresupuesto, buscarEnlacePorToken, reclamarEnlaceAceptado, guardarFirmaEnlace, formatoTokenValido } from './enlace-presupuesto.model.js';
 import { almacenamiento } from './almacenamiento.service.js';
 import { busEventos } from './eventos.service.js';
 import { enviarNotificacion } from './push.service.js';
@@ -1448,8 +1448,11 @@ export class PresupuestosService {
    * guarda ANTES de llamar a `aceptarPresupuesto`, así el documento ya la
    * lleva en el momento en que se publica `presupuesto.aprobado` — un
    * futuro consumidor del evento que relea el Presupuesto ya la encuentra.
-   * `marcarEnlaceAceptado` usa `aceptadoEn: null` como guarda atómica
-   * contra un doble envío concurrente del mismo enlace.
+   * `reclamarEnlaceAceptado` usa `aceptadoEn: null` como guarda atómica
+   * contra un doble envío concurrente del mismo enlace — se llama ANTES
+   * de subir la firma, para que un envío que pierde la carrera nunca
+   * llegue a subir un archivo que quedaría huérfano (hallazgo de la
+   * auditoría de seguridad, 18/08/2026).
    */
   async aceptarPresupuestoPublico(tokenPlano: string, evidencia: { ip: string; userAgent: string; firmaDataUrl: string }): Promise<{ ok: true; yaEstabaAceptado: boolean }> {
     if (!formatoTokenValido(tokenPlano)) throw new ErrorDeNegocio('Enlace no válido.', 400);
@@ -1493,18 +1496,19 @@ export class PresupuestosService {
       throw new ErrorDeNegocio('La firma no es una imagen PNG válida.', 400);
     }
 
-    const subida = await almacenamiento.subir(bufferFirma, { contentType: 'image/png', carpeta: 'firmas' });
-
-    // Guarda atómica contra doble envío concurrente del mismo enlace.
-    const enlaceActualizado = await marcarEnlaceAceptado(tokenPlano, {
-      ip: evidencia.ip, userAgent: evidencia.userAgent, firmaUrl: subida.url,
-    });
-    if (!enlaceActualizado) {
+    // Reclama PRIMERO (atómico, guarda contra doble envío concurrente del
+    // mismo enlace), sube la firma DESPUÉS — solo si se gana la carrera, ver
+    // comentario en `reclamarEnlaceAceptado`.
+    const enlaceReclamado = await reclamarEnlaceAceptado(tokenPlano, { ip: evidencia.ip, userAgent: evidencia.userAgent });
+    if (!enlaceReclamado) {
       // Perdió la carrera contra otra petición concurrente con el mismo
       // enlace — esa otra ya está aceptando (o ya aceptó); no repetir el
       // trabajo aquí.
       return { ok: true, yaEstabaAceptado: true };
     }
+
+    const subida = await almacenamiento.subir(bufferFirma, { contentType: 'image/png', carpeta: 'firmas' });
+    await guardarFirmaEnlace(tokenPlano, subida.url);
 
     const ahora = new Date().toISOString();
     await PresupuestoModel.updateOne(

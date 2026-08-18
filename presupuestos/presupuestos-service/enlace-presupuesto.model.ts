@@ -60,11 +60,13 @@ export async function crearEnlacePresupuesto(params: {
   const ahora = new Date();
   const expiraEn = new Date(ahora.getTime() + Math.max(1, params.validezDias) * 24 * 60 * 60 * 1000);
 
-  await EnlacePresupuestoModel.updateMany(
-    { presupuestoId: params.presupuestoId, usuarioId: params.usuarioId, revocadoEn: null },
-    { $set: { revocadoEn: ahora } }
-  ).exec();
-
+  // Crear el nuevo ANTES de revocar los anteriores (no al revés) — son dos
+  // operaciones separadas, no una transacción; si el proceso cae justo
+  // entre medias, este orden deja como mucho DOS enlaces válidos a la vez
+  // (inofensivo — "Generar enlace" está pensado para eso), nunca CERO
+  // (que dejaría al presupuesto sin ningún enlace utilizable hasta que
+  // alguien vuelva a pulsar el botón). Hallazgo de la auditoría de
+  // seguridad, 18/08/2026.
   const tokenPlano = randomBytes(32).toString('hex');
   await EnlacePresupuestoModel.create({
     tokenHash: hashearToken(tokenPlano),
@@ -79,6 +81,12 @@ export async function crearEnlacePresupuesto(params: {
     aceptadoUserAgent: '',
     firmaUrl: '',
   });
+
+  await EnlacePresupuestoModel.updateMany(
+    { presupuestoId: params.presupuestoId, usuarioId: params.usuarioId, revocadoEn: null, tokenHash: { $ne: hashearToken(tokenPlano) } },
+    { $set: { revocadoEn: ahora } }
+  ).exec();
+
   return { token: tokenPlano, expiraEn };
 }
 
@@ -88,17 +96,31 @@ export async function buscarEnlacePorToken(tokenPlano: string): Promise<any | nu
 }
 
 /**
- * Marca el enlace como aceptado — atómico y con el propio filtro
+ * Reclama el enlace como aceptado — atómico y con el propio filtro
  * (`aceptadoEn: null`) como guarda contra doble envío concurrente (mismo
  * patrón que `rotarRefreshToken`). Si no hay coincidencia, el enlace ya
  * estaba aceptado (por esta misma petición reintentada, o por una
  * concurrente) y el llamador debe tratarlo como éxito idempotente, no como
  * error.
+ *
+ * Deliberadamente SIN `firmaUrl` todavía — quien llama debe reclamar
+ * PRIMERO y subir la imagen de la firma DESPUÉS, solo si gana la carrera.
+ * Al revés (subir primero, reclamar después) el perdedor de una carrera ya
+ * habría subido su imagen para nada, dejando un archivo huérfano en el
+ * almacenamiento (hallazgo de la auditoría de seguridad, 18/08/2026).
  */
-export async function marcarEnlaceAceptado(tokenPlano: string, evidencia: { ip: string; userAgent: string; firmaUrl: string }): Promise<any | null> {
+export async function reclamarEnlaceAceptado(tokenPlano: string, evidencia: { ip: string; userAgent: string }): Promise<any | null> {
   return EnlacePresupuestoModel.findOneAndUpdate(
     { tokenHash: hashearToken(tokenPlano), aceptadoEn: null },
-    { $set: { aceptadoEn: new Date(), aceptadoIp: evidencia.ip, aceptadoUserAgent: evidencia.userAgent, firmaUrl: evidencia.firmaUrl } },
+    { $set: { aceptadoEn: new Date(), aceptadoIp: evidencia.ip, aceptadoUserAgent: evidencia.userAgent } },
     { new: true }
+  ).exec();
+}
+
+/** Guarda la URL de la firma en un enlace ya reclamado (ver `reclamarEnlaceAceptado`). */
+export async function guardarFirmaEnlace(tokenPlano: string, firmaUrl: string): Promise<void> {
+  await EnlacePresupuestoModel.updateOne(
+    { tokenHash: hashearToken(tokenPlano) },
+    { $set: { firmaUrl } }
   ).exec();
 }
