@@ -172,11 +172,15 @@ export async function comprimirImagen(
  * archivo sea PNG (reporte real, 18/08/2026: "el logo se ve con un fondo
  * blanco" en el menú lateral en modo oscuro).
  *
- * Expansión desde el borde de la imagen hacia dentro (flood-fill), no un
- * simple "todo lo que se parezca a este color se borra" — así un logo con
- * partes internas claras (una letra blanca, un detalle gris) no pierde esos
- * píxeles solo por parecerse al fondo; únicamente se toca lo que está
- * conectado de verdad con el borde.
+ * Compara cada píxel de la imagen contra el color de fondo (no solo el
+ * borde): la primera versión solo vaciaba el fondo expandiéndose desde el
+ * borde hacia dentro (flood-fill), y dejaba intactos los huecos cerrados que
+ * no tocan el borde — el interior de una "A" o una "R", por ejemplo (reporte
+ * real, 18/08/2026: "en medio de las letras, dentro de la A, dentro de la R,
+ * hay puntos blancos"). Comparar cada píxel directamente es más simple y sí
+ * los alcanza, a costa de asumir que cualquier píxel del color del fondo lo
+ * es de verdad — asunción razonable para un logo de dos tonos (tinta sobre
+ * un color de fondo plano), que es el caso normal.
  *
  * Si las 4 esquinas no son razonablemente parecidas entre sí (fondo con
  * textura, foto en vez de logo con fondo plano…) no se toca nada — más
@@ -202,26 +206,14 @@ export function quitarFondoClaro(canvas: HTMLCanvasElement, tolerancia = 26): vo
   const desviacionMaxima = Math.max(...esquinas.map(([x, y]) => distanciaFondo(indice(x, y))));
   if (desviacionMaxima > 40) return; // Esquinas demasiado distintas entre sí — no es un fondo plano fiable.
 
-  const visitado = new Uint8Array(w * h);
-  const pila: number[] = [];
-  for (let x = 0; x < w; x++) { pila.push(x, 0, x, h - 1); }
-  for (let y = 0; y < h; y++) { pila.push(0, y, w - 1, y); }
-
-  while (pila.length) {
-    const y = pila.pop()!;
-    const x = pila.pop()!;
-    if (x < 0 || y < 0 || x >= w || y >= h) continue;
-    const p = y * w + x;
-    if (visitado[p]) continue;
-    visitado[p] = 1;
-    const i = indice(x, y);
+  for (let p = 0; p < w * h; p++) {
+    const i = p * 4;
     const d = distanciaFondo(i);
-    if (d > tolerancia * 2) continue; // Ya es claramente parte del dibujo — ni se toca ni se sigue expandiendo por aquí.
+    if (d > tolerancia * 2) continue; // Claramente parte del dibujo — no se toca.
     // Degradado: totalmente transparente pegado al color de fondo, subiendo
     // hacia opaco a medida que se acerca al límite de tolerancia — evita un
     // borde duro tipo "recortado con tijera" alrededor del logo.
     datos[i + 3] = Math.round(datos[i + 3] * Math.min(1, d / tolerancia));
-    pila.push(x + 1, y, x - 1, y, x, y + 1, x, y - 1);
   }
 
   ctx.putImageData(imagen, 0, 0);
