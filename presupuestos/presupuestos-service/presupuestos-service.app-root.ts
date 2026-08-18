@@ -18,6 +18,7 @@ import type { AccesoUsuario, EstadoUsuario } from './usuario.model.js';
 import { CodigoPromocionalModel, conectarCodigos, canjearCodigo, generarIdCodigo, normalizarCodigo } from './codigo-promocional.model.js';
 import { CosteInfraestructuraModel, conectarCostes, generarIdCoste } from './coste-infraestructura.model.js';
 import { configurarVapid, enviarNotificacion } from './push.service.js';
+import { iniciarRecordatorioHorasDiario } from './recordatorio-horas.service.js';
 import type { PushSub } from './push.service.js';
 import { limitadorGeneral, limitadorAuth } from './rate-limit.middleware.js';
 import { crearRouterIA } from './ia-rutas.js';
@@ -337,6 +338,7 @@ export function run() {
   app.set('trust proxy', trustProxyEnv ? (/^\d+$/.test(trustProxyEnv) ? Number(trustProxyEnv) : trustProxyEnv) : 'loopback');
 
   configurarVapid();
+  iniciarRecordatorioHorasDiario();
   asegurarAdmin()
     .then(migrarNombresNormalizados)
     .then(asegurarIndiceNombreNormalizado)
