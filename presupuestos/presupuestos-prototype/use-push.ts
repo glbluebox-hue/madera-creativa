@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import type { SesionActiva } from './use-auth.js';
 import { fetchConAuth } from './api.js';
 
@@ -25,9 +25,18 @@ export type EstadoPush =
  * `activar()` para que la propia interfaz ofrezca un botón explícito
  * (petición del usuario, 18/08/2026: "activar las notificaciones push de
  * alguna manera") — un clic real siempre dispara el aviso nativo del
- * navegador. El intento automático se mantiene, pero solo para refrescar
- * en silencio una suscripción que YA estaba concedida (no para pedir
- * permiso por primera vez).
+ * navegador.
+ *
+ * `estado` se deriva siempre de la realidad comprobable (el permiso del
+ * navegador + si existe de verdad una `PushSubscription`), nunca solo de
+ * si la última llamada a `activar()` terminó sin error — el usuario
+ * reportó exactamente ese fallo (18/08/2026): concedía el permiso, el
+ * propio navegador lo confirmaba ("Permitidas"), y el banner seguía
+ * diciendo que faltaba activarlas, sin volver a comprobar nunca la
+ * suscripción real. `sincronizar()` es la única función que decide
+ * `estado`, y se llama tanto al montar como al volver a la pestaña como
+ * tras pulsar "Activar" — un único camino, sin estados que puedan quedar
+ * desincronizados entre sí.
  *
  * @param sesion Sesión activa del usuario.
  */
@@ -45,52 +54,50 @@ export function usePush(sesion: SesionActiva | null): { estado: EstadoPush; erro
    * el panel — sin esto, un permiso ya concedido que aun así no llega a
    * suscribirse deja al usuario viendo solo "todavía no has activado...",
    * indistinguible de no haber pulsado nada, sin ninguna pista de qué
-   * falla de verdad (reportado 18/08/2026: el usuario concede el permiso,
-   * el navegador lo confirma, y el aviso se queda igual).
+   * falla de verdad.
    */
   const [error, setError] = useState('');
+  // Evita solapar dos sincronizaciones a la vez (p. ej. el timer de 3s y un
+  // cambio de visibilidad casi simultáneos) — sin esto podían pisarse una
+  // a otra y dejar `estado` a medias.
+  const sincronizando = useRef(false);
 
   /**
-   * Suscribe de verdad (sin pedir permiso — se asume ya concedido) y lo
-   * registra en el servidor. Extraída de `activar()` para poder reutilizarla
-   * también cuando se detecta el permiso concedido SIN que el usuario haya
-   * pulsado el botón (ver el listener de `visibilitychange` más abajo): sin
-   * esto, un permiso concedido desde fuera de la app (ajustes del sistema)
-   * nunca llegaba a crear una suscripción real, así que aunque el banner
-   * desapareciera las notificaciones seguirían sin poder llegar.
+   * Confirma (o crea) una `PushSubscription` real y la registra en el
+   * servidor. Reutiliza la suscripción existente del dispositivo si ya hay
+   * una (`getSubscription()`, comprobación local, sin red) en vez de
+   * darla siempre de baja y pedir una nueva — así que si el permiso ya
+   * estaba concedido de antes, esto puede confirmar "todo en orden" sin
+   * volver a mostrar ningún diálogo. Solo pide una nueva suscripción al
+   * navegador cuando no existe ninguna todavía.
    */
   const asegurarSuscripcion = useCallback(async (): Promise<boolean> => {
     try {
-      const res = await fetch(`${BASE}/push/vapid-public-key`, { credentials: 'include' });
-      if (!res.ok) { setError(`No se pudo obtener la clave del servidor (${res.status}).`); return false; }
-      const { key: rawKey } = await res.json() as { key: string };
-      const key = rawKey?.trim();
-      if (!key) { setError('El servidor no tiene configurada la clave de notificaciones.'); return false; }
-
       // Mismo scope explícito que presupuestos-prototype.app-root.tsx, para
       // que ambas llamadas resuelvan siempre al mismo registro (controlando
       // toda la app, no solo /assets/).
       const registro = await navigator.serviceWorker.register('/assets/sw.js', { scope: '/' });
       await navigator.serviceWorker.ready;
 
-      // Si ya existe una suscripción de un intento anterior (posiblemente
-      // con una clave VAPID distinta a la actual del servidor — cambiaría
-      // en un reinicio del servicio si no está fijada en variables de
-      // entorno persistentes), `subscribe()` con las mismas opciones
-      // devolvería esa suscripción vieja tal cual, en vez de fallar o
-      // crear una nueva — el error solo aparecería más tarde, al intentar
-      // ENVIAR una notificación, nunca aquí. Se da de baja primero para
-      // forzar una suscripción nueva, siempre con la clave vigente.
-      const suscripcionPrevia = await registro.pushManager.getSubscription();
-      if (suscripcionPrevia) await suscripcionPrevia.unsubscribe().catch(() => {});
+      let sub = await registro.pushManager.getSubscription();
+      if (!sub) {
+        const res = await fetch(`${BASE}/push/vapid-public-key`, { credentials: 'include' });
+        if (!res.ok) { setError(`No se pudo obtener la clave del servidor (${res.status}).`); return false; }
+        const { key: rawKey } = await res.json() as { key: string };
+        const key = rawKey?.trim();
+        if (!key) { setError('El servidor no tiene configurada la clave de notificaciones.'); return false; }
+        sub = await registro.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(key) as unknown as BufferSource,
+        });
+      }
 
-      const sub = await registro.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(key) as unknown as BufferSource,
-      });
-
-      // El usuario sale de la sesión autenticada (`fetchConAuth`), nunca de
-      // un campo que mande el cliente — ver historial de este archivo.
+      // Se reenvía siempre al servidor, exista ya o se acabe de crear —
+      // barato e idempotente (`push.service.ts` la guarda por endpoint) y
+      // así se autocorrige un registro que hubiera fallado en un intento
+      // anterior sin que el usuario tenga que hacer nada más. El usuario
+      // sale de la sesión autenticada (`fetchConAuth`), nunca de un campo
+      // que mande el cliente — ver historial de este archivo.
       const resSub = await fetchConAuth('/push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -106,46 +113,47 @@ export function usePush(sesion: SesionActiva | null): { estado: EstadoPush; erro
     }
   }, []);
 
+  /**
+   * Único punto que decide `estado` — nunca pide permiso (eso solo lo hace
+   * `activar()`, con gesto real del usuario), solo comprueba la realidad
+   * actual y, si el permiso ya está concedido, confirma la suscripción.
+   */
+  const sincronizar = useCallback(async () => {
+    if (!soportado) { setEstado('no-soportado'); return; }
+    if (Notification.permission === 'denied') { setEstado('denegado'); return; }
+    if (Notification.permission !== 'granted') { setEstado('sin-pedir'); return; }
+    if (sincronizando.current) return;
+    sincronizando.current = true;
+    try {
+      const ok = await asegurarSuscripcion();
+      setEstado(ok ? 'concedido' : 'sin-pedir');
+    } finally {
+      sincronizando.current = false;
+    }
+  }, [soportado, asegurarSuscripcion]);
+
   const activar = useCallback(async () => {
     if (!usuarioId || !soportado) return;
     setEstado('activando');
     setError('');
     const permiso = await Notification.requestPermission();
     if (permiso !== 'granted') { setEstado(permiso === 'denied' ? 'denegado' : 'sin-pedir'); return; }
-    const ok = await asegurarSuscripcion();
-    setEstado(ok ? 'concedido' : (Notification.permission === 'denied' ? 'denegado' : 'sin-pedir'));
-  }, [usuarioId, soportado, asegurarSuscripcion]);
+    await sincronizar();
+  }, [usuarioId, soportado, sincronizar]);
 
   useEffect(() => {
     if (!usuarioId || !soportado) return;
 
-    // Silencioso a propósito: si el permiso YA estaba concedido (de una
-    // sesión anterior, o concedido fuera de la app — ajustes del sistema —
-    // antes de que este componente llegara a montarse), refresca la
-    // suscripción sin volver a pedir nada.
-    const refrescarSiConcedido = () => {
-      if (Notification.permission === 'granted') {
-        asegurarSuscripcion().then((ok) => setEstado(ok ? 'concedido' : 'sin-pedir'));
-      }
-    };
-
-    const t = setTimeout(refrescarSiConcedido, 3000);
+    const t = setTimeout(sincronizar, 3000);
 
     // `Notification.permission` puede cambiar mientras la app sigue
     // montada sin recargarse — típico en una PWA instalada: el usuario
     // sale a los ajustes del sistema para conceder el permiso a mano y
-    // vuelve a la app (en Android esto normalmente NO recarga la página,
-    // así que el `useState` inicial nunca vuelve a evaluarse). Sin este
-    // listener, el aviso "todavía no has activado las notificaciones" se
-    // quedaba fijo aunque el permiso ya estuviera concedido (reportado
-    // 18/08/2026, tras reinstalar la PWA y activar el permiso desde los
-    // ajustes de Android en vez de desde el botón de la app).
+    // vuelve a la app (en Android esto normalmente NO recarga la página).
+    // Sin este listener, el banner se quedaba fijo con el valor que tenía
+    // al montar, aunque el permiso cambiara después (reportado 18/08/2026).
     const alVolverVisible = () => {
-      if (document.visibilityState !== 'visible') return;
-      if (!soportado) return;
-      if (Notification.permission === 'denied') { setEstado('denegado'); return; }
-      if (Notification.permission === 'granted') { refrescarSiConcedido(); return; }
-      setEstado('sin-pedir');
+      if (document.visibilityState === 'visible') sincronizar();
     };
     document.addEventListener('visibilitychange', alVolverVisible);
 
@@ -153,8 +161,7 @@ export function usePush(sesion: SesionActiva | null): { estado: EstadoPush; erro
       clearTimeout(t);
       document.removeEventListener('visibilitychange', alVolverVisible);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usuarioId, soportado]);
+  }, [usuarioId, soportado, sincronizar]);
 
   return { estado, error, activar };
 }
