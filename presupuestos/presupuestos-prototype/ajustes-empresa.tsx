@@ -134,14 +134,17 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
                 type="range"
                 min={60}
                 // El propio menú lateral (`.sidebar`, ancho fijo 260px, con
-                // su padding) solo tiene sitio real para ~227px de imagen —
+                // su padding) solo tiene sitio real para imagen —
                 // comprobado en el navegador (`getComputedStyle`, no a
-                // ojo). Un máximo de 320px aquí prometía un tamaño que
-                // nunca se llegaba a ver, y el usuario lo reportó como
-                // "no crece más a partir de un punto" — el propio
-                // contenedor lo recortaba en silencio. 220 deja margen de
-                // sobra sin prometer de más.
-                max={220}
+                // ojo). Un máximo aquí por encima de ese límite prometía un
+                // tamaño que nunca se llegaba a ver, y el usuario lo
+                // reportó como "no crece más a partir de un punto" — el
+                // propio contenedor lo recortaba en silencio. Tras quitar
+                // el margen horizontal sobrante de `.sidebarMarca`
+                // (18/08/2026, a petición del usuario de verlo más
+                // grande), el límite real subió de ~227px a ~232px —
+                // 228 deja un pequeño margen de seguridad sin prometer de más.
+                max={228}
                 step={1}
                 value={logoTamano}
                 onChange={(e) => setLogoTamano(Number(e.target.value))}

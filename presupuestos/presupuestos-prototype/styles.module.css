@@ -1806,7 +1806,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0.5rem 0.15rem 1.25rem;
+  /* Sin margen horizontal propio (a diferencia del resto del menú, que sí
+     lo necesita para el texto de los enlaces) — el logo es lo único que
+     hay aquí, y cada píxel de margen le resta directamente ancho
+     disponible dentro de un `.sidebar` de ancho fijo (petición del
+     usuario de poder verlo más grande, 18/08/2026, sin ensanchar el menú
+     entero). */
+  padding: 0.5rem 0 1.25rem;
   margin-bottom: 1.5rem;
   border-bottom: 1px solid var(--borde-fino);
   background: none;
