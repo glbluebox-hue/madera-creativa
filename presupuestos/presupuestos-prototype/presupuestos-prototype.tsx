@@ -24,6 +24,7 @@ import { usePush } from './use-push.js';
 import { useTema } from './use-tema.js';
 import { usePerfil } from './use-perfil.js';
 import { AjustesPerfil } from './ajustes-perfil.js';
+import { PanelNotificaciones } from './panel-notificaciones.js';
 import type { Cliente, Factura } from './types.js';
 import * as api from './api.js';
 import logoMadera from './assets/logo.png';
@@ -88,9 +89,10 @@ export function PresupuestosPrototype() {
   const { dataTheme, tema, alternar: alternarTema } = useTema();
   const { perfil, actualizar: actualizarPerfil } = usePerfil(listo);
   const [ajustesPerfil, setAjustesPerfil] = useState(false);
+  const [panelNotificaciones, setPanelNotificaciones] = useState(false);
 
   useLicencia(sesion, logout);
-  usePush(sesion);
+  const { estado: estadoPush, activar: activarPush } = usePush(sesion);
 
   if (!autenticado) {
     return <LoginPage onLogin={login} onLoginDirecto={loginDirecto} onRegistrar={registrar} />;
@@ -286,6 +288,15 @@ export function PresupuestosPrototype() {
                   <path d="M12 7a5 5 0 0 1 5 5c0 1.2-0.1 2.4-0.4 3.5" /><path d="M12 7a5 5 0 0 0-5 5c0 1.5-0.2 3-0.7 4.5" />
                 </svg>
               </button>
+              {estadoPush !== 'no-soportado' && (
+                <button
+                  className={`${styles.sidebarAccionBtn} ${estadoPush === 'concedido' ? styles.sidebarAccionBtnActivo : ''}`}
+                  onClick={() => { setPanelNotificaciones(true); setMenuMovilAbierto(false); }}
+                  title="Notificaciones"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
+                </button>
+              )}
               <button
                 className={styles.sidebarAccionBtn}
                 onClick={alternarTema}
@@ -467,6 +478,10 @@ export function PresupuestosPrototype() {
       )}
 
       {panelAdmin && sesion?.esAdmin && <PanelAdmin onCerrar={() => setPanelAdmin(false)} />}
+
+      {panelNotificaciones && (
+        <PanelNotificaciones estadoPush={estadoPush} onActivarPush={activarPush} onCerrar={() => setPanelNotificaciones(false)} />
+      )}
 
 
       {/* Asistente IA — botón flotante siempre visible (además del icono del

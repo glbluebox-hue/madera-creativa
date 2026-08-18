@@ -19,6 +19,7 @@ import { CodigoPromocionalModel, conectarCodigos, canjearCodigo, generarIdCodigo
 import { CosteInfraestructuraModel, conectarCostes, generarIdCoste } from './coste-infraestructura.model.js';
 import { configurarVapid, enviarNotificacion } from './push.service.js';
 import { iniciarRecordatorioHorasDiario } from './recordatorio-horas.service.js';
+import { iniciarNotificacionesProgramadas } from './notificaciones-programadas.service.js';
 import type { PushSub } from './push.service.js';
 import { limitadorGeneral, limitadorAuth } from './rate-limit.middleware.js';
 import { crearRouterIA } from './ia-rutas.js';
@@ -64,6 +65,9 @@ import {
   esquemaTareasEntrada,
   esquemaEstadoClienteEntrada,
   esquemaPresupuestoClienteEntrada,
+  esquemaActualizarCobros,
+  esquemaNotifPrefs,
+  esquemaActualizarRecordatorios,
 } from './esquemas-validacion.js';
 
 // Debe ejecutarse antes de leer cualquier process.env.* de este módulo —
@@ -339,6 +343,7 @@ export function run() {
 
   configurarVapid();
   iniciarRecordatorioHorasDiario();
+  iniciarNotificacionesProgramadas();
   asegurarAdmin()
     .then(migrarNombresNormalizados)
     .then(asegurarIndiceNombreNormalizado)
@@ -990,6 +995,48 @@ export function run() {
     } catch (err) { responderError(req, res, err); }
   });
 
+  // ── Notificaciones — interruptores por tipo y recordatorios propios (18/08/2026) ──
+
+  /**
+   * `.lean()` no aplica los defaults de Mongoose a cuentas que no tengan
+   * el campo en absoluto (mismo aviso que en el resto de esta base de
+   * código) — de ahí el `?? true`/`?? []` explícito en vez de confiar en
+   * el esquema.
+   */
+  app.get('/notificaciones/preferencias', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      await conectarUsuarios();
+      const u = await UsuarioModel.findOne({ id: req.usuarioId }).lean().exec() as any;
+      if (!u) { res.status(404).json({ error: 'No encontrado' }); return; }
+      const p = u.notifPrefs || {};
+      res.json({
+        preferencias: {
+          horas: p.horas ?? true,
+          cobrosPendientes: p.cobrosPendientes ?? true,
+          margenBajo: p.margenBajo ?? true,
+          briefingDiario: p.briefingDiario ?? true,
+        },
+        recordatorios: u.recordatoriosPersonalizados ?? [],
+      });
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  app.put('/notificaciones/preferencias', requireAuth, validar(esquemaNotifPrefs), async (req: AuthRequest, res) => {
+    try {
+      await conectarUsuarios();
+      await UsuarioModel.updateOne({ id: req.usuarioId }, { $set: { notifPrefs: req.body } });
+      res.json({ ok: true });
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  app.put('/notificaciones/recordatorios', requireAuth, validar(esquemaActualizarRecordatorios), async (req: AuthRequest, res) => {
+    try {
+      await conectarUsuarios();
+      await UsuarioModel.updateOne({ id: req.usuarioId }, { $set: { recordatoriosPersonalizados: req.body.recordatorios } });
+      res.json({ ok: true });
+    } catch (err) { responderError(req, res, err); }
+  });
+
   /**
    * Cambia el usuario de acceso y/o la contraseña — nunca sin verificar la
    * contraseña actual primero (por si la sesión sigue abierta en un
@@ -1268,6 +1315,19 @@ export function run() {
   app.delete('/presupuestos/:id', requireAuth, async (req: AuthRequest, res) => {
     try { await svc.borrarPresupuesto(req.params.id, req.usuarioId!); res.json({ ok: true }); }
     catch (err) { responderError(req, res, err); }
+  });
+
+  /**
+   * Sustituye la lista completa de cobros de un presupuesto (roadmap
+   * "cobros pendientes"). Ruta de acción dedicada, fuera del PUT genérico
+   * de presupuesto — mismo motivo que `estado`/`firmaClienteUrl`: así un
+   * guardado normal del editor nunca puede pisar los cobros sin querer.
+   */
+  app.put('/presupuestos/:id/cobros', requireAuth, validar(esquemaActualizarCobros), async (req: AuthRequest, res) => {
+    try {
+      const presupuesto = await svc.actualizarCobros(req.params.id, req.usuarioId!, req.body.cobros);
+      res.json({ ok: true, presupuesto });
+    } catch (err) { responderError(req, res, err); }
   });
 
   // ── Plantillas (Motor Documental, Incremento 4) — aisladas por usuarioId ──

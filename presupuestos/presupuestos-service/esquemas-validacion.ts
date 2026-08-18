@@ -516,6 +516,40 @@ export const esquemaAceptarPortalPublico = z.object({
   firma: z.string().min(100).max(600_000).regex(/^data:image\/png;base64,/, 'La firma debe ser una imagen PNG.'),
 });
 
+/** Un hito de cobro editado a mano (roadmap "cobros pendientes", 18/08/2026). */
+const esquemaCobro = z.object({
+  id: z.string().min(1).max(64),
+  concepto: z.string().trim().min(1).max(300),
+  importe: z.number().finite(),
+  /** Fecha ISO de cobro, o cadena vacía si sigue pendiente — nunca `null` (Mongoose ya usa `''` como default). */
+  cobradoEn: z.string().max(40).optional().default(''),
+});
+
+/** Lista completa de cobros de un presupuesto — se sustituye entera, no por hito individual (más simple, y el usuario puede añadir/quitar filas libremente en el mismo guardado). */
+export const esquemaActualizarCobros = z.object({
+  cobros: z.array(esquemaCobro).max(50),
+});
+
+/** Interruptores por tipo de notificación (panel de notificaciones, 18/08/2026) — los cuatro opcionales, cada uno con su propio default `true` (activados salvo que el usuario los apague). */
+export const esquemaNotifPrefs = z.object({
+  horas: z.boolean().optional().default(true),
+  cobrosPendientes: z.boolean().optional().default(true),
+  margenBajo: z.boolean().optional().default(true),
+  briefingDiario: z.boolean().optional().default(true),
+});
+
+const esquemaRecordatorioPersonalizado = z.object({
+  id: z.string().min(1).max(64),
+  texto: z.string().trim().min(1).max(200),
+  hora: z.number().int().min(0).max(23),
+  activo: z.boolean().optional().default(true),
+});
+
+/** Lista completa de recordatorios propios — mismo criterio que `esquemaActualizarCobros`: se sustituye entera. */
+export const esquemaActualizarRecordatorios = z.object({
+  recordatorios: z.array(esquemaRecordatorioPersonalizado).max(20),
+});
+
 /** Límite defensivo de una plantilla — mismo criterio que un presupuesto en formato documento. */
 export const LIMITE_CONTENIDO_PLANTILLA_BYTES = 4 * 1024 * 1024;
 

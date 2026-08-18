@@ -70,6 +70,39 @@ const PushSubscriptionSchema = new Schema(
 );
 
 /**
+ * Interruptores por tipo de notificación push (panel de notificaciones,
+ * 18/08/2026) — todos activos por defecto, así una cuenta ya existente
+ * (sin este campo) se comporta igual que antes de añadirlo, sin migración.
+ */
+const PreferenciasNotificacionesSchema = new Schema(
+  {
+    horas: { type: Boolean, default: true },
+    cobrosPendientes: { type: Boolean, default: true },
+    margenBajo: { type: Boolean, default: true },
+    briefingDiario: { type: Boolean, default: true },
+  },
+  { _id: false }
+);
+
+/**
+ * Recordatorio propio del usuario — texto libre, repetido cada día a la
+ * hora elegida mientras `activo` (mismo patrón de "una vez al día" que
+ * `recordatorio-horas.service.ts`, no un aviso único). Vive en el propio
+ * usuario, no en ninguna colección aparte: son pocos por cuenta y siempre
+ * se leen todos juntos, nunca por separado.
+ */
+const RecordatorioPersonalizadoSchema = new Schema(
+  {
+    id: { type: String, required: true },
+    texto: { type: String, required: true },
+    /** Hora del día (0-23, hora UTC — mismo criterio que `RECORDATORIO_HORAS_HORA`). */
+    hora: { type: Number, required: true, min: 0, max: 23 },
+    activo: { type: Boolean, default: true },
+  },
+  { _id: false }
+);
+
+/**
  * Algoritmo con el que se generó `passwordHash`.
  * `legacy` = hash no criptográfico anterior a la migración de seguridad;
  * se verifica con `verificarPasswordLegado` y se re-hashea a `bcrypt`
@@ -117,6 +150,8 @@ const UsuarioSchema = new Schema({
    * leerse — no hace falta ninguna migración destructiva.
    */
   acceso:       { type: AccesoSchema, default: () => ACCESO_POR_DEFECTO },
+  notifPrefs:   { type: PreferenciasNotificacionesSchema, default: () => ({}) },
+  recordatoriosPersonalizados: { type: [RecordatorioPersonalizadoSchema], default: [] },
 });
 
 /** Modelo Mongoose de Usuario. */

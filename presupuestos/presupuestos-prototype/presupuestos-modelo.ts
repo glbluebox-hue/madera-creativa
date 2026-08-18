@@ -47,6 +47,8 @@ export type PresupuestoMC = {
   firmaClienteUrl?: string;
   /** Fecha ISO de la firma — vacío si no hay firma. */
   firmaClienteFecha?: string;
+  /** Hitos de cobro (roadmap "cobros pendientes", 18/08/2026) — generados al aceptar, editables a mano. Ausente en presupuestos creados antes de esta función. */
+  cobros?: import('./api.js').Cobro[];
 };
 
 /** Vista pública de un presupuesto (Portal del cliente) — lista blanca, ver `obtenerPresupuestoPublico` en el backend. */

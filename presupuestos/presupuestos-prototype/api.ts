@@ -1040,3 +1040,68 @@ export async function cambiarAcceso(datos: { passwordActual: string; nombreNuevo
     return { ok: false, error: 'Sin conexión con el servidor.' };
   }
 }
+
+// ── Notificaciones — interruptores por tipo y recordatorios propios (18/08/2026) ──
+
+/** Interruptores por tipo de notificación. */
+export type NotifPrefs = {
+  horas: boolean;
+  cobrosPendientes: boolean;
+  margenBajo: boolean;
+  briefingDiario: boolean;
+};
+
+/** Recordatorio propio del usuario. */
+export type RecordatorioPersonalizado = {
+  id: string;
+  texto: string;
+  /** Hora del día, 0-23 (hora UTC). */
+  hora: number;
+  activo: boolean;
+};
+
+export async function obtenerPreferenciasNotificaciones(): Promise<{ preferencias: NotifPrefs; recordatorios: RecordatorioPersonalizado[] }> {
+  const res = await fetchConAuth('/notificaciones/preferencias');
+  await comprobarRespuesta(res, 'No se pudieron cargar las notificaciones');
+  return res.json();
+}
+
+export async function guardarPreferenciasNotificaciones(preferencias: NotifPrefs): Promise<void> {
+  const res = await fetchConAuth('/notificaciones/preferencias', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(preferencias),
+  });
+  await comprobarRespuesta(res, 'No se pudieron guardar las notificaciones');
+}
+
+export async function guardarRecordatoriosPersonalizados(recordatorios: RecordatorioPersonalizado[]): Promise<void> {
+  const res = await fetchConAuth('/notificaciones/recordatorios', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recordatorios }),
+  });
+  await comprobarRespuesta(res, 'No se pudieron guardar los recordatorios');
+}
+
+// ── Cobros pendientes de un presupuesto (18/08/2026) ──
+
+/** Un hito de cobro de un presupuesto. */
+export type Cobro = {
+  id: string;
+  concepto: string;
+  importe: number;
+  /** Fecha ISO en la que se marcó como cobrado, o '' si sigue pendiente. */
+  cobradoEn: string;
+};
+
+export async function actualizarCobros(presupuestoId: string, cobros: Cobro[]): Promise<Cobro[]> {
+  const res = await fetchConAuth(`/presupuestos/${presupuestoId}/cobros`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cobros }),
+  });
+  await comprobarRespuesta(res, 'No se pudieron guardar los cobros');
+  const data = await res.json();
+  return data.presupuesto?.cobros ?? [];
+}

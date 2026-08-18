@@ -154,6 +154,14 @@ const ClienteSchema = new Schema({
   adjuntos: { type: [AdjuntoSchema], default: [] },
   fotos: { type: [FotoSchema], default: [] },
   dibujos: { type: [DibujoGuardadoSchema], default: [] },
+  /**
+   * `true` mientras el margen de este proyecto sigue por debajo del umbral
+   * de aviso (notificación "margen bajo", 18/08/2026) — evita repetir el
+   * aviso en cada comprobación mientras el margen sigue bajo. Se limpia en
+   * cuanto el margen vuelve a subir por encima del umbral, para que una
+   * caída posterior sí vuelva a avisar.
+   */
+  margenAvisado: { type: Boolean, default: false },
 });
 
 /** Esquema de configuración de empresa — uno por usuario. */
@@ -261,6 +269,26 @@ const ElementoPresupuestoSchema = new Schema(
 );
 
 /**
+ * Un hito de cobro dentro de un presupuesto aceptado (roadmap, notificación
+ * de "cobros pendientes" — 18/08/2026). Se genera automáticamente al
+ * aceptar (ver `generarCobrosDesdeCondiciones` en `presupuestos-service.ts`,
+ * a partir del texto libre de `condicionesPago`), pero es editable a mano
+ * en todo momento — el propio usuario pidió esto explícitamente porque el
+ * alcance de un presupuesto cambia durante la obra y el importe pactado ya
+ * no tiene por qué coincidir con el original.
+ */
+const CobroSchema = new Schema(
+  {
+    id: { type: String, required: true },
+    concepto: { type: String, required: true },
+    importe: { type: Number, required: true },
+    /** Fecha ISO en la que se marcó como cobrado, o `''` si sigue pendiente. */
+    cobradoEn: { type: String, default: '' },
+  },
+  { _id: false }
+);
+
+/**
  * Esquema de presupuesto — tres formatos conviven en la misma colección,
  * `formato` explícito, nunca inferido:
  * - `'simple'` (Fase 5, sin cambios): descripción + alcance (bullets sin
@@ -322,6 +350,14 @@ const PresupuestoSchema = new Schema({
    */
   firmaClienteUrl: { type: String, default: '' },
   firmaClienteFecha: { type: String, default: '' },
+  /**
+   * Hitos de cobro (roadmap "cobros pendientes", 18/08/2026). Generados al
+   * aceptar, EXCLUIDOS de `esquemaPresupuestoMC` a propósito (mismo patrón
+   * que `estado`/`firmaClienteUrl`) — así un guardado normal del editor de
+   * presupuesto nunca puede pisarlos; solo los tocan `aceptarPresupuesto` y
+   * `actualizarCobros`.
+   */
+  cobros: { type: [CobroSchema], default: [] },
 });
 PresupuestoSchema.index({ usuarioId: 1, clienteId: 1, creado: -1 });
 

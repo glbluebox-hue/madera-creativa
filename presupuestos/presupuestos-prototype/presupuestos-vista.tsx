@@ -7,6 +7,7 @@ import { AbrirDocumento } from './abrir-documento.js';
 import { generarId } from './mock.js';
 import { formatoEuro, formatoFecha } from './calculos.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
+import { CobrosPresupuesto } from './cobros-presupuesto.js';
 import styles from './styles.module.css';
 
 export type PresupuestosVistaProps = {
@@ -184,6 +185,16 @@ export function PresupuestosVista({ clienteId, clienteNombre, empresa, onActuali
       setAceptandoId(null);
     }
   };
+
+  /**
+   * Guarda la lista completa de cobros de un presupuesto (roadmap "cobros
+   * pendientes") — el servidor responde con la lista ya guardada, que
+   * sustituye la del estado local sin volver a pedir el presupuesto entero.
+   */
+  const guardarCobros = useCallback(async (presupuestoId: string, cobros: Parameters<typeof api.actualizarCobros>[1]) => {
+    const actualizados = await api.actualizarCobros(presupuestoId, cobros);
+    setPresupuestos((prev) => prev.map((x) => (x.id === presupuestoId ? { ...x, cobros: actualizados } : x)));
+  }, []);
 
   /**
    * Genera el enlace del Portal del cliente y lo deja listo para copiar
@@ -391,21 +402,26 @@ export function PresupuestosVista({ clienteId, clienteNombre, empresa, onActuali
           {presupuestos.map((p) => (
             <div key={p.id} className={styles.filaLista} style={{ padding: '1rem' }}>
               {p.formato === 'lienzo' || p.formato === 'documento' ? (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
-                  <div>
-                    <p style={{ margin: 0, fontWeight: 700, fontSize: '1rem' }}>{p.titulo}</p>
-                    <p style={{ margin: '0.2rem 0 0', fontSize: '0.72rem', color: 'var(--topo-muy-claro)' }}>
-                      {p.formato === 'lienzo' ? 'Plantilla libre (legado)' : 'Documento'} · Creado {formatoFecha(p.creado)}
-                    </p>
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
+                    <div>
+                      <p style={{ margin: 0, fontWeight: 700, fontSize: '1rem' }}>{p.titulo}</p>
+                      <p style={{ margin: '0.2rem 0 0', fontSize: '0.72rem', color: 'var(--topo-muy-claro)' }}>
+                        {p.formato === 'lienzo' ? 'Plantilla libre (legado)' : 'Documento'} · Creado {formatoFecha(p.creado)}
+                      </p>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 800, fontSize: '1.1rem', whiteSpace: 'nowrap' }}>{formatoEuro(p.precioTotal)}</span>
+                      {accionAceptar(p)}
+                      {accionEnlace(p)}
+                      <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={() => setDocumentoAbierto(p)}>Abrir editor</button>
+                      <ConfirmarBorrado onConfirmar={() => borrar(p.id)} titulo="Borrar presupuesto" />
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 800, fontSize: '1.1rem', whiteSpace: 'nowrap' }}>{formatoEuro(p.precioTotal)}</span>
-                    {accionAceptar(p)}
-                    {accionEnlace(p)}
-                    <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={() => setDocumentoAbierto(p)}>Abrir editor</button>
-                    <ConfirmarBorrado onConfirmar={() => borrar(p.id)} titulo="Borrar presupuesto" />
-                  </div>
-                </div>
+                  {p.estado === 'aceptado' && p.cobros && (
+                    <CobrosPresupuesto cobros={p.cobros} onGuardar={(c) => guardarCobros(p.id, c)} />
+                  )}
+                </>
               ) : editandoId === p.id ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                   <input
@@ -457,6 +473,10 @@ export function PresupuestosVista({ clienteId, clienteNombre, empresa, onActuali
                   </div>
 
                   <div style={{ marginTop: '0.6rem', display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>{accionAceptar(p)}{accionEnlace(p)}</div>
+
+                  {p.estado === 'aceptado' && p.cobros && (
+                    <CobrosPresupuesto cobros={p.cobros} onGuardar={(c) => guardarCobros(p.id, c)} />
+                  )}
 
                   {p.descripcion && (
                     <p style={{ margin: '0.75rem 0 0', fontSize: '0.85rem', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{p.descripcion}</p>

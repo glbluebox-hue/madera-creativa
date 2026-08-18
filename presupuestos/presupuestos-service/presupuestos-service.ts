@@ -24,6 +24,43 @@ const TAREAS_BASE_PRESUPUESTO_ACEPTADO = [
   'Fabricar', 'Lijar', 'Pintar', 'Montar', 'Cobro final',
 ];
 
+/**
+ * Genera los hitos de cobro de un presupuesto a partir del texto libre de
+ * condiciones de pago (ej. "60% al aceptar el presupuesto / 40% al
+ * finalizar el trabajo") — roadmap "cobros pendientes", 18/08/2026. Busca
+ * porcentajes explícitos en segmentos separados por '/', ';' o salto de
+ * línea; si no encuentra ninguno (texto libre sin ese formato, o vacío),
+ * genera un único hito por el importe completo — nunca deja el presupuesto
+ * sin ningún cobro que marcar. El ÚLTIMO hito absorbe el redondeo (nunca se
+ * reparte entre todos) para que la suma sea siempre exactamente
+ * `precioTotal`, nunca unos céntimos de más o de menos.
+ */
+function generarCobrosDesdeCondiciones(condicionesPago: string, precioTotal: number): Array<{ id: string; concepto: string; importe: number; cobradoEn: string }> {
+  const total = Math.round((precioTotal || 0) * 100) / 100;
+  const segmentos = (condicionesPago || '').split(/[/;\n]/).map((s) => s.trim()).filter(Boolean);
+  const hitos: Array<{ concepto: string; porcentaje: number }> = [];
+  for (const seg of segmentos) {
+    const m = seg.match(/(\d+(?:[.,]\d+)?)\s*%/);
+    if (m) hitos.push({ concepto: seg, porcentaje: parseFloat(m[1].replace(',', '.')) });
+  }
+  const sumaPorcentajes = hitos.reduce((s, h) => s + h.porcentaje, 0);
+  if (hitos.length === 0 || sumaPorcentajes <= 0 || total <= 0) {
+    return [{ id: randomUUID(), concepto: 'Pago completo', importe: total, cobradoEn: '' }];
+  }
+  const resultado = hitos.map((h) => ({
+    id: randomUUID(),
+    concepto: h.concepto,
+    importe: Math.round((total * h.porcentaje) / sumaPorcentajes * 100) / 100,
+    cobradoEn: '',
+  }));
+  const sumaImportes = resultado.reduce((s, h) => s + h.importe, 0);
+  const diferencia = Math.round((total - sumaImportes) * 100) / 100;
+  if (diferencia !== 0) {
+    resultado[resultado.length - 1].importe = Math.round((resultado[resultado.length - 1].importe + diferencia) * 100) / 100;
+  }
+  return resultado;
+}
+
 /** Estructura de una ficha de cliente tal como la maneja el servicio. */
 export type ClienteDoc = Record<string, unknown> & { id: string };
 
@@ -1374,6 +1411,26 @@ export class PresupuestosService {
   }
 
   /**
+   * Reemplaza la lista completa de cobros de un presupuesto (roadmap
+   * "cobros pendientes", 18/08/2026) — el usuario puede editar importes,
+   * añadir o quitar hitos, y marcar/desmarcar cualquiera como cobrado
+   * (poniendo o vaciando `cobradoEn`) libremente en el mismo guardado. Sin
+   * restricción de que el presupuesto esté aceptado: no hay ninguna razón
+   * de negocio para impedirlo, y así también sirve para corregir a mano si
+   * la generación automática no encajó bien con el texto de condiciones.
+   */
+  async actualizarCobros(presupuestoId: string, usuarioId: string, cobros: Array<{ id: string; concepto: string; importe: number; cobradoEn?: string }>): Promise<Record<string, unknown>> {
+    await conectar();
+    const doc = await PresupuestoModel.findOneAndUpdate(
+      { id: presupuestoId, usuarioId },
+      { $set: { cobros: cobros.map((c) => ({ ...c, cobradoEn: c.cobradoEn || '' })) } },
+      { new: true }
+    ).lean().exec();
+    if (!doc) throw new ErrorDeNegocio('Presupuesto no encontrado', 400);
+    return this.limpiar(doc as Record<string, unknown>);
+  }
+
+  /**
    * Genera un enlace público nuevo para un presupuesto (Portal del
    * cliente). Solo disponible para el formato vigente (`'simple'` o
    * `'documento'`) — el legado `'lienzo'` (editor Excalidraw) no tiene vista
@@ -1555,6 +1612,16 @@ export class PresupuestosService {
       cambios.presupuesto = (presupuesto.precioTotal as number) || 0;
     }
     await ClienteModel.findOneAndUpdate({ id: clienteId, usuarioId }, { $set: cambios }).exec();
+
+    // Cobros pendientes (roadmap, 18/08/2026) — se generan solo la primera
+    // vez (presupuesto recién aceptado, `cobros` todavía vacío); a partir
+    // de ahí el usuario los gestiona a mano (`actualizarCobros`), así que
+    // una re-aceptación (no debería ocurrir, pero por si acaso) nunca los
+    // pisa.
+    if (!Array.isArray(presupuesto.cobros) || (presupuesto.cobros as unknown[]).length === 0) {
+      const cobros = generarCobrosDesdeCondiciones((presupuesto.condicionesPago as string) || '', (presupuesto.precioTotal as number) || 0);
+      await PresupuestoModel.findOneAndUpdate({ id: presupuesto.id, usuarioId }, { $set: { cobros } }).exec();
+    }
 
     await conectarUsuarios();
     const propietario = await UsuarioModel.findOne({ id: usuarioId }).lean().exec() as any;

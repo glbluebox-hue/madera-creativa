@@ -40,7 +40,8 @@ const INTERVALO_COMPROBACION_MS = 5 * 60 * 1000;
 
 let ultimaFechaEjecutada = '';
 
-function hoyComoFecha(): string {
+/** UTC — ver el comentario de arriba. Reutilizada por `notificaciones-programadas.service.ts` para el resto de tipos de notificación, por el mismo motivo (mismo reloj para "qué hora es" y "qué día es hoy"). */
+export function hoyComoFecha(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
@@ -59,6 +60,8 @@ export async function ejecutarRecordatorioHorasDiario(): Promise<void> {
   for (const usuario of usuarios) {
     const subs = (usuario.pushSubs ?? []) as PushSub[];
     if (subs.length === 0) continue; // Sin ningún dispositivo suscrito, no hay a quién avisar.
+    // `.lean()` no aplica el default de Mongoose a cuentas sin el campo — `?? true` para que se comporten igual que antes de que existiera el interruptor (panel de notificaciones, 18/08/2026).
+    if (usuario.notifPrefs?.horas === false) continue;
 
     const clientesActivos = await ClienteModel.find({ usuarioId: usuario.id, estado: 'en_curso' })
       .select('horas')
