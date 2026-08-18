@@ -89,6 +89,7 @@ export function PortalPresupuesto() {
                 documento={presupuesto.contenidoDocumento as unknown as DocumentoMC}
                 logoEmpresa={presupuesto.empresa.logo}
                 precioVinculado={presupuesto.precioTotal}
+                componentes={presupuesto.componentesResueltos}
               />
             </div>
 

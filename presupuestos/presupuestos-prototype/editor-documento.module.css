@@ -113,8 +113,14 @@
      contenido visible nunca puede ser más grande que el propio cuadro. */
   overflow: hidden;
 }
-.elementoSeleccionado { outline: 1px solid var(--negro); }
-.elementoBloqueado { cursor: not-allowed; }
+/* Sin outline propio a propósito: Moveable ya dibuja su propia caja de
+   selección con asas — un outline aquí encima dibujaba una SEGUNDA caja
+   (una negra pegada al elemento real, otra la de Moveable con sus puntos),
+   que además se desincronizaban entre sí al hacer scroll del lienzo
+   (reporte real del usuario, 19/08/2026: "no entiendo por qué hay dos").
+   Un elemento bloqueado (sin Moveable activo) sigue necesitando su propia
+   marca visual, así que esa sí se mantiene. */
+.elementoBloqueado { cursor: not-allowed; outline: 1px dashed var(--topo-claro); }
 
 .panelDerecho {
   width: 260px;

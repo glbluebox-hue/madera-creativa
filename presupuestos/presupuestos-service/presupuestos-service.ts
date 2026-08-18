@@ -227,6 +227,47 @@ function hashContenidoPublico(p: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(proyeccionPublicaPresupuesto(p))).digest('hex');
 }
 
+/**
+ * Ids de `ComponenteMC` referenciados por elementos `instanciaComponente`
+ * en cualquier parte de un `DocumentoMC` (cuerpo de página, encabezado/pie
+ * propios de cada página, encabezado/pie por defecto del documento) — para
+ * el Portal del cliente, que no tiene sesión con la que resolverlos por su
+ * cuenta (ver `obtenerPresupuestoPublico`, más abajo). Antes de esto, una
+ * instancia sin resolver se quedaba mostrando "Cargando componente…" para
+ * siempre en el enlace público — parecía la aplicación rota.
+ */
+function componenteIdsReferenciados(documento: unknown): string[] {
+  if (!documento || typeof documento !== 'object') return [];
+  const doc = documento as Record<string, unknown>;
+  const ids = new Set<string>();
+  const recorrerElementos = (elementos: unknown) => {
+    if (!Array.isArray(elementos)) return;
+    for (const el of elementos) {
+      if (!el || typeof el !== 'object') continue;
+      const elemento = el as Record<string, unknown>;
+      if (elemento.tipo === 'instanciaComponente') {
+        const contenido = elemento.contenido as Record<string, unknown> | undefined;
+        const id = contenido?.componenteId;
+        if (typeof id === 'string' && id) ids.add(id);
+      }
+    }
+  };
+  const recorrerZona = (zona: unknown) => {
+    if (zona && typeof zona === 'object') recorrerElementos((zona as Record<string, unknown>).elementos);
+  };
+  recorrerZona(doc.encabezadoPorDefecto);
+  recorrerZona(doc.piePorDefecto);
+  const paginas = Array.isArray(doc.paginas) ? doc.paginas : [];
+  for (const p of paginas) {
+    if (!p || typeof p !== 'object') continue;
+    const pagina = p as Record<string, unknown>;
+    recorrerElementos(pagina.elementos);
+    recorrerZona(pagina.encabezado);
+    recorrerZona(pagina.pie);
+  }
+  return [...ids];
+}
+
 /** Cabecera real de un PNG (los primeros 8 bytes) — ver `aceptarPresupuestoPublico`. */
 const CABECERA_PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -1473,6 +1514,23 @@ export class PresupuestosService {
     const cliente = await ClienteModel.findOne({ id: presupuesto.clienteId, usuarioId: enlace.usuarioId }).select('nombre').lean().exec() as any;
     const empresa = await EmpresaModel.findOne({ usuarioId: enlace.usuarioId }).lean().exec() as any;
 
+    // Componentes reutilizables (Incremento 6) que el documento referencia
+    // desde su membrete/pie o su cuerpo — resueltos aquí, en el servidor,
+    // porque el Portal del cliente no tiene sesión con la que pedirlos por
+    // su cuenta. Deliberadamente FUERA de `proyeccionPublicaPresupuesto`:
+    // no debe afectar a `hashContenidoPublico` (si un componente cambia
+    // después de generar el enlace no invalida la firma, igual que ya pasa
+    // hoy con el logo/precio "vinculado", que también se resuelve en vivo).
+    // Acotado al mismo usuario dueño del presupuesto — nunca a cualquier id.
+    let componentesResueltos: Record<string, unknown>[] = [];
+    if (presupuesto.formato === 'documento') {
+      const ids = componenteIdsReferenciados(presupuesto.contenidoDocumento);
+      if (ids.length > 0) {
+        const docs = await ComponenteModel.find({ id: { $in: ids }, usuarioId: enlace.usuarioId }).lean().exec();
+        componentesResueltos = (docs as any[]).map((d) => this.limpiar(d as Record<string, unknown>));
+      }
+    }
+
     return {
       ...proyeccionPublicaPresupuesto(presupuesto),
       estado: presupuesto.estado || 'borrador',
@@ -1490,6 +1548,7 @@ export class PresupuestosService {
       // muestra desde aquí, no desde el enlace.
       firmaClienteUrl: presupuesto.firmaClienteUrl || '',
       firmaClienteFecha: presupuesto.firmaClienteFecha || '',
+      componentesResueltos,
     };
   }
 

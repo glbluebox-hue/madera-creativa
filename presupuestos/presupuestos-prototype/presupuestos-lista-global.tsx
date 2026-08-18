@@ -49,6 +49,10 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
   const [plantillas, setPlantillas] = useState<PlantillaMC[]>([]);
   const [nuevoClienteAbierto, setNuevoClienteAbierto] = useState(false);
   const [nombreClienteNuevo, setNombreClienteNuevo] = useState('');
+  /** Enlace del Portal del cliente ya generado por presupuesto, listo para copiar — vive solo en memoria, mismo patrón que `presupuestos-vista.tsx`. */
+  const [enlaces, setEnlaces] = useState<Record<string, string>>({});
+  const [enlaceCopiadoId, setEnlaceCopiadoId] = useState<string | null>(null);
+  const [generandoEnlaceId, setGenerandoEnlaceId] = useState<string | null>(null);
 
   const cargar = useCallback(() => {
     setCargando(true);
@@ -78,6 +82,54 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
     } catch (e) {
       setError(String(e).replace(/^Error:\s*/, ''));
     }
+  };
+
+  /** Genera el enlace del Portal del cliente y lo deja listo para copiar — mismo mecanismo que `presupuestos-vista.tsx`. */
+  const generarEnlace = async (id: string) => {
+    setGenerandoEnlaceId(id);
+    setError(null);
+    try {
+      const { token } = await api.generarEnlacePresupuesto(id);
+      setEnlaces((prev) => ({ ...prev, [id]: `${window.location.origin}/portal/${token}` }));
+    } catch (e) {
+      setError(String(e).replace(/^Error:\s*/, ''));
+    } finally {
+      setGenerandoEnlaceId(null);
+    }
+  };
+
+  const copiarEnlace = async (url: string, id: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setEnlaceCopiadoId(id);
+      setTimeout(() => setEnlaceCopiadoId((actual) => (actual === id ? null : actual)), 2000);
+    } catch { /* portapapeles no disponible — el enlace ya se ve en el campo, se puede seleccionar a mano */ }
+  };
+
+  /** Botón "Generar enlace" del Portal del cliente — no existía en esta lista global (solo en la de dentro de la ficha de cliente), así que un presupuesto en formato 'documento' creado aquí no tenía ninguna forma de enviarse (reporte real del usuario, 19/08/2026). Legado 'lienzo' sin vista pública, igual que en la otra lista. */
+  const accionEnlace = (p: PresupuestoMC) => {
+    if (p.formato === 'lienzo') return null;
+    const url = enlaces[p.id];
+    if (!url) {
+      return (
+        <button
+          className={`${styles.btn} ${styles.btnSecundario}`}
+          onClick={() => generarEnlace(p.id)}
+          disabled={generandoEnlaceId === p.id}
+          title="Genera un enlace para que el cliente vea y acepte este presupuesto sin registrarse"
+        >
+          {generandoEnlaceId === p.id ? 'Generando…' : 'Generar enlace'}
+        </button>
+      );
+    }
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+        <input className={styles.input} value={url} readOnly onFocus={(e) => e.target.select()} style={{ fontSize: '0.78rem', width: '160px' }} />
+        <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={() => copiarEnlace(url, p.id)}>
+          {enlaceCopiadoId === p.id ? '✓ Copiado' : 'Copiar'}
+        </button>
+      </div>
+    );
   };
 
   const abrir = (p: PresupuestoMC) => {
@@ -247,8 +299,9 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
                   {nombreDe(p.clienteId)} · {p.formato === 'lienzo' ? 'Plantilla libre (legado)' : p.formato === 'documento' ? 'Documento' : 'Narrativo'} · {formatoFecha(p.creado)}
                 </p>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                 <span style={{ fontWeight: 800, fontSize: '1.05rem', whiteSpace: 'nowrap' }}>{formatoEuro(p.precioTotal)}</span>
+                <div onClick={(e) => e.stopPropagation()}>{accionEnlace(p)}</div>
                 <div onClick={(e) => e.stopPropagation()}>
                   <ConfirmarBorrado onConfirmar={() => borrar(p.id)} titulo="Borrar presupuesto" />
                 </div>

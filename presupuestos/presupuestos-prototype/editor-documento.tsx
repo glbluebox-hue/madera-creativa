@@ -184,6 +184,30 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
   const refsElementos = useRef<Map<string, HTMLDivElement>>(new Map());
   const clipboardRef = useRef<ElementoMC[] | null>(null);
 
+  /**
+   * Moveable mide la posición del elemento seleccionado en pantalla una
+   * vez y la deja en caché — si el usuario hace scroll del lienzo con la
+   * rueda del ratón (sin arrastrar nada), esa posición en pantalla cambia
+   * pero Moveable nunca se entera por su cuenta, así que su caja de
+   * selección se queda "plantada" en el sitio antiguo mientras la página
+   * se desplaza por debajo (fallo real reportado por el usuario,
+   * 19/08/2026, con captura de pantalla). `updateRect()` es el método que
+   * la propia librería expone para forzar remedir; se llama en cada evento
+   * de scroll del contenedor del lienzo.
+   */
+  const moveableUnicoRef = useRef<{ updateRect: () => void } | null>(null);
+  const moveableGrupoRef = useRef<{ updateRect: () => void } | null>(null);
+  useEffect(() => {
+    const contenedor = lienzoContenedorRef.current;
+    if (!contenedor) return;
+    const alHacerScroll = () => {
+      moveableUnicoRef.current?.updateRect();
+      moveableGrupoRef.current?.updateRect();
+    };
+    contenedor.addEventListener('scroll', alHacerScroll);
+    return () => contenedor.removeEventListener('scroll', alHacerScroll);
+  }, []);
+
   /** Aplica un comando (DocumentoMC actual -> nuevo) empujando el estado previo al historial de deshacer. Único punto de mutación del documento en todo el editor — nunca se llama a setDocumento directamente fuera de aquí (Regla de Oro 3). */
   const ejecutar = useCallback((comando: (doc: DocumentoMC) => DocumentoMC) => {
     setDocumento((actual) => {
@@ -234,7 +258,16 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
 
   const insertarElemento = useCallback((tipo: string) => {
     const definicion = obtenerTipoRender(tipo);
-    const base = crearElementoBase(tipo, { x: 60, y: 60 }, definicion.tamanoInicial);
+    // Centrado en la página activa, no en una esquina fija — un elemento
+    // nuevo en (60,60) caía sistemáticamente encima del membrete (reporte
+    // real del usuario, 19/08/2026: "me lo abre encima del logo").
+    const pagina = documento.paginas.find((p) => p.id === paginaActivaId) ?? documento.paginas[0];
+    const config = pagina.configuracion ?? documento.configuracionPorDefecto;
+    const posicionInicial = {
+      x: Math.max(0, Math.round((config.ancho - definicion.tamanoInicial.ancho) / 2)),
+      y: Math.max(0, Math.round((config.alto - definicion.tamanoInicial.alto) / 2)),
+    };
+    const base = crearElementoBase(tipo, posicionInicial, definicion.tamanoInicial);
     const elemento: ElementoMC = {
       ...base,
       contenido: definicion.crearContenidoInicial(),
@@ -243,7 +276,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
     };
     ejecutar((doc) => anadirElemento(doc, paginaActivaId, elemento));
     setSeleccion([elemento.id]);
-  }, [ejecutar, paginaActivaId]);
+  }, [ejecutar, paginaActivaId, documento]);
 
   const eliminarSeleccionActual = useCallback(() => {
     if (seleccion.length === 0) return;
@@ -1144,6 +1177,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
           // desmontarse y montarse de nuevo, midiendo siempre la posición
           // real actual, venga el cambio de donde venga.
           key={`${elementoUnicoSeleccionado.id}-${elementoUnicoSeleccionado.posicion.x}-${elementoUnicoSeleccionado.posicion.y}-${elementoUnicoSeleccionado.tamano.ancho}-${elementoUnicoSeleccionado.tamano.alto}`}
+          ref={moveableUnicoRef}
           target={targetsMoveable[0]}
           draggable resizable
           onDrag={onDragUnico}
@@ -1164,6 +1198,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
             const el = localizarElemento(documento, id)?.elemento;
             return el ? `${id}-${el.posicion.x}-${el.posicion.y}` : id;
           }).join('|')}
+          ref={moveableGrupoRef}
           target={targetsMoveable}
           draggable
           onDragGroup={onDragGroupUnico}

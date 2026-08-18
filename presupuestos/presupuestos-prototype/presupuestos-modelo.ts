@@ -1,3 +1,5 @@
+import type { ComponenteMC } from './documento-modelo.js';
+
 /** Un elemento con precio propio dentro de un presupuesto (añadido tras la creación inicial). */
 export type ElementoPresupuesto = {
   id: string;
@@ -59,6 +61,8 @@ export type PresupuestoPublico = {
   alcance: string[];
   items: ElementoPresupuesto[];
   contenidoDocumento?: Record<string, unknown>;
+  /** Componentes reutilizables (Incremento 6) referenciados por el documento, ya resueltos por el servidor — el Portal no tiene sesión con la que pedirlos por su cuenta. */
+  componentesResueltos?: ComponenteMC[];
   condicionesPago: string;
   validezDias: number;
   condicionesGenerales: string;
