@@ -6,7 +6,11 @@ import { calcularMetricas } from './dashboard-calculos.js';
 import { formatoEuro, formatoFecha } from './calculos.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
 import { obtenerTodosLosPresupuestos } from './api.js';
+import { usePrivacidadDashboard } from './use-privacidad.js';
 import styles from './styles.module.css';
+
+/** Marcador visual del modo privacidad — mismo ancho aproximado en cualquier tarjeta, sin importar la longitud real de la cifra que oculta. */
+const VALOR_OCULTO = '••••••';
 
 /** Props del panel principal (dashboard). */
 export type DashboardProps = {
@@ -67,6 +71,7 @@ type ItemActividad =
 export function Dashboard({ nombre, clientes, facturas, resumen, onAbrir, onBorrarFactura, onActualizarCliente }: DashboardProps) {
   const m = calcularMetricas(clientes);
   const primerNombre = (nombre || '').split(' ')[0];
+  const { privado, alternar: alternarPrivacidad } = usePrivacidadDashboard();
 
   /**
    * "Registrar la actividad correspondiente" (Fase 1, detalle pendiente) —
@@ -117,16 +122,29 @@ export function Dashboard({ nombre, clientes, facturas, resumen, onAbrir, onBorr
 
   return (
     <div className={styles.dashboard}>
-      <div className={styles.dashboardTop}>
-        <h2 className={styles.h2}>¡Buenas {horaDelDia()}, {primerNombre}!</h2>
-        <p className={styles.dashboardSub}>Aquí tienes un resumen de tu actividad</p>
+      <div className={styles.dashboardTop} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
+        <div>
+          <h2 className={styles.h2}>¡Buenas {horaDelDia()}, {primerNombre}!</h2>
+          <p className={styles.dashboardSub}>Aquí tienes un resumen de tu actividad</p>
+        </div>
+        <button
+          type="button"
+          className={styles.btnIcono}
+          onClick={alternarPrivacidad}
+          title={privado ? 'Mostrar las cifras' : 'Ocultar las cifras (modo privacidad)'}
+          style={{ flexShrink: 0 }}
+        >
+          {privado
+            ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
+            : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>}
+        </button>
       </div>
 
       <div className={styles.kpiGrid}>
-        <Kpi icono="ingreso" color="verde" etiqueta="Ingresos" valor={formatoEuro(resumen.totalIngresos)} sub={`${resumen.numIngresos} facturas`} />
-        <Kpi icono="gasto" color="rojo" etiqueta="Gastos" valor={formatoEuro(resumen.totalGastos)} sub={`${resumen.numGastos} facturas`} />
-        <Kpi icono="balance" color={resumen.balance >= 0 ? 'verde' : 'rojo'} etiqueta="Balance" valor={formatoEuro(resumen.balance)} sub={`${resumen.numFacturas} facturas`} />
-        <Kpi icono="presupuestos" color="topo" etiqueta="Presupuestos" valor={String(m.presupuestosPendientes + m.enCurso)} sub={m.enCurso > 0 ? `${m.enCurso} en curso` : `${m.presupuestosPendientes} pendientes`} />
+        <Kpi icono="ingreso" color="verde" etiqueta="Ingresos" valor={privado ? VALOR_OCULTO : formatoEuro(resumen.totalIngresos)} sub={`${resumen.numIngresos} facturas`} />
+        <Kpi icono="gasto" color="rojo" etiqueta="Gastos" valor={privado ? VALOR_OCULTO : formatoEuro(resumen.totalGastos)} sub={`${resumen.numGastos} facturas`} />
+        <Kpi icono="balance" color={resumen.balance >= 0 ? 'verde' : 'rojo'} etiqueta="Balance" valor={privado ? VALOR_OCULTO : formatoEuro(resumen.balance)} sub={`${resumen.numFacturas} facturas`} />
+        <Kpi icono="presupuestos" color="topo" etiqueta="Presupuestos" valor={privado ? VALOR_OCULTO : String(m.presupuestosPendientes + m.enCurso)} sub={m.enCurso > 0 ? `${m.enCurso} en curso` : `${m.presupuestosPendientes} pendientes`} />
       </div>
 
       <div className={styles.dashboardCols}>
