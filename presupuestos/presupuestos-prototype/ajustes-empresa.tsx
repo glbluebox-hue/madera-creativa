@@ -1,9 +1,26 @@
 import { useRef, useState } from 'react';
 import type { Empresa } from './use-empresa.js';
 import { leerArchivoComoBase64 } from './archivos.js';
+import { comprimirImagen } from './procesamiento-imagenes.js';
 import { TEMA_POR_DEFECTO } from './documento-modelo.js';
 import type { TemaMC } from './documento-modelo.js';
 import styles from './styles.module.css';
+
+/**
+ * Un logo no necesita más de unos cientos de píxeles de ancho para verse
+ * bien en ningún sitio de la app (barra lateral, ~230px como máximo real
+ * — ver `logoTamano`; membrete de presupuestos, similar). Sin comprimir,
+ * una foto o captura de pantalla subida tal cual como logo (varios MB, muy
+ * por encima de lo necesario) tarda un tiempo perceptible en decodificarse
+ * y reajustar su tamaño en pantalla — investigado 18/08/2026 tras un
+ * reporte de "el logo se ve grande un instante y luego encoge"; el resto
+ * de subidas de imagen de la app (fotos, adjuntos, escáner) ya comprimen,
+ * esta era la única que no. Sin forzar JPEG (a diferencia del escáner de
+ * facturas): un logo suele necesitar fondo transparente, y JPEG no admite
+ * canal alfa — WebP sí, y es el formato que ya usa `comprimirImagen` por
+ * defecto cuando el navegador lo soporta.
+ */
+const DIMENSION_MAXIMA_LOGO_PX = 800;
 
 /** Props del modal de ajustes de empresa. */
 export type AjustesEmpresaProps = {
@@ -40,7 +57,9 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
   const subirLogo = (files: FileList | null) => {
     const file = files?.[0];
     if (!file || !file.type.startsWith('image/')) return;
-    leerArchivoComoBase64(file).then(setLogo);
+    comprimirImagen(file, { maxDim: DIMENSION_MAXIMA_LOGO_PX, calidad: 0.9 })
+      .then(({ blob }) => leerArchivoComoBase64(blob))
+      .then(setLogo);
   };
 
   const guardar = async () => {

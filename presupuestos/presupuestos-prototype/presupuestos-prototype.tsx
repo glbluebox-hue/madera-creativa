@@ -82,7 +82,7 @@ export function PresupuestosPrototype() {
   // muestra en pantallas estrechas (Dirección Creativa, ajuste móvil).
   const [menuMovilAbierto, setMenuMovilAbierto] = useState(false);
   const [asistente, setAsistente] = useState(false);
-  const { empresa, actualizar } = useEmpresa(listo, sesion?.esAdmin ?? false);
+  const { empresa, cargando: empresaCargando, actualizar } = useEmpresa(listo, sesion?.esAdmin ?? false);
   // Proveedores aislados por usuario — admin usa clave original, usuarios nuevos tienen espacio propio
   const { proveedores, productos, crearProveedor, actualizarProveedor, borrarProveedor, crearProducto, actualizarProducto, borrarProducto } = useProveedores(listo);
   const { dataTheme, tema, alternar: alternarTema } = useTema();
@@ -171,7 +171,15 @@ export function PresupuestosPrototype() {
             onClick={() => { setAjustes(true); setMenuMovilAbierto(false); }}
             title={sesion?.esAdmin ? 'Ajustes de empresa' : empresa.logo ? 'Cambiar logo' : 'Añade el logo de tu empresa'}
           >
-            {empresa.logo ? (
+            {empresaCargando ? (
+              // Mientras se confirma si hay un logo propio guardado, no
+              // pintar ningún logo todavía — `empresa` arranca con el logo
+              // de Madera Creativa por defecto (ver `use-empresa.ts`), y
+              // pintarlo de inmediato para luego sustituirlo por el logo
+              // real del negocio es justo el parpadeo reportado varias
+              // veces (18/08/2026).
+              <span className={styles.sidebarLogoImg} aria-hidden="true" />
+            ) : empresa.logo ? (
               // Tamaño ajustable a mano (Ajustes de empresa) en vez del
               // máximo fijo de la clase CSS — el `max-width` inline siempre
               // gana sobre el de `.sidebarLogoImg` (mayor especificidad que

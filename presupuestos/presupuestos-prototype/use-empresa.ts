@@ -84,6 +84,19 @@ const EMPRESA_USUARIO: Empresa = {
 export function useEmpresa(autenticado = false, esAdmin = false): {
   empresa: Empresa;
   /**
+   * `true` mientras todavía no se sabe si hay un logo/tamaño propios
+   * guardados en el servidor. Para el admin, `empresa` empieza con el logo
+   * de Madera Creativa por defecto (`EMPRESA_ADMIN.logo`) — sin esta
+   * bandera, ese logo por defecto se pintaba de inmediato y, en cuanto
+   * respondía `/empresa` (normalmente en menos de un segundo, pero
+   * perceptible), se sustituía por el logo propio del negocio con su
+   * tamaño real: un parpadeo de "logo equivocado" en cada carga, reportado
+   * varias veces (18/08/2026) y confundido al principio con un problema de
+   * service worker o de compresión de imagen — el verdadero origen era
+   * este optimistic-render con datos por defecto que no eran los reales.
+   */
+  cargando: boolean;
+  /**
    * Guarda los cambios en el servidor y solo entonces actualiza el estado
    * local — antes se actualizaba de inmediato y el guardado real fallaba en
    * silencio (`.catch(() => {})`), mismo fallo ya diagnosticado y corregido
@@ -97,10 +110,12 @@ export function useEmpresa(autenticado = false, esAdmin = false): {
 } {
   const inicial = esAdmin ? EMPRESA_ADMIN : EMPRESA_USUARIO;
   const [empresa, setEmpresa] = useState<Empresa>(inicial);
+  const [cargando, setCargando] = useState(autenticado);
 
   useEffect(() => {
-    if (!autenticado) return;
+    if (!autenticado) { setCargando(false); return; }
     let activo = true;
+    setCargando(true);
     api
       .obtenerEmpresa()
       .then((datos) => {
@@ -121,7 +136,8 @@ export function useEmpresa(autenticado = false, esAdmin = false): {
           logoTamano: datos.logoTamano ?? inicial.logoTamano,
         });
       })
-      .catch(() => { /* sin conexión: mantener valores por defecto */ });
+      .catch(() => { /* sin conexión: mantener valores por defecto */ })
+      .finally(() => { if (activo) setCargando(false); });
     return () => { activo = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autenticado, esAdmin]);
@@ -137,5 +153,5 @@ export function useEmpresa(autenticado = false, esAdmin = false): {
     }
   }, [empresa]);
 
-  return { empresa, actualizar };
+  return { empresa, cargando, actualizar };
 }
