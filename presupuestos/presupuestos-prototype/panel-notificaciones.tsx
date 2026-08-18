@@ -25,6 +25,30 @@ const TIPOS: Array<{ clave: keyof NotifPrefs; titulo: string; descripcion: strin
 const HORAS_DIA = Array.from({ length: 24 }, (_, i) => i);
 
 /**
+ * El selector de hora de un recordatorio muestra y recoge la hora LOCAL
+ * del propio dispositivo (lo que el usuario espera al elegir "17:00" es
+ * que suene a las 17:00 de su reloj) — pero el servidor compara siempre
+ * en UTC (`recordatoriosPersonalizados[].hora`, ver
+ * `notificaciones-programadas.service.ts`), mismo criterio que el resto
+ * de horas de esta app. Sin esta conversión, un recordatorio puesto a las
+ * 17:00 se guardaba tal cual como si ya fuera UTC, así que en cualquier
+ * huso horario distinto de UTC se disparaba a otra hora — reportado
+ * 18/08/2026 ("puse una notificación a las 17:00 pero no ha llegado
+ * nada"). Se usa el desfase ACTUAL del navegador (no tiene en cuenta un
+ * cambio de horario de invierno/verano más adelante — límite aceptado: si
+ * eso pasa, basta con volver a guardar el recordatorio para que se
+ * reajuste).
+ */
+function horaLocalAUtc(horaLocal: number): number {
+  const offsetHoras = new Date().getTimezoneOffset() / 60;
+  return (Math.round(horaLocal + offsetHoras) % 24 + 24) % 24;
+}
+function horaUtcALocal(horaUtc: number): number {
+  const offsetHoras = new Date().getTimezoneOffset() / 60;
+  return (Math.round(horaUtc - offsetHoras) % 24 + 24) % 24;
+}
+
+/**
  * Panel de notificaciones (18/08/2026): interruptores por tipo + gestión de
  * recordatorios propios (texto libre, hora del día, activo/inactivo).
  * Reemplaza el simple botón de campana como punto de entrada — pedido
@@ -42,7 +66,14 @@ export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCe
 
   useEffect(() => {
     api.obtenerPreferenciasNotificaciones()
-      .then(({ preferencias, recordatorios }) => { setPreferencias(preferencias); setRecordatorios(recordatorios); })
+      .then(({ preferencias, recordatorios }) => {
+        setPreferencias(preferencias);
+        // El servidor guarda la hora en UTC — se convierte a hora local
+        // aquí, una sola vez, para que el resto del componente (el
+        // desplegable, el estado que se edita) trabaje siempre en hora
+        // local, tal como la ve y espera el usuario.
+        setRecordatorios(recordatorios.map((r) => ({ ...r, hora: horaUtcALocal(r.hora) })));
+      })
       .catch(() => setError('No se pudieron cargar tus notificaciones.'))
       .finally(() => setCargando(false));
   }, []);
@@ -60,7 +91,10 @@ export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCe
     try {
       await Promise.all([
         api.guardarPreferenciasNotificaciones(preferencias),
-        api.guardarRecordatoriosPersonalizados(recordatorios),
+        // Se convierte de vuelta a UTC justo aquí, al cruzar hacia el
+        // servidor — el estado en memoria de este componente sigue en
+        // hora local hasta el último momento.
+        api.guardarRecordatoriosPersonalizados(recordatorios.map((r) => ({ ...r, hora: horaLocalAUtc(r.hora) }))),
       ]);
       onCerrar();
     } catch {
