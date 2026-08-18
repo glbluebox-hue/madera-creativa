@@ -1,5 +1,5 @@
 import { ClienteModel, conectar } from './cliente.model.js';
-import { UsuarioModel, conectarUsuarios } from './usuario.model.js';
+import { UsuarioModel, conectarUsuarios, leerPreferenciaNotif } from './usuario.model.js';
 import { enviarNotificacion } from './push.service.js';
 import type { PushSub } from './push.service.js';
 import { logger } from './logger.service.js';
@@ -13,32 +13,30 @@ import { logger } from './logger.service.js';
  * ningún proyecto activo), no se envía nada — el propio roadmap pide
  * explícitamente evitar avisos innecesarios.
  *
- * Hora de disparo configurable vía `RECORDATORIO_HORAS_HORA` (0-23, hora
- * UTC — la app no guarda huso horario por usuario, y "hoy" también se
- * calcula en UTC más abajo, así que la comparación usa el mismo reloj en
- * los dos sitios a propósito). Por defecto 20 (las 20:00 UTC), una hora
- * razonable de "fin de la jornada" para un oficio manual.
+ * Hora de disparo: cada usuario tiene la suya propia, editable desde el
+ * panel de notificaciones (`notifPrefs.horas`, ver `usuario.model.ts` —
+ * ampliado 18/08/2026, antes era una única hora fija de servidor vía
+ * `RECORDATORIO_HORAS_HORA`, sin poder cambiarla desde la app). Por
+ * defecto 20:00 UTC para quien no la haya tocado nunca, una hora
+ * razonable de "fin de la jornada" para un oficio manual. Siempre en UTC
+ * — la app no guarda huso horario por usuario, y "hoy" también se calcula
+ * en UTC más abajo, así que la comparación usa el mismo reloj en los dos
+ * sitios a propósito (el frontend convierte la hora local del usuario a
+ * UTC antes de guardarla, ver `panel-notificaciones.tsx`).
  *
  * Implementación deliberada sin librería de cron nueva: un único
- * `setInterval` que comprueba cada pocos minutos si ya es la hora
- * objetivo y si hoy todavía no se ha ejecutado — no hacía falta añadir
- * una dependencia para esto. `ultimaFechaEjecutada` es la guarda contra
- * disparos repetidos dentro de la misma ventana horaria (varias
- * comprobaciones del intervalo caen dentro de la misma hora objetivo);
- * NO sobrevive a un reinicio del proceso, así que un reinicio justo en la
- * ventana objetivo podría, en el peor caso, repetir el aviso ese día — un
- * riesgo aceptado (mucho más barato que persistir el estado para un caso
- * tan raro), nunca silencioso: queda registrado en el log si ocurre.
+ * `setInterval` cada minuto que comprueba, por usuario, si es su hora
+ * exacta y si hoy todavía no se ha ejecutado para él — no hacía falta
+ * añadir una dependencia para esto. La guarda por usuario+día no
+ * sobrevive a un reinicio del proceso; riesgo aceptado (mucho más barato
+ * que persistir el estado para un caso tan raro), nunca silencioso: queda
+ * registrado en el log si ocurre.
  */
 
-const HORA_OBJETIVO = (() => {
-  const desdeEnv = Number(process.env.RECORDATORIO_HORAS_HORA);
-  return Number.isInteger(desdeEnv) && desdeEnv >= 0 && desdeEnv <= 23 ? desdeEnv : 20;
-})();
+const INTERVALO_COMPROBACION_MS = 60 * 1000;
 
-const INTERVALO_COMPROBACION_MS = 5 * 60 * 1000;
-
-let ultimaFechaEjecutada = '';
+/** Por usuarioId, para no repetir el aviso dos veces el mismo día. */
+const ultimaFechaPorUsuario = new Map<string, string>();
 
 /** UTC — ver el comentario de arriba. Reutilizada por `notificaciones-programadas.service.ts` para el resto de tipos de notificación, por el mismo motivo (mismo reloj para "qué hora es" y "qué día es hoy"). */
 export function hoyComoFecha(): string {
@@ -46,11 +44,11 @@ export function hoyComoFecha(): string {
 }
 
 /**
- * Ejecuta el recordatorio para todos los usuarios activos — exportado
- * aparte de `iniciarRecordatorioHorasDiario` para poder llamarlo
- * directamente en pruebas, sin depender del reloj real.
+ * Ejecuta el recordatorio para todos los usuarios activos a quienes les
+ * toque en `ahora` — exportado aparte de `iniciarRecordatorioHorasDiario`
+ * para poder llamarlo directamente en pruebas, sin depender del reloj real.
  */
-export async function ejecutarRecordatorioHorasDiario(): Promise<void> {
+export async function ejecutarRecordatorioHorasDiario(ahora: Date = new Date()): Promise<void> {
   await conectar();
   await conectarUsuarios();
 
@@ -60,8 +58,11 @@ export async function ejecutarRecordatorioHorasDiario(): Promise<void> {
   for (const usuario of usuarios) {
     const subs = (usuario.pushSubs ?? []) as PushSub[];
     if (subs.length === 0) continue; // Sin ningún dispositivo suscrito, no hay a quién avisar.
-    // `.lean()` no aplica el default de Mongoose a cuentas sin el campo — `?? true` para que se comporten igual que antes de que existiera el interruptor (panel de notificaciones, 18/08/2026).
-    if (usuario.notifPrefs?.horas === false) continue;
+
+    const pref = leerPreferenciaNotif(usuario.notifPrefs, 'horas', 20);
+    if (!pref.activo || pref.hora !== ahora.getUTCHours() || pref.minuto !== ahora.getUTCMinutes()) continue;
+    if (ultimaFechaPorUsuario.get(usuario.id) === hoy) continue;
+    ultimaFechaPorUsuario.set(usuario.id, hoy);
 
     const clientesActivos = await ClienteModel.find({ usuarioId: usuario.id, estado: 'en_curso' })
       .select('horas')
@@ -91,16 +92,7 @@ export async function ejecutarRecordatorioHorasDiario(): Promise<void> {
  */
 export function iniciarRecordatorioHorasDiario(): void {
   setInterval(() => {
-    const ahora = new Date();
-    const hoy = hoyComoFecha();
-    // `getUTCHours()`, no `getHours()` — `hoyComoFecha()` ya usa
-    // `toISOString()` (UTC); si se comparara la hora objetivo con la hora
-    // LOCAL del proceso, "qué hora es" y "qué día es hoy" usarían dos
-    // relojes distintos, coincidiendo solo porque el servidor de Render
-    // corre en UTC hoy (fragilidad detectada en la auditoría de
-    // seguridad, 18/08/2026, antes de que llegara a ser un fallo real).
-    if (ahora.getUTCHours() !== HORA_OBJETIVO || ultimaFechaEjecutada === hoy) return;
-    ultimaFechaEjecutada = hoy;
-    ejecutarRecordatorioHorasDiario().catch((err) => logger.error({ err }, '[recordatorio-horas] Error ejecutando el recordatorio diario'));
+    ejecutarRecordatorioHorasDiario(new Date())
+      .catch((err) => logger.error({ err }, '[recordatorio-horas] Error ejecutando el recordatorio diario'));
   }, INTERVALO_COMPROBACION_MS);
 }

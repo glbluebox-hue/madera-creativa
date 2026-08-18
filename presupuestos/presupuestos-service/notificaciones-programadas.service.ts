@@ -1,5 +1,5 @@
 import { ClienteModel, PresupuestoModel, conectar } from './cliente.model.js';
-import { UsuarioModel, conectarUsuarios } from './usuario.model.js';
+import { UsuarioModel, conectarUsuarios, leerPreferenciaNotif } from './usuario.model.js';
 import { enviarNotificacion } from './push.service.js';
 import type { PushSub } from './push.service.js';
 import { logger } from './logger.service.js';
@@ -8,27 +8,33 @@ import { hoyComoFecha } from './recordatorio-horas.service.js';
 /**
  * Resto de notificaciones del panel (18/08/2026), aparte de
  * `recordatorio-horas.service.ts`: cobros pendientes, margen bajo,
- * briefing diario, y los recordatorios propios de cada usuario. Mismo
- * patrón de siempre — `setInterval` cada pocos minutos, cada tipo con su
- * propia guarda "ya se ejecutó hoy/hoy a esta hora" en memoria (no
- * sobrevive a un reinicio del proceso, riesgo aceptado, ver
- * `recordatorio-horas.service.ts`).
+ * briefing diario, y los recordatorios propios de cada usuario.
+ *
+ * Cada tipo dispara a la hora (y minuto) que cada usuario tenga
+ * configurados en `notifPrefs` — ampliado 18/08/2026: antes los tres
+ * (cobros/margen/briefing) compartían una única hora fija de servidor sin
+ * poder cambiarla desde la app ("todo esto tiene que ser editable y con
+ * la posibilidad de poner una hora y también minutos"). El intervalo de
+ * comprobación baja de 5 a 1 minuto para poder acertar el minuto exacto
+ * — coste insignificante a esta escala (una app de un solo negocio):
+ * cada función vuelve a consultar todos los usuarios activos cada minuto,
+ * pero descarta en el acto los que no tengan suscripción o cuya hora no
+ * coincida, sin hacer ningún trabajo pesado por ellos.
  */
 
-const INTERVALO_COMPROBACION_MS = 5 * 60 * 1000;
-
-/** Hora UTC (0-23) de los avisos "de mañana" — briefing diario, cobros pendientes, margen bajo. Configurable, igual que `RECORDATORIO_HORAS_HORA`. */
-const HORA_MANANA = (() => {
-  const desdeEnv = Number(process.env.RECORDATORIO_MANANA_HORA);
-  return Number.isInteger(desdeEnv) && desdeEnv >= 0 && desdeEnv <= 23 ? desdeEnv : 8;
-})();
+const INTERVALO_COMPROBACION_MS = 60 * 1000;
 
 /** Margen mínimo aceptable (%) antes de avisar — fijo, no configurable por ahora (pedido explícito del usuario: "por debajo de 40%"). */
 const UMBRAL_MARGEN_BAJO = 40;
 
-let ultimaFechaManana = '';
-/** Por usuario+recordatorio, para no repetir el mismo recordatorio dos veces el mismo día. */
-const ultimaFechaRecordatorio = new Map<string, string>();
+/** Por clave "tipo:usuarioId" (o "recordatorio:usuarioId:id"), para no repetir el mismo aviso dos veces el mismo día aunque el minuto exacto se compruebe varias veces (arranques, reintentos). */
+const ultimaFechaPorClave = new Map<string, string>();
+
+/** `true` si, para este usuario, `tipo` está activo y su hora+minuto configurados coinciden con `ahora`. */
+function esSuMomento(notifPrefs: any, tipo: string, horaDefecto: number, ahora: Date): boolean {
+  const pref = leerPreferenciaNotif(notifPrefs, tipo, horaDefecto);
+  return pref.activo && pref.hora === ahora.getUTCHours() && pref.minuto === ahora.getUTCMinutes();
+}
 
 /** Réplica exacta de `calcularResumen` (`presupuestos-prototype/calculos.ts`) — mismo cálculo, lado servidor. Si una fórmula cambia, cambiar las dos. */
 function calcularMargenPorcentaje(cliente: any): number {
@@ -42,16 +48,25 @@ function calcularMargenPorcentaje(cliente: any): number {
   return totalIngresos > 0 ? (margen / totalIngresos) * 100 : 0;
 }
 
-/** Cobros pendientes: presupuestos aceptados con algún hito sin `cobradoEn`. Exportada aparte para poder probarla directamente, igual que `ejecutarRecordatorioHorasDiario`. */
-export async function ejecutarAvisoCobrosPendientes(): Promise<void> {
+/**
+ * Cobros pendientes: presupuestos aceptados con algún hito sin
+ * `cobradoEn`. `ahora` decide a quién le toca — exportada aparte para
+ * poder probarla directamente pasando una fecha concreta, igual que
+ * `ejecutarRecordatorioHorasDiario`.
+ */
+export async function ejecutarAvisoCobrosPendientes(ahora: Date = new Date()): Promise<void> {
   await conectar();
   await conectarUsuarios();
+  const hoy = hoyComoFecha();
   const usuarios = await UsuarioModel.find({ estado: 'activo' }).lean().exec() as any[];
 
   for (const usuario of usuarios) {
     const subs = (usuario.pushSubs ?? []) as PushSub[];
     if (subs.length === 0) continue;
-    if (usuario.notifPrefs?.cobrosPendientes === false) continue;
+    if (!esSuMomento(usuario.notifPrefs, 'cobrosPendientes', 8, ahora)) continue;
+    const clave = `cobrosPendientes:${usuario.id}`;
+    if (ultimaFechaPorClave.get(clave) === hoy) continue;
+    ultimaFechaPorClave.set(clave, hoy);
 
     const presupuestos = await PresupuestoModel.find({ usuarioId: usuario.id, estado: 'aceptado' })
       .select('cobros titulo')
@@ -78,16 +93,20 @@ export async function ejecutarAvisoCobrosPendientes(): Promise<void> {
   }
 }
 
-/** Margen bajo: una vez por proyecto mientras siga por debajo del umbral (ver `Cliente.margenAvisado`). Exportada aparte, mismo motivo. */
-export async function ejecutarAvisoMargenBajo(): Promise<void> {
+/** Margen bajo: una vez por proyecto mientras siga por debajo del umbral (ver `Cliente.margenAvisado`). `ahora` decide a quién le toca. Exportada aparte, mismo motivo. */
+export async function ejecutarAvisoMargenBajo(ahora: Date = new Date()): Promise<void> {
   await conectar();
   await conectarUsuarios();
+  const hoy = hoyComoFecha();
   const usuarios = await UsuarioModel.find({ estado: 'activo' }).lean().exec() as any[];
 
   for (const usuario of usuarios) {
     const subs = (usuario.pushSubs ?? []) as PushSub[];
     if (subs.length === 0) continue;
-    if (usuario.notifPrefs?.margenBajo === false) continue;
+    if (!esSuMomento(usuario.notifPrefs, 'margenBajo', 8, ahora)) continue;
+    const clave = `margenBajo:${usuario.id}`;
+    if (ultimaFechaPorClave.get(clave) === hoy) continue;
+    ultimaFechaPorClave.set(clave, hoy);
 
     const clientesActivos = await ClienteModel.find({ usuarioId: usuario.id, estado: 'en_curso' })
       .select('nombre movimientos horas tarifaHora margenAvisado')
@@ -116,16 +135,20 @@ export async function ejecutarAvisoMargenBajo(): Promise<void> {
   }
 }
 
-/** Briefing diario: un resumen corto de proyectos activos y cobros pendientes. Exportada aparte, mismo motivo. */
-export async function ejecutarBriefingDiario(): Promise<void> {
+/** Briefing diario: un resumen corto de proyectos activos y cobros pendientes. `ahora` decide a quién le toca. Exportada aparte, mismo motivo. */
+export async function ejecutarBriefingDiario(ahora: Date = new Date()): Promise<void> {
   await conectar();
   await conectarUsuarios();
+  const hoy = hoyComoFecha();
   const usuarios = await UsuarioModel.find({ estado: 'activo' }).lean().exec() as any[];
 
   for (const usuario of usuarios) {
     const subs = (usuario.pushSubs ?? []) as PushSub[];
     if (subs.length === 0) continue;
-    if (usuario.notifPrefs?.briefingDiario === false) continue;
+    if (!esSuMomento(usuario.notifPrefs, 'briefingDiario', 8, ahora)) continue;
+    const clave = `briefingDiario:${usuario.id}`;
+    if (ultimaFechaPorClave.get(clave) === hoy) continue;
+    ultimaFechaPorClave.set(clave, hoy);
 
     const [numActivos, presupuestos] = await Promise.all([
       ClienteModel.countDocuments({ usuarioId: usuario.id, estado: 'en_curso' }).exec(),
@@ -144,11 +167,10 @@ export async function ejecutarBriefingDiario(): Promise<void> {
   }
 }
 
-/** Recordatorios propios: cada uno se dispara a SU hora configurada, no a `HORA_MANANA`. */
+/** Recordatorios propios: cada uno se dispara a SU hora+minuto configurados. */
 async function ejecutarRecordatoriosPersonalizados(ahora: Date): Promise<void> {
   await conectarUsuarios();
   const hoy = hoyComoFecha();
-  const horaActual = ahora.getUTCHours();
   const usuarios = await UsuarioModel.find({ estado: 'activo' }).lean().exec() as any[];
 
   for (const usuario of usuarios) {
@@ -156,10 +178,10 @@ async function ejecutarRecordatoriosPersonalizados(ahora: Date): Promise<void> {
     if (subs.length === 0) continue;
     const recordatorios = (usuario.recordatoriosPersonalizados ?? []) as any[];
     for (const r of recordatorios) {
-      if (!r.activo || r.hora !== horaActual) continue;
-      const clave = `${usuario.id}:${r.id}`;
-      if (ultimaFechaRecordatorio.get(clave) === hoy) continue;
-      ultimaFechaRecordatorio.set(clave, hoy);
+      if (!r.activo || r.hora !== ahora.getUTCHours() || (r.minuto ?? 0) !== ahora.getUTCMinutes()) continue;
+      const clave = `recordatorio:${usuario.id}:${r.id}`;
+      if (ultimaFechaPorClave.get(clave) === hoy) continue;
+      ultimaFechaPorClave.set(clave, hoy);
       for (const sub of subs) {
         await enviarNotificacion(sub, 'Recordatorio', r.texto, { tipo: 'recordatorio-personalizado', id: r.id })
           .catch((err) => logger.error({ err, usuarioId: usuario.id }, '[notificaciones] Error enviando recordatorio personalizado'));
@@ -176,15 +198,9 @@ async function ejecutarRecordatoriosPersonalizados(ahora: Date): Promise<void> {
 export function iniciarNotificacionesProgramadas(): void {
   setInterval(() => {
     const ahora = new Date();
-    const hoy = hoyComoFecha();
-
-    if (ahora.getUTCHours() === HORA_MANANA && ultimaFechaManana !== hoy) {
-      ultimaFechaManana = hoy;
-      ejecutarAvisoCobrosPendientes().catch((err) => logger.error({ err }, '[notificaciones] Error en el aviso de cobros pendientes'));
-      ejecutarAvisoMargenBajo().catch((err) => logger.error({ err }, '[notificaciones] Error en el aviso de margen bajo'));
-      ejecutarBriefingDiario().catch((err) => logger.error({ err }, '[notificaciones] Error en el briefing diario'));
-    }
-
+    ejecutarAvisoCobrosPendientes(ahora).catch((err) => logger.error({ err }, '[notificaciones] Error en el aviso de cobros pendientes'));
+    ejecutarAvisoMargenBajo(ahora).catch((err) => logger.error({ err }, '[notificaciones] Error en el aviso de margen bajo'));
+    ejecutarBriefingDiario(ahora).catch((err) => logger.error({ err }, '[notificaciones] Error en el briefing diario'));
     ejecutarRecordatoriosPersonalizados(ahora).catch((err) => logger.error({ err }, '[notificaciones] Error en los recordatorios personalizados'));
   }, INTERVALO_COMPROBACION_MS);
 }

@@ -530,12 +530,19 @@ export const esquemaActualizarCobros = z.object({
   cobros: z.array(esquemaCobro).max(50),
 });
 
-/** Interruptores por tipo de notificación (panel de notificaciones, 18/08/2026) — los cuatro opcionales, cada uno con su propio default `true` (activados salvo que el usuario los apague). */
+/** Un tipo de notificación: activo/inactivo + su propia hora (18/08/2026 — antes horas/margen/cobros/briefing compartían una hora fija de servidor, sin poder cambiarla). */
+const esquemaPreferenciaNotifTipo = z.object({
+  activo: z.boolean().optional().default(true),
+  hora: z.number().int().min(0).max(23),
+  minuto: z.number().int().min(0).max(59).optional().default(0),
+});
+
+/** Interruptores + hora por tipo de notificación (panel de notificaciones, 18/08/2026). */
 export const esquemaNotifPrefs = z.object({
-  horas: z.boolean().optional().default(true),
-  cobrosPendientes: z.boolean().optional().default(true),
-  margenBajo: z.boolean().optional().default(true),
-  briefingDiario: z.boolean().optional().default(true),
+  horas: esquemaPreferenciaNotifTipo,
+  cobrosPendientes: esquemaPreferenciaNotifTipo,
+  margenBajo: esquemaPreferenciaNotifTipo,
+  briefingDiario: esquemaPreferenciaNotifTipo,
 });
 
 const esquemaRecordatorioPersonalizado = z.object({

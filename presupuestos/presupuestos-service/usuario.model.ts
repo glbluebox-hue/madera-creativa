@@ -70,19 +70,51 @@ const PushSubscriptionSchema = new Schema(
 );
 
 /**
- * Interruptores por tipo de notificación push (panel de notificaciones,
- * 18/08/2026) — todos activos por defecto, así una cuenta ya existente
- * (sin este campo) se comporta igual que antes de añadirlo, sin migración.
+ * Un tipo de notificación concreto — activo/inactivo y a qué hora
+ * (18/08/2026, ampliado a hora+minuto propios por tipo: antes horas y
+ * margen/cobros/briefing compartían una única hora fija de servidor, sin
+ * poder cambiarla desde la app — pedido explícito del usuario: "todo esto
+ * tiene que ser editable y con la posibilidad de poner una hora y también
+ * minutos"). `Schema.Types.Mixed` en vez de un sub-schema tipado a
+ * propósito: `notifPrefs.horas` empezó siendo un `Boolean` liso (versión
+ * anterior, sigue así en cuentas que no lo hayan vuelto a guardar) — un
+ * sub-schema con casting estricto fallaría al leer ese valor antiguo. La
+ * interpretación (booleano viejo vs. objeto nuevo vs. ausente del todo) la
+ * hace siempre `leerPreferenciaNotif()`, nunca Mongoose.
  */
 const PreferenciasNotificacionesSchema = new Schema(
   {
-    horas: { type: Boolean, default: true },
-    cobrosPendientes: { type: Boolean, default: true },
-    margenBajo: { type: Boolean, default: true },
-    briefingDiario: { type: Boolean, default: true },
+    horas: { type: Schema.Types.Mixed, default: true },
+    cobrosPendientes: { type: Schema.Types.Mixed, default: true },
+    margenBajo: { type: Schema.Types.Mixed, default: true },
+    briefingDiario: { type: Schema.Types.Mixed, default: true },
   },
   { _id: false }
 );
+
+/** Un tipo de notificación ya interpretado — activo/inactivo y su hora (UTC). */
+export type PreferenciaNotifTipo = { activo: boolean; hora: number; minuto: number };
+
+/**
+ * Lee un campo de `notifPrefs` con compatibilidad hacia atrás: puede venir
+ * ausente (cuenta nunca guardó nada), como `Boolean` liso (formato
+ * anterior, solo activo/inactivo, hora fija de servidor) o como el objeto
+ * nuevo `{activo, hora, minuto}`. `horaDefecto` es la hora fija que tenía
+ * ese tipo antes de poder configurarse (20h para horas, 8h para el resto)
+ * — se usa tanto si el campo está ausente como si es el booleano antiguo,
+ * para que una cuenta que no lo haya vuelto a tocar siga disparando a la
+ * misma hora de siempre.
+ */
+export function leerPreferenciaNotif(notifPrefs: any, tipo: string, horaDefecto: number): PreferenciaNotifTipo {
+  const v = notifPrefs?.[tipo];
+  if (v === undefined || v === null) return { activo: true, hora: horaDefecto, minuto: 0 };
+  if (typeof v === 'boolean') return { activo: v, hora: horaDefecto, minuto: 0 };
+  return {
+    activo: v.activo ?? true,
+    hora: Number.isInteger(v.hora) && v.hora >= 0 && v.hora <= 23 ? v.hora : horaDefecto,
+    minuto: Number.isInteger(v.minuto) && v.minuto >= 0 && v.minuto <= 59 ? v.minuto : 0,
+  };
+}
 
 /**
  * Recordatorio propio del usuario — texto libre, repetido cada día a la

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import * as api from './api.js';
-import type { NotifPrefs, RecordatorioPersonalizado } from './api.js';
+import type { NotifPrefs, PreferenciaNotifTipo, RecordatorioPersonalizado } from './api.js';
 import type { EstadoPush } from './use-push.js';
 import styles from './styles.module.css';
 
@@ -16,51 +16,70 @@ export type PanelNotificacionesProps = {
 };
 
 const TIPOS: Array<{ clave: keyof NotifPrefs; titulo: string; descripcion: string }> = [
-  { clave: 'horas', titulo: 'Recordatorio de horas', descripcion: 'Un aviso al final del día si tienes proyectos activos sin horas registradas hoy.' },
+  { clave: 'horas', titulo: 'Recordatorio de horas', descripcion: 'Un aviso si tienes proyectos activos sin horas registradas hoy.' },
   { clave: 'cobrosPendientes', titulo: 'Cobros pendientes', descripcion: 'Resumen de los cobros de presupuestos aceptados que todavía no has marcado como recibidos.' },
   { clave: 'margenBajo', titulo: 'Margen bajo', descripcion: 'Aviso cuando el margen de un proyecto activo baja del 40%.' },
-  { clave: 'briefingDiario', titulo: 'Briefing diario', descripcion: 'Un resumen corto por la mañana: proyectos activos y cobros pendientes.' },
+  { clave: 'briefingDiario', titulo: 'Briefing diario', descripcion: 'Un resumen corto: proyectos activos y cobros pendientes.' },
 ];
 
-const HORAS_DIA = Array.from({ length: 24 }, (_, i) => i);
+const PREFERENCIAS_POR_DEFECTO: NotifPrefs = {
+  horas: { activo: true, hora: 20, minuto: 0 },
+  cobrosPendientes: { activo: true, hora: 8, minuto: 0 },
+  margenBajo: { activo: true, hora: 8, minuto: 0 },
+  briefingDiario: { activo: true, hora: 8, minuto: 0 },
+};
 
 /**
- * El selector de hora de un recordatorio muestra y recoge la hora LOCAL
- * del propio dispositivo (lo que el usuario espera al elegir "17:00" es
- * que suene a las 17:00 de su reloj) — pero el servidor compara siempre
- * en UTC (`recordatoriosPersonalizados[].hora`, ver
- * `notificaciones-programadas.service.ts`), mismo criterio que el resto
- * de horas de esta app. Sin esta conversión, un recordatorio puesto a las
- * 17:00 se guardaba tal cual como si ya fuera UTC, así que en cualquier
- * huso horario distinto de UTC se disparaba a otra hora — reportado
- * 18/08/2026 ("puse una notificación a las 17:00 pero no ha llegado
- * nada"). Se usa el desfase ACTUAL del navegador (no tiene en cuenta un
- * cambio de horario de invierno/verano más adelante — límite aceptado: si
- * eso pasa, basta con volver a guardar el recordatorio para que se
- * reajuste).
+ * Los selectores de hora muestran y recogen la hora LOCAL del propio
+ * dispositivo (lo que el usuario espera al elegir "17:00" es que suene a
+ * las 17:00 de su reloj) — pero el servidor compara siempre en UTC (mismo
+ * criterio en todos los tipos de notificación, ver
+ * `notificaciones-programadas.service.ts`/`recordatorio-horas.service.ts`).
+ * Sin esta conversión, una hora puesta a las 17:00 se guardaba tal cual
+ * como si ya fuera UTC, así que en cualquier huso horario distinto de UTC
+ * se disparaba a otra hora — reportado 18/08/2026 ("puse una notificación
+ * a las 17:00 pero no ha llegado nada"). Se trabaja en "minutos desde
+ * medianoche" para no repetir la aritmética de hora+minuto por separado.
+ * Usa el desfase ACTUAL del navegador (no tiene en cuenta un cambio de
+ * horario de invierno/verano más adelante — límite aceptado: si eso pasa,
+ * basta con volver a guardar para que se reajuste).
  */
-function horaLocalAUtc(horaLocal: number): number {
-  const offsetHoras = new Date().getTimezoneOffset() / 60;
-  return (Math.round(horaLocal + offsetHoras) % 24 + 24) % 24;
+function localAUtc(hora: number, minuto: number): { hora: number; minuto: number } {
+  const offsetMin = new Date().getTimezoneOffset();
+  const total = (((hora * 60 + minuto) + offsetMin) % 1440 + 1440) % 1440;
+  return { hora: Math.floor(total / 60), minuto: total % 60 };
 }
-function horaUtcALocal(horaUtc: number): number {
-  const offsetHoras = new Date().getTimezoneOffset() / 60;
-  return (Math.round(horaUtc - offsetHoras) % 24 + 24) % 24;
+function utcALocal(hora: number, minuto: number): { hora: number; minuto: number } {
+  const offsetMin = new Date().getTimezoneOffset();
+  const total = (((hora * 60 + minuto) - offsetMin) % 1440 + 1440) % 1440;
+  return { hora: Math.floor(total / 60), minuto: total % 60 };
+}
+/** Para el valor de un `<input type="time">`. */
+function aHHMM(hora: number, minuto: number): string {
+  return `${String(hora).padStart(2, '0')}:${String(minuto).padStart(2, '0')}`;
+}
+function desdeHHMM(valor: string): { hora: number; minuto: number } {
+  const [h, m] = valor.split(':').map(Number);
+  return { hora: h || 0, minuto: m || 0 };
 }
 
 /**
- * Panel de notificaciones (18/08/2026): interruptores por tipo + gestión de
- * recordatorios propios (texto libre, hora del día, activo/inactivo).
- * Reemplaza el simple botón de campana como punto de entrada — pedido
- * explícito del usuario ("crearía un panel con la posibilidad de activar o
- * desactivar diferentes tipos de notificación").
+ * Panel de notificaciones (18/08/2026): interruptores + hora propia por
+ * tipo, y gestión de recordatorios propios (texto libre, hora,
+ * activo/inactivo). Reemplaza el simple botón de campana como punto de
+ * entrada — pedido explícito del usuario ("crearía un panel con la
+ * posibilidad de activar o desactivar diferentes tipos de notificación").
+ * Cada tipo tenía al principio una única hora fija de servidor — ampliado
+ * el mismo día a hora propia editable por tipo, con minutos, no solo
+ * horas en punto ("todo esto tiene que ser editable y con la posibilidad
+ * de poner una hora y también minutos").
  */
 export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCerrar }: PanelNotificacionesProps) {
   const [cargando, setCargando] = useState(true);
-  const [preferencias, setPreferencias] = useState<NotifPrefs>({ horas: true, cobrosPendientes: true, margenBajo: true, briefingDiario: true });
+  const [preferencias, setPreferencias] = useState<NotifPrefs>(PREFERENCIAS_POR_DEFECTO);
   const [recordatorios, setRecordatorios] = useState<RecordatorioPersonalizado[]>([]);
   const [nuevoTexto, setNuevoTexto] = useState('');
-  const [nuevaHora, setNuevaHora] = useState(9);
+  const [nuevaHora, setNuevaHora] = useState('09:00');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
   const [probando, setProbando] = useState(false);
@@ -82,21 +101,34 @@ export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCe
   useEffect(() => {
     api.obtenerPreferenciasNotificaciones()
       .then(({ preferencias, recordatorios }) => {
-        setPreferencias(preferencias);
-        // El servidor guarda la hora en UTC — se convierte a hora local
-        // aquí, una sola vez, para que el resto del componente (el
-        // desplegable, el estado que se edita) trabaje siempre en hora
-        // local, tal como la ve y espera el usuario.
-        setRecordatorios(recordatorios.map((r) => ({ ...r, hora: horaUtcALocal(r.hora) })));
+        // El servidor guarda todas las horas en UTC — se convierten a hora
+        // local aquí, una sola vez, para que el resto del componente
+        // trabaje siempre en hora local, tal como la ve y espera el usuario.
+        const local: NotifPrefs = { horas: preferencias.horas, cobrosPendientes: preferencias.cobrosPendientes, margenBajo: preferencias.margenBajo, briefingDiario: preferencias.briefingDiario };
+        for (const clave of Object.keys(local) as (keyof NotifPrefs)[]) {
+          const p = preferencias[clave];
+          const { hora, minuto } = utcALocal(p.hora, p.minuto);
+          local[clave] = { activo: p.activo, hora, minuto };
+        }
+        setPreferencias(local);
+        setRecordatorios(recordatorios.map((r) => {
+          const { hora, minuto } = utcALocal(r.hora, r.minuto ?? 0);
+          return { ...r, hora, minuto };
+        }));
       })
       .catch(() => setError('No se pudieron cargar tus notificaciones.'))
       .finally(() => setCargando(false));
   }, []);
 
+  const cambiarTipo = (clave: keyof NotifPrefs, cambios: Partial<PreferenciaNotifTipo>) => {
+    setPreferencias((prev) => ({ ...prev, [clave]: { ...prev[clave], ...cambios } }));
+  };
+
   const anadirRecordatorio = () => {
     const texto = nuevoTexto.trim();
     if (!texto) return;
-    setRecordatorios((prev) => [...prev, { id: crypto.randomUUID(), texto, hora: nuevaHora, activo: true }]);
+    const { hora, minuto } = desdeHHMM(nuevaHora);
+    setRecordatorios((prev) => [...prev, { id: crypto.randomUUID(), texto, hora, minuto, activo: true }]);
     setNuevoTexto('');
   };
 
@@ -104,12 +136,21 @@ export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCe
     setGuardando(true);
     setError('');
     try {
+      // Se convierte de vuelta a UTC justo aquí, al cruzar hacia el
+      // servidor — el estado en memoria de este componente sigue en hora
+      // local hasta el último momento.
+      const prefsUtc: NotifPrefs = { ...preferencias };
+      for (const clave of Object.keys(prefsUtc) as (keyof NotifPrefs)[]) {
+        const p = preferencias[clave];
+        const { hora, minuto } = localAUtc(p.hora, p.minuto);
+        prefsUtc[clave] = { activo: p.activo, hora, minuto };
+      }
       await Promise.all([
-        api.guardarPreferenciasNotificaciones(preferencias),
-        // Se convierte de vuelta a UTC justo aquí, al cruzar hacia el
-        // servidor — el estado en memoria de este componente sigue en
-        // hora local hasta el último momento.
-        api.guardarRecordatoriosPersonalizados(recordatorios.map((r) => ({ ...r, hora: horaLocalAUtc(r.hora) }))),
+        api.guardarPreferenciasNotificaciones(prefsUtc),
+        api.guardarRecordatoriosPersonalizados(recordatorios.map((r) => {
+          const { hora, minuto } = localAUtc(r.hora, r.minuto);
+          return { ...r, hora, minuto };
+        })),
       ]);
       onCerrar();
     } catch {
@@ -167,21 +208,34 @@ export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCe
           <>
             <div className={styles.campo} style={{ marginBottom: '1.25rem' }}>
               <label className={styles.campoLabel}>Tipos de notificación</label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '0.4rem' }}>
-                {TIPOS.map((t) => (
-                  <label key={t.clave} style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      style={{ marginTop: '0.2rem' }}
-                      checked={preferencias[t.clave]}
-                      onChange={(e) => setPreferencias((p) => ({ ...p, [t.clave]: e.target.checked }))}
-                    />
-                    <span>
-                      <span style={{ display: 'block', fontWeight: 600, fontSize: '0.88rem', color: 'var(--negro)' }}>{t.titulo}</span>
-                      <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>{t.descripcion}</span>
-                    </span>
-                  </label>
-                ))}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.4rem' }}>
+                {TIPOS.map((t) => {
+                  const pref = preferencias[t.clave];
+                  return (
+                    <div key={t.clave} style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start' }}>
+                      <input
+                        type="checkbox"
+                        style={{ marginTop: '0.2rem' }}
+                        checked={pref.activo}
+                        onChange={(e) => cambiarTipo(t.clave, { activo: e.target.checked })}
+                      />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--negro)' }}>{t.titulo}</span>
+                          <input
+                            type="time"
+                            className={styles.input}
+                            style={{ width: '110px' }}
+                            value={aHHMM(pref.hora, pref.minuto)}
+                            disabled={!pref.activo}
+                            onChange={(e) => { const { hora, minuto } = desdeHHMM(e.target.value); cambiarTipo(t.clave, { hora, minuto }); }}
+                          />
+                        </div>
+                        <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>{t.descripcion}</span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -205,14 +259,13 @@ export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCe
                       value={r.texto}
                       onChange={(e) => setRecordatorios((prev) => prev.map((x) => x.id === r.id ? { ...x, texto: e.target.value } : x))}
                     />
-                    <select
+                    <input
+                      type="time"
                       className={styles.input}
-                      style={{ width: '90px' }}
-                      value={r.hora}
-                      onChange={(e) => setRecordatorios((prev) => prev.map((x) => x.id === r.id ? { ...x, hora: Number(e.target.value) } : x))}
-                    >
-                      {HORAS_DIA.map((h) => <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>)}
-                    </select>
+                      style={{ width: '110px' }}
+                      value={aHHMM(r.hora, r.minuto)}
+                      onChange={(e) => { const { hora, minuto } = desdeHHMM(e.target.value); setRecordatorios((prev) => prev.map((x) => x.id === r.id ? { ...x, hora, minuto } : x)); }}
+                    />
                     <button
                       type="button"
                       className={`${styles.btn} ${styles.btnSecundario}`}
@@ -234,9 +287,13 @@ export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCe
                   onChange={(e) => setNuevoTexto(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); anadirRecordatorio(); } }}
                 />
-                <select className={styles.input} style={{ width: '90px' }} value={nuevaHora} onChange={(e) => setNuevaHora(Number(e.target.value))}>
-                  {HORAS_DIA.map((h) => <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>)}
-                </select>
+                <input
+                  type="time"
+                  className={styles.input}
+                  style={{ width: '110px' }}
+                  value={nuevaHora}
+                  onChange={(e) => setNuevaHora(e.target.value)}
+                />
                 <button type="button" className={`${styles.btn} ${styles.btnSecundario}`} onClick={anadirRecordatorio} disabled={!nuevoTexto.trim()}>Añadir</button>
               </div>
             </div>

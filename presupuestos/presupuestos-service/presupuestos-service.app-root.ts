@@ -13,7 +13,7 @@ import { logger } from './logger.service.js';
 import { inicializarMotorDocumental } from './documento-motor-inicializar.js';
 import { inicializarAutomatizaciones } from './automatizaciones-listener.js';
 import { PresupuestosService, ErrorDeNegocio } from './presupuestos-service.js';
-import { UsuarioModel, conectarUsuarios, migrarNombresNormalizados, asegurarIndiceNombreNormalizado, ACCESO_POR_DEFECTO } from './usuario.model.js';
+import { UsuarioModel, conectarUsuarios, migrarNombresNormalizados, asegurarIndiceNombreNormalizado, ACCESO_POR_DEFECTO, leerPreferenciaNotif } from './usuario.model.js';
 import type { AccesoUsuario, EstadoUsuario } from './usuario.model.js';
 import { CodigoPromocionalModel, conectarCodigos, canjearCodigo, generarIdCodigo, normalizarCodigo } from './codigo-promocional.model.js';
 import { CosteInfraestructuraModel, conectarCostes, generarIdCoste } from './coste-infraestructura.model.js';
@@ -1029,13 +1029,13 @@ export function run() {
       await conectarUsuarios();
       const u = await UsuarioModel.findOne({ id: req.usuarioId }).lean().exec() as any;
       if (!u) { res.status(404).json({ error: 'No encontrado' }); return; }
-      const p = u.notifPrefs || {};
+      const p = u.notifPrefs;
       res.json({
         preferencias: {
-          horas: p.horas ?? true,
-          cobrosPendientes: p.cobrosPendientes ?? true,
-          margenBajo: p.margenBajo ?? true,
-          briefingDiario: p.briefingDiario ?? true,
+          horas: leerPreferenciaNotif(p, 'horas', 20),
+          cobrosPendientes: leerPreferenciaNotif(p, 'cobrosPendientes', 8),
+          margenBajo: leerPreferenciaNotif(p, 'margenBajo', 8),
+          briefingDiario: leerPreferenciaNotif(p, 'briefingDiario', 8),
         },
         recordatorios: u.recordatoriosPersonalizados ?? [],
       });

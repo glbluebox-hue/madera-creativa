@@ -1043,12 +1043,21 @@ export async function cambiarAcceso(datos: { passwordActual: string; nombreNuevo
 
 // ── Notificaciones — interruptores por tipo y recordatorios propios (18/08/2026) ──
 
-/** Interruptores por tipo de notificación. */
+/** Un tipo de notificación: activo/inactivo + su propia hora (UTC) — ampliado 18/08/2026, cada tipo tenía antes una hora fija de servidor sin poder cambiarla. */
+export type PreferenciaNotifTipo = {
+  activo: boolean;
+  /** Hora del día, 0-23 (hora UTC). */
+  hora: number;
+  /** Minuto, 0-59 (hora UTC). */
+  minuto: number;
+};
+
+/** Interruptores + hora por tipo de notificación. */
 export type NotifPrefs = {
-  horas: boolean;
-  cobrosPendientes: boolean;
-  margenBajo: boolean;
-  briefingDiario: boolean;
+  horas: PreferenciaNotifTipo;
+  cobrosPendientes: PreferenciaNotifTipo;
+  margenBajo: PreferenciaNotifTipo;
+  briefingDiario: PreferenciaNotifTipo;
 };
 
 /** Recordatorio propio del usuario. */
@@ -1057,6 +1066,8 @@ export type RecordatorioPersonalizado = {
   texto: string;
   /** Hora del día, 0-23 (hora UTC). */
   hora: number;
+  /** Minuto, 0-59 (hora UTC). */
+  minuto: number;
   activo: boolean;
 };
 
