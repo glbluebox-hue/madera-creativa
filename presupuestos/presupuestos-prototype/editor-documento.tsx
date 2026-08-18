@@ -14,7 +14,7 @@ import type { OnDrag, OnDragGroup, OnResize } from 'react-moveable';
 // tipado explícitamente contra los tipos reales importados abajo.
 const Moveable = ReactMoveable.default as unknown as ComponentType<Record<string, unknown>>;
 import type { Empresa } from './use-empresa.js';
-import type { DocumentoMC, ElementoMC, PaginaMC, TemaMC, RecursoMC, ComponenteMC } from './documento-modelo.js';
+import type { DocumentoMC, ElementoMC, PaginaMC, TemaMC, RecursoMC, ComponenteMC, ZonaMC } from './documento-modelo.js';
 import { PAGINA_A4, TEMA_POR_DEFECTO } from './documento-modelo.js';
 import { generarId } from './mock.js';
 import {
@@ -24,15 +24,15 @@ import {
   agruparElementos, desagruparElementos, establecerBloqueo, cambiarCapa, alinear, distribuir,
   anadirPagina, eliminarPagina, establecerFondoPagina, localizarElemento,
   crearEstiloNombrado, eliminarEstiloNombrado, renombrarEstiloNombrado, aplicarEstiloNombrado,
-  resolverEstiloEfectivo, establecerTema, sincronizarEstiloConNombrado,
+  establecerTema, sincronizarEstiloConNombrado,
   crearElementoInstanciaComponente, desvincularInstancia,
 } from './documento-comandos.js';
 import { obtenerTipoRender, listarTiposRenderInsertables, elementoObligatorioIncompleto } from './documento-registro-tipos-render.js';
+import { resolverZonaEfectiva, elementoVisibleEn, resolverElementoPresentacion } from './documento-render-compartido.js';
 import './documento-tipos-iniciales-render.js'; // registro de render por efecto secundario — ver ese archivo.
 import './documento-tipos-avanzados-render.js'; // Tabla/Firma/Código QR/Dibujo/Bloque IA (Incremento 7) — mismo patrón.
 import './documento-variables-iniciales.js'; // registro de variables inteligentes por efecto secundario (Incremento 4).
 import { leerArchivoComoBase64 } from './archivos.js';
-import { formatoEuro } from './calculos.js';
 import * as api from './api.js';
 import editorStyles from './editor-documento.module.css';
 import styles from './styles.module.css';
@@ -404,19 +404,6 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
     return () => contenedor.removeEventListener('wheel', onWheel);
   }, []);
 
-  // ── Logo/precio vinculados — se resuelven en vivo a partir de Empresa/precioVinculado, nunca se guardan resueltos. ──
-
-  const resolverUrlLogo = (elemento: ElementoMC) => {
-    const modo = (elemento.contenido.modo as string) ?? 'vinculado';
-    if (modo === 'vinculado') return empresa.logo ?? '';
-    return (elemento.contenido.url as string) ?? '';
-  };
-  const resolverValorPrecio = (elemento: ElementoMC) => {
-    const modo = (elemento.contenido.modo as string) ?? 'vinculado';
-    if (modo === 'vinculado') return precioVinculado !== undefined ? formatoEuro(precioVinculado) : '';
-    return (elemento.contenido.valor as string) ?? '';
-  };
-
   // ── Guardado ─────────────────────────────────────────────────────────────────
 
   const guardar = async () => {
@@ -644,22 +631,15 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
     // Sección 9 de la arquitectura: al exportar/imprimir se filtra por
     // visibilidad !== 'soloEdicion'; al mostrar el editor, se filtra lo
     // contrario (nunca se ve 'soloImpresion' mientras se edita). 'oculto'
-    // nunca se ve en ningún contexto.
-    const visibilidad = elemento.restricciones.visibilidad;
-    const visible = visibilidad !== 'oculto' && (modoImpresion ? visibilidad !== 'soloEdicion' : visibilidad !== 'soloImpresion');
-    if (!visible) return null;
+    // nunca se ve en ningún contexto. Misma regla que usa el visor de solo
+    // lectura del Portal del cliente (`documento-render-compartido.ts`).
+    if (!elementoVisibleEn(elemento, modoImpresion)) return null;
 
     // Elementos vinculados (logo/precio) y el estilo con nombre (sección 4 de
     // la arquitectura) se resuelven en un ElementoMC "de presentación" — nunca
     // se persiste el valor resuelto, siempre se recalcula a partir de la
     // referencia (`estiloNombradoId` / `contenido.modo:'vinculado'`).
-    const estiloEfectivo = resolverEstiloEfectivo(documento, elemento);
-    const elementoConEstilo = estiloEfectivo === elemento.estilo ? elemento : { ...elemento, estilo: estiloEfectivo };
-    const elementoPresentacion: ElementoMC = elementoConEstilo.tipo === 'logotipo'
-      ? { ...elementoConEstilo, contenido: { ...elementoConEstilo.contenido, url: resolverUrlLogo(elemento) } }
-      : elementoConEstilo.tipo === 'precioDestacado'
-      ? { ...elementoConEstilo, contenido: { ...elementoConEstilo.contenido, valor: resolverValorPrecio(elemento) } }
-      : elementoConEstilo;
+    const elementoPresentacion = resolverElementoPresentacion(documento, elemento, { logoEmpresa: empresa.logo ?? undefined, precioVinculado });
 
     return (
       <div
@@ -678,6 +658,46 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
           onSalirEdicion={() => setEditandoId(null)}
           resolverComponente={(id) => componentesCache.get(id)}
         />
+      </div>
+    );
+  }
+
+  /**
+   * Pinta un elemento de una zona repetida (encabezado/pie) — a diferencia
+   * de `renderElemento`, siempre de solo lectura en este incremento: el
+   * membrete se ve en el lienzo (hueco real que tenía el editor: nunca se
+   * pintaba, ni en pantalla ni al exportar), pero seleccionarlo/arrastrarlo
+   * dentro del propio editor queda para un incremento posterior — no hacía
+   * falta para que el Portal del cliente muestre el documento real, que es
+   * el encargo de este incremento.
+   */
+  function renderElementoZona(elemento: ElementoMC) {
+    if (!elementoVisibleEn(elemento, modoImpresion)) return null;
+    const definicion = obtenerTipoRender(elemento.tipo);
+    const elementoPresentacion = resolverElementoPresentacion(documento, elemento, { logoEmpresa: empresa.logo ?? undefined, precioVinculado });
+    return (
+      <div
+        key={elemento.id}
+        className={editorStyles.elemento}
+        style={{ left: elemento.posicion.x, top: elemento.posicion.y, width: elemento.tamano.ancho, height: elemento.tamano.alto, transform: `rotate(${elemento.rotacion}deg)`, opacity: elemento.opacidad, zIndex: elemento.capa }}
+      >
+        <definicion.Render
+          elemento={elementoPresentacion}
+          editando={false}
+          onCambiarContenido={() => {}}
+          onSalirEdicion={() => {}}
+          resolverComponente={(id) => componentesCache.get(id)}
+        />
+      </div>
+    );
+  }
+
+  /** Pinta la banda de encabezado o pie de una página, si tiene una zona efectiva (herencia resuelta con `resolverZonaEfectiva`). `pointerEvents: 'none'` a propósito: en este incremento el membrete se ve pero no se interactúa con él en el lienzo (ver nota de `renderElementoZona`). */
+  function renderZonaDocumento(zona: ZonaMC | null, ancho: number, posicion: 'arriba' | 'abajo') {
+    if (!zona) return null;
+    return (
+      <div style={{ position: 'absolute', left: 0, [posicion === 'arriba' ? 'top' : 'bottom']: 0, width: ancho, height: zona.altura, pointerEvents: 'none' }}>
+        {zona.elementos.map((el) => renderElementoZona(el))}
       </div>
     );
   }
@@ -1075,6 +1095,8 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
           {documento.paginas.map((pagina) => {
             const config = pagina.configuracion ?? documento.configuracionPorDefecto;
             const fondo = pagina.fondo;
+            const encabezado = resolverZonaEfectiva(pagina.encabezado, documento.encabezadoPorDefecto);
+            const pie = resolverZonaEfectiva(pagina.pie, documento.piePorDefecto);
             const estiloFondo: CSSProperties =
               fondo?.tipo === 'imagen' && fondo.imagenUrl
                 ? {
@@ -1094,7 +1116,9 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
                 onMouseDown={(e) => e.stopPropagation()}
               >
                 <div style={{ width: config.ancho, height: config.alto, transform: `scale(${zoom})`, transformOrigin: 'top left', position: 'relative' }}>
+                  {renderZonaDocumento(encabezado, config.ancho, 'arriba')}
                   {pagina.elementos.map((el) => renderElemento(el, pagina))}
+                  {renderZonaDocumento(pie, config.ancho, 'abajo')}
                 </div>
               </div>
             );

@@ -2,8 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import * as api from './api.js';
 import type { PresupuestoPublico } from './presupuestos-modelo.js';
+import type { DocumentoMC } from './documento-modelo.js';
 import { formatoEuro, formatoFecha } from './calculos.js';
 import { FirmaCanvas } from './firma-canvas.js';
+import { VisorDocumento } from './visor-documento.js';
 import styles from './styles.module.css';
 
 /**
@@ -57,7 +59,11 @@ export function PortalPresupuesto() {
     // preferencia de tema guardada, así que sigue `prefers-color-scheme`
     // del dispositivo del cliente automáticamente.
     <div className={styles.app} style={{ minHeight: '100vh', background: 'var(--fondo)', display: 'flex', justifyContent: 'center', padding: '1.25rem 1rem 3rem' }}>
-      <div style={{ width: '100%', maxWidth: '560px' }}>
+      {/* Un documento del Motor Documental es una página A4 (794px de ancho
+          natural) — el ancho de columna de texto de siempre (560px) lo
+          dejaría diminuto en pantallas grandes; el resto de pantallas
+          (cargando/error/formato plano) mantienen el ancho de siempre. */}
+      <div style={{ width: '100%', maxWidth: presupuesto?.formato === 'documento' && presupuesto.contenidoDocumento ? '900px' : '560px' }}>
         {estado === 'cargando' && (
           <p style={{ textAlign: 'center', color: 'var(--topo-claro)', marginTop: '3rem' }}>Cargando…</p>
         )}
@@ -69,7 +75,46 @@ export function PortalPresupuesto() {
           </div>
         )}
 
-        {estado === 'listo' && presupuesto && (
+        {estado === 'listo' && presupuesto && presupuesto.formato === 'documento' && presupuesto.contenidoDocumento && (
+          <>
+            {/* Sin el bloque de logo/nombre de aquí arriba a propósito: el
+                documento del Motor Documental ya trae su propio membrete
+                (encabezado de página) — repetirlo aquí sería una marca
+                duplicada. */}
+            <p style={{ textAlign: 'center', color: 'var(--topo-claro)', fontSize: '0.85rem', margin: '0 0 1rem' }}>
+              Presupuesto para {presupuesto.clienteNombre} · válido hasta el {formatoFecha(presupuesto.expiraEn)}
+            </p>
+            <div style={{ width: '100%', overflowX: 'auto' }}>
+              <VisorDocumento
+                documento={presupuesto.contenidoDocumento as unknown as DocumentoMC}
+                logoEmpresa={presupuesto.empresa.logo}
+                precioVinculado={presupuesto.precioTotal}
+              />
+            </div>
+
+            <div className={styles.panel} style={{ marginTop: '1.5rem', textAlign: 'center', maxWidth: '560px', marginLeft: 'auto', marginRight: 'auto' }}>
+              {presupuesto.estado === 'aceptado' ? (
+                <>
+                  <p style={{ color: 'var(--verde)', fontWeight: 700, marginBottom: presupuesto.firmaClienteUrl ? '0.75rem' : 0 }}>
+                    ✓ Aceptado {presupuesto.firmaClienteFecha ? `el ${formatoFecha(presupuesto.firmaClienteFecha)}` : ''}
+                  </p>
+                  {presupuesto.firmaClienteUrl && (
+                    <img src={presupuesto.firmaClienteUrl} alt="Firma" style={{ maxWidth: '260px', maxHeight: '120px', border: '1px solid var(--borde-fino)', borderRadius: '8px', background: 'var(--blanco)' }} />
+                  )}
+                </>
+              ) : firmando ? (
+                <FirmaCanvas onFirmar={firmar} onCancelar={() => setFirmando(false)} enviando={enviando} />
+              ) : (
+                <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={() => setFirmando(true)} style={{ width: '100%', fontSize: '1rem', padding: '0.85rem' }}>
+                  Aceptar presupuesto
+                </button>
+              )}
+              {error && estado === 'listo' && <p style={{ color: 'var(--rojo)', fontSize: '0.85rem', marginTop: '0.6rem' }}>{error}</p>}
+            </div>
+          </>
+        )}
+
+        {estado === 'listo' && presupuesto && !(presupuesto.formato === 'documento' && presupuesto.contenidoDocumento) && (
           <>
             <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
               {presupuesto.empresa.logo && (
