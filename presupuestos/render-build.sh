@@ -18,7 +18,7 @@ echo "── Frontend: preparar archivos estáticos (manifest, iconos, service w
 cd presupuestos-prototype
 rm -rf public-render
 mkdir -p public-render/assets
-cp assets/icon-180.png assets/icon-192.png assets/icon-512.png assets/icon-maskable-512.png assets/sw.js public-render/assets/
+cp assets/icon-180.png assets/icon-192.png assets/icon-512.png assets/icon-maskable-512.png assets/icono-huella.png assets/sw.js public-render/assets/
 cp manifest.webmanifest public-render/
 
 echo "── Frontend: instalar y compilar (mismo origen que la API, sin prefijo /api) ──"
