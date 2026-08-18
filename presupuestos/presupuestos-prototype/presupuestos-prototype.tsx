@@ -92,7 +92,7 @@ export function PresupuestosPrototype() {
   const [panelNotificaciones, setPanelNotificaciones] = useState(false);
 
   useLicencia(sesion, logout);
-  const { estado: estadoPush, activar: activarPush } = usePush(sesion);
+  const { estado: estadoPush, error: errorPush, activar: activarPush } = usePush(sesion);
 
   if (!autenticado) {
     return <LoginPage onLogin={login} onLoginDirecto={loginDirecto} onRegistrar={registrar} />;
@@ -480,7 +480,7 @@ export function PresupuestosPrototype() {
       {panelAdmin && sesion?.esAdmin && <PanelAdmin onCerrar={() => setPanelAdmin(false)} />}
 
       {panelNotificaciones && (
-        <PanelNotificaciones estadoPush={estadoPush} onActivarPush={activarPush} onCerrar={() => setPanelNotificaciones(false)} />
+        <PanelNotificaciones estadoPush={estadoPush} errorPush={errorPush} onActivarPush={activarPush} onCerrar={() => setPanelNotificaciones(false)} />
       )}
 
 

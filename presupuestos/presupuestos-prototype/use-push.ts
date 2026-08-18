@@ -31,7 +31,7 @@ export type EstadoPush =
  *
  * @param sesion Sesión activa del usuario.
  */
-export function usePush(sesion: SesionActiva | null): { estado: EstadoPush; activar: () => Promise<void> } {
+export function usePush(sesion: SesionActiva | null): { estado: EstadoPush; error: string; activar: () => Promise<void> } {
   const usuarioId = sesion?.usuarioId ?? null;
   const soportado = typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
   const [estado, setEstado] = useState<EstadoPush>(() => {
@@ -40,6 +40,15 @@ export function usePush(sesion: SesionActiva | null): { estado: EstadoPush; acti
     if (Notification.permission === 'denied') return 'denegado';
     return 'sin-pedir';
   });
+  /**
+   * Motivo técnico del último fallo al suscribir, para poder mostrarlo en
+   * el panel — sin esto, un permiso ya concedido que aun así no llega a
+   * suscribirse deja al usuario viendo solo "todavía no has activado...",
+   * indistinguible de no haber pulsado nada, sin ninguna pista de qué
+   * falla de verdad (reportado 18/08/2026: el usuario concede el permiso,
+   * el navegador lo confirma, y el aviso se queda igual).
+   */
+  const [error, setError] = useState('');
 
   /**
    * Suscribe de verdad (sin pedir permiso — se asume ya concedido) y lo
@@ -53,16 +62,27 @@ export function usePush(sesion: SesionActiva | null): { estado: EstadoPush; acti
   const asegurarSuscripcion = useCallback(async (): Promise<boolean> => {
     try {
       const res = await fetch(`${BASE}/push/vapid-public-key`, { credentials: 'include' });
-      if (!res.ok) return false;
+      if (!res.ok) { setError(`No se pudo obtener la clave del servidor (${res.status}).`); return false; }
       const { key: rawKey } = await res.json() as { key: string };
       const key = rawKey?.trim();
-      if (!key) return false;
+      if (!key) { setError('El servidor no tiene configurada la clave de notificaciones.'); return false; }
 
       // Mismo scope explícito que presupuestos-prototype.app-root.tsx, para
       // que ambas llamadas resuelvan siempre al mismo registro (controlando
       // toda la app, no solo /assets/).
       const registro = await navigator.serviceWorker.register('/assets/sw.js', { scope: '/' });
       await navigator.serviceWorker.ready;
+
+      // Si ya existe una suscripción de un intento anterior (posiblemente
+      // con una clave VAPID distinta a la actual del servidor — cambiaría
+      // en un reinicio del servicio si no está fijada en variables de
+      // entorno persistentes), `subscribe()` con las mismas opciones
+      // devolvería esa suscripción vieja tal cual, en vez de fallar o
+      // crear una nueva — el error solo aparecería más tarde, al intentar
+      // ENVIAR una notificación, nunca aquí. Se da de baja primero para
+      // forzar una suscripción nueva, siempre con la clave vigente.
+      const suscripcionPrevia = await registro.pushManager.getSubscription();
+      if (suscripcionPrevia) await suscripcionPrevia.unsubscribe().catch(() => {});
 
       const sub = await registro.pushManager.subscribe({
         userVisibleOnly: true,
@@ -71,14 +91,17 @@ export function usePush(sesion: SesionActiva | null): { estado: EstadoPush; acti
 
       // El usuario sale de la sesión autenticada (`fetchConAuth`), nunca de
       // un campo que mande el cliente — ver historial de este archivo.
-      await fetchConAuth('/push/subscribe', {
+      const resSub = await fetchConAuth('/push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subscription: sub.toJSON() }),
       });
+      if (!resSub.ok) { setError(`El servidor no guardó la suscripción (${resSub.status}).`); return false; }
+      setError('');
       return true;
     } catch (err) {
       console.warn('Push no disponible:', err);
+      setError(err instanceof Error ? err.message : 'Error desconocido al suscribirse.');
       return false;
     }
   }, []);
@@ -86,6 +109,7 @@ export function usePush(sesion: SesionActiva | null): { estado: EstadoPush; acti
   const activar = useCallback(async () => {
     if (!usuarioId || !soportado) return;
     setEstado('activando');
+    setError('');
     const permiso = await Notification.requestPermission();
     if (permiso !== 'granted') { setEstado(permiso === 'denied' ? 'denegado' : 'sin-pedir'); return; }
     const ok = await asegurarSuscripcion();
@@ -132,7 +156,7 @@ export function usePush(sesion: SesionActiva | null): { estado: EstadoPush; acti
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usuarioId, soportado]);
 
-  return { estado, activar };
+  return { estado, error, activar };
 }
 
 /** Convierte una clave base64url a Uint8Array para la API de push. */

@@ -8,6 +8,8 @@ import styles from './styles.module.css';
 export type PanelNotificacionesProps = {
   /** Estado actual del permiso/suscripción push del navegador. */
   estadoPush: EstadoPush;
+  /** Motivo técnico del último fallo al suscribir, o '' si no hubo ninguno — se muestra junto al aviso para poder diagnosticar sin acceso al dispositivo. */
+  errorPush: string;
   /** Pide permiso y registra la suscripción — mismo callback que el botón de campana. */
   onActivarPush: () => Promise<void>;
   onCerrar: () => void;
@@ -29,7 +31,7 @@ const HORAS_DIA = Array.from({ length: 24 }, (_, i) => i);
  * explícito del usuario ("crearía un panel con la posibilidad de activar o
  * desactivar diferentes tipos de notificación").
  */
-export function PanelNotificaciones({ estadoPush, onActivarPush, onCerrar }: PanelNotificacionesProps) {
+export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCerrar }: PanelNotificacionesProps) {
   const [cargando, setCargando] = useState(true);
   const [preferencias, setPreferencias] = useState<NotifPrefs>({ horas: true, cobrosPendientes: true, margenBajo: true, briefingDiario: true });
   const [recordatorios, setRecordatorios] = useState<RecordatorioPersonalizado[]>([]);
@@ -87,6 +89,11 @@ export function PanelNotificaciones({ estadoPush, onActivarPush, onCerrar }: Pan
               <button type="button" className={`${styles.btn} ${styles.btnPrimario}`} onClick={onActivarPush} disabled={estadoPush === 'activando'}>
                 {estadoPush === 'activando' ? 'Activando…' : 'Activar en este dispositivo'}
               </button>
+            )}
+            {errorPush && (
+              <p style={{ margin: '0.6rem 0 0', fontSize: '0.78rem', color: 'var(--rojo)' }}>
+                No se ha podido completar: {errorPush}
+              </p>
             )}
           </div>
         )}
