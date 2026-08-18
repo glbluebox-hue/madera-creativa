@@ -82,13 +82,18 @@ self.addEventListener('push', (event) => {
       // Android, y el sistema lo pinta SIEMPRE monocromo a partir del canal
       // alfa — cualquier píxel opaco se vuelve blanco sólido, sea cual sea
       // su color, y lo transparente desaparece. `icon-192.png` tiene fondo
-      // opaco (crema), así que ahí ese fondo entero se pintaba blanco sólido
-      // — un cuadrado en blanco sin forma reconocible (reportado 18/08/2026,
-      // captura de la barra de estado en una tablet). `icono-huella.png` es
-      // justo la huella de madera sola, con fondo transparente de verdad —
-      // con esa transparencia, Android sí puede recortar la silueta.
+      // opaco (crema): ese fondo entero se pintaba blanco sólido, un
+      // cuadrado en blanco sin forma. `icono-huella.png`/`d-huella.png`
+      // tampoco sirven pese a estar en formato RGBA: comprobado píxel a
+      // píxel, el 100% de su canal alfa es 255 (opacos del todo, sin
+      // transparencia real) — mismo problema, un rectángulo blanco liso
+      // (reportado 18/08/2026, dos capturas reales: tablet y móvil).
+      // `icono-huella-badge.png` es nuevo, generado a partir de
+      // `icon-512.png` calculando el alfa por luminancia (fondo crema →
+      // transparente, tinta oscura → opaco) — con transparencia real
+      // comprobada, Android ya puede recortar la silueta de verdad.
       icon: '/assets/icon-512.png',
-      badge: '/assets/icono-huella.png',
+      badge: '/assets/icono-huella-badge.png',
       data: datos.datos || {},
     })
   );
