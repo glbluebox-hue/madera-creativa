@@ -1,4 +1,4 @@
-import { formatoEuro } from './calculos.js';
+import { formatoEuroPrivado } from './calculos.js';
 import * as api from './api.js';
 import type { GastoPeriodico } from './types.js';
 import { GastosPeriodicos } from './gastos-periodicos.js';
@@ -8,6 +8,8 @@ import styles from './styles.module.css';
 export type TrimestresProps = {
   /** Año a mostrar. Si no se indica, usa el año actual. */
   anio?: number;
+  /** Modo privacidad activo — oculta los importes (el interruptor vive en Inicio; ver `use-privacidad.ts`). */
+  privado?: boolean;
 };
 
 type DatosTrimestre = {
@@ -57,7 +59,7 @@ function trimestre(fecha: string): number {
  * como el resto de la app pasó a paginar, ya no hay garantía de que el
  * componente padre tenga cargado un año completo de facturas.
  */
-export function Trimestres({ anio }: TrimestresProps) {
+export function Trimestres({ anio, privado = false }: TrimestresProps) {
   const anioActual = anio ?? new Date().getFullYear();
   const [anioSeleccionado, setAnioSeleccionado] = React.useState(anioActual);
   const [aniosDisponibles, setAniosDisponibles] = React.useState<number[]>([anioActual]);
@@ -194,7 +196,7 @@ export function Trimestres({ anio }: TrimestresProps) {
             </div>
             <span className={styles.kpiLabel} style={{ textTransform: 'none', fontSize: '0.86rem', color: 'var(--topo-claro)' }}>Ingresos anuales</span>
           </div>
-          <span className={`${styles.kpiValor} ${styles.valorVerde}`}>{formatoEuro(totalIngresos)}</span>
+          <span className={`${styles.kpiValor} ${styles.valorVerde}`}>{formatoEuroPrivado(totalIngresos, privado)}</span>
         </div>
         <div className={styles.kpiTarjeta}>
           <div className={styles.kpiCabecera}>
@@ -203,7 +205,7 @@ export function Trimestres({ anio }: TrimestresProps) {
             </div>
             <span className={styles.kpiLabel} style={{ textTransform: 'none', fontSize: '0.86rem', color: 'var(--topo-claro)' }}>Gastos anuales</span>
           </div>
-          <span className={`${styles.kpiValor} ${styles.valorRojo}`}>{formatoEuro(totalGastos)}</span>
+          <span className={`${styles.kpiValor} ${styles.valorRojo}`}>{formatoEuroPrivado(totalGastos, privado)}</span>
         </div>
         <div className={styles.kpiTarjeta}>
           <div className={styles.kpiCabecera}>
@@ -212,7 +214,7 @@ export function Trimestres({ anio }: TrimestresProps) {
             </div>
             <span className={styles.kpiLabel} style={{ textTransform: 'none', fontSize: '0.86rem', color: 'var(--topo-claro)' }}>Beneficio neto</span>
           </div>
-          <span className={`${styles.kpiValor} ${totalBeneficio >= 0 ? styles.valorVerde : styles.valorRojo}`}>{formatoEuro(totalBeneficio)}</span>
+          <span className={`${styles.kpiValor} ${totalBeneficio >= 0 ? styles.valorVerde : styles.valorRojo}`}>{formatoEuroPrivado(totalBeneficio, privado)}</span>
         </div>
         <div className={styles.kpiTarjeta}>
           <div className={styles.kpiCabecera}>
@@ -221,7 +223,7 @@ export function Trimestres({ anio }: TrimestresProps) {
             </div>
             <span className={styles.kpiLabel} style={{ textTransform: 'none', fontSize: '0.86rem', color: 'var(--topo-claro)' }}>Total IRPF estimado</span>
           </div>
-          <span className={styles.kpiValor} style={{ color: 'var(--ocre)' }}>{formatoEuro(totalIrpf)}</span>
+          <span className={styles.kpiValor} style={{ color: 'var(--ocre)' }}>{formatoEuroPrivado(totalIrpf, privado)}</span>
           <span className={styles.kpiSub}>20% del beneficio neto</span>
         </div>
       </div>
@@ -262,14 +264,14 @@ export function Trimestres({ anio }: TrimestresProps) {
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /></svg>
                     Ingresos
                   </span>
-                  <span style={{ color: 'var(--verde)', fontWeight: 600 }}>{formatoEuro(t.ingresos)}</span>
+                  <span style={{ color: 'var(--verde)', fontWeight: 600 }}>{formatoEuroPrivado(t.ingresos, privado)}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
                   <span style={{ color: 'var(--topo-claro)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" /><line x1="1" y1="10" x2="23" y2="10" /></svg>
                     Gastos
                   </span>
-                  <span style={{ color: 'var(--rojo)', fontWeight: 600 }}>-{formatoEuro(t.gastos)}</span>
+                  <span style={{ color: 'var(--rojo)', fontWeight: 600 }}>-{formatoEuroPrivado(t.gastos, privado)}</span>
                 </div>
                 {t.gastosPeriodicos > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
@@ -277,14 +279,14 @@ export function Trimestres({ anio }: TrimestresProps) {
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
                       Gastos periódicos
                     </span>
-                    <span style={{ color: 'var(--rojo)', fontWeight: 600 }}>-{formatoEuro(t.gastosPeriodicos)}</span>
+                    <span style={{ color: 'var(--rojo)', fontWeight: 600 }}>-{formatoEuroPrivado(t.gastosPeriodicos, privado)}</span>
                   </div>
                 )}
                 <div style={{ height: 1, background: 'var(--borde)', margin: '0.2rem 0' }} />
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
                   <span style={{ fontWeight: 600, color: 'var(--topo)' }}>Beneficio neto</span>
                   <span style={{ fontWeight: 700, color: t.beneficio >= 0 ? 'var(--verde)' : 'var(--rojo)' }}>
-                    {formatoEuro(t.beneficio)}
+                    {formatoEuroPrivado(t.beneficio, privado)}
                   </span>
                 </div>
               </div>
@@ -309,7 +311,7 @@ export function Trimestres({ anio }: TrimestresProps) {
                     fontSize: '1.15rem', fontWeight: 800,
                     color: pagado ? 'var(--ocre)' : 'var(--topo-muy-claro)',
                   }}>
-                    {pagado ? formatoEuro(t.irpf) : '—'}
+                    {pagado ? formatoEuroPrivado(t.irpf, privado) : '—'}
                   </span>
                 </div>
                 {!pagado && t.beneficio <= 0 && (
@@ -339,7 +341,7 @@ export function Trimestres({ anio }: TrimestresProps) {
                       </p>
                     </div>
                     <span style={{ fontSize: '1.05rem', fontWeight: 800, color: t.impuestoIndirecto >= 0 ? 'var(--topo)' : 'var(--verde)' }}>
-                      {formatoEuro(t.impuestoIndirecto)}
+                      {formatoEuroPrivado(t.impuestoIndirecto, privado)}
                     </span>
                   </div>
                 </div>

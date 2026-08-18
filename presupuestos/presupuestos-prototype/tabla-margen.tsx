@@ -1,5 +1,5 @@
 import type { ResumenCliente } from './calculos.js';
-import { formatoEuro } from './calculos.js';
+import { formatoEuroPrivado } from './calculos.js';
 import styles from './styles.module.css';
 
 /** Props de la tabla de margen de ganancia. */
@@ -8,13 +8,15 @@ export type TablaMargenProps = {
   resumen: ResumenCliente;
   /** Presupuesto acordado con el cliente, para comparar. */
   presupuesto: number;
+  /** Modo privacidad activo — oculta los importes (el interruptor vive en Inicio; ver `use-privacidad.ts`). */
+  privado: boolean;
 };
 
 /**
  * Tabla de margen de ganancia: desglosa ingresos, costes (materiales y
  * mano de obra) y calcula el margen final y su porcentaje.
  */
-export function TablaMargen({ resumen, presupuesto }: TablaMargenProps) {
+export function TablaMargen({ resumen, presupuesto, privado }: TablaMargenProps) {
   const filas = [
     { concepto: 'Ingresos cobrados', importe: resumen.totalIngresos, tipo: 'positivo' as const },
     { concepto: 'Gastos de materiales', importe: -resumen.totalGastos, tipo: 'negativo' as const },
@@ -46,14 +48,14 @@ export function TablaMargen({ resumen, presupuesto }: TablaMargenProps) {
                   style={{ textAlign: 'right' }}
                   className={f.tipo === 'positivo' ? styles.importeIngreso : styles.importeGasto}
                 >
-                  {f.importe >= 0 ? '+' : '-'}{formatoEuro(Math.abs(f.importe))}
+                  {!privado && (f.importe >= 0 ? '+' : '-')}{formatoEuroPrivado(Math.abs(f.importe), privado)}
                 </td>
               </tr>
             ))}
             <tr className={styles.filaTotal}>
               <td><strong>Coste total</strong></td>
               <td style={{ textAlign: 'right' }} className={styles.importeGasto}>
-                <strong>-{formatoEuro(resumen.costeTotal)}</strong>
+                <strong>{!privado && '-'}{formatoEuroPrivado(resumen.costeTotal, privado)}</strong>
               </td>
             </tr>
             <tr className={styles.filaMargen}>
@@ -68,7 +70,7 @@ export function TablaMargen({ resumen, presupuesto }: TablaMargenProps) {
                 className={resumen.margen >= 0 ? styles.valorVerde : styles.valorRojo}
               >
                 <strong style={{ fontSize: '1.1rem' }}>
-                  {resumen.margen >= 0 ? '+' : '-'}{formatoEuro(Math.abs(resumen.margen))}
+                  {!privado && (resumen.margen >= 0 ? '+' : '-')}{formatoEuroPrivado(Math.abs(resumen.margen), privado)}
                 </strong>
               </td>
             </tr>
@@ -78,11 +80,11 @@ export function TablaMargen({ resumen, presupuesto }: TablaMargenProps) {
 
       {presupuesto > 0 && (
         <p className={styles.margenNota}>
-          Presupuesto acordado: <strong>{formatoEuro(presupuesto)}</strong>
+          Presupuesto acordado: <strong>{formatoEuroPrivado(presupuesto, privado)}</strong>
           {' · '}
           {resumen.totalIngresos >= presupuesto
             ? 'Ya has cobrado el total presupuestado.'
-            : `Pendiente de cobrar: ${formatoEuro(presupuesto - resumen.totalIngresos)}`}
+            : `Pendiente de cobrar: ${formatoEuroPrivado(presupuesto - resumen.totalIngresos, privado)}`}
         </p>
       )}
     </div>

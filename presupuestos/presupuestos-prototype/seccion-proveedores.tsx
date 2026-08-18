@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Proveedor, Producto, Factura } from './types.js';
 import * as api from './api.js';
-import { formatoEuro, formatoFecha } from './calculos.js';
+import { formatoEuroPrivado, formatoFecha } from './calculos.js';
 import { ImporteInput } from './importe-input.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
 import { useAvisoGuardado, AvisoGuardado } from './aviso-guardado.js';
@@ -13,6 +13,8 @@ import styles from './styles.module.css';
 export type SeccionProveedoresProps = {
   proveedores: Proveedor[];
   productos: Producto[];
+  /** Modo privacidad activo — oculta los importes (el interruptor vive en Inicio; ver `use-privacidad.ts`). */
+  privado: boolean;
   onCrearProveedor: (p: Omit<Proveedor, 'id' | 'creado'>) => void;
   onActualizarProveedor: (p: Proveedor) => void;
   onBorrarProveedor: (id: string) => void;
@@ -171,7 +173,7 @@ function FormProducto({
  * el catálogo de productos con precios actualizados.
  */
 export function SeccionProveedores({
-  proveedores, productos,
+  proveedores, productos, privado,
   onCrearProveedor, onActualizarProveedor, onBorrarProveedor,
   onCrearProducto, onActualizarProducto, onBorrarProducto,
 }: SeccionProveedoresProps) {
@@ -271,7 +273,7 @@ export function SeccionProveedores({
               <div className={styles.kpiIconoChipTopo} style={{ width: 32, height: 32, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><IconoFactura /></div>
               <span className={styles.kpiLabel} style={{ textTransform: 'none', fontSize: '0.86rem', color: 'var(--topo-claro)' }}>Total comprado</span>
             </div>
-            <span className={styles.kpiValor}>{formatoEuro(total)}</span>
+            <span className={styles.kpiValor}>{formatoEuroPrivado(total, privado)}</span>
             <span className={styles.kpiSub}>{factProv.filter(f => f.tipo === 'gasto').length} facturas</span>
           </div>
           <div className={styles.kpiTarjeta}>
@@ -297,7 +299,7 @@ export function SeccionProveedores({
                   <tr key={f.id}>
                     <td style={{ whiteSpace: 'nowrap', fontSize: '0.8rem' }}>{formatoFecha(f.fecha)}</td>
                     <td style={{ fontSize: '0.82rem' }}>{f.concepto || '—'}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 700, color: f.tipo === 'gasto' ? 'var(--rojo)' : 'var(--verde)', whiteSpace: 'nowrap' }}>{formatoEuro(f.importe)}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 700, color: f.tipo === 'gasto' ? 'var(--rojo)' : 'var(--verde)', whiteSpace: 'nowrap' }}>{formatoEuroPrivado(f.importe, privado)}</td>
                     <td style={{ textAlign: 'right' }}>
                       {f.tieneDocumento && (
                         <span style={{ display: 'flex', gap: '0.25rem', justifyContent: 'flex-end' }}>
@@ -318,6 +320,7 @@ export function SeccionProveedores({
             facturaId={viendoFacturaId}
             onCerrar={() => setViendoFacturaId(null)}
             onDescargarPdf={descargarPdfProveedor}
+            privado={privado}
           />
         )}
 
@@ -341,7 +344,7 @@ export function SeccionProveedores({
                   {p.categoria && <span style={{ fontSize: '0.65rem', background: 'var(--borde-fino)', color: 'var(--topo)', padding: '1px 6px', borderRadius: 'var(--radio-full, 999px)' }}>{p.categoria}</span>}
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <p style={{ margin: 0, fontWeight: 800, color: 'var(--topo)', fontSize: '0.95rem' }}>{formatoEuro(p.precio)}</p>
+                  <p style={{ margin: 0, fontWeight: 800, color: 'var(--topo)', fontSize: '0.95rem' }}>{formatoEuroPrivado(p.precio, privado)}</p>
                   <p style={{ margin: 0, fontSize: '0.65rem', color: 'var(--topo-claro)' }}>por {p.unidad}</p>
                 </div>
                 <div style={{ display: 'flex', gap: '0.25rem' }}>
@@ -416,16 +419,16 @@ export function SeccionProveedores({
                   return (
                     <div key={cat}>
                       <p style={{ margin: '0.75rem 0 0.3rem', fontSize: '0.72rem', fontWeight: 800, color: 'var(--topo-claro)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>{cat}</p>
-                      {items.map(p => <ProductoFila key={p.id} p={p} prov={proveedores.find(x => x.id === p.proveedorId)} onEditar={() => { setEditandoProducto(p); setModalProducto(true); }} onBorrar={() => onBorrarProducto(p.id)} />)}
+                      {items.map(p => <ProductoFila key={p.id} p={p} prov={proveedores.find(x => x.id === p.proveedorId)} privado={privado} onEditar={() => { setEditandoProducto(p); setModalProducto(true); }} onBorrar={() => onBorrarProducto(p.id)} />)}
                     </div>
                   );
                 })
-              : productosFiltrados.map(p => <ProductoFila key={p.id} p={p} prov={proveedores.find(x => x.id === p.proveedorId)} onEditar={() => { setEditandoProducto(p); setModalProducto(true); }} onBorrar={() => onBorrarProducto(p.id)} />)
+              : productosFiltrados.map(p => <ProductoFila key={p.id} p={p} prov={proveedores.find(x => x.id === p.proveedorId)} privado={privado} onEditar={() => { setEditandoProducto(p); setModalProducto(true); }} onBorrar={() => onBorrarProducto(p.id)} />)
             }
             {productosFiltrados.some(p => !p.categoria) && (
               <>
                 {categorias.length > 0 && <p style={{ margin: '0.75rem 0 0.3rem', fontSize: '0.72rem', fontWeight: 800, color: 'var(--topo-claro)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Sin categoría</p>}
-                {productosFiltrados.filter(p => !p.categoria).map(p => <ProductoFila key={p.id} p={p} prov={proveedores.find(x => x.id === p.proveedorId)} onEditar={() => { setEditandoProducto(p); setModalProducto(true); }} onBorrar={() => onBorrarProducto(p.id)} />)}
+                {productosFiltrados.filter(p => !p.categoria).map(p => <ProductoFila key={p.id} p={p} prov={proveedores.find(x => x.id === p.proveedorId)} privado={privado} onEditar={() => { setEditandoProducto(p); setModalProducto(true); }} onBorrar={() => onBorrarProducto(p.id)} />)}
               </>
             )}
           </div>
@@ -478,7 +481,7 @@ export function SeccionProveedores({
               <div className={styles.kpiIconoChipRojo} style={{ width: 32, height: 32, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><IconoFactura s={16} /></div>
               <span className={styles.kpiLabel} style={{ textTransform: 'none', fontSize: '0.86rem', color: 'var(--topo-claro)' }}>Total compras</span>
             </div>
-            <span className={`${styles.kpiValor}`} style={{ color: 'var(--rojo)' }}>{formatoEuro(proveedores.reduce((s, p) => s + totalProveedor(p), 0))}</span>
+            <span className={`${styles.kpiValor}`} style={{ color: 'var(--rojo)' }}>{formatoEuroPrivado(proveedores.reduce((s, p) => s + totalProveedor(p), 0), privado)}</span>
           </div>
           <div className={styles.kpiTarjeta}>
             <div className={styles.kpiCabecera}>
@@ -520,7 +523,7 @@ export function SeccionProveedores({
                   </p>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <p style={{ margin: 0, fontWeight: 800, fontSize: '0.95rem', color: 'var(--topo)' }}>{formatoEuro(total)}</p>
+                  <p style={{ margin: 0, fontWeight: 800, fontSize: '0.95rem', color: 'var(--topo)' }}>{formatoEuroPrivado(total, privado)}</p>
                   <p style={{ margin: 0, fontSize: '0.65rem', color: 'var(--topo-claro)' }}>total comprado</p>
                 </div>
                 <div style={{ display: 'flex', gap: '0.25rem' }} onClick={e => e.stopPropagation()}>
@@ -549,7 +552,7 @@ export function SeccionProveedores({
 }
 
 /** Fila de producto en el catálogo. */
-function ProductoFila({ p, prov, onEditar, onBorrar }: { p: Producto; prov?: Proveedor; onEditar: () => void; onBorrar: () => void }) {
+function ProductoFila({ p, prov, privado, onEditar, onBorrar }: { p: Producto; prov?: Proveedor; privado: boolean; onEditar: () => void; onBorrar: () => void }) {
   return (
     <div className={styles.filaLista} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.6rem 0.85rem' }}>
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -559,7 +562,7 @@ function ProductoFila({ p, prov, onEditar, onBorrar }: { p: Producto; prov?: Pro
         {p.fechaPrecio && <p style={{ margin: 0, fontSize: '0.65rem', color: 'var(--topo-muy-claro)' }}>Precio actualizado: {formatoFecha(p.fechaPrecio)}</p>}
       </div>
       <div style={{ textAlign: 'right', flexShrink: 0 }}>
-        <p style={{ margin: 0, fontWeight: 800, color: 'var(--topo)', fontSize: '0.95rem' }}>{formatoEuro(p.precio)}</p>
+        <p style={{ margin: 0, fontWeight: 800, color: 'var(--topo)', fontSize: '0.95rem' }}>{formatoEuroPrivado(p.precio, privado)}</p>
         <p style={{ margin: 0, fontSize: '0.65rem', color: 'var(--topo-claro)' }}>por {p.unidad}</p>
       </div>
       <div style={{ display: 'flex', gap: '0.25rem' }}>

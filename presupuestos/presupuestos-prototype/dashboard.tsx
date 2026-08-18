@@ -3,14 +3,10 @@ import type { Cliente, Factura } from './types.js';
 import type { ResumenFacturas } from './use-facturas.js';
 import type { PresupuestoMC } from './presupuestos-modelo.js';
 import { calcularMetricas } from './dashboard-calculos.js';
-import { formatoEuro, formatoFecha } from './calculos.js';
+import { formatoEuroPrivado, VALOR_OCULTO, formatoFecha } from './calculos.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
 import { obtenerTodosLosPresupuestos } from './api.js';
-import { usePrivacidadDashboard } from './use-privacidad.js';
 import styles from './styles.module.css';
-
-/** Marcador visual del modo privacidad — mismo ancho aproximado en cualquier tarjeta, sin importar la longitud real de la cifra que oculta. */
-const VALOR_OCULTO = '••••••';
 
 /** Props del panel principal (dashboard). */
 export type DashboardProps = {
@@ -22,6 +18,10 @@ export type DashboardProps = {
   facturas: Factura[];
   /** Totales ya resueltos por el servidor sobre toda la colección de facturas. */
   resumen: ResumenFacturas;
+  /** Modo privacidad activo — oculta los importes (Inicio es donde vive el interruptor; ver `use-privacidad.ts`). */
+  privado: boolean;
+  /** Activa/desactiva el modo privacidad. */
+  onAlternarPrivacidad: () => void;
   /** Abre la ficha de un cliente. */
   onAbrir: (id: string) => void;
   /** Borra una factura (Actividad reciente). */
@@ -68,10 +68,9 @@ type ItemActividad =
   | { tipo: 'factura'; fecha: string; factura: Factura }
   | { tipo: 'presupuestoAceptado'; fecha: string; presupuesto: PresupuestoMC };
 
-export function Dashboard({ nombre, clientes, facturas, resumen, onAbrir, onBorrarFactura, onActualizarCliente }: DashboardProps) {
+export function Dashboard({ nombre, clientes, facturas, resumen, privado, onAlternarPrivacidad, onAbrir, onBorrarFactura, onActualizarCliente }: DashboardProps) {
   const m = calcularMetricas(clientes);
   const primerNombre = (nombre || '').split(' ')[0];
-  const { privado, alternar: alternarPrivacidad } = usePrivacidadDashboard();
 
   /**
    * "Registrar la actividad correspondiente" (Fase 1, detalle pendiente) —
@@ -130,7 +129,7 @@ export function Dashboard({ nombre, clientes, facturas, resumen, onAbrir, onBorr
         <button
           type="button"
           className={styles.btnIcono}
-          onClick={alternarPrivacidad}
+          onClick={onAlternarPrivacidad}
           title={privado ? 'Mostrar las cifras' : 'Ocultar las cifras (modo privacidad)'}
           style={{ flexShrink: 0 }}
         >
@@ -141,9 +140,9 @@ export function Dashboard({ nombre, clientes, facturas, resumen, onAbrir, onBorr
       </div>
 
       <div className={styles.kpiGrid}>
-        <Kpi icono="ingreso" color="verde" etiqueta="Ingresos" valor={privado ? VALOR_OCULTO : formatoEuro(resumen.totalIngresos)} sub={`${resumen.numIngresos} facturas`} />
-        <Kpi icono="gasto" color="rojo" etiqueta="Gastos" valor={privado ? VALOR_OCULTO : formatoEuro(resumen.totalGastos)} sub={`${resumen.numGastos} facturas`} />
-        <Kpi icono="balance" color={resumen.balance >= 0 ? 'verde' : 'rojo'} etiqueta="Balance" valor={privado ? VALOR_OCULTO : formatoEuro(resumen.balance)} sub={`${resumen.numFacturas} facturas`} />
+        <Kpi icono="ingreso" color="verde" etiqueta="Ingresos" valor={formatoEuroPrivado(resumen.totalIngresos, privado)} sub={`${resumen.numIngresos} facturas`} />
+        <Kpi icono="gasto" color="rojo" etiqueta="Gastos" valor={formatoEuroPrivado(resumen.totalGastos, privado)} sub={`${resumen.numGastos} facturas`} />
+        <Kpi icono="balance" color={resumen.balance >= 0 ? 'verde' : 'rojo'} etiqueta="Balance" valor={formatoEuroPrivado(resumen.balance, privado)} sub={`${resumen.numFacturas} facturas`} />
         <Kpi icono="presupuestos" color="topo" etiqueta="Presupuestos" valor={privado ? VALOR_OCULTO : String(m.presupuestosPendientes + m.enCurso)} sub={m.enCurso > 0 ? `${m.enCurso} en curso` : `${m.presupuestosPendientes} pendientes`} />
       </div>
 
@@ -168,7 +167,7 @@ export function Dashboard({ nombre, clientes, facturas, resumen, onAbrir, onBorr
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
                     <span className={styles.actividadFecha}>{formatoFecha(item.factura.fecha)}</span>
                     <span className={item.factura.tipo === 'ingreso' ? styles.valorVerde : styles.valorRojo}>
-                      {item.factura.tipo === 'gasto' ? '-' : ''}{formatoEuro(item.factura.importe)}
+                      {item.factura.tipo === 'gasto' && !privado ? '-' : ''}{formatoEuroPrivado(item.factura.importe, privado)}
                     </span>
                   </div>
                   <ConfirmarBorrado titulo="Borrar factura" onConfirmar={() => onBorrarFactura(item.factura.id)} />
@@ -186,7 +185,7 @@ export function Dashboard({ nombre, clientes, facturas, resumen, onAbrir, onBorr
                 <div className={styles.actividadDerecha} style={{ flexDirection: 'row', alignItems: 'center', gap: '0.6rem' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
                     <span className={styles.actividadFecha}>{formatoFecha(item.presupuesto.actualizado)}</span>
-                    <span className={styles.valorVerde}>{formatoEuro(item.presupuesto.precioTotal)}</span>
+                    <span className={styles.valorVerde}>{formatoEuroPrivado(item.presupuesto.precioTotal, privado)}</span>
                   </div>
                 </div>
               </div>

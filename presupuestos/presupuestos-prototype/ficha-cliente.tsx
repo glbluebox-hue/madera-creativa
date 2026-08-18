@@ -4,7 +4,7 @@ import * as api from './api.js';
 import { GaleriaFotos } from './galeria-fotos.js';
 import type { FotoProyecto } from './galeria-fotos.js';
 import { EscanerFactura } from './escaner-factura.js';
-import { formatoEuro, formatoFecha } from './calculos.js';
+import { formatoEuroPrivado, formatoFecha } from './calculos.js';
 import { calcularResumen } from './calculos.js';
 import { TablaMovimientos } from './tabla-movimientos.js';
 import { TablaHoras } from './tabla-horas.js';
@@ -35,6 +35,8 @@ export type FichaClienteProps = {
   proveedores?: Proveedor[];
   /** Datos de empresa — usados por el editor de presupuestos en lienzo (membrete, condiciones por defecto). */
   empresa: Empresa;
+  /** Modo privacidad activo — oculta los importes (el interruptor vive en Inicio; ver `use-privacidad.ts`). */
+  privado: boolean;
   /** Persiste cambios de empresa — usado para el clic-en-el-logo del editor de lienzo. */
   onActualizarEmpresa: (cambios: Partial<Empresa>) => void;
   /** Volver a la lista. */
@@ -68,7 +70,7 @@ const PESTANAS: { id: Pestana; label: string }[] = [
  * acceso), Presupuestos (ingresos/gastos/horas/margen), Facturas y Notas.
  * Ninguna función existente se ha quitado — solo se ha reorganizado.
  */
-export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa, onActualizarEmpresa, onVolver, onActualizar, onBorrar, onGuardarFactura, onCrearProveedor }: FichaClienteProps) {
+export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa, privado, onActualizarEmpresa, onVolver, onActualizar, onBorrar, onGuardarFactura, onCrearProveedor }: FichaClienteProps) {
   const [pestana, setPestana] = useState<Pestana>('resumen');
   /** Contador-disparador: cada incremento fuerza `TabDatos` a abrirse en modo edición (botón "Editar" de la cabecera, ver más abajo). */
   const [abrirEdicionDatos, setAbrirEdicionDatos] = useState(0);
@@ -251,6 +253,7 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa
           facturasGasto={facturasCliente}
           adjuntos={adjuntosCliente}
           totalIngresos={r.totalIngresos}
+          privado={privado}
           onIrAProyecto={() => setPestana('proyectos')}
           onIrADocumentos={() => setPestana('proyectos')}
         />
@@ -285,7 +288,7 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa
                 </div>
                 <span className={styles.kpiLabel} style={{ textTransform: 'none', fontSize: '0.86rem', color: 'var(--topo-claro)' }}>Ingresos</span>
               </div>
-              <span className={`${styles.kpiValor} ${styles.valorVerde}`}>{formatoEuro(r.totalIngresos)}</span>
+              <span className={`${styles.kpiValor} ${styles.valorVerde}`}>{formatoEuroPrivado(r.totalIngresos, privado)}</span>
             </div>
             <div className={styles.kpiTarjeta}>
               <div className={styles.kpiCabecera}>
@@ -294,7 +297,7 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa
                 </div>
                 <span className={styles.kpiLabel} style={{ textTransform: 'none', fontSize: '0.86rem', color: 'var(--topo-claro)' }}>Gastos materiales</span>
               </div>
-              <span className={`${styles.kpiValor} ${styles.valorRojo}`}>{formatoEuro(r.totalGastos)}</span>
+              <span className={`${styles.kpiValor} ${styles.valorRojo}`}>{formatoEuroPrivado(r.totalGastos, privado)}</span>
             </div>
             <div className={styles.kpiTarjeta}>
               <div className={styles.kpiCabecera}>
@@ -303,7 +306,7 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa
                 </div>
                 <span className={styles.kpiLabel} style={{ textTransform: 'none', fontSize: '0.86rem', color: 'var(--topo-claro)' }}>Mano de obra ({r.totalHoras} h)</span>
               </div>
-              <span className={`${styles.kpiValor} ${styles.valorAzul}`}>{formatoEuro(r.costeManoObra)}</span>
+              <span className={`${styles.kpiValor} ${styles.valorAzul}`}>{formatoEuroPrivado(r.costeManoObra, privado)}</span>
             </div>
             <div className={styles.kpiTarjeta}>
               <div className={styles.kpiCabecera}>
@@ -313,7 +316,7 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa
                 <span className={styles.kpiLabel} style={{ textTransform: 'none', fontSize: '0.86rem', color: 'var(--topo-claro)' }}>Margen de ganancia</span>
               </div>
               <span className={`${styles.kpiValor} ${r.margen >= 0 ? styles.valorVerde : styles.valorRojo}`}>
-                {formatoEuro(r.margen)}
+                {formatoEuroPrivado(r.margen, privado)}
               </span>
               <span className={styles.kpiSub}>{r.margenPorcentaje.toFixed(1)}% sobre ingresos</span>
             </div>
@@ -333,7 +336,7 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa
             onBorrar={borrarHoras}
           />
 
-          <TablaMargen resumen={r} presupuesto={cliente.presupuesto} />
+          <TablaMargen resumen={r} presupuesto={cliente.presupuesto} privado={privado} />
         </div>
       )}
 
@@ -364,13 +367,13 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa
                       <tr key={f.id}>
                         <td>{f.fecha}</td>
                         <td><strong>{f.proveedor || '—'}</strong>{f.concepto && <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>{f.concepto}</span>}</td>
-                        <td style={{ textAlign: 'right', color: 'var(--rojo)', fontWeight: 600 }}>-{formatoEuro(f.importe)}</td>
+                        <td style={{ textAlign: 'right', color: 'var(--rojo)', fontWeight: 600 }}>{!privado && '-'}{formatoEuroPrivado(f.importe, privado)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
                 <p style={{ textAlign: 'right', fontWeight: 600, color: 'var(--rojo)', fontSize: '0.9rem', margin: 0 }}>
-                  Total facturas de gasto: -{formatoEuro(totalFacturasGasto)}
+                  Total facturas de gasto: {!privado && '-'}{formatoEuroPrivado(totalFacturasGasto, privado)}
                 </p>
               </>
             )}

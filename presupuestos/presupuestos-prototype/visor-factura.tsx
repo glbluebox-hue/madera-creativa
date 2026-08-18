@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Factura } from './types.js';
-import { formatoEuro, formatoFecha } from './calculos.js';
+import { formatoEuroPrivado, formatoFecha } from './calculos.js';
 import { paginasVisualizablesDeFactura } from './factura-paginas.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
@@ -11,6 +11,8 @@ export type VisorFacturaProps = {
   /** Si no se pasa, el botón "Editar" no se muestra — usado en contextos (p. ej. la ficha de un proveedor) que no tienen el editor de facturas disponible. */
   onEditar?: (f: Factura) => void;
   onDescargarPdf: (id: string) => void;
+  /** Modo privacidad activo — oculta el importe (el interruptor vive en Inicio; ver `use-privacidad.ts`). */
+  privado?: boolean;
 };
 
 /**
@@ -19,7 +21,7 @@ export type VisorFacturaProps = {
  * trae `imagen`/`paginas` por ligereza) y muestra sus páginas en grande,
  * con los datos (proveedor, fecha, importe) como cabecera.
  */
-export function VisorFactura({ facturaId, onCerrar, onEditar, onDescargarPdf }: VisorFacturaProps) {
+export function VisorFactura({ facturaId, onCerrar, onEditar, onDescargarPdf, privado = false }: VisorFacturaProps) {
   const [factura, setFactura] = useState<Factura | null>(null);
   const [cargando, setCargando] = useState(true);
   const [paginaActiva, setPaginaActiva] = useState(0);
@@ -57,7 +59,7 @@ export function VisorFactura({ facturaId, onCerrar, onEditar, onDescargarPdf }: 
               {/* Datos */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem 1.25rem', fontSize: '0.82rem' }}>
                 <span><strong style={{ color: 'var(--topo-claro)', fontWeight: 600 }}>Fecha:</strong> {formatoFecha(factura.fecha)}</span>
-                <span><strong style={{ color: 'var(--topo-claro)', fontWeight: 600 }}>Importe:</strong> <span style={{ color: factura.tipo === 'ingreso' ? 'var(--verde)' : 'var(--rojo)', fontWeight: 700 }}>{factura.tipo === 'ingreso' ? '+' : '-'}{formatoEuro(factura.importe)}</span></span>
+                <span><strong style={{ color: 'var(--topo-claro)', fontWeight: 600 }}>Importe:</strong> <span style={{ color: factura.tipo === 'ingreso' ? 'var(--verde)' : 'var(--rojo)', fontWeight: 700 }}>{!privado && (factura.tipo === 'ingreso' ? '+' : '-')}{formatoEuroPrivado(factura.importe, privado)}</span></span>
                 {factura.numeroFactura && <span><strong style={{ color: 'var(--topo-claro)', fontWeight: 600 }}>Nº factura:</strong> {factura.numeroFactura}</span>}
                 {factura.categoria && <span><strong style={{ color: 'var(--topo-claro)', fontWeight: 600 }}>Categoría:</strong> {factura.categoria}</span>}
               </div>

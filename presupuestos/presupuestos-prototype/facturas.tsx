@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { Factura, Proveedor } from './types.js';
 import type { FiltroFacturas, ResumenFacturas } from './use-facturas.js';
-import { formatoEuro, formatoFecha } from './calculos.js';
+import { formatoEuroPrivado, formatoFecha } from './calculos.js';
 import { EscanerFactura } from './escaner-factura.js';
 import { Trimestres } from './trimestres.js';
 import { autoCrearProveedorDeFactura } from './proveedor-utils.js';
@@ -27,6 +27,8 @@ export type FacturasProps = {
   facturas: Factura[];
   /** Totales calculados en el servidor (Incremento 1.5) — correctos con independencia de la página cargada. */
   resumen: ResumenFacturas;
+  /** Modo privacidad activo — oculta los importes (el interruptor vive en Inicio; ver `use-privacidad.ts`). */
+  privado: boolean;
   filtro: FiltroFacturas;
   onFiltroChange: (f: FiltroFacturas) => void;
   hayMas: boolean;
@@ -44,7 +46,7 @@ export type FacturasProps = {
  * Sección principal de facturas: lista de facturas + vista trimestral Hacienda.
  */
 export function Facturas({
-  facturas, resumen, filtro, onFiltroChange, hayMas, cargandoMas, onCargarMas,
+  facturas, resumen, privado, filtro, onFiltroChange, hayMas, cargandoMas, onCargarMas,
   clientes, proveedores = [], onGuardar, onBorrar, onCrearProveedor,
 }: FacturasProps) {
   const [escaner, setEscaner] = useState(false);
@@ -215,7 +217,7 @@ export function Facturas({
       </div>
 
       {/* ── Vista trimestral ── */}
-      {vista === 'trimestres' && <Trimestres />}
+      {vista === 'trimestres' && <Trimestres privado={privado} />}
 
       {/* ── Vista lista ── */}
       {vista === 'lista' && (
@@ -229,7 +231,7 @@ export function Facturas({
                 </div>
                 <span className={styles.kpiLabel} style={{ textTransform: 'none', fontSize: '0.86rem', color: 'var(--topo-claro)' }}>Ingresos</span>
               </div>
-              <span className={`${styles.kpiValor} ${styles.valorVerde}`}>{formatoEuro(resumen.totalIngresos)}</span>
+              <span className={`${styles.kpiValor} ${styles.valorVerde}`}>{formatoEuroPrivado(resumen.totalIngresos, privado)}</span>
               <span className={styles.kpiSub}>{resumen.numIngresos} factura{resumen.numIngresos !== 1 ? 's' : ''}</span>
             </div>
             <div className={styles.kpiTarjeta}>
@@ -239,7 +241,7 @@ export function Facturas({
                 </div>
                 <span className={styles.kpiLabel} style={{ textTransform: 'none', fontSize: '0.86rem', color: 'var(--topo-claro)' }}>Gastos</span>
               </div>
-              <span className={`${styles.kpiValor} ${styles.valorRojo}`}>{formatoEuro(resumen.totalGastos)}</span>
+              <span className={`${styles.kpiValor} ${styles.valorRojo}`}>{formatoEuroPrivado(resumen.totalGastos, privado)}</span>
               <span className={styles.kpiSub}>{resumen.numGastos} factura{resumen.numGastos !== 1 ? 's' : ''}</span>
             </div>
             <div className={styles.kpiTarjeta}>
@@ -249,7 +251,7 @@ export function Facturas({
                 </div>
                 <span className={styles.kpiLabel} style={{ textTransform: 'none', fontSize: '0.86rem', color: 'var(--topo-claro)' }}>Balance</span>
               </div>
-              <span className={`${styles.kpiValor} ${resumen.balance >= 0 ? styles.valorVerde : styles.valorRojo}`}>{formatoEuro(resumen.balance)}</span>
+              <span className={`${styles.kpiValor} ${resumen.balance >= 0 ? styles.valorVerde : styles.valorRojo}`}>{formatoEuroPrivado(resumen.balance, privado)}</span>
               <span className={styles.kpiSub}>{resumen.numFacturas} factura{resumen.numFacturas !== 1 ? 's' : ''} en total</span>
             </div>
           </div>
@@ -405,7 +407,7 @@ export function Facturas({
                       {f.clienteId ? nombreCliente(f.clienteId) : '—'}
                     </td>
                     <td style={{ textAlign: 'right', fontWeight: 600, color: f.tipo === 'ingreso' ? 'var(--verde)' : 'var(--rojo)' }}>
-                      {f.tipo === 'ingreso' ? '+' : '-'}{formatoEuro(f.importe)}
+                      {!privado && (f.tipo === 'ingreso' ? '+' : '-')}{formatoEuroPrivado(f.importe, privado)}
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <span style={{ display: 'flex', gap: '0.25rem', justifyContent: 'flex-end' }}>
@@ -458,6 +460,7 @@ export function Facturas({
           onCerrar={() => setViendoId(null)}
           onEditar={(f) => abrirEdicion(f)}
           onDescargarPdf={descargarPdf}
+          privado={privado}
         />
       )}
     </div>

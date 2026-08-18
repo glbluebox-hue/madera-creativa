@@ -23,6 +23,7 @@ import { useLicencia } from './use-licencia.js';
 import { usePush } from './use-push.js';
 import { useTema } from './use-tema.js';
 import { usePerfil } from './use-perfil.js';
+import { usePrivacidad } from './use-privacidad.js';
 import { AjustesPerfil } from './ajustes-perfil.js';
 import { PanelNotificaciones } from './panel-notificaciones.js';
 import type { Cliente, Factura } from './types.js';
@@ -69,12 +70,36 @@ export function PresupuestosPrototype() {
   const [panelAdmin, setPanelAdmin] = useState(false);
   // Siempre se entra por "Inicio" — a petición del usuario, nunca se
   // recuerda la última sección visitada entre sesiones (antes se
-  // persistía en localStorage; se quitó a propósito).
-  const [seccion, setSeccion] = useState<Seccion>('inicio');
+  // persistía en localStorage; se quitó a propósito). Única excepción:
+  // llegar desde la notificación de recordatorio de horas, que sí debe
+  // abrir directamente en Clientes (petición del usuario, 18/08/2026) —
+  // un parámetro de un solo uso en la URL, nunca algo persistente.
+  const [seccion, setSeccion] = useState<Seccion>(() => {
+    const abrirEn = new URLSearchParams(window.location.search).get('accion');
+    return abrirEn === 'clientes' ? 'clientes' : 'inicio';
+  });
   const cambiarSeccion = (s: Seccion) => {
     setSeccion(s);
     setMenuMovilAbierto(false);
   };
+  useEffect(() => {
+    // El parámetro `?accion=clientes` es de un solo uso — se limpia de la
+    // URL nada más leerlo (ya en el `useState` de arriba) para que un
+    // recargado posterior no se quede pegado a Clientes.
+    if (new URLSearchParams(window.location.search).has('accion')) {
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+    // Con la app ya abierta (misma pestaña, sin recargar), tocar la
+    // notificación no dispara este `useState` de arriba — el service
+    // worker manda un mensaje en su lugar (ver `notificationclick` en
+    // sw.js) para llevar igualmente a Clientes.
+    const alRecibirMensaje = (e: MessageEvent) => {
+      if (e.data?.tipo === 'ir-a-clientes') cambiarSeccion('clientes');
+    };
+    navigator.serviceWorker?.addEventListener('message', alRecibirMensaje);
+    return () => navigator.serviceWorker?.removeEventListener('message', alRecibirMensaje);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Con un dibujo abierto a pantalla completa, la barra "← Inicio" móvil no
   // debe ni existir en el DOM (ver `SeccionDibujosProps.onEditorAbierto`).
   const [dibujoEditorAbierto, setDibujoEditorAbierto] = useState(false);
@@ -87,6 +112,7 @@ export function PresupuestosPrototype() {
   // Proveedores aislados por usuario — admin usa clave original, usuarios nuevos tienen espacio propio
   const { proveedores, productos, crearProveedor, actualizarProveedor, borrarProveedor, crearProducto, actualizarProducto, borrarProducto } = useProveedores(listo);
   const { dataTheme, tema, alternar: alternarTema } = useTema();
+  const { privado, alternar: alternarPrivacidad } = usePrivacidad();
   const { perfil, actualizar: actualizarPerfil } = usePerfil(listo);
   const [ajustesPerfil, setAjustesPerfil] = useState(false);
   const [panelNotificaciones, setPanelNotificaciones] = useState(false);
@@ -346,6 +372,8 @@ export function PresupuestosPrototype() {
             clientes={clientes}
             facturas={facturas}
             resumen={resumenFacturas}
+            privado={privado}
+            onAlternarPrivacidad={alternarPrivacidad}
             onAbrir={(id) => { cambiarSeccion('clientes'); abrirCliente(id); }}
             onBorrarFactura={borrarFactura}
             onActualizarCliente={actualizarCliente}
@@ -363,6 +391,7 @@ export function PresupuestosPrototype() {
           <SeccionProveedores
             proveedores={proveedores}
             productos={productos}
+            privado={privado}
             onCrearProveedor={crearProveedor}
             onActualizarProveedor={actualizarProveedor}
             onBorrarProveedor={borrarProveedor}
@@ -388,6 +417,7 @@ export function PresupuestosPrototype() {
           <Facturas
             facturas={facturas}
             resumen={resumenFacturas}
+            privado={privado}
             filtro={filtroFacturas}
             onFiltroChange={establecerFiltroFacturas}
             hayMas={facturasHayMas}
@@ -410,6 +440,7 @@ export function PresupuestosPrototype() {
                 cliente={clienteActual}
                 clientes={nombresClientes}
                 empresa={empresa}
+                privado={privado}
                 onActualizarEmpresa={actualizar}
                 onVolver={volverALista}
                 onActualizar={(c) => { setClienteActual(c); actualizarCliente(c); }}

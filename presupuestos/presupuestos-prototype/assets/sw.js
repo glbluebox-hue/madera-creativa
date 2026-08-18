@@ -74,8 +74,14 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(datos.titulo || 'Madera Creativa', {
       body: datos.cuerpo || '',
-      icon: '/assets/logo.png',
-      badge: '/assets/logo.png',
+      // `logo.png` es el rótulo horizontal de la marca (1540×554) — pensado
+      // para la barra lateral, no para un icono. Un icono/badge de
+      // notificación se ve cuadrado; con el rótulo ancho salía recortado o
+      // deformado. `icon-512`/`icon-192` son los iconos cuadrados que ya
+      // existían para la PWA (manifest, iOS) — reutilizados aquí en vez de
+      // generar unos nuevos (18/08/2026).
+      icon: '/assets/icon-512.png',
+      badge: '/assets/icon-192.png',
       data: datos.datos || {},
     })
   );
@@ -83,12 +89,21 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  // El recordatorio de horas es genérico ("N proyectos sin horas hoy"),
+  // sin un cliente concreto al que llevar directamente — se lleva a
+  // Clientes para que el usuario elija cuál (petición del usuario,
+  // 18/08/2026: "que se vaya a clientes... donde yo elijo el cliente").
+  // Con una pestaña ya abierta no sirve `clients.openWindow` (abriría una
+  // segunda), así que se le manda un mensaje a la pestaña existente en vez
+  // de navegarla directamente aquí.
+  const irAClientes = event.notification.data?.tipo === 'recordatorio-horas';
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cs) => {
       if (cs.length > 0) {
+        if (irAClientes) cs[0].postMessage({ tipo: 'ir-a-clientes' });
         cs[0].focus();
       } else {
-        clients.openWindow('/');
+        clients.openWindow(irAClientes ? '/?accion=clientes' : '/');
       }
     })
   );

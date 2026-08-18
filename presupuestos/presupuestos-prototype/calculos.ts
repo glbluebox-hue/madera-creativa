@@ -50,6 +50,19 @@ export function calcularResumen(cliente: Cliente): ResumenCliente {
   };
 }
 
+/** Marcador del modo privacidad — sustituye cualquier cifra cuando está activo (ver `use-privacidad.ts`). */
+export const VALOR_OCULTO = '••••••';
+
+/**
+ * Igual que `formatoEuro`, pero sustituye el resultado por `VALOR_OCULTO`
+ * cuando el modo privacidad está activo — para no repetir el mismo
+ * `privado ? VALOR_OCULTO : formatoEuro(x)` en cada sitio que muestra una
+ * cifra (Inicio, Facturas, Proveedores, ficha de cliente).
+ */
+export function formatoEuroPrivado(valor: number, privado: boolean): string {
+  return privado ? VALOR_OCULTO : formatoEuro(valor);
+}
+
 /**
  * Formatea un número como moneda en euros.
  * @param valor El importe a formatear.

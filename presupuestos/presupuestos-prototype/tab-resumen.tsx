@@ -1,5 +1,5 @@
 import type { Cliente, Factura, Adjunto } from './types.js';
-import { formatoEuro, formatoFecha, formatoTamano } from './calculos.js';
+import { formatoEuroPrivado, formatoFecha, formatoTamano } from './calculos.js';
 import styles from './styles.module.css';
 
 /** Props de la pestaña "Resumen". */
@@ -11,6 +11,8 @@ export type TabResumenProps = {
   adjuntos: Adjunto[];
   /** Total de ingresos registrados (de `calcularResumen`). */
   totalIngresos: number;
+  /** Modo privacidad activo — oculta los importes (el interruptor vive en Inicio; ver `use-privacidad.ts`). */
+  privado: boolean;
   /** Va a la pestaña de Proyectos. */
   onIrAProyecto: () => void;
   /** Va a la pestaña de Notas/Documentos. */
@@ -31,7 +33,7 @@ type ItemActividad = {
  * proyecto actual, cifras clave, actividad reciente real (facturas y
  * movimientos, no datos de ejemplo) y los documentos más recientes.
  */
-export function TabResumen({ cliente, facturasGasto, adjuntos, totalIngresos, onIrAProyecto, onIrADocumentos }: TabResumenProps) {
+export function TabResumen({ cliente, facturasGasto, adjuntos, totalIngresos, privado, onIrAProyecto, onIrADocumentos }: TabResumenProps) {
   const pendiente = Math.max(0, (cliente.presupuesto || 0) - totalIngresos);
   const foto = (cliente.fotos ?? [])[0];
 
@@ -71,10 +73,10 @@ export function TabResumen({ cliente, facturasGasto, adjuntos, totalIngresos, on
       </div>
 
       <div className={styles.statStrip}>
-        <div className={styles.statBox}><div className={styles.statBoxValor}>{formatoEuro(cliente.presupuesto || 0)}</div><div className={styles.statBoxLabel}>Presupuesto acordado</div></div>
+        <div className={styles.statBox}><div className={styles.statBoxValor}>{formatoEuroPrivado(cliente.presupuesto || 0, privado)}</div><div className={styles.statBoxLabel}>Presupuesto acordado</div></div>
         <div className={styles.statBox}><div className={styles.statBoxValor}>{facturasGasto.length}</div><div className={styles.statBoxLabel}>Facturas de gasto</div></div>
-        <div className={styles.statBox}><div className={styles.statBoxValor}>{formatoEuro(totalIngresos)}</div><div className={styles.statBoxLabel}>Cobrado</div></div>
-        <div className={styles.statBox}><div className={styles.statBoxValor} style={{ color: pendiente > 0 ? 'var(--rojo)' : 'var(--verde)' }}>{formatoEuro(pendiente)}</div><div className={styles.statBoxLabel}>Pendiente</div></div>
+        <div className={styles.statBox}><div className={styles.statBoxValor}>{formatoEuroPrivado(totalIngresos, privado)}</div><div className={styles.statBoxLabel}>Cobrado</div></div>
+        <div className={styles.statBox}><div className={styles.statBoxValor} style={{ color: pendiente > 0 ? 'var(--rojo)' : 'var(--verde)' }}>{formatoEuroPrivado(pendiente, privado)}</div><div className={styles.statBoxLabel}>Pendiente</div></div>
       </div>
 
       <div className={styles.dashboardCols}>
@@ -100,7 +102,7 @@ export function TabResumen({ cliente, facturasGasto, adjuntos, totalIngresos, on
                   <span className={styles.actividadFecha}>{formatoFecha(a.fecha)}</span>
                   {a.importe !== undefined && (
                     <span className={a.tipoImporte === 'ingreso' ? styles.valorVerde : styles.valorRojo}>
-                      {a.tipoImporte === 'gasto' ? '-' : ''}{formatoEuro(a.importe)}
+                      {!privado && a.tipoImporte === 'gasto' ? '-' : ''}{formatoEuroPrivado(a.importe, privado)}
                     </span>
                   )}
                 </div>
