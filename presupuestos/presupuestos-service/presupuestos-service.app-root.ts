@@ -439,6 +439,27 @@ export function run() {
     } catch (err) { responderError(req, res, err); }
   });
 
+  /**
+   * Envía una notificación de prueba a todos los dispositivos suscritos
+   * del usuario autenticado, al instante — pedido explícito del usuario
+   * (18/08/2026) para poder comprobar de verdad si las notificaciones le
+   * llegan, sin tener que esperar a la hora de un recordatorio. Solo a
+   * los propios dispositivos del usuario autenticado, nunca a otra
+   * cuenta.
+   */
+  app.post('/push/probar', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      await conectarUsuarios();
+      const u = await UsuarioModel.findOne({ id: req.usuarioId }).lean().exec() as any;
+      const subs = (u?.pushSubs ?? []) as PushSub[];
+      if (subs.length === 0) { res.status(400).json({ error: 'No hay ninguna suscripción activa en este dispositivo.' }); return; }
+      for (const sub of subs) {
+        await enviarNotificacion(sub, 'Notificación de prueba', 'Si ves esto, las notificaciones te están llegando correctamente.', { tipo: 'prueba' });
+      }
+      res.json({ ok: true, dispositivos: subs.length });
+    } catch (err) { responderError(req, res, err); }
+  });
+
   // ── Auth ──
 
   /** Mensaje explicativo para cuando un código no se pudo canjear al registrarse — nunca bloquea el registro, solo informa. */

@@ -1084,6 +1084,12 @@ export async function guardarRecordatoriosPersonalizados(recordatorios: Recordat
   await comprobarRespuesta(res, 'No se pudieron guardar los recordatorios');
 }
 
+/** Envía una notificación de prueba a este dispositivo — para comprobar de verdad que llegan, sin esperar a la hora de un recordatorio. */
+export async function probarNotificacion(): Promise<void> {
+  const res = await fetchConAuth('/push/probar', { method: 'POST' });
+  await comprobarRespuestaConMotivo(res, 'No se pudo enviar la notificación de prueba');
+}
+
 // ── Cobros pendientes de un presupuesto (18/08/2026) ──
 
 /** Un hito de cobro de un presupuesto. */

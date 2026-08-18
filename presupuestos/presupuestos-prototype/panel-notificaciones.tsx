@@ -63,6 +63,21 @@ export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCe
   const [nuevaHora, setNuevaHora] = useState(9);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
+  const [probando, setProbando] = useState(false);
+  const [resultadoPrueba, setResultadoPrueba] = useState('');
+
+  const probar = async () => {
+    setProbando(true);
+    setResultadoPrueba('');
+    try {
+      await api.probarNotificacion();
+      setResultadoPrueba('Enviada — debería llegarte en unos segundos.');
+    } catch (e) {
+      setResultadoPrueba(String(e).replace(/^Error:\s*/, ''));
+    } finally {
+      setProbando(false);
+    }
+  };
 
   useEffect(() => {
     api.obtenerPreferenciasNotificaciones()
@@ -128,6 +143,20 @@ export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCe
               <p style={{ margin: '0.6rem 0 0', fontSize: '0.78rem', color: 'var(--rojo)' }}>
                 No se ha podido completar: {errorPush}
               </p>
+            )}
+          </div>
+        )}
+
+        {estadoPush === 'concedido' && (
+          <div className={styles.campo} style={{ marginBottom: '1.25rem', padding: '0.75rem', background: 'var(--fondo)', borderRadius: 'var(--radio)' }}>
+            <p style={{ margin: '0 0 0.6rem', fontSize: '0.85rem', color: 'var(--topo)' }}>
+              Notificaciones activadas en este dispositivo.
+            </p>
+            <button type="button" className={`${styles.btn} ${styles.btnSecundario}`} onClick={probar} disabled={probando}>
+              {probando ? 'Enviando…' : 'Enviar notificación de prueba'}
+            </button>
+            {resultadoPrueba && (
+              <p style={{ margin: '0.6rem 0 0', fontSize: '0.78rem', color: 'var(--topo)' }}>{resultadoPrueba}</p>
             )}
           </div>
         )}
