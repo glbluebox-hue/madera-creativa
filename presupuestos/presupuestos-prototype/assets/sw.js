@@ -8,11 +8,34 @@
 // después de cada cambio. La caché aquí es solo una reserva para cuando
 // no hay red, no una estrategia de rendimiento — eso se revisará aparte,
 // con `vite-plugin-pwa`, cuando la parte visual esté más asentada.
-const CACHE = 'madera-shell-v3';
+const CACHE = 'madera-shell-v4';
 const RESERVA = ['/', '/manifest.webmanifest', '/assets/icon-192.png'];
 
+// `skipWaiting` + `clients.claim()` (18/08/2026): sin esto, un service
+// worker nuevo se queda "esperando" hasta que se cierran TODAS las
+// pestañas/instancias que controlaba el anterior — con la app instalada
+// como PWA en el móvil, eso en la práctica significa que un despliegue
+// nuevo no se nota hasta cerrar la app del todo y reabrirla, y mientras
+// tanto la pestaña ya abierta sigue sirviendo JS/CSS de la versión
+// anterior de en medio de una sesión activa. Esto explica dos síntomas
+// reales reportados el mismo día: un botón nuevo ("Generar enlace") que
+// no aparecía tras desplegarlo, y el logo mostrándose un instante con un
+// tamaño y luego cambiando a otro (contenido nuevo y viejo mezclado
+// mientras la pestaña seguía bajo el control del service worker
+// anterior). Con esto, cada despliegue nuevo toma el control de
+// inmediato, sin esperar a un cierre completo.
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(RESERVA)));
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    Promise.all([
+      clients.claim(),
+      caches.keys().then((claves) => Promise.all(claves.filter((k) => k !== CACHE).map((k) => caches.delete(k)))),
+    ])
+  );
 });
 
 self.addEventListener('fetch', (event) => {
