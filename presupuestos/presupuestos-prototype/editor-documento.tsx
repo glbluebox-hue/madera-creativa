@@ -145,6 +145,17 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nombreEstiloNuevo, setNombreEstiloNuevo] = useState('');
+  /**
+   * En pantallas estrechas (móvil, tablet en vertical), los paneles
+   * izquierdo (páginas/capas) y derecho (propiedades) tapaban el lienzo
+   * por completo, sin ningún botón para cerrarlos — el usuario no podía
+   * llegar a ver la plantilla en absoluto (reportado 20/08/2026, con
+   * captura). En pantallas anchas (escritorio) ambos paneles se quedan
+   * siempre visibles como hasta ahora; en estrechas, empiezan cerrados y
+   * cada uno se abre solo con su propio botón — nunca los dos a la vez,
+   * para no repetir el mismo problema con el otro panel.
+   */
+  const [panelMovilAbierto, setPanelMovilAbierto] = useState<'ninguno' | 'izquierdo' | 'derecho'>('ninguno');
   const [panelTemaAbierto, setPanelTemaAbierto] = useState(false);
   const [panelPlantillaAbierto, setPanelPlantillaAbierto] = useState(false);
   const [nombrePlantillaNueva, setNombrePlantillaNueva] = useState('');
@@ -250,6 +261,12 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
       }
       return [id];
     });
+    // En pantallas estrechas, seleccionar un elemento abre directamente el
+    // panel de propiedades — sin esto, el usuario tendría que tocar el
+    // botón "Propiedades" a mano cada vez, un paso extra innecesario. En
+    // escritorio no tiene efecto visual (los paneles ya están siempre
+    // visibles ahí).
+    setPanelMovilAbierto('derecho');
   }, []);
 
   const limpiarSeleccion = useCallback(() => { setSeleccion([]); setEditandoId(null); }, []);
@@ -903,6 +920,10 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
         <input className={editorStyles.titulo} value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Título del documento" />
         <span style={{ fontSize: '0.75rem', color: 'var(--topo-claro)' }}>{clienteNombre}</span>
         <div style={{ flex: 1 }} />
+        {/* Solo visibles en pantallas estrechas (ver CSS) — en escritorio
+            ambos paneles ya están siempre a la vista. */}
+        <button className={editorStyles.btnPanelMovil} onClick={() => setPanelMovilAbierto((v) => (v === 'izquierdo' ? 'ninguno' : 'izquierdo'))}>📑 Páginas</button>
+        <button className={editorStyles.btnPanelMovil} onClick={() => setPanelMovilAbierto((v) => (v === 'derecho' ? 'ninguno' : 'derecho'))}>⚙️ Propiedades</button>
         {error && <span style={{ color: 'var(--rojo, #c0392b)', fontSize: '0.78rem' }}>{error}</span>}
         <button className={styles.btn} onClick={guardar} disabled={guardando}>{guardando ? 'Guardando…' : 'Guardar'}</button>
       </div>
@@ -1086,7 +1107,8 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
       )}
 
       <div className={editorStyles.cuerpo}>
-        <div className={editorStyles.panelIzquierdo}>
+        <div className={`${editorStyles.panelIzquierdo} ${panelMovilAbierto === 'izquierdo' ? editorStyles.panelMovilAbierto : ''}`}>
+          <button className={editorStyles.btnCerrarPanelMovil} onClick={() => setPanelMovilAbierto('ninguno')}>✕ Cerrar</button>
           <p className={editorStyles.panelTituloSeccion}>Páginas</p>
           {documento.paginas.map((p, i) => (
             <div key={p.id} className={`${editorStyles.paginaFila} ${p.id === paginaActivaId ? editorStyles.paginaFilaActiva : ''}`} onClick={() => setPaginaActivaId(p.id)}>
@@ -1124,7 +1146,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
           {paginaActiva.elementos.length === 0 && <p className={editorStyles.panelNota}>Sin elementos en esta página.</p>}
         </div>
 
-        <div ref={lienzoContenedorRef} className={editorStyles.lienzoContenedor} onMouseDown={() => limpiarSeleccion()}>
+        <div ref={lienzoContenedorRef} className={editorStyles.lienzoContenedor} onMouseDown={() => { limpiarSeleccion(); setPanelMovilAbierto('ninguno'); }}>
           {documento.paginas.map((pagina) => {
             const config = pagina.configuracion ?? documento.configuracionPorDefecto;
             const fondo = pagina.fondo;
@@ -1158,7 +1180,8 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
           })}
         </div>
 
-        <div className={editorStyles.panelDerecho}>
+        <div className={`${editorStyles.panelDerecho} ${panelMovilAbierto === 'derecho' ? editorStyles.panelMovilAbierto : ''}`}>
+          <button className={editorStyles.btnCerrarPanelMovil} onClick={() => setPanelMovilAbierto('ninguno')}>✕ Cerrar</button>
           {panelPropiedades()}
         </div>
       </div>

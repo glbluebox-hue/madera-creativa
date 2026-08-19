@@ -242,11 +242,82 @@
   padding: 0 0.2rem;
 }
 
+/* Botón para cerrar un panel abierto en pantalla estrecha — no existe en
+   escritorio, donde ambos paneles están siempre visibles sin necesidad de
+   cerrarlos. */
+.btnCerrarPanelMovil { display: none; }
+
+/* Botones de la barra superior para abrir cada panel en pantalla estrecha
+   — ocultos en escritorio, donde no hacen falta (los paneles ya están
+   siempre a la vista). */
+.btnPanelMovil { display: none; }
+
 @media (max-width: 720px) {
-  .panelIzquierdo, .panelDerecho { position: fixed; top: 0; bottom: 0; z-index: 10; box-shadow: 0 0 12px rgba(0,0,0,0.2); }
-  .panelIzquierdo { left: 0; }
-  .panelDerecho { right: 0; }
+  /* Antes ambos paneles estaban siempre visibles y tapaban el lienzo por
+     completo, sin ninguna forma de cerrarlos — el usuario no podía ver la
+     plantilla en absoluto en el móvil (reportado 20/08/2026, con
+     captura). Ahora empiezan fuera de pantalla (`translateX`) y solo se
+     muestran uno a la vez, nunca los dos juntos, al pulsar su botón en la
+     barra superior o al seleccionar un elemento (panel de propiedades).
+     Tocar el lienzo o el botón "Cerrar" los vuelve a ocultar. */
+  .panelIzquierdo, .panelDerecho {
+    position: fixed; top: 0; bottom: 0; z-index: 10;
+    width: min(85vw, 320px);
+    box-shadow: 0 0 12px rgba(0,0,0,0.25);
+    transition: transform 0.2s ease;
+    display: flex; flex-direction: column;
+  }
+  .panelIzquierdo { left: 0; transform: translateX(-105%); }
+  .panelDerecho { right: 0; transform: translateX(105%); }
+  .panelIzquierdo.panelMovilAbierto, .panelDerecho.panelMovilAbierto { transform: translateX(0); }
+
+  .btnCerrarPanelMovil {
+    display: block;
+    align-self: flex-end;
+    background: var(--fondo-panel);
+    border: 1px solid var(--borde);
+    border-radius: var(--radio);
+    padding: 0.4rem 0.7rem;
+    font-size: 0.78rem;
+    cursor: pointer;
+    margin-bottom: 0.4rem;
+  }
+
+  .btnPanelMovil {
+    display: inline-flex;
+    align-items: center;
+    background: var(--fondo-panel);
+    border: 1px solid var(--borde);
+    border-radius: var(--radio);
+    padding: 0.4rem 0.6rem;
+    font-size: 0.78rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
   .lienzoContenedor { padding: 1rem; }
+}
+
+/* Aparte del `max-width`, cubre también el móvil en horizontal: mismo
+   ancho lógico estrecho que en vertical, así que necesita la misma
+   solución de paneles ocultables — sin esto, girar el teléfono para tener
+   más ancho (petición real del usuario) no arreglaba nada porque el alto
+   de pantalla en horizontal es aún más pequeño que 720px en la mayoría de
+   móviles. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .panelIzquierdo, .panelDerecho {
+    position: fixed; top: 0; bottom: 0; z-index: 10;
+    width: min(60vw, 320px);
+    box-shadow: 0 0 12px rgba(0,0,0,0.25);
+    transition: transform 0.2s ease;
+    display: flex; flex-direction: column;
+  }
+  .panelIzquierdo { left: 0; transform: translateX(-105%); }
+  .panelDerecho { right: 0; transform: translateX(105%); }
+  .panelIzquierdo.panelMovilAbierto, .panelDerecho.panelMovilAbierto { transform: translateX(0); }
+  .btnCerrarPanelMovil { display: block; align-self: flex-end; background: var(--fondo-panel); border: 1px solid var(--borde); border-radius: var(--radio); padding: 0.4rem 0.7rem; font-size: 0.78rem; cursor: pointer; margin-bottom: 0.4rem; }
+  .btnPanelMovil { display: inline-flex; align-items: center; background: var(--fondo-panel); border: 1px solid var(--borde); border-radius: var(--radio); padding: 0.4rem 0.6rem; font-size: 0.78rem; cursor: pointer; white-space: nowrap; }
+  .lienzoContenedor { padding: 0.75rem; }
 }
 
 /* Marcador sin estilo propio — solo existe para poder localizar en el DOM
