@@ -307,31 +307,6 @@ async function asegurarAdmin(): Promise<void> {
   }
 }
 
-/**
- * Migra documentos históricos (sin usuarioId) asignándolos al admin.
- * Se ejecuta al arrancar y solo toca registros que no tienen usuarioId.
- */
-async function migrarDatosAdmin(): Promise<void> {
-  try {
-    const { ClienteModel, EmpresaModel, FacturaModel, conectar } = await import('./cliente.model.js');
-    await conectar();
-    const [c, e, f] = await Promise.all([
-      ClienteModel.updateMany({ usuarioId: { $exists: false } }, { $set: { usuarioId: 'admin' } }),
-      EmpresaModel.updateMany({ usuarioId: { $exists: false } }, { $set: { usuarioId: 'admin' } }),
-      FacturaModel.updateMany({ usuarioId: { $exists: false } }, { $set: { usuarioId: 'admin' } }),
-    ]);
-    const total = (c?.modifiedCount || 0) + (e?.modifiedCount || 0) + (f?.modifiedCount || 0);
-    if (total > 0) {
-      logger.info(
-        { clientes: c?.modifiedCount, facturas: f?.modifiedCount, empresa: e?.modifiedCount },
-        'Migración admin de datos históricos'
-      );
-    }
-  } catch (err) {
-    logger.warn({ err }, 'Migración datos admin');
-  }
-}
-
 // ── Servidor Express ──────────────────────────────────────────────────────────
 
 /**
@@ -375,7 +350,14 @@ export function run() {
     .then(migrarNombresNormalizados)
     .then(asegurarIndiceNombreNormalizado)
     .catch((err) => logger.error({ err }, 'Error inicializando admin / migrando nombres normalizados'));
-  migrarDatosAdmin().catch((err) => logger.error({ err }, 'Error en migración de datos admin'));
+  // `migrarDatosAdmin()` (backfill de usuarioId en documentos históricos de
+  // antes del multiusuario) se ha retirado (19/08/2026): hacía un escaneo
+  // COMPLETO sin índice de Clientes/Empresa/Facturas en cada arranque del
+  // servidor — nunca encontraba nada que migrar desde hace tiempo (su log
+  // de éxito nunca aparecía), pero sí competía por recursos justo al
+  // arrancar. Causa real, confirmada con los logs de Render, de un aviso
+  // "Operation `clientes.updateMany()` buffering timed out after 10000ms"
+  // y de cargas de la app de varios minutos tras cada despliegue.
 
   app.use(middlewareLogPeticion);
   app.use(helmet());
