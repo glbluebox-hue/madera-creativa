@@ -48,6 +48,36 @@ export function alPerderSesion(callback: () => void): void {
   callbackSesionInvalida = callback;
 }
 
+function esperar(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Un intento de `/auth/refresh`. Distingue un rechazo REAL de sesión
+ * (401/403 — el servidor confirma que el token ya no vale, no hay nada que
+ * reintentar) de cualquier otro fallo (red caída un instante, servidor
+ * lento, error 5xx puntual) — reintenta una vez en el segundo caso antes
+ * de rendirse, en vez de cerrar sesión ante cualquier tropiezo pasajero.
+ * Bug real reportado 19/08/2026: un fallo transitorio (no un rechazo de
+ * verdad) desconectaba al usuario en segundos, aunque su sesión de
+ * servidor siguiera siendo perfectamente válida.
+ */
+async function intentarRefrescarSesion(reintentar: boolean): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE}/auth/refresh`, { method: 'POST', credentials: 'include' });
+    if (res.ok) {
+      const data = await res.json() as { accessToken: string };
+      establecerAccessToken(data.accessToken);
+      return true;
+    }
+    if (res.status === 401 || res.status === 403) { establecerAccessToken(null); return false; }
+  } catch { /* red caída — se trata igual que un error 5xx, ver abajo */ }
+
+  if (reintentar) { await esperar(800); return intentarRefrescarSesion(false); }
+  establecerAccessToken(null);
+  return false;
+}
+
 /**
  * Renueva la sesión llamando a `/auth/refresh` (usa la cookie httpOnly del
  * refresh token, que el navegador envía solo). Si dos llamadas se solapan
@@ -56,17 +86,7 @@ export function alPerderSesion(callback: () => void): void {
  */
 export async function refrescarSesion(): Promise<boolean> {
   if (refrescoEnCurso) return refrescoEnCurso;
-  refrescoEnCurso = (async () => {
-    try {
-      const res = await fetch(`${BASE}/auth/refresh`, { method: 'POST', credentials: 'include' });
-      if (!res.ok) { establecerAccessToken(null); return false; }
-      const data = await res.json() as { accessToken: string };
-      establecerAccessToken(data.accessToken);
-      return true;
-    } catch {
-      return false;
-    }
-  })();
+  refrescoEnCurso = intentarRefrescarSesion(true);
   try {
     return await refrescoEnCurso;
   } finally {
