@@ -437,7 +437,7 @@ export function run() {
       const usuarioId = req.usuarioId!;
       const { subscription } = req.body;
       await conectarUsuarios();
-      const u = await UsuarioModel.findOne({ id: usuarioId }).exec();
+      const u = await UsuarioModel.findOne({ id: usuarioId }).select('pushSubs').exec();
       if (!u) { res.status(404).json({ error: 'Usuario no encontrado' }); return; }
       const yaExiste = (u.pushSubs || []).some((s: any) => s.endpoint === subscription.endpoint);
       if (!yaExiste) {
@@ -459,7 +459,7 @@ export function run() {
   app.post('/push/probar', requireAuth, async (req: AuthRequest, res) => {
     try {
       await conectarUsuarios();
-      const u = await UsuarioModel.findOne({ id: req.usuarioId }).lean().exec() as any;
+      const u = await UsuarioModel.findOne({ id: req.usuarioId }).select('pushSubs').lean().exec() as any;
       const subs = (u?.pushSubs ?? []) as PushSub[];
       if (subs.length === 0) { res.status(400).json({ error: 'No hay ninguna suscripción activa en este dispositivo.' }); return; }
       for (const sub of subs) {
@@ -545,7 +545,8 @@ export function run() {
     try {
       await conectarUsuarios();
       const { nombre, password } = req.body;
-      const u = await UsuarioModel.findOne({ nombreNormalizado: nombre.toLowerCase() }).lean().exec() as any;
+      const u = await UsuarioModel.findOne({ nombreNormalizado: nombre.toLowerCase() })
+        .select('id nombre passwordHash hashAlgo estado esAdmin').lean().exec() as any;
       if (!u) { res.status(401).json({ error: 'Usuario o contraseña incorrectos.' }); return; }
 
       let credencialesValidas: boolean;
@@ -599,7 +600,7 @@ export function run() {
       }
 
       await conectarUsuarios();
-      const u = await UsuarioModel.findOne({ id: rotado.usuarioId }).lean().exec() as any;
+      const u = await UsuarioModel.findOne({ id: rotado.usuarioId }).select('estado esAdmin').lean().exec() as any;
       if (!u || u.estado !== 'activo') {
         res.clearCookie('mc_refresh', opcionesCookieRefresh());
         res.status(403).json({ error: 'Acceso denegado' });
@@ -658,7 +659,7 @@ export function run() {
     try {
       await conectarUsuarios();
       const usuarioId = req.usuarioId!;
-      const u = await UsuarioModel.findOne({ id: usuarioId }).lean().exec() as any;
+      const u = await UsuarioModel.findOne({ id: usuarioId }).select('estado').lean().exec() as any;
       if (!u) { res.status(404).json({ activo: false }); return; }
       res.json({ activo: u.estado === 'activo', estado: u.estado });
     } catch (err) { responderError(req, res, err); }
@@ -1011,7 +1012,7 @@ export function run() {
   app.get('/perfil', requireAuth, async (req: AuthRequest, res) => {
     try {
       await conectarUsuarios();
-      const u = await UsuarioModel.findOne({ id: req.usuarioId }).lean().exec() as any;
+      const u = await UsuarioModel.findOne({ id: req.usuarioId }).select('nombreMostrar foto').lean().exec() as any;
       if (!u) { res.status(404).json({ error: 'No encontrado' }); return; }
       res.json({ nombreMostrar: u.nombreMostrar || '', foto: u.foto || '' });
     } catch (err) { responderError(req, res, err); }
