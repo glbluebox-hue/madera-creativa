@@ -77,16 +77,24 @@ function guardarUsuarios(us: UsuarioRegistrado[]): void {
   try { localStorage.setItem(KEY_USUARIOS, JSON.stringify(us)); } catch { /* noop */ }
 }
 
+/**
+ * Lee la sesión guardada tal cual, SIN comprobar inactividad aquí — esa
+ * comprobación vivía antes en esta función y borraba la sesión local en
+ * cuanto pasaban 5 minutos desde el último toque/scroll registrado, ANTES
+ * de darle al servidor (que sí conoce la validez real, mucho más larga,
+ * del refresh token en su cookie httpOnly) la oportunidad de confirmar si
+ * la sesión seguía activa. Cualquier recarga de página (recargar
+ * manualmente, el gesto de "tirar hacia abajo" en móvil…) que llegara tras
+ * más de 5 minutos sin esos eventos concretos desconectaba al usuario aun
+ * con una sesión de servidor perfectamente válida (reportado 19/08/2026).
+ * El cierre por inactividad de verdad sigue existiendo — ver el `useEffect`
+ * de más abajo con `resetTimer()`/`setTimeout(logout, ...)`, que solo actúa
+ * mientras la pestaña sigue abierta, nunca al volver a cargarla.
+ */
 function cargarSesion(): SesionActiva | null {
   try {
     const raw = localStorage.getItem(KEY_SESION);
     if (!raw) return null;
-    const actividad = parseInt(localStorage.getItem(KEY_ACTIVIDAD) ?? '0', 10);
-    if (Date.now() - actividad > MS_INACTIVIDAD) {
-      localStorage.removeItem(KEY_SESION);
-      localStorage.removeItem(KEY_ACTIVIDAD);
-      return null;
-    }
     return JSON.parse(raw) as SesionActiva;
   } catch { return null; }
 }
