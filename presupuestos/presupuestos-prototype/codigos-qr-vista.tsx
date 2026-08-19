@@ -26,6 +26,14 @@ export function CodigosQRVista() {
   const [nombre, setNombre] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Edición de un código QR ya guardado — renombrar y, opcionalmente,
+  // sustituir la imagen por otra (petición del usuario, 19/08/2026).
+  const [editando, setEditando] = useState<CodigoQRMC | null>(null);
+  const [nombreEdicion, setNombreEdicion] = useState('');
+  const [archivoNuevoEdicion, setArchivoNuevoEdicion] = useState<File | null>(null);
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false);
+  const inputEdicionRef = useRef<HTMLInputElement>(null);
+
   const cargar = () => {
     setCargando(true);
     api.obtenerCodigosQR()
@@ -59,6 +67,34 @@ export function CodigosQRVista() {
       setError(e instanceof Error ? e.message : 'No se pudo subir el código QR.');
     } finally {
       setSubiendo(false);
+    }
+  };
+
+  const abrirEdicion = (c: CodigoQRMC) => {
+    setEditando(c);
+    setNombreEdicion(c.nombre);
+    setArchivoNuevoEdicion(null);
+  };
+
+  const guardarEdicion = async () => {
+    if (!editando || !nombreEdicion.trim()) return;
+    setGuardandoEdicion(true);
+    setError(null);
+    try {
+      let imagenUrl = editando.imagenUrl;
+      if (archivoNuevoEdicion) {
+        const { blob } = await comprimirImagen(archivoNuevoEdicion, { maxDim: 1600, calidad: 0.9 });
+        const dataUrl = await leerArchivoComoBase64(blob);
+        const recurso = await api.subirRecurso({ nombre: nombreEdicion.trim(), tipo: 'otro', ambito: 'usuario', etiquetas: ['codigo-qr'], dataUrl });
+        imagenUrl = recurso.url;
+      }
+      const guardado = await api.guardarCodigoQR({ ...editando, nombre: nombreEdicion.trim(), imagenUrl });
+      setCodigos((prev) => prev.map((c) => (c.id === guardado.id ? guardado : c)));
+      setEditando(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo guardar el código QR.');
+    } finally {
+      setGuardandoEdicion(false);
     }
   };
 
@@ -110,7 +146,17 @@ export function CodigosQRVista() {
               />
               <div style={{ padding: '0.5rem 0.6rem', background: 'var(--fondo-panel)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.4rem' }}>
                 <span style={{ fontSize: '0.8rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.nombre}</span>
-                <ConfirmarBorrado onConfirmar={() => borrar(c.id)} titulo="Borrar código QR" />
+                <div style={{ display: 'flex', gap: '0.25rem', flexShrink: 0 }}>
+                  <button
+                    className={styles.btnIcono}
+                    title="Editar código QR"
+                    aria-label="Editar código QR"
+                    onClick={(e) => { e.stopPropagation(); abrirEdicion(c); }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" /></svg>
+                  </button>
+                  <ConfirmarBorrado onConfirmar={() => borrar(c.id)} titulo="Borrar código QR" />
+                </div>
               </div>
             </div>
           ))}
@@ -146,6 +192,48 @@ export function CodigosQRVista() {
               <button className={styles.btn} onClick={() => setNombrePendiente(null)} disabled={subiendo} style={{ fontSize: '0.8rem' }}>Cancelar</button>
               <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={confirmarSubida} disabled={subiendo || !nombre.trim()} style={{ fontSize: '0.8rem' }}>
                 {subiendo ? 'Subiendo…' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Editar un código QR ya guardado — renombrar y, opcionalmente, sustituir la imagen */}
+      {editando && (
+        <div className={styles.overlay} onClick={() => !guardandoEdicion && setEditando(null)}>
+          <div className={styles.modal} style={{ maxWidth: 360, padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }} onClick={(e) => e.stopPropagation()}>
+            <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem' }}>Editar código QR</p>
+
+            <img
+              src={urlImagenFiable(archivoNuevoEdicion ? URL.createObjectURL(archivoNuevoEdicion) : editando.imagenUrl)}
+              alt={nombreEdicion}
+              style={{ width: '100%', maxHeight: 180, objectFit: 'contain', borderRadius: 6, background: 'var(--fondo)' }}
+            />
+
+            <input
+              ref={inputEdicionRef}
+              type="file"
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) setArchivoNuevoEdicion(f); e.target.value = ''; }}
+            />
+            <button className={styles.btn} onClick={() => inputEdicionRef.current?.click()} disabled={guardandoEdicion} style={{ fontSize: '0.8rem' }}>
+              {archivoNuevoEdicion ? 'Imagen nueva elegida — cambiar otra vez' : 'Sustituir la imagen'}
+            </button>
+
+            <input
+              className={styles.input}
+              autoFocus
+              placeholder="Nombre"
+              value={nombreEdicion}
+              onChange={(e) => setNombreEdicion(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') guardarEdicion(); }}
+              disabled={guardandoEdicion}
+            />
+            <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
+              <button className={styles.btn} onClick={() => setEditando(null)} disabled={guardandoEdicion} style={{ fontSize: '0.8rem' }}>Cancelar</button>
+              <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={guardarEdicion} disabled={guardandoEdicion || !nombreEdicion.trim()} style={{ fontSize: '0.8rem' }}>
+                {guardandoEdicion ? 'Guardando…' : 'Guardar'}
               </button>
             </div>
           </div>
