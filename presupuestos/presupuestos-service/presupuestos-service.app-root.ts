@@ -1283,6 +1283,39 @@ export function run() {
     } catch (err) { responderError(req, res, err); }
   });
 
+  /**
+   * Sirve una imagen guardada en R2 pasando por el propio servidor, en vez
+   * de que el navegador vaya directo al dominio público de R2. Confirmado
+   * en vivo (19/08/2026): tanto la URL pública antigua de R2 como el
+   * dominio propio nuevo devuelven 503 de forma intermitente para
+   * peticiones del navegador — pero el servidor, usando la API S3
+   * autenticada (`almacenamiento.obtener()`, endpoint privado, no el
+   * dominio público), sí consigue el archivo de forma fiable (es la misma
+   * vía que ya usa la descarga de PDF, que nunca ha fallado). Sin
+   * `requireAuth` a propósito: una etiqueta `<img>` no puede mandar un
+   * token Bearer, y el archivo ya es público de por sí en R2 — solo se
+   * exige que la URL pedida sea realmente de uno de nuestros dominios de
+   * R2 conocidos, para no convertir esto en un proxy abierto a cualquier URL.
+   */
+  app.get('/imagen-proxy', async (req, res) => {
+    try {
+      const urlParam = req.query.url;
+      if (typeof urlParam !== 'string') { res.status(400).json({ error: 'Falta el parámetro url' }); return; }
+      let analizada: URL;
+      try { analizada = new URL(urlParam); } catch { res.status(400).json({ error: 'URL inválida' }); return; }
+      const dominiosR2Permitidos = ['pub-fd9490abec4f4d9a85fa2a5fe237d18b.r2.dev', 'cdn.maderacreativa.com'];
+      if (!dominiosR2Permitidos.includes(analizada.hostname)) {
+        res.status(400).json({ error: 'Dominio no permitido' }); return;
+      }
+      const clave = decodeURIComponent(analizada.pathname.replace(/^\//, ''));
+      const archivo = await almacenamiento.obtener(clave);
+      if (!archivo) { res.status(404).json({ error: 'No encontrado' }); return; }
+      res.setHeader('Content-Type', archivo.contentType);
+      res.setHeader('Cache-Control', 'private, max-age=3600');
+      res.send(archivo.datos);
+    } catch (err) { responderError(req, res, err); }
+  });
+
   /** PDF real de una factura individual — descarga directa. */
   app.get('/facturas/:id/pdf', requireAuth, async (req: AuthRequest, res) => {
     try {

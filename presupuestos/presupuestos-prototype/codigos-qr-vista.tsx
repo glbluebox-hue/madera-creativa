@@ -5,7 +5,7 @@ import { leerArchivoComoBase64 } from './archivos.js';
 import { comprimirImagen } from './procesamiento-imagenes.js';
 import type { CodigoQRMC } from './codigos-qr-modelo.js';
 import { Z_MODAL } from './z-index.js';
-import { reintentarConDominioR2Nuevo } from './imagen-fallback.js';
+import { urlImagenFiable } from './imagen-fallback.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
 import styles from './styles.module.css';
 
@@ -103,8 +103,7 @@ export function CodigosQRVista() {
           {codigos.map((c) => (
             <div key={c.id} style={{ position: 'relative', borderRadius: 6, overflow: 'hidden', background: 'var(--fondo)', border: '1px solid var(--borde)', cursor: 'pointer' }}>
               <img
-                src={c.imagenUrl}
-                onError={reintentarConDominioR2Nuevo}
+                src={urlImagenFiable(c.imagenUrl)}
                 alt={c.nombre}
                 onClick={() => setVisor(c)}
                 style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover', display: 'block' }}
@@ -160,7 +159,7 @@ export function CodigosQRVista() {
           style={{ position: 'fixed', inset: 0, background: 'rgba(10,8,6,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: Z_MODAL, padding: '1rem' }}
         >
           <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
-            <img src={visor.imagenUrl} onError={reintentarConDominioR2Nuevo} alt={visor.nombre} style={{ maxWidth: '100%', maxHeight: '85vh', objectFit: 'contain', borderRadius: 6 }} />
+            <img src={urlImagenFiable(visor.imagenUrl)} alt={visor.nombre} style={{ maxWidth: '100%', maxHeight: '85vh', objectFit: 'contain', borderRadius: 6 }} />
             <p style={{ color: 'var(--blanco)', margin: 0, fontSize: '0.9rem', textAlign: 'center' }}>{visor.nombre}</p>
           </div>
         </div>
