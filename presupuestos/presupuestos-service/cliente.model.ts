@@ -1,4 +1,5 @@
-import mongoose, { Schema, model, models, Model } from 'mongoose';
+import { Schema, model, models, Model } from 'mongoose';
+import { conectarMongo } from './mongo-conexion.js';
 
 /** Subdocumento de un movimiento económico (gasto o ingreso). */
 const MovimientoSchema = new Schema(
@@ -706,7 +707,5 @@ export const CarpetaModel: Model<any> = models.Carpeta || model('Carpeta', Carpe
  * siempre.
  */
 export async function conectar(): Promise<void> {
-  if (mongoose.connection.readyState === 1) return;
-  const url = process.env.MONGO_URL || 'mongodb://localhost:27017/madera-creativa';
-  await mongoose.connect(url, { maxPoolSize: 10, minPoolSize: 0, maxIdleTimeMS: 30_000 });
+  await conectarMongo();
 }

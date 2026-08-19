@@ -1,5 +1,6 @@
-import mongoose, { Schema, model, models, Model } from 'mongoose';
+import { Schema, model, models, Model } from 'mongoose';
 import { logger } from './logger.service.js';
+import { conectarMongo } from './mongo-conexion.js';
 
 /** Estado de un usuario en el sistema de licencias. */
 export type EstadoUsuario = 'pendiente' | 'activo' | 'suspendido';
@@ -190,19 +191,18 @@ const UsuarioSchema = new Schema({
 export const UsuarioModel: Model<any> = models.Usuario || model('Usuario', UsuarioSchema);
 
 /**
- * Conecta a MongoDB (reutiliza conexión existente). Mismo pool acotado que
- * `conectar()` en `cliente.model.ts` — ver el comentario allí (auditoría
- * 12/08/2026, alerta real de Atlas por límite de conexiones). En la
- * práctica solo una de las dos funciones llega a llamar a
- * `mongoose.connect()` de verdad (ambas comparten la misma conexión por
- * defecto de mongoose, protegidas por el mismo `readyState === 1`) — se
- * mantienen los mismos valores en ambas para que el resultado no dependa
- * de cuál se invoque primero.
+ * Conecta a MongoDB (reutiliza conexión existente). Delega en
+ * `conectarMongo()` (`mongo-conexion.ts`) — antes esta función y `conectar()`
+ * en `cliente.model.ts` llamaban cada una a `mongoose.connect()` por su
+ * cuenta, con la guarda `readyState === 1` (solo descarta "ya conectada",
+ * no "conectando ahora mismo"). Al arrancar el servidor, varias peticiones
+ * a rutas distintas disparaban su propia conexión a la vez, compitiendo
+ * entre sí — causa real (confirmada con `duracionMs` en los logs de
+ * Render, 19/08/2026) de logins y refrescos de sesión tardando decenas de
+ * segundos justo tras cada despliegue.
  */
 export async function conectarUsuarios(): Promise<void> {
-  if (mongoose.connection.readyState === 1) return;
-  const url = process.env.MONGO_URL || 'mongodb://localhost:27017/madera-creativa';
-  await mongoose.connect(url, { maxPoolSize: 10, minPoolSize: 0, maxIdleTimeMS: 30_000 });
+  await conectarMongo();
 }
 
 /**
