@@ -366,7 +366,12 @@ export function run() {
   // los códigos QR subidos, que se sirven desde el dominio público de
   // Cloudflare R2. Se añade ese origen explícitamente a img-src; el resto
   // de directivas se queda en los valores por defecto de helmet.
-  const origenR2 = process.env.R2_PUBLIC_URL_BASE ? new URL(process.env.R2_PUBLIC_URL_BASE).origin : null;
+  let origenR2: string | null = null;
+  try {
+    origenR2 = process.env.R2_PUBLIC_URL_BASE ? new URL(process.env.R2_PUBLIC_URL_BASE).origin : null;
+  } catch (err) {
+    logger.error({ err, valor: process.env.R2_PUBLIC_URL_BASE }, 'R2_PUBLIC_URL_BASE no es una URL válida — CSP de imágenes sin ese origen');
+  }
   app.use(helmet({
     contentSecurityPolicy: {
       directives: {
