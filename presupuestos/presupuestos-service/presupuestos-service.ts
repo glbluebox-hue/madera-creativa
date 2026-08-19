@@ -1,4 +1,5 @@
 import { randomUUID, createHash } from 'node:crypto';
+import type { PipelineStage } from 'mongoose';
 import { ClienteModel, EmpresaModel, FacturaModel, ProveedorModel, ProductoModel, DibujoModel, CarpetaModel, NotaModel, PresupuestoModel, PlantillaModel, RecursoModel, ComponenteModel, CodigoQRModel, AutomatizacionModel, ContratoModel, GastoPeriodicoModel, conectar } from './cliente.model.js';
 import { UsuarioModel, conectarUsuarios } from './usuario.model.js';
 import { crearEnlacePresupuesto, buscarEnlacePorToken, reclamarEnlaceAceptado, guardarFirmaEnlace, formatoTokenValido } from './enlace-presupuesto.model.js';
@@ -618,31 +619,45 @@ export class PresupuestosService {
     if (opciones.tipo !== 'todas') filtro.tipo = opciones.tipo;
     const salto = (opciones.pagina - 1) * opciones.limite;
     const [docs, total] = await Promise.all([
-      FacturaModel.find(filtro).sort({ creado: -1 }).skip(salto).limit(opciones.limite).lean().exec(),
+      FacturaModel.aggregate([
+        { $match: filtro },
+        { $sort: { creado: -1 } },
+        { $skip: salto },
+        { $limit: opciones.limite },
+        ...this.pipelineTieneDocumentoFactura(),
+      ]).exec(),
       FacturaModel.countDocuments(filtro).exec(),
     ]);
-    const items = docs.map((d) => {
-      const limpio = this.limpiar(d as Record<string, unknown>) as Record<string, unknown>;
-      const tieneDocumento = this.tieneDocumentoFactura(limpio);
-      const { imagen: _img, ...rest } = limpio;
-      return { ...rest, tieneDocumento };
-    });
+    const items = docs.map((d) => this.limpiar(d as Record<string, unknown>));
     return { items, total };
   }
 
   /**
-   * Indica si una factura tiene algún documento adjunto (imagen/PDF, en
-   * cualquiera de sus formatos históricos), sin exponer el contenido en sí
-   * — usado en el listado paginado, donde `imagen` se omite por peso pero
-   * la lista sigue necesitando saber si mostrar los botones de Ver/Descargar.
+   * Etapas de agregación que calculan `tieneDocumento` (si hay algún
+   * documento adjunto, en cualquiera de sus formatos históricos) DENTRO de
+   * MongoDB y excluyen `imagen`/`imagenes` (potencialmente muchos MB en
+   * base64 por factura escaneada) antes de que salgan del servidor de
+   * Atlas — antes se traían completos con `.find()` y se descartaban ya en
+   * Node, lo que transferría decenas de MB por cada carga del listado sin
+   * necesidad (causa real de cargas de más de 50s en `/facturas`,
+   * confirmada con `duracionMs` en los logs de Render, 19/08/2026).
    */
-  private tieneDocumentoFactura(d: Record<string, unknown>): boolean {
-    return Boolean(
-      (Array.isArray(d.paginas) && d.paginas.length) ||
-      (Array.isArray(d.imagenes) && d.imagenes.length) ||
-      d.imagen ||
-      d.pdfOriginalUrl
-    );
+  private pipelineTieneDocumentoFactura(): PipelineStage[] {
+    return [
+      {
+        $addFields: {
+          tieneDocumento: {
+            $or: [
+              { $gt: [{ $size: { $ifNull: ['$paginas', []] } }, 0] },
+              { $gt: [{ $size: { $ifNull: ['$imagenes', []] } }, 0] },
+              { $ne: [{ $ifNull: ['$imagen', ''] }, ''] },
+              { $ne: [{ $ifNull: ['$pdfOriginalUrl', ''] }, ''] },
+            ],
+          },
+        },
+      },
+      { $project: { imagen: 0, imagenes: 0 } },
+    ];
   }
 
   /**
@@ -655,16 +670,12 @@ export class PresupuestosService {
    */
   async listarFacturasPorAnio(usuarioId: string, anio: number): Promise<Record<string, unknown>[]> {
     await conectar();
-    const docs = await FacturaModel.find({
-      usuarioId,
-      fecha: { $gte: `${anio}-01-01`, $lte: `${anio}-12-31` },
-    }).sort({ creado: -1 }).lean().exec();
-    return docs.map((d) => {
-      const limpio = this.limpiar(d as Record<string, unknown>) as Record<string, unknown>;
-      const tieneDocumento = this.tieneDocumentoFactura(limpio);
-      const { imagen: _img, ...rest } = limpio;
-      return { ...rest, tieneDocumento };
-    });
+    const docs = await FacturaModel.aggregate([
+      { $match: { usuarioId, fecha: { $gte: `${anio}-01-01`, $lte: `${anio}-12-31` } } },
+      { $sort: { creado: -1 } },
+      ...this.pipelineTieneDocumentoFactura(),
+    ]).exec();
+    return docs.map((d) => this.limpiar(d as Record<string, unknown>));
   }
 
   /**
@@ -681,16 +692,17 @@ export class PresupuestosService {
     await conectar();
     const mesInicio = (trimestre - 1) * 3 + 1;
     const mesFin = mesInicio + 2;
-    const docs = await FacturaModel.find({
-      usuarioId,
-      fecha: { $gte: `${anio}-${String(mesInicio).padStart(2, '0')}-01`, $lte: `${anio}-${String(mesFin).padStart(2, '0')}-31` },
-    }).sort({ creado: -1 }).lean().exec();
-    return docs.map((d) => {
-      const limpio = this.limpiar(d as Record<string, unknown>) as Record<string, unknown>;
-      const tieneDocumento = this.tieneDocumentoFactura(limpio);
-      const { imagen: _img, ...rest } = limpio;
-      return { ...rest, tieneDocumento };
-    });
+    const docs = await FacturaModel.aggregate([
+      {
+        $match: {
+          usuarioId,
+          fecha: { $gte: `${anio}-${String(mesInicio).padStart(2, '0')}-01`, $lte: `${anio}-${String(mesFin).padStart(2, '0')}-31` },
+        },
+      },
+      { $sort: { creado: -1 } },
+      ...this.pipelineTieneDocumentoFactura(),
+    ]).exec();
+    return docs.map((d) => this.limpiar(d as Record<string, unknown>));
   }
 
   /**
@@ -704,13 +716,12 @@ export class PresupuestosService {
    */
   async listarFacturasDeCliente(usuarioId: string, clienteId: string): Promise<Record<string, unknown>[]> {
     await conectar();
-    const docs = await FacturaModel.find({ usuarioId, clienteId }).sort({ creado: -1 }).lean().exec();
-    return docs.map((d) => {
-      const limpio = this.limpiar(d as Record<string, unknown>) as Record<string, unknown>;
-      const tieneDocumento = this.tieneDocumentoFactura(limpio);
-      const { imagen: _img, ...rest } = limpio;
-      return { ...rest, tieneDocumento };
-    });
+    const docs = await FacturaModel.aggregate([
+      { $match: { usuarioId, clienteId } },
+      { $sort: { creado: -1 } },
+      ...this.pipelineTieneDocumentoFactura(),
+    ]).exec();
+    return docs.map((d) => this.limpiar(d as Record<string, unknown>));
   }
 
   /**
@@ -724,16 +735,12 @@ export class PresupuestosService {
   async listarFacturasDeProveedor(usuarioId: string, nombreProveedor: string): Promise<Record<string, unknown>[]> {
     await conectar();
     const escapado = nombreProveedor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const docs = await FacturaModel.find({
-      usuarioId,
-      $or: [{ proveedor: { $regex: escapado, $options: 'i' } }, { proveedor: nombreProveedor }],
-    }).sort({ creado: -1 }).lean().exec();
-    return docs.map((d) => {
-      const limpio = this.limpiar(d as Record<string, unknown>) as Record<string, unknown>;
-      const tieneDocumento = this.tieneDocumentoFactura(limpio);
-      const { imagen: _img, ...rest } = limpio;
-      return { ...rest, tieneDocumento };
-    });
+    const docs = await FacturaModel.aggregate([
+      { $match: { usuarioId, $or: [{ proveedor: { $regex: escapado, $options: 'i' } }, { proveedor: nombreProveedor }] } },
+      { $sort: { creado: -1 } },
+      ...this.pipelineTieneDocumentoFactura(),
+    ]).exec();
+    return docs.map((d) => this.limpiar(d as Record<string, unknown>));
   }
 
   /**
