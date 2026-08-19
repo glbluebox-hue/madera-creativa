@@ -8,7 +8,14 @@
 // después de cada cambio. La caché aquí es solo una reserva para cuando
 // no hay red, no una estrategia de rendimiento — eso se revisará aparte,
 // con `vite-plugin-pwa`, cuando la parte visual esté más asentada.
-const CACHE = 'madera-shell-v4';
+// v5 (19/08/2026): antes se guardaban en caché también las respuestas de
+// error (403/503...) como si fueran válidas — un fallo pasajero del
+// almacenamiento de imágenes (R2) dejaba esa respuesta rota guardada para
+// siempre, aunque el servidor real ya estuviera funcionando de nuevo. Subir
+// la versión fuerza a todos los dispositivos a limpiar la caché vieja de
+// una vez (ver 'activate' más abajo, que borra cualquier caché que no
+// coincida con este nombre).
+const CACHE = 'madera-shell-v5';
 const RESERVA = ['/', '/manifest.webmanifest', '/assets/icon-192.png'];
 
 // `skipWaiting` + `clients.claim()` (18/08/2026): sin esto, un service
@@ -57,8 +64,15 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     fetch(event.request)
       .then((res) => {
-        const copia = res.clone();
-        caches.open(CACHE).then((c) => c.put(event.request, copia)).catch(() => {});
+        // Solo se guarda en caché una respuesta realmente buena (2xx). Antes
+        // se guardaba cualquier respuesta, incluidos errores (403/503 de un
+        // fallo pasajero del almacenamiento externo) — quedaban servidos
+        // como si fueran válidos indefinidamente, incluso después de que el
+        // servidor real ya funcionara bien de nuevo.
+        if (res.ok) {
+          const copia = res.clone();
+          caches.open(CACHE).then((c) => c.put(event.request, copia)).catch(() => {});
+        }
         return res;
       })
       .catch(() => caches.match(event.request))
