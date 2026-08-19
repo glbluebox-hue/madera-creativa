@@ -372,11 +372,19 @@ export function run() {
   } catch (err) {
     logger.error({ err, valor: process.env.R2_PUBLIC_URL_BASE }, 'R2_PUBLIC_URL_BASE no es una URL válida — CSP de imágenes sin ese origen');
   }
+  // Dominio antiguo (la "Public Development URL" gratuita de R2, sin coste
+  // pero explícitamente no apta para producción — devolvía 503 con
+  // cualquier tráfico real, confirmado en vivo 19/08/2026). Ya migrado a un
+  // dominio propio (`cdn.maderacreativa.com`, vía R2_PUBLIC_URL_BASE), pero
+  // las URLs YA GUARDADAS en facturas/códigos QR anteriores a la migración
+  // siguen apuntando a este dominio antiguo — se mantiene permitido en la
+  // CSP para que ese contenido histórico no se rompa.
+  const ORIGEN_R2_LEGADO = 'https://pub-fd9490abec4f4d9a85fa2a5fe237d18b.r2.dev';
   app.use(helmet({
     contentSecurityPolicy: {
       directives: {
         ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-        'img-src': ["'self'", 'data:', ...(origenR2 ? [origenR2] : [])],
+        'img-src': ["'self'", 'data:', ORIGEN_R2_LEGADO, ...(origenR2 && origenR2 !== ORIGEN_R2_LEGADO ? [origenR2] : [])],
       },
     },
   }));
