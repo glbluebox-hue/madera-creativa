@@ -1,8 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { DocumentoMC, ElementoMC, PaginaMC } from './documento-modelo.js';
 import { PAGINA_A4 } from './documento-modelo.js';
-import { resolverVariables } from './documento-registro-variables.js';
-import type { ContextoVariables } from './documento-registro-variables.js';
 
 /**
  * Genera un `DocumentoMC` completo (membrete + secciones + página de
@@ -17,6 +15,13 @@ import type { ContextoVariables } from './documento-registro-variables.js';
  * carpintero las edita libremente en el editor sin tener que "desvincular"
  * ninguna instancia de componente primero.
  *
+ * Los valores reales (cliente, empresa) se interpolan aquí directamente en
+ * texto, en vez de dejar `{{cliente.direccion}}` sin resolver para que lo
+ * resuelva `resolverVariables` más tarde — un cliente creado solo con
+ * nombre (sin dirección/teléfono todavía) dejaba esas llaves literales
+ * visibles en el documento generado (reporte real, 19/08/2026); con
+ * interpolación directa esas líneas simplemente se omiten si no hay dato.
+ *
  * Sin librería de maquetación de texto (Word/InDesign): la altura de cada
  * bloque de texto se ESTIMA a partir de su longitud (`estimarAlturaTexto`)
  * porque los elementos del Motor Documental tienen una caja de tamaño fijo
@@ -27,15 +32,24 @@ import type { ContextoVariables } from './documento-registro-variables.js';
 
 const MARGEN = { arriba: 40, abajo: 40, izquierda: 40, derecha: 40 };
 const ANCHO_UTIL = PAGINA_A4.ancho - MARGEN.izquierda - MARGEN.derecha;
-const ALTURA_MEMBRETE = 90;
+const ALTURA_MEMBRETE = 100;
 const ALTURA_UTIL_PAGINA = PAGINA_A4.alto - MARGEN.arriba - MARGEN.abajo;
-const GAP_ENTRE_BLOQUES = 24;
+const GAP_ENTRE_BLOQUES = 26;
+
+/** Paleta corporativa — mismos tonos que `TEMA_POR_DEFECTO` (`documento-modelo.ts`) y la marca Madera Creativa en el resto de la app. */
+const COLOR_PRIMARIO = '#51483f';
+const COLOR_SECUNDARIO = '#8a6835';
+const COLOR_TEXTO_CLARO = '#7a7060';
 
 const formatoMoneda = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
+const formatoFechaCorta = new Intl.DateTimeFormat('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
 export type SeccionPresupuesto = { titulo: string; descripcion: string; precio: number };
 
-export type ContextoGeneracion = ContextoVariables & {
+export type ContextoGeneracion = {
+  cliente: { nombre: string; email?: string; telefono?: string; direccion?: string };
+  empresa: { nombre: string; telefono?: string; email?: string; iban?: string; logo?: string | null };
+  titulo: string;
   condicionesPago?: string;
   condicionesGenerales?: string;
 };
@@ -61,7 +75,25 @@ function elementoPrecioFijo(x: number, y: number, ancho: number, alto: number, v
   return {
     ...elementoBase('precioDestacado', x, y, ancho, alto),
     contenido: { modo: 'fijo', valor: formatoMoneda.format(valor) },
-    estilo: { colorFondo: '#f5ede0', colorTexto: '#8a6835' },
+    estilo: { colorFondo: '#f5ede0', colorTexto: COLOR_SECUNDARIO },
+  };
+}
+
+/** Logo de empresa vinculado — el mismo que ya usa el carpintero en Ajustes de empresa, no una copia (mismo criterio ya establecido para el logo del editor). */
+function elementoLogo(x: number, y: number, ancho: number, alto: number): ElementoMC {
+  return {
+    ...elementoBase('logotipo', x, y, ancho, alto),
+    contenido: { modo: 'vinculado', url: '' },
+    estilo: {},
+  };
+}
+
+/** Línea horizontal fina — separador visual bajo el membrete. `RenderLinea` ignora `contenido` y dibuja un trazo a lo ancho de la caja, centrado en su alto (ver `documento-tipos-iniciales-render.tsx`). */
+function elementoLinea(x: number, y: number, ancho: number, color: string): ElementoMC {
+  return {
+    ...elementoBase('linea', x, y, ancho, 6),
+    contenido: { puntos: [{ x: 0, y: 0 }, { x: 1, y: 0 }] },
+    estilo: { color, grosor: 1.5, patron: 'solido' },
   };
 }
 
@@ -87,42 +119,52 @@ function nuevaPagina(indice: number, nombre: string): PaginaMC {
   };
 }
 
-/** Membrete corporativo: nombre de empresa a la izquierda, "PRESUPUESTO" + fecha a la derecha — mismo patrón visual que el preventivo de referencia del usuario (19/08/2026). */
+/** Membrete corporativo: logo a la izquierda, "PRESUPUESTO" + fecha a la derecha, línea separadora al pie de la zona — mismo patrón visual que el preventivo de referencia del usuario (19/08/2026). */
 function crearMembrete(): DocumentoMC['encabezadoPorDefecto'] {
   return {
     altura: ALTURA_MEMBRETE,
     elementos: [
-      elementoTexto(MARGEN.izquierda, 22, 260, 50, '{{empresa.nombre}}', { fontFamily: 'Georgia', fontSize: 22, fontWeight: 'bold', color: '#51483f' }),
-      elementoTexto(PAGINA_A4.ancho - MARGEN.derecha - 260, 20, 260, 28, 'PRESUPUESTO', { fontSize: 16, fontWeight: 'bold', textAlign: 'right' }),
-      elementoTexto(PAGINA_A4.ancho - MARGEN.derecha - 260, 50, 260, 22, 'Fecha: {{fecha}}', { fontSize: 11, color: '#7a7060', textAlign: 'right' }),
+      elementoLogo(MARGEN.izquierda, 18, 150, 60),
+      elementoTexto(PAGINA_A4.ancho - MARGEN.derecha - 260, 22, 260, 28, 'PRESUPUESTO', { fontSize: 17, fontWeight: 'bold', textAlign: 'right', color: COLOR_PRIMARIO }),
+      elementoTexto(PAGINA_A4.ancho - MARGEN.derecha - 260, 54, 260, 22, `Fecha: ${formatoFechaCorta.format(new Date())}`, { fontSize: 11, color: COLOR_TEXTO_CLARO, textAlign: 'right' }),
+      elementoLinea(MARGEN.izquierda, ALTURA_MEMBRETE - 10, ANCHO_UTIL, COLOR_SECUNDARIO),
     ],
   };
 }
 
-/** Portada: bloque de cliente y de empresa lado a lado, y el título del presupuesto — variables sin resolver todavía ({{...}}), se resuelven al final con `resolverVariables`. */
-function crearPaginaPortada(): PaginaMC {
+/** Solo las líneas con dato real — un cliente creado con solo el nombre no debe dejar huecos de "{{...}}" ni líneas en blanco. */
+function bloqueDatos(titulo: string, lineas: (string | undefined)[]): string {
+  return [titulo, ...lineas.filter((l): l is string => !!l && l.trim() !== '')].join('\n');
+}
+
+/** Portada: bloque de cliente y de empresa lado a lado (debajo del membrete, nunca superpuestos con él) y el título del presupuesto. */
+function crearPaginaPortada(contexto: ContextoGeneracion): { pagina: PaginaMC; alturaOcupada: number } {
   const pagina = nuevaPagina(0, 'Portada');
   const anchoBloque = (ANCHO_UTIL - GAP_ENTRE_BLOQUES) / 2;
+  const inicio = ALTURA_MEMBRETE + GAP_ENTRE_BLOQUES;
+  const textoCliente = bloqueDatos('CLIENTE', [contexto.cliente.nombre, contexto.cliente.direccion, contexto.cliente.telefono, contexto.cliente.email]);
+  const textoEmpresa = bloqueDatos(contexto.empresa.nombre, [contexto.empresa.telefono, contexto.empresa.email]);
+  const altoBloqueDatos = Math.max(estimarAlturaTexto(textoCliente, anchoBloque, 12.5, 1.6), estimarAlturaTexto(textoEmpresa, anchoBloque, 12.5, 1.6));
   pagina.elementos = [
-    elementoTexto(MARGEN.izquierda, 0, anchoBloque, 100, 'CLIENTE\n{{cliente.nombre}}\n{{cliente.direccion}}\n{{cliente.telefono}}', { fontSize: 12.5, lineHeight: 1.6 }),
-    elementoTexto(MARGEN.izquierda + anchoBloque + GAP_ENTRE_BLOQUES, 0, anchoBloque, 100, '{{empresa.nombre}}\n{{empresa.telefono}}\n{{empresa.email}}', { fontSize: 12.5, lineHeight: 1.6, textAlign: 'right' }),
-    elementoTexto(MARGEN.izquierda, 110, ANCHO_UTIL, 40, '{{presupuesto.titulo}}', { fontSize: 21, fontWeight: 'bold' }),
+    elementoTexto(MARGEN.izquierda, inicio, anchoBloque, altoBloqueDatos, textoCliente, { fontSize: 12.5, lineHeight: 1.6 }),
+    elementoTexto(MARGEN.izquierda + anchoBloque + GAP_ENTRE_BLOQUES, inicio, anchoBloque, altoBloqueDatos, textoEmpresa, { fontSize: 12.5, lineHeight: 1.6, textAlign: 'right' }),
+    elementoTexto(MARGEN.izquierda, inicio + altoBloqueDatos + GAP_ENTRE_BLOQUES, ANCHO_UTIL, 40, contexto.titulo, { fontSize: 21, fontWeight: 'bold', color: COLOR_PRIMARIO }),
   ];
-  return pagina;
+  return { pagina, alturaOcupada: inicio + altoBloqueDatos + GAP_ENTRE_BLOQUES + 40 };
 }
 
 /** Página final: condiciones de pago, condiciones generales, IBAN — mismo patrón de bloque que una sección más, para que la reutilice el mismo bucle de paginación. */
-function bloqueCondiciones(condicionesPago: string, condicionesGenerales: string): { alto: number; crear: (y: number) => ElementoMC[] } {
+function bloqueCondiciones(condicionesPago: string, condicionesGenerales: string, iban: string | undefined): { alto: number; crear: (y: number) => ElementoMC[] } {
   const textoCompleto = [
     condicionesPago ? `Condiciones de pago: ${condicionesPago}` : '',
-    'IBAN: {{empresa.iban}}',
+    iban ? `IBAN: ${iban}` : '',
     condicionesGenerales,
   ].filter(Boolean).join('\n\n');
   const alto = 30 + estimarAlturaTexto(textoCompleto, ANCHO_UTIL, 12, 1.6) + 20;
   return {
     alto,
     crear: (y: number) => [
-      elementoTexto(MARGEN.izquierda, y, ANCHO_UTIL, 30, 'Condiciones', { fontSize: 16, fontWeight: 'bold' }),
+      elementoTexto(MARGEN.izquierda, y, ANCHO_UTIL, 30, 'Condiciones', { fontSize: 16, fontWeight: 'bold', color: COLOR_PRIMARIO }),
       elementoTexto(MARGEN.izquierda, y + 34, ANCHO_UTIL, alto - 34, textoCompleto, { fontSize: 12, lineHeight: 1.6, color: '#3a342c' }),
     ],
   };
@@ -136,35 +178,36 @@ function bloqueSeccion(seccion: SeccionPresupuesto): { alto: number; crear: (y: 
   return {
     alto,
     crear: (y: number) => [
-      elementoTexto(MARGEN.izquierda, y, ANCHO_UTIL, 26, seccion.titulo, { fontSize: 16.5, fontWeight: 'bold' }),
+      elementoTexto(MARGEN.izquierda, y, ANCHO_UTIL, 26, seccion.titulo, { fontSize: 16.5, fontWeight: 'bold', color: COLOR_PRIMARIO }),
       elementoTexto(MARGEN.izquierda, y + 34, ANCHO_UTIL, altoDescripcion, seccion.descripcion, { fontSize: 12.5, lineHeight: 1.55 }),
-      elementoPrecioFijo(MARGEN.izquierda, y + yPrecio, 210, 46, seccion.precio),
+      // Abajo a la derecha, como en el PDF de referencia del usuario (19/08/2026) — no a la izquierda.
+      elementoPrecioFijo(MARGEN.izquierda + ANCHO_UTIL - 220, y + yPrecio, 220, 50, seccion.precio),
     ],
   };
 }
 
 /**
  * Construye el documento completo: portada + secciones (paginadas
- * automáticamente cuando no caben) + condiciones, y resuelve las
- * variables `{{...}}` al final contra el contexto real. `precioTotal` es
- * la suma real de los precios de sección — nunca se confía en que la IA
- * haga bien la suma (mismo criterio que ya usa `anadirElementoPresupuesto`).
+ * automáticamente cuando no caben) + condiciones. `precioTotal` es la suma
+ * real de los precios de sección — nunca se confía en que la IA haga bien
+ * la suma (mismo criterio que ya usa `anadirElementoPresupuesto`).
  */
 export function generarDocumentoPresupuesto(secciones: SeccionPresupuesto[], contexto: ContextoGeneracion): { documento: DocumentoMC; precioTotal: number } {
-  const paginas: PaginaMC[] = [crearPaginaPortada()];
+  const { pagina: paginaPortada, alturaOcupada } = crearPaginaPortada(contexto);
+  const paginas: PaginaMC[] = [paginaPortada];
   let paginaActual = paginas[0];
-  let cursorY = 170; // debajo del bloque de cliente/empresa + título de la portada.
+  let cursorY = alturaOcupada + GAP_ENTRE_BLOQUES;
 
   const bloques = [
     ...secciones.map((s) => bloqueSeccion(s)),
-    bloqueCondiciones(contexto.condicionesPago ?? '', contexto.condicionesGenerales ?? ''),
+    bloqueCondiciones(contexto.condicionesPago ?? '', contexto.condicionesGenerales ?? '', contexto.empresa.iban),
   ];
 
   for (const bloque of bloques) {
     if (cursorY + bloque.alto > ALTURA_UTIL_PAGINA) {
       paginaActual = nuevaPagina(paginas.length, '');
       paginas.push(paginaActual);
-      cursorY = 0;
+      cursorY = ALTURA_MEMBRETE + GAP_ENTRE_BLOQUES; // páginas nuevas también empiezan bajo el membrete, que se repite en todas.
     }
     paginaActual.elementos.push(...bloque.crear(cursorY));
     cursorY += bloque.alto + GAP_ENTRE_BLOQUES;
@@ -172,7 +215,7 @@ export function generarDocumentoPresupuesto(secciones: SeccionPresupuesto[], con
 
   const precioTotal = secciones.reduce((suma, s) => suma + s.precio, 0);
 
-  const documentoSinResolver: DocumentoMC = {
+  const documento: DocumentoMC = {
     id: randomUUID(), schemaVersion: 1, documentoBaseId: null, etiquetaVersion: null, documentVersion: 1,
     plantillaOrigen: null,
     paginas,
@@ -186,6 +229,5 @@ export function generarDocumentoPresupuesto(secciones: SeccionPresupuesto[], con
     estilosGuardados: [],
   };
 
-  const documento = resolverVariables(documentoSinResolver, { ...contexto, presupuesto: { titulo: contexto.presupuesto?.titulo ?? '', precioTotal } });
   return { documento, precioTotal };
 }

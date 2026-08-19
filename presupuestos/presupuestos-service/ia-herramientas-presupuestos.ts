@@ -117,6 +117,15 @@ const esquemaCrearPresupuestoDocumento = z.object({
   secciones: z.array(esquemaSeccionPresupuesto).min(1).max(30),
   condicionesPago: z.string().trim().max(500).optional(),
   condicionesGenerales: z.string().trim().max(2000).optional(),
+  /**
+   * Dirección/teléfono del cliente TAL COMO los haya dado el usuario en su
+   * mensaje — el documento los usa aunque la ficha del cliente en la app
+   * no los tenga guardados todavía (reporte real, 19/08/2026: "quiero que
+   * la IA entienda que si le doy la dirección la ponga ahí"). No se
+   * escriben en la ficha del cliente, solo se usan para este documento.
+   */
+  clienteDireccion: z.string().trim().max(300).optional(),
+  clienteTelefono: z.string().trim().max(60).optional(),
 });
 
 /**
@@ -134,7 +143,9 @@ export const herramientaCrearPresupuestoDocumento: HerramientaIA<z.infer<typeof 
     'del trabajo, ej. "Cocina a medida", "Mueble de salón", "Rodapié"), cada una con su propia descripción y precio. ' +
     'Úsala cuando el trabajo tenga varias partes claramente distintas con precio propio cada una; para un presupuesto ' +
     'de una sola partida con un único precio, usa crearPresupuesto en su lugar. No inventes secciones, precios, ' +
-    'materiales ni medidas que el usuario no haya indicado — si falta el precio de alguna parte, pregúntalo antes de llamar a esta herramienta.',
+    'materiales ni medidas que el usuario no haya indicado — si falta el precio de alguna parte, pregúntalo antes de llamar a esta herramienta. ' +
+    'Si el usuario menciona en su mensaje la dirección o el teléfono del cliente (aunque la ficha del cliente no los tenga guardados), ' +
+    'pásalos en clienteDireccion/clienteTelefono tal cual los haya dado — no los inventes si no los ha dado.',
   permiso: 'escritura',
   esquemaParametros: esquemaCrearPresupuestoDocumento,
   async ejecutar(params, ctx) {
@@ -146,9 +157,14 @@ export const herramientaCrearPresupuestoDocumento: HerramientaIA<z.infer<typeof 
     const condicionesGenerales = params.condicionesGenerales ?? '';
 
     const { documento, precioTotal } = generarDocumentoPresupuesto(params.secciones, {
-      cliente: { nombre: (cliente as any).nombre, email: (cliente as any).email, telefono: (cliente as any).telefono, direccion: (cliente as any).direccion },
-      empresa: { nombre: empresa.nombre, telefono: empresa.telefono, email: empresa.email, iban: empresa.iban },
-      presupuesto: { titulo: params.titulo, precioTotal: 0 }, // el total real se inyecta dentro del generador, una vez sumado.
+      cliente: {
+        nombre: (cliente as any).nombre,
+        email: (cliente as any).email,
+        telefono: params.clienteTelefono || (cliente as any).telefono,
+        direccion: params.clienteDireccion || (cliente as any).direccion,
+      },
+      empresa: { nombre: empresa.nombre, telefono: empresa.telefono, email: empresa.email, iban: empresa.iban, logo: empresa.logo },
+      titulo: params.titulo,
       condicionesPago,
       condicionesGenerales,
     });
