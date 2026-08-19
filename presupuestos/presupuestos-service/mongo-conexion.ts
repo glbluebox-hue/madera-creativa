@@ -27,7 +27,22 @@ export async function conectarMongo(): Promise<void> {
   if (promesaConexion) { await promesaConexion; return; }
   const url = process.env.MONGO_URL || 'mongodb://localhost:27017/madera-creativa';
   promesaConexion = mongoose
-    .connect(url, { maxPoolSize: 10, minPoolSize: 0, maxIdleTimeMS: 30_000 })
+    .connect(url, {
+      maxPoolSize: 10,
+      // Antes en 0: sin ninguna conexión mantenida viva, cada ráfaga de
+      // peticiones tras >30s de inactividad (uso normal de un solo usuario
+      // abriendo la app de vez en cuando) pagaba el coste completo de abrir
+      // conexión nueva desde cero. Con 2 de mínimo, siempre hay conexiones
+      // ya establecidas listas para usar.
+      minPoolSize: 2,
+      maxIdleTimeMS: 30_000,
+      // Por defecto el driver espera hasta 30s intentando seleccionar
+      // servidor antes de rendirse — encaja sospechosamente con varios
+      // duracionMs reales vistos en los logs de Render (29-38s). Bajarlo
+      // hace que un problema de conectividad real falle rápido y quede
+      // claro en los logs, en vez de colarse como "lento" en silencio.
+      serverSelectionTimeoutMS: 8_000,
+    })
     .then(() => undefined)
     .finally(() => { promesaConexion = null; });
   await promesaConexion;
