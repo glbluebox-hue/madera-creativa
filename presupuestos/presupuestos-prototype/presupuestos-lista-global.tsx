@@ -218,11 +218,24 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
       const clienteNombre = nombreDe(clienteId);
       const respuesta = await api.generarRespuestaIA({
         capacidad: 'asistente-global',
-        mensajes: [{ role: 'user', content: `Crea un presupuesto para el cliente ${clienteNombre}. Descripción del trabajo: ${descripcion}` }],
+        mensajes: [{
+          role: 'user',
+          content:
+            `Crea un presupuesto CON MEMBRETE (usa siempre la herramienta crearPresupuestoDocumento, nunca crearPresupuesto) ` +
+            `para el cliente ${clienteNombre}. Si el trabajo es una sola partida con un único precio, créala igualmente ` +
+            `como una única sección — nunca uses crearPresupuesto en esta pantalla. Descripción del trabajo: ${descripcion}`,
+        }],
         referencias: { clienteId },
       });
       const propuesta = respuesta.propuestas.find((p) => p.nombre === 'crearPresupuestoDocumento');
-      if (!propuesta) throw new Error('La IA no ha podido generar el presupuesto — prueba a describir el trabajo con más detalle (partes y precios).');
+      if (!propuesta) {
+        const otraPropuesta = respuesta.propuestas.find((p) => p.nombre === 'crearPresupuesto');
+        throw new Error(
+          otraPropuesta
+            ? 'La IA generó un presupuesto de texto plano en vez de uno con membrete — vuelve a intentarlo, o créalo desde el asistente general si prefieres el formato simple.'
+            : 'La IA no ha podido generar el presupuesto — prueba a describir el trabajo con más detalle (partes y precios).'
+        );
+      }
       const { resultado } = await api.confirmarPropuestaIA({
         capacidad: 'asistente-global',
         nombre: propuesta.nombre,
