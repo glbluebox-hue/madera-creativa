@@ -50,6 +50,7 @@ import {
   esquemaProveedor,
   esquemaProducto,
   esquemaNotaMC,
+  esquemaCodigoQRMC,
   esquemaPresupuestoMC,
   esquemaPlantillaMC,
   esquemaSubidaRecurso,
@@ -1287,6 +1288,23 @@ export function run() {
 
   app.delete('/notas/:id', requireAuth, async (req: AuthRequest, res) => {
     try { await svc.borrarNota(req.params.id, req.usuarioId!); res.json({ ok: true }); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  // ── Códigos QR (sección propia del menú, 19/08/2026) ──
+
+  app.get('/codigos-qr', requireAuth, async (req: AuthRequest, res) => {
+    try { res.json(await svc.listarCodigosQR(req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.put('/codigos-qr/:id', requireAuth, validar(esquemaCodigoQRMC), async (req: AuthRequest, res) => {
+    try { res.json(await svc.guardarCodigoQR({ ...req.body, id: req.params.id }, req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.delete('/codigos-qr/:id', requireAuth, async (req: AuthRequest, res) => {
+    try { await svc.borrarCodigoQR(req.params.id, req.usuarioId!); res.json({ ok: true }); }
     catch (err) { responderError(req, res, err); }
   });
 

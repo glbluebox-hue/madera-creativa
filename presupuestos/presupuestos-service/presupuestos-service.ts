@@ -1,5 +1,5 @@
 import { randomUUID, createHash } from 'node:crypto';
-import { ClienteModel, EmpresaModel, FacturaModel, ProveedorModel, ProductoModel, DibujoModel, CarpetaModel, NotaModel, PresupuestoModel, PlantillaModel, RecursoModel, ComponenteModel, AutomatizacionModel, ContratoModel, GastoPeriodicoModel, conectar } from './cliente.model.js';
+import { ClienteModel, EmpresaModel, FacturaModel, ProveedorModel, ProductoModel, DibujoModel, CarpetaModel, NotaModel, PresupuestoModel, PlantillaModel, RecursoModel, ComponenteModel, CodigoQRModel, AutomatizacionModel, ContratoModel, GastoPeriodicoModel, conectar } from './cliente.model.js';
 import { UsuarioModel, conectarUsuarios } from './usuario.model.js';
 import { crearEnlacePresupuesto, buscarEnlacePorToken, reclamarEnlaceAceptado, guardarFirmaEnlace, formatoTokenValido } from './enlace-presupuesto.model.js';
 import { almacenamiento } from './almacenamiento.service.js';
@@ -1260,6 +1260,32 @@ export class PresupuestosService {
   async borrarNota(id: string, usuarioId: string): Promise<void> {
     await conectar();
     await NotaModel.deleteOne({ id, usuarioId }).exec();
+  }
+
+  // ── Códigos QR (sección propia del menú, 19/08/2026) ────────────────────────
+
+  /** Lista los códigos QR guardados, más recientes primero. */
+  async listarCodigosQR(usuarioId: string): Promise<Record<string, unknown>[]> {
+    await conectar();
+    const docs = await CodigoQRModel.find({ usuarioId }).sort({ creado: -1 }).lean().exec();
+    return docs.map((d) => this.limpiar(d as Record<string, unknown>));
+  }
+
+  /** Crea o actualiza un código QR guardado (nombre + url de la imagen ya subida a la biblioteca de recursos). */
+  async guardarCodigoQR(codigoQR: Record<string, unknown>, usuarioId: string): Promise<Record<string, unknown>> {
+    await conectar();
+    const doc = await CodigoQRModel.findOneAndUpdate(
+      { id: codigoQR.id, usuarioId },
+      { ...codigoQR, usuarioId },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).lean().exec();
+    return this.limpiar(doc as Record<string, unknown>);
+  }
+
+  /** Borra un código QR guardado — no borra la imagen de la biblioteca de recursos (mismo criterio que `borrarComponente`: puede seguir referenciada en otro sitio). */
+  async borrarCodigoQR(id: string, usuarioId: string): Promise<void> {
+    await conectar();
+    await CodigoQRModel.deleteOne({ id, usuarioId }).exec();
   }
 
   // ── Presupuestos (Fase 5 — copiloto de Presupuestos) — aislados por usuarioId ──

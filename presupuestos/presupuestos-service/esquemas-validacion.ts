@@ -448,6 +448,14 @@ export const esquemaNotaMC = z.object({
   actualizado: z.string().min(1).max(64),
 });
 
+/** Código QR guardado (sección propia del menú, 19/08/2026) — imagen ya subida a la biblioteca de recursos, aquí solo el nombre y a qué url apunta. */
+export const esquemaCodigoQRMC = z.object({
+  id: z.string().min(1).max(64),
+  nombre: z.string().trim().min(1, 'Ponle un nombre al código QR.').max(200),
+  imagenUrl: z.string().min(1).max(2000),
+  creado: z.string().min(1).max(64),
+});
+
 /** Un elemento de precio individual dentro del alcance de un presupuesto (Fase 5). */
 const esquemaElementoPresupuesto = z.object({
   id: z.string().min(1).max(64),

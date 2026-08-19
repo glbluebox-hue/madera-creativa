@@ -9,6 +9,7 @@ import { AjustesEmpresa } from './ajustes-empresa.js';
 import { Facturas } from './facturas.js';
 import { SeccionPresupuestosContenedor } from './seccion-presupuestos-contenedor.js';
 import { NotasVista } from './notas-vista.js';
+import { CodigosQRVista } from './codigos-qr-vista.js';
 import { SeccionDibujos } from './seccion-dibujos.js';
 import { SeccionProveedores } from './seccion-proveedores.js';
 import { useProveedores } from './use-proveedores.js';
@@ -32,7 +33,7 @@ import logoMadera from './assets/logo.png';
 import styles from './styles.module.css';
 
 /** Secciones principales de la app. */
-type Seccion = 'inicio' | 'clientes' | 'presupuestos' | 'facturas' | 'notas' | 'proveedores' | 'dibujos';
+type Seccion = 'inicio' | 'clientes' | 'presupuestos' | 'facturas' | 'notas' | 'proveedores' | 'dibujos' | 'codigosQR';
 
 /**
  * App de presupuestos de cliente para Madera Creativa.
@@ -276,6 +277,13 @@ export function PresupuestosPrototype() {
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
               Notas
             </button>
+            <button
+              className={`${styles.sidebarNavItem} ${seccion === 'codigosQR' ? styles.sidebarNavItemActivo : ''}`}
+              onClick={() => { cambiarSeccion('codigosQR'); volverALista(); }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="1" y="1" width="7" height="7" /><rect x="16" y="1" width="7" height="7" /><rect x="1" y="16" width="7" height="7" /><line x1="16" y1="16" x2="16" y2="23" /><line x1="23" y1="16" x2="23" y2="23" /><line x1="16" y1="19.5" x2="23" y2="19.5" /></svg>
+              Código QR
+            </button>
           </nav>
 
           <div className={styles.sidebarUser}>
@@ -347,8 +355,8 @@ export function PresupuestosPrototype() {
         </aside>
 
         <div className={styles.contenidoPrincipal}>
-      {/* ===== BARRA ATRÁS MÓVIL — aparece en presupuestos, facturas, notas, proveedores y dibujos ===== */}
-      {(['presupuestos', 'facturas', 'notas', 'proveedores', 'dibujos'] as string[]).includes(seccion) && !(seccion === 'dibujos' && dibujoEditorAbierto) && (
+      {/* ===== BARRA ATRÁS MÓVIL — aparece en presupuestos, facturas, notas, proveedores, dibujos y códigos QR ===== */}
+      {(['presupuestos', 'facturas', 'notas', 'proveedores', 'dibujos', 'codigosQR'] as string[]).includes(seccion) && !(seccion === 'dibujos' && dibujoEditorAbierto) && (
         <div className={styles.barraVolver}>
           <button
             className={styles.barraVolverBtn}
@@ -358,7 +366,7 @@ export function PresupuestosPrototype() {
             Inicio
           </button>
           <p className={styles.barraVolverTitulo}>
-            {seccion === 'presupuestos' ? 'Presupuestos' : seccion === 'facturas' ? 'Facturas' : seccion === 'notas' ? 'Notas' : seccion === 'dibujos' ? 'Pizarra de medición' : 'Proveedores'}
+            {seccion === 'presupuestos' ? 'Presupuestos' : seccion === 'facturas' ? 'Facturas' : seccion === 'notas' ? 'Notas' : seccion === 'dibujos' ? 'Pizarra de medición' : seccion === 'codigosQR' ? 'Código QR' : 'Proveedores'}
           </p>
           <div style={{ width: 56, flexShrink: 0 }} />
         </div>
@@ -382,6 +390,9 @@ export function PresupuestosPrototype() {
 
         {/* ── SECCIÓN NOTAS ── */}
         {seccion === 'notas' && <NotasVista clientes={nombresClientes} />}
+
+        {/* ── SECCIÓN CÓDIGOS QR ── */}
+        {seccion === 'codigosQR' && <CodigosQRVista />}
 
         {/* ── SECCIÓN DIBUJOS (Fase 2.1) ── */}
         {seccion === 'dibujos' && <SeccionDibujos clientes={nombresClientes} onEditorAbierto={setDibujoEditorAbierto} />}

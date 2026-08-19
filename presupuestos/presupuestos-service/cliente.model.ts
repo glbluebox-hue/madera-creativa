@@ -258,6 +258,24 @@ const NotaSchema = new Schema({
 NotaSchema.index({ usuarioId: 1, clienteId: 1 });
 NotaSchema.index({ usuarioId: 1, creado: -1 });
 
+/**
+ * Código QR guardado (imagen ya diseñada por el usuario, ej. un cartel
+ * "escanéame y déjanos tu reseña en Google") — sección nueva del menú
+ * lateral, independiente de cualquier cliente. La imagen en sí se sube a
+ * través de la biblioteca de recursos ya existente (`subirRecursoBiblioteca`,
+ * deduplicación por hash) — aquí solo se guarda el nombre y a qué recurso
+ * apunta, mismo criterio que el resto del Motor Documental ("nunca Base64
+ * embebido en el propio documento/registro").
+ */
+const CodigoQRSchema = new Schema({
+  id: { type: String, required: true, unique: true, index: true },
+  usuarioId: { type: String, required: true, index: true, default: 'admin' },
+  nombre: { type: String, required: true },
+  imagenUrl: { type: String, required: true },
+  creado: { type: String, required: true },
+});
+CodigoQRSchema.index({ usuarioId: 1, creado: -1 });
+
 /** Elemento de precio individual dentro del alcance de un presupuesto (Fase 5, IA agente). */
 const ElementoPresupuestoSchema = new Schema(
   {
@@ -477,6 +495,9 @@ export const ProveedorModel: Model<any> = models.Proveedor || model('Proveedor',
 
 /** Modelo Mongoose de Nota — colección nueva, sin nombre de colección heredado que respetar. */
 export const NotaModel: Model<any> = models.Nota || model('Nota', NotaSchema);
+
+/** Modelo Mongoose de Código QR guardado — colección nueva. */
+export const CodigoQRModel: Model<any> = models.CodigoQR || model('CodigoQR', CodigoQRSchema);
 
 /** Modelo Mongoose de Plantilla (Motor Documental, Incremento 4) — colección nueva. */
 export const PlantillaModel: Model<any> = models.Plantilla || model('Plantilla', PlantillaSchema);

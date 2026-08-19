@@ -1,5 +1,6 @@
 import type { Cliente, Factura, Proveedor, Producto, Dibujo, Carpeta, GastoPeriodico, Movimiento, Tarea } from './types.js';
 import type { NotaMC } from './notas-modelo.js';
+import type { CodigoQRMC } from './codigos-qr-modelo.js';
 import type { PresupuestoMC, PresupuestoPublico } from './presupuestos-modelo.js';
 import type { PlantillaMC, RecursoMC, ComponenteMC } from './documento-modelo.js';
 import type { ContratoMC } from './contratos-modelo.js';
@@ -620,6 +621,32 @@ export async function guardarNota(nota: NotaMC): Promise<NotaMC> {
 export async function borrarNota(id: string): Promise<void> {
   const res = await fetchConAuth(`/notas/${id}`, { method: 'DELETE' });
   await comprobarRespuesta(res, 'No se pudo borrar la nota');
+}
+
+/* ===== CÓDIGOS QR (sección propia del menú, 19/08/2026) ===== */
+
+/** Recupera todos los códigos QR guardados. */
+export async function obtenerCodigosQR(): Promise<CodigoQRMC[]> {
+  const res = await fetchConAuth('/codigos-qr');
+  await comprobarRespuesta(res, 'No se pudieron cargar los códigos QR');
+  return res.json();
+}
+
+/** Crea o actualiza un código QR guardado. */
+export async function guardarCodigoQR(codigoQR: CodigoQRMC): Promise<CodigoQRMC> {
+  const res = await fetchConAuth(`/codigos-qr/${codigoQR.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(codigoQR),
+  });
+  await comprobarRespuesta(res, 'No se pudo guardar el código QR');
+  return res.json();
+}
+
+/** Borra un código QR guardado por su id. */
+export async function borrarCodigoQR(id: string): Promise<void> {
+  const res = await fetchConAuth(`/codigos-qr/${id}`, { method: 'DELETE' });
+  await comprobarRespuesta(res, 'No se pudo borrar el código QR');
 }
 
 /* ===== NÚCLEO DE IA (Fase 3/4/5) ===== */
