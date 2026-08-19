@@ -156,6 +156,15 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
    * para no repetir el mismo problema con el otro panel.
    */
   const [panelMovilAbierto, setPanelMovilAbierto] = useState<'ninguno' | 'izquierdo' | 'derecho'>('ninguno');
+  /**
+   * La barra de herramientas (+ Texto, + Imagen...) tiene más de 20
+   * botones — en pantalla estrecha, siempre desplegada, ocupaba casi toda
+   * la pantalla y dejaba el lienzo reducido a una rendija abajo del todo
+   * (reportado 20/08/2026, con captura real: "es imposible de ver").
+   * Empieza recogida solo en pantallas estrechas; en escritorio se queda
+   * como siempre, siempre visible.
+   */
+  const [herramientasAbiertas, setHerramientasAbiertas] = useState(() => typeof window === 'undefined' || window.innerWidth > 720);
   const [panelTemaAbierto, setPanelTemaAbierto] = useState(false);
   const [panelPlantillaAbierto, setPanelPlantillaAbierto] = useState(false);
   const [nombrePlantillaNueva, setNombrePlantillaNueva] = useState('');
@@ -217,6 +226,85 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
     };
     contenedor.addEventListener('scroll', alHacerScroll);
     return () => contenedor.removeEventListener('scroll', alHacerScroll);
+  }, []);
+
+  /**
+   * Pellizcar con dos dedos para hacer zoom (petición del usuario,
+   * 20/08/2026) — no existe ningún control táctil de zoom, solo los
+   * botones +/- pensados para ratón. Distancia entre los dos dedos al
+   * empezar el gesto vs. distancia actual, aplicado como factor sobre el
+   * zoom que ya hubiera (no lo sustituye desde 1, para que pellizcar
+   * partiendo de cualquier nivel de zoom se sienta natural). `passive:
+   * false` + `preventDefault` es necesario para que el navegador no haga
+   * ADEMÁS su propio zoom de página nativo a la vez (que solo ampliaría
+   * toda la interfaz, no el lienzo).
+   */
+  useEffect(() => {
+    const contenedor = lienzoContenedorRef.current;
+    if (!contenedor) return;
+    let distanciaInicial: number | null = null;
+    let zoomInicial = 1;
+    const distanciaEntreDedos = (t: TouchList): number => {
+      const [a, b] = [t[0], t[1]];
+      return Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
+    };
+    const alEmpezar = (e: TouchEvent) => {
+      if (e.touches.length !== 2) { distanciaInicial = null; return; }
+      distanciaInicial = distanciaEntreDedos(e.touches);
+      zoomInicial = zoom;
+    };
+    const alMover = (e: TouchEvent) => {
+      if (e.touches.length !== 2 || distanciaInicial === null) return;
+      e.preventDefault();
+      const distanciaActual = distanciaEntreDedos(e.touches);
+      const factor = distanciaActual / distanciaInicial;
+      setZoom(Math.min(2, Math.max(0.25, zoomInicial * factor)));
+    };
+    const alTerminar = (e: TouchEvent) => { if (e.touches.length < 2) distanciaInicial = null; };
+    contenedor.addEventListener('touchstart', alEmpezar, { passive: true });
+    contenedor.addEventListener('touchmove', alMover, { passive: false });
+    contenedor.addEventListener('touchend', alTerminar, { passive: true });
+    contenedor.addEventListener('touchcancel', alTerminar, { passive: true });
+    return () => {
+      contenedor.removeEventListener('touchstart', alEmpezar);
+      contenedor.removeEventListener('touchmove', alMover);
+      contenedor.removeEventListener('touchend', alTerminar);
+      contenedor.removeEventListener('touchcancel', alTerminar);
+    };
+    // Deliberadamente sin `zoom` en las dependencias: reinstalar los
+    // listeners en cada cambio de zoom cortaría un pellizco a mitad de
+    // gesto. `zoomInicial` ya captura el valor vigente al EMPEZAR cada
+    // gesto nuevo, que es lo único que hace falta.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * Ajusta el zoom inicial al ancho real disponible cuando la página no
+   * cabe (móvil/tablet) — sin esto, una hoja A4 a 100% es más ancha que
+   * la mayoría de pantallas de móvil y queda cortada por un lado, sin
+   * ninguna pista visual de que hay más hoja fuera de la vista (reportado
+   * 20/08/2026, con captura real: "se corta"). Solo al montar y al girar
+   * la pantalla — nunca en cada cambio del documento, para no pisar un
+   * zoom que el usuario ya haya elegido a mano con los botones +/- Zoom.
+   */
+  useEffect(() => {
+    const contenedor = lienzoContenedorRef.current;
+    if (!contenedor) return;
+    const ajustarZoomInicial = () => {
+      const configPagina = documento.paginas.find((p) => p.id === paginaActivaId)?.configuracion ?? documento.configuracionPorDefecto;
+      const anchoDisponible = contenedor.clientWidth - 32; // padding lateral del contenedor (1rem a cada lado)
+      if (anchoDisponible > 0 && configPagina.ancho > anchoDisponible) {
+        setZoom(Math.max(0.25, anchoDisponible / configPagina.ancho));
+      }
+    };
+    ajustarZoomInicial();
+    window.addEventListener('resize', ajustarZoomInicial);
+    window.addEventListener('orientationchange', ajustarZoomInicial);
+    return () => {
+      window.removeEventListener('resize', ajustarZoomInicial);
+      window.removeEventListener('orientationchange', ajustarZoomInicial);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /** Aplica un comando (DocumentoMC actual -> nuevo) empujando el estado previo al historial de deshacer. Único punto de mutación del documento en todo el editor — nunca se llama a setDocumento directamente fuera de aquí (Regla de Oro 3). */
@@ -924,11 +1012,12 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
             ambos paneles ya están siempre a la vista. */}
         <button className={editorStyles.btnPanelMovil} onClick={() => setPanelMovilAbierto((v) => (v === 'izquierdo' ? 'ninguno' : 'izquierdo'))}>📑 Páginas</button>
         <button className={editorStyles.btnPanelMovil} onClick={() => setPanelMovilAbierto((v) => (v === 'derecho' ? 'ninguno' : 'derecho'))}>⚙️ Propiedades</button>
+        <button className={editorStyles.btnPanelMovil} onClick={() => setHerramientasAbiertas((v) => !v)}>{herramientasAbiertas ? '🛠️ Ocultar herramientas' : '🛠️ Herramientas'}</button>
         {error && <span style={{ color: 'var(--rojo, #c0392b)', fontSize: '0.78rem' }}>{error}</span>}
         <button className={styles.btn} onClick={guardar} disabled={guardando}>{guardando ? 'Guardando…' : 'Guardar'}</button>
       </div>
 
-      <div className={editorStyles.barraHerramientas}>
+      <div className={`${editorStyles.barraHerramientas} ${!herramientasAbiertas ? editorStyles.barraHerramientasCerrada : ''}`}>
         {listarTiposRenderInsertables().map((t) => (
           <button key={t.tipo} className={editorStyles.btnHerramienta} onClick={() => insertarElemento(t.tipo)}>+ {t.etiqueta}</button>
         ))}

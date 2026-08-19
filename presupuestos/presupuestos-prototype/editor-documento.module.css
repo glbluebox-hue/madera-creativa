@@ -296,6 +296,13 @@
   }
 
   .lienzoContenedor { padding: 1rem; }
+
+  /* La barra de herramientas (+ Texto, + Imagen...) tiene más de 20
+     botones — siempre desplegada en pantalla estrecha ocupaba casi toda
+     la altura, dejando el lienzo reducido a una rendija (reportado
+     20/08/2026: "es imposible de ver"). Empieza recogida; el botón
+     "🛠️ Herramientas" de la barra superior la despliega. */
+  .barraHerramientasCerrada { display: none; }
 }
 
 /* Aparte del `max-width`, cubre también el móvil en horizontal: mismo
@@ -318,6 +325,7 @@
   .btnCerrarPanelMovil { display: block; align-self: flex-end; background: var(--fondo-panel); border: 1px solid var(--borde); border-radius: var(--radio); padding: 0.4rem 0.7rem; font-size: 0.78rem; cursor: pointer; margin-bottom: 0.4rem; }
   .btnPanelMovil { display: inline-flex; align-items: center; background: var(--fondo-panel); border: 1px solid var(--borde); border-radius: var(--radio); padding: 0.4rem 0.6rem; font-size: 0.78rem; cursor: pointer; white-space: nowrap; }
   .lienzoContenedor { padding: 0.75rem; }
+  .barraHerramientasCerrada { display: none; }
 }
 
 /* Marcador sin estilo propio — solo existe para poder localizar en el DOM
