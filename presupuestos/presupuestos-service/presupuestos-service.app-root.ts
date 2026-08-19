@@ -209,6 +209,23 @@ export function opcionesCookieRefresh(maxAgeMs?: number) {
 export const REFRESH_TTL_MS = (Number(process.env.REFRESH_TOKEN_TTL_DIAS) || 30) * 24 * 60 * 60 * 1000;
 
 /**
+ * Caché en memoria de "¿sigue esta cuenta activa?" (usuarioId -> hasta
+ * cuándo vale sin volver a preguntar) — antes `requireAuth` consultaba
+ * MongoDB en TODAS Y CADA UNA de las peticiones autenticadas, no solo al
+ * iniciar sesión. Con una app que lanza en paralelo una decena de
+ * peticiones al cargar (clientes, facturas, resumen, proveedores...), cada
+ * una pagando ese viaje redondo a Mongo antes de hacer su propio trabajo,
+ * el efecto acumulado real observado fue una carga de 30+ segundos, hasta
+ * casi 2 minutos (reporte real del usuario, 19/08/2026, con capturas del
+ * panel Network confirmando ~1.5-2s por petición incluso en respuestas 304).
+ * TTL corto (60s): una cuenta suspendida sigue quedando bloqueada casi de
+ * inmediato, no es un relajamiento real de seguridad — solo evita repetir
+ * la misma pregunta decenas de veces en el mismo segundo.
+ */
+const TTL_CACHE_ACTIVO_MS = 60_000;
+const cacheUsuarioActivo = new Map<string, { activo: boolean; expira: number }>();
+
+/**
  * Middleware de autenticación: valida el access token (JWT firmado) y
  * adjunta req.usuarioId. Los datos de cada usuario están completamente
  * aislados por usuarioId.
@@ -223,9 +240,18 @@ export async function requireAuth(req: AuthRequest, res: express.Response, next:
   const usuarioId = payload.sub;
   if (usuarioId === 'admin') { req.usuarioId = 'admin'; next(); return; }
   try {
-    await conectarUsuarios();
-    const u = await UsuarioModel.findOne({ id: usuarioId }).lean().exec() as any;
-    if (!u || u.estado !== 'activo') { res.status(403).json({ error: 'Acceso denegado' }); return; }
+    const ahora = Date.now();
+    const enCache = cacheUsuarioActivo.get(usuarioId);
+    let activo: boolean;
+    if (enCache && enCache.expira > ahora) {
+      activo = enCache.activo;
+    } else {
+      await conectarUsuarios();
+      const u = await UsuarioModel.findOne({ id: usuarioId }).select('estado').lean().exec() as any;
+      activo = !!u && u.estado === 'activo';
+      cacheUsuarioActivo.set(usuarioId, { activo, expira: ahora + TTL_CACHE_ACTIVO_MS });
+    }
+    if (!activo) { res.status(403).json({ error: 'Acceso denegado' }); return; }
     req.usuarioId = usuarioId;
     next();
   } catch (err) { responderError(req, res, err); }
