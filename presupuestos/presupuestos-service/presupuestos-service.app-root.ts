@@ -606,13 +606,24 @@ export function run() {
    * `presupuestos-prototype/api.ts`) y al arrancar la app para restaurar
    * la sesión sin pedir credenciales de nuevo.
    */
-  app.post('/auth/refresh', async (req, res) => {
+  app.post('/auth/refresh', async (req: AuthRequest, res) => {
     try {
       const tokenPlano = req.cookies?.mc_refresh as string | undefined;
-      if (!tokenPlano) { res.status(401).json({ error: 'Sin sesión' }); return; }
+      if (!tokenPlano) {
+        logger.warn({ requestId: req.requestId }, '[auth/refresh] Rechazado: sin cookie mc_refresh en la petición');
+        res.status(401).json({ error: 'Sin sesión' }); return;
+      }
+      // Solo los primeros 8 caracteres del token — suficiente para saber si
+      // dos peticiones distintas están reutilizando el mismo, sin registrar
+      // el token completo (equivalente a una contraseña de sesión).
+      const pistaToken = tokenPlano.slice(0, 8);
 
       const rotado = await rotarRefreshToken(tokenPlano);
       if (!rotado) {
+        logger.warn(
+          { requestId: req.requestId, pistaToken },
+          '[auth/refresh] Rechazado: rotarRefreshToken devolvió null (token no encontrado, ya revocado, o caducado)'
+        );
         res.clearCookie('mc_refresh', opcionesCookieRefresh());
         res.status(401).json({ error: 'Sesión caducada' });
         return;
@@ -621,11 +632,16 @@ export function run() {
       await conectarUsuarios();
       const u = await UsuarioModel.findOne({ id: rotado.usuarioId }).select('estado esAdmin').lean().exec() as any;
       if (!u || u.estado !== 'activo') {
+        logger.warn(
+          { requestId: req.requestId, pistaToken, usuarioId: rotado.usuarioId, estado: u?.estado ?? 'no-encontrado' },
+          '[auth/refresh] Rechazado: usuario no encontrado o no activo'
+        );
         res.clearCookie('mc_refresh', opcionesCookieRefresh());
         res.status(403).json({ error: 'Acceso denegado' });
         return;
       }
 
+      logger.info({ requestId: req.requestId, pistaToken, usuarioId: u.id }, '[auth/refresh] Sesión renovada correctamente');
       res.cookie('mc_refresh', rotado.nuevoToken, opcionesCookieRefresh(REFRESH_TTL_MS));
       const accessToken = firmarAccessToken({ sub: u.id, esAdmin: u.esAdmin });
       res.json({ ok: true, accessToken });
