@@ -360,7 +360,21 @@ export function run() {
   // y de cargas de la app de varios minutos tras cada despliegue.
 
   app.use(middlewareLogPeticion);
-  app.use(helmet());
+  // La CSP por defecto de helmet solo permite imágenes de origen propio
+  // ('self') y data: — bloqueaba en silencio (sin error de red visible,
+  // solo "(blocked:csp)" en el panel Network) las facturas escaneadas y
+  // los códigos QR subidos, que se sirven desde el dominio público de
+  // Cloudflare R2. Se añade ese origen explícitamente a img-src; el resto
+  // de directivas se queda en los valores por defecto de helmet.
+  const origenR2 = process.env.R2_PUBLIC_URL_BASE ? new URL(process.env.R2_PUBLIC_URL_BASE).origin : null;
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+        'img-src': ["'self'", 'data:', ...(origenR2 ? [origenR2] : [])],
+      },
+    },
+  }));
   app.use(cors({
     origin: (origen, callback) => {
       if (origenPermitido(origen)) { callback(null, true); return; }
