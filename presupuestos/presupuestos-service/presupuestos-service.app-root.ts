@@ -196,11 +196,23 @@ function middlewareLogPeticion(req: express.Request, res: express.Response, next
  * navegador nunca reenviara la cookie. `path: '/'` evita ese desajuste en
  * cualquier capa de proxy, presente o futura.
  */
+/**
+ * `sameSite: 'lax'`, no `'strict'` (19/08/2026, bug real reportado): con
+ * `'strict'`, el navegador puede no reenviar la cookie en ciertos
+ * relanzamientos/recargas de una PWA instalada (tratados por el navegador
+ * como si llegaran de fuera del sitio) — el usuario se quedaba sin sesión
+ * en segundos, aun con un refresh token perfectamente válido. `'lax'` sigue
+ * bloqueando la cookie en peticiones cross-site iniciadas por OTROS sitios
+ * (la protección real que importa contra CSRF) pero sí sobrevive a
+ * recargas y relanzamientos — es además el valor por defecto que aplican
+ * los navegadores cuando no se especifica ninguno, precisamente por ese
+ * equilibrio.
+ */
 export function opcionesCookieRefresh(maxAgeMs?: number) {
   return {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict' as const,
+    sameSite: 'lax' as const,
     path: '/',
     ...(maxAgeMs !== undefined ? { maxAge: maxAgeMs } : {}),
   };
