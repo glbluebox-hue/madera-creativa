@@ -3,6 +3,7 @@ import type { Factura } from './types.js';
 import { formatoEuroPrivado, formatoFecha } from './calculos.js';
 import { paginasVisualizablesDeFactura } from './factura-paginas.js';
 import * as api from './api.js';
+import { reintentarConDominioR2Nuevo } from './imagen-fallback.js';
 import styles from './styles.module.css';
 
 export type VisorFacturaProps = {
@@ -85,7 +86,7 @@ export function VisorFactura({ facturaId, onCerrar, onEditar, onDescargarPdf, pr
                           {p.tipo === 'pdf' ? (
                             <span style={{ fontSize: '0.6rem', fontWeight: 700 }}>PDF</span>
                           ) : (
-                            <img src={p.url} alt={`Página ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                            <img src={p.url} onError={reintentarConDominioR2Nuevo} alt={`Página ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                           )}
                           <span style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: i === paginaActiva ? 'var(--topo)' : 'rgba(0,0,0,0.45)',
                             color: 'var(--blanco)', fontSize: '0.55rem', textAlign: 'center', fontWeight: 700, padding: '1px 0' }}>{i + 1}</span>
@@ -97,7 +98,7 @@ export function VisorFactura({ facturaId, onCerrar, onEditar, onDescargarPdf, pr
                     {paginaActual.tipo === 'pdf' ? (
                       <iframe src={paginaActual.url} title="Documento de la factura" style={{ width: '100%', height: 420, border: 'none', display: 'block' }} />
                     ) : (
-                      <img src={paginaActual.url} alt="Documento de la factura" style={{ width: '100%', maxHeight: 420, objectFit: 'contain', display: 'block' }} />
+                      <img src={paginaActual.url} onError={reintentarConDominioR2Nuevo} alt="Documento de la factura" style={{ width: '100%', maxHeight: 420, objectFit: 'contain', display: 'block' }} />
                     )}
                   </div>
                 </>
