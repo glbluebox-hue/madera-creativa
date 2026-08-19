@@ -1,4 +1,5 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
+import { hostname } from 'node:os';
 import jwt from 'jsonwebtoken';
 import { logger } from './logger.service.js';
 
@@ -49,9 +50,26 @@ function obtenerSecreto(): string {
   return secretoEfimeroDev;
 }
 
+/**
+ * Huella corta (no reversible) del secreto realmente en uso — para poder
+ * comparar en los logs si dos procesos distintos (dos instancias, o antes
+ * y después de un reinicio) están usando el MISMO secreto sin necesidad de
+ * exponer el secreto en sí. Si esta huella difiere entre el log de
+ * `firmarAccessToken` y el de un `verificarAccessToken` fallido, confirma
+ * que hay más de un secreto en juego.
+ */
+function huellaSecreto(secreto: string): string {
+  return createHash('sha256').update(secreto).digest('hex').slice(0, 10);
+}
+
 /** Firma un access token JWT de corta duración. */
 export function firmarAccessToken(payload: PayloadAcceso): string {
-  return jwt.sign(payload, obtenerSecreto(), { expiresIn: ACCESS_TOKEN_TTL });
+  const secreto = obtenerSecreto();
+  logger.info(
+    { hostname: hostname(), pid: process.pid, huellaSecreto: huellaSecreto(secreto), usuarioId: payload.sub },
+    '[token] Access token firmado'
+  );
+  return jwt.sign(payload, secreto, { expiresIn: ACCESS_TOKEN_TTL });
 }
 
 /**
@@ -59,13 +77,35 @@ export function firmarAccessToken(payload: PayloadAcceso): string {
  * expiración son válidas, o `null` si no lo son (token inválido, caducado
  * o manipulado) — nunca lanza, para que `requireAuth` pueda tratarlo como
  * un simple "no autorizado".
+ *
+ * 19/08/2026: se añade registro detallado en el fallo (bug real en
+ * investigación — un token recién firmado, usado en el segundo siguiente,
+ * era rechazado como inválido de forma intermitente). El motivo exacto que
+ * da `jsonwebtoken` (firma no coincide, caducado, formato roto...) y la
+ * huella del secreto usado para verificar permiten comparar directamente
+ * contra el log de `firmarAccessToken` del mismo token.
  */
 export function verificarAccessToken(token: string): PayloadAcceso | null {
+  const secreto = obtenerSecreto();
   try {
-    const payload = jwt.verify(token, obtenerSecreto());
+    const payload = jwt.verify(token, secreto);
     if (typeof payload === 'string' || !('sub' in payload)) return null;
     return { sub: String(payload.sub), esAdmin: Boolean((payload as { esAdmin?: unknown }).esAdmin) };
-  } catch {
+  } catch (err) {
+    let decodificadoSinVerificar: unknown = null;
+    try { decodificadoSinVerificar = jwt.decode(token); } catch { /* token ni siquiera bien formado */ }
+    logger.warn(
+      {
+        hostname: hostname(),
+        pid: process.pid,
+        huellaSecreto: huellaSecreto(secreto),
+        errorNombre: err instanceof Error ? err.name : typeof err,
+        errorMensaje: err instanceof Error ? err.message : String(err),
+        decodificadoSinVerificar,
+        ahoraUnix: Math.floor(Date.now() / 1000),
+      },
+      '[token] Verificación de access token fallida'
+    );
     return null;
   }
 }
