@@ -65,11 +65,19 @@ function huellaSecreto(secreto: string): string {
 /** Firma un access token JWT de corta duración. */
 export function firmarAccessToken(payload: PayloadAcceso): string {
   const secreto = obtenerSecreto();
+  const token = jwt.sign(payload, secreto, { expiresIn: ACCESS_TOKEN_TTL });
   logger.info(
-    { hostname: hostname(), pid: process.pid, huellaSecreto: huellaSecreto(secreto), usuarioId: payload.sub },
+    {
+      hostname: hostname(),
+      pid: process.pid,
+      huellaSecreto: huellaSecreto(secreto),
+      huellaToken: huellaSecreto(token),
+      longitudToken: token.length,
+      usuarioId: payload.sub,
+    },
     '[token] Access token firmado'
   );
-  return jwt.sign(payload, secreto, { expiresIn: ACCESS_TOKEN_TTL });
+  return token;
 }
 
 /**
@@ -89,7 +97,13 @@ export function verificarAccessToken(token: string): PayloadAcceso | null {
   const secreto = obtenerSecreto();
   try {
     const payload = jwt.verify(token, secreto);
-    if (typeof payload === 'string' || !('sub' in payload)) return null;
+    if (typeof payload === 'string' || !('sub' in payload)) {
+      logger.warn(
+        { hostname: hostname(), pid: process.pid, huellaToken: huellaSecreto(token), longitudToken: token.length },
+        '[token] Verificación fallida: payload sin "sub" o es un string plano'
+      );
+      return null;
+    }
     return { sub: String(payload.sub), esAdmin: Boolean((payload as { esAdmin?: unknown }).esAdmin) };
   } catch (err) {
     let decodificadoSinVerificar: unknown = null;
@@ -99,6 +113,8 @@ export function verificarAccessToken(token: string): PayloadAcceso | null {
         hostname: hostname(),
         pid: process.pid,
         huellaSecreto: huellaSecreto(secreto),
+        huellaToken: huellaSecreto(token),
+        longitudToken: token.length,
         errorNombre: err instanceof Error ? err.name : typeof err,
         errorMensaje: err instanceof Error ? err.message : String(err),
         decodificadoSinVerificar,
