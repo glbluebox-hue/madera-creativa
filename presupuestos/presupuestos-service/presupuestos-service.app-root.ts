@@ -650,7 +650,7 @@ export function run() {
       }
 
       await conectarUsuarios();
-      const u = await UsuarioModel.findOne({ id: rotado.usuarioId }).select('estado esAdmin').lean().exec() as any;
+      const u = await UsuarioModel.findOne({ id: rotado.usuarioId }).select('id estado esAdmin').lean().exec() as any;
       if (!u || u.estado !== 'activo') {
         logger.warn(
           { requestId: req.requestId, pistaToken, usuarioId: rotado.usuarioId, estado: u?.estado ?? 'no-encontrado' },
