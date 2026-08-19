@@ -53,6 +53,11 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
   const [enlaces, setEnlaces] = useState<Record<string, string>>({});
   const [enlaceCopiadoId, setEnlaceCopiadoId] = useState<string | null>(null);
   const [generandoEnlaceId, setGenerandoEnlaceId] = useState<string | null>(null);
+  /** "Generar con IA" dentro del selector — campo libre para describir el trabajo, ver `generarConIA`. */
+  const [campoIAAbierto, setCampoIAAbierto] = useState(false);
+  const [descripcionIA, setDescripcionIA] = useState('');
+  const [generandoIA, setGenerandoIA] = useState(false);
+  const [errorIA, setErrorIA] = useState<string | null>(null);
 
   const cargar = useCallback(() => {
     setCargando(true);
@@ -194,6 +199,54 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
     setEditor({ presupuesto: borrador, clienteId, clienteNombre: nombreDe(clienteId) });
   };
 
+  /**
+   * "Generar con IA": una sola pantalla, sin ida y vuelta de chat — el
+   * propio hecho de pulsar "Generar" ya es la confirmación del usuario, así
+   * que la propuesta de la herramienta (`crearPresupuestoDocumento`, permiso
+   * de escritura) se confirma de inmediato en cuanto llega, sin un paso
+   * intermedio visible. El presupuesto se guarda ya en Mongo al terminar
+   * (igual que si lo hubiera creado el propio asistente en un chat) — se
+   * abre después en el editor real para que el carpintero lo revise y
+   * ajuste antes de generar el enlace, nunca se envía solo.
+   */
+  const generarConIA = async (clienteId: string) => {
+    const descripcion = descripcionIA.trim();
+    if (!descripcion) return;
+    setGenerandoIA(true);
+    setErrorIA(null);
+    try {
+      const clienteNombre = nombreDe(clienteId);
+      const respuesta = await api.generarRespuestaIA({
+        capacidad: 'asistente-global',
+        mensajes: [{ role: 'user', content: `Crea un presupuesto para el cliente ${clienteNombre}. Descripción del trabajo: ${descripcion}` }],
+        referencias: { clienteId },
+      });
+      const propuesta = respuesta.propuestas.find((p) => p.nombre === 'crearPresupuestoDocumento');
+      if (!propuesta) throw new Error('La IA no ha podido generar el presupuesto — prueba a describir el trabajo con más detalle (partes y precios).');
+      const { resultado } = await api.confirmarPropuestaIA({
+        capacidad: 'asistente-global',
+        nombre: propuesta.nombre,
+        argumentos: propuesta.argumentos,
+        toolCallId: propuesta.id,
+        referencias: { clienteId },
+      });
+      if (resultado?.error) throw new Error(String(resultado.error));
+      const lista = await api.obtenerTodosLosPresupuestos();
+      const creado = lista.find((p) => p.id === resultado?.presupuestoId);
+      if (!creado) throw new Error('El presupuesto se generó pero no se pudo abrir — búscalo en la lista y ábrelo desde ahí.');
+      setPresupuestos(lista);
+      setSelectorAbierto(false);
+      setClienteElegidoId(null);
+      setCampoIAAbierto(false);
+      setDescripcionIA('');
+      setEditor({ presupuesto: creado, clienteId, clienteNombre });
+    } catch (e) {
+      setErrorIA(e instanceof Error ? e.message : 'No se pudo generar el presupuesto.');
+    } finally {
+      setGenerandoIA(false);
+    }
+  };
+
   if (editor) {
     return (
       <AbrirDocumento
@@ -258,7 +311,41 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
               </>
             ) : (
               <>
-                <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem' }}>{nombreDe(clienteElegidoId)} — en blanco o desde plantilla</p>
+                <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem' }}>{nombreDe(clienteElegidoId)} — en blanco, desde plantilla o con IA</p>
+
+                {campoIAAbierto ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                    <textarea
+                      className={styles.input}
+                      autoFocus
+                      rows={4}
+                      placeholder="Describe el trabajo: partes, materiales, precios de cada parte…"
+                      value={descripcionIA}
+                      onChange={(e) => setDescripcionIA(e.target.value)}
+                      style={{ resize: 'vertical', fontSize: '0.82rem' }}
+                      disabled={generandoIA}
+                    />
+                    {errorIA && <p style={{ margin: 0, color: 'var(--rojo)', fontSize: '0.78rem' }}>{errorIA}</p>}
+                    <div style={{ display: 'flex', gap: '0.4rem' }}>
+                      <button
+                        className={`${styles.btn} ${styles.btnPrimario}`}
+                        style={{ fontSize: '0.78rem' }}
+                        onClick={() => generarConIA(clienteElegidoId)}
+                        disabled={generandoIA || !descripcionIA.trim()}
+                      >
+                        {generandoIA ? 'Generando…' : 'Generar'}
+                      </button>
+                      <button className={styles.btn} style={{ fontSize: '0.78rem' }} onClick={() => { setCampoIAAbierto(false); setErrorIA(null); }} disabled={generandoIA}>
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ textAlign: 'left', fontSize: '0.8rem' }} onClick={() => setCampoIAAbierto(true)}>
+                    ✨ Generar con IA
+                  </button>
+                )}
+
                 <button className={styles.btn} style={{ textAlign: 'left', fontSize: '0.8rem' }} onClick={() => crearBorrador(clienteElegidoId)}>En blanco</button>
                 {plantillas.length > 0 && <p style={{ margin: '0.4rem 0 0', fontSize: '0.72rem', color: 'var(--topo-claro)' }}>Plantillas guardadas</p>}
                 {plantillas.map((pl) => (
@@ -266,7 +353,7 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
                     {pl.nombre} {pl.ambito === 'corporativa' ? '· corporativa' : ''}
                   </button>
                 ))}
-                <button className={styles.btn} style={{ fontSize: '0.78rem', alignSelf: 'flex-start' }} onClick={() => setClienteElegidoId(null)}>← Cambiar cliente</button>
+                <button className={styles.btn} style={{ fontSize: '0.78rem', alignSelf: 'flex-start' }} onClick={() => { setClienteElegidoId(null); setCampoIAAbierto(false); setErrorIA(null); }}>← Cambiar cliente</button>
               </>
             )}
             <button className={styles.btn} style={{ fontSize: '0.78rem', alignSelf: 'flex-end' }} onClick={() => setSelectorAbierto(false)}>Cancelar</button>

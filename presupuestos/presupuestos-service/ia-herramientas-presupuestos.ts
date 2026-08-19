@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { HerramientaIA } from './ia-herramienta.js';
 import { PresupuestosService } from './presupuestos-service.js';
+import { generarDocumentoPresupuesto } from './documento-generador-presupuesto.js';
 
 /**
  * Herramientas de escritura del copiloto de Presupuestos (Fase 5 — primera
@@ -104,7 +105,87 @@ export const herramientaAnadirElementoPresupuesto: HerramientaIA<z.infer<typeof 
   },
 };
 
+const esquemaSeccionPresupuesto = z.object({
+  titulo: z.string().trim().min(1).max(150),
+  descripcion: z.string().trim().min(1).max(2000),
+  precio: z.number().finite().nonnegative(),
+});
+
+const esquemaCrearPresupuestoDocumento = z.object({
+  clienteNombre: z.string().trim().min(1).max(200),
+  titulo: z.string().trim().min(1).max(200),
+  secciones: z.array(esquemaSeccionPresupuesto).min(1).max(30),
+  condicionesPago: z.string().trim().max(500).optional(),
+  condicionesGenerales: z.string().trim().max(2000).optional(),
+});
+
+/**
+ * Presupuesto profesional con membrete y varias secciones con precio
+ * propio (Motor Documental) — la IA descompone el trabajo en partidas en
+ * vez de un único párrafo con un precio total (`crearPresupuesto`, más
+ * arriba). El documento real (páginas, membrete, paginación automática)
+ * lo construye `generarDocumentoPresupuesto` — la IA nunca ve ni decide
+ * coordenadas ni maquetación, solo el contenido de cada sección.
+ */
+export const herramientaCrearPresupuestoDocumento: HerramientaIA<z.infer<typeof esquemaCrearPresupuestoDocumento>> = {
+  nombre: 'crearPresupuestoDocumento',
+  descripcion:
+    'Crea un presupuesto profesional con membrete de empresa, dividido en secciones (una por cada parte diferenciada ' +
+    'del trabajo, ej. "Cocina a medida", "Mueble de salón", "Rodapié"), cada una con su propia descripción y precio. ' +
+    'Úsala cuando el trabajo tenga varias partes claramente distintas con precio propio cada una; para un presupuesto ' +
+    'de una sola partida con un único precio, usa crearPresupuesto en su lugar. No inventes secciones, precios, ' +
+    'materiales ni medidas que el usuario no haya indicado — si falta el precio de alguna parte, pregúntalo antes de llamar a esta herramienta.',
+  permiso: 'escritura',
+  esquemaParametros: esquemaCrearPresupuestoDocumento,
+  async ejecutar(params, ctx) {
+    const cliente = await svc.buscarClientePorNombre(ctx.usuarioId, params.clienteNombre);
+    if (!cliente) return { error: `No se encontró ningún cliente llamado "${params.clienteNombre}".` };
+
+    const empresa = await svc.obtenerEmpresa(ctx.usuarioId);
+    const condicionesPago = params.condicionesPago ?? empresa.condicionesPagoDefecto;
+    const condicionesGenerales = params.condicionesGenerales ?? '';
+
+    const { documento, precioTotal } = generarDocumentoPresupuesto(params.secciones, {
+      cliente: { nombre: (cliente as any).nombre, email: (cliente as any).email, telefono: (cliente as any).telefono, direccion: (cliente as any).direccion },
+      empresa: { nombre: empresa.nombre, telefono: empresa.telefono, email: empresa.email, iban: empresa.iban },
+      presupuesto: { titulo: params.titulo, precioTotal: 0 }, // el total real se inyecta dentro del generador, una vez sumado.
+      condicionesPago,
+      condicionesGenerales,
+    });
+
+    const ahora = new Date().toISOString();
+    const presupuesto = await svc.guardarPresupuesto({
+      id: randomUUID(),
+      clienteId: cliente.id,
+      titulo: params.titulo,
+      formato: 'documento',
+      descripcion: '',
+      alcance: [],
+      items: [],
+      contenidoLienzo: {},
+      contenidoDocumento: documento as unknown as Record<string, unknown>,
+      condicionesPago,
+      validezDias: empresa.validezDiasDefecto,
+      condicionesGenerales,
+      precioTotal,
+      creado: ahora,
+      actualizado: ahora,
+    } as any, ctx.usuarioId);
+
+    return {
+      ok: true,
+      presupuestoId: presupuesto.id,
+      clienteId: cliente.id,
+      clienteNombre: cliente.nombre,
+      titulo: params.titulo,
+      precioTotal,
+      numeroSecciones: params.secciones.length,
+    };
+  },
+};
+
 export const herramientasPresupuestos: HerramientaIA[] = [
   herramientaCrearPresupuesto,
   herramientaAnadirElementoPresupuesto,
+  herramientaCrearPresupuestoDocumento,
 ];
