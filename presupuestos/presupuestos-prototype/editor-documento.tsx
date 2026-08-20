@@ -157,6 +157,17 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
    */
   const [panelMovilAbierto, setPanelMovilAbierto] = useState<'ninguno' | 'izquierdo' | 'derecho'>('ninguno');
   /**
+   * Selección múltiple con el dedo (petición del usuario, 20/08/2026):
+   * antes solo se podía añadir un elemento a la selección manteniendo
+   * pulsada la tecla Shift al tocarlo — una pantalla táctil no tiene esa
+   * tecla, así que en móvil/tablet era imposible seleccionar varios
+   * elementos a la vez (necesario, por ejemplo, para "Guardar selección
+   * como componente"). Con este modo activado, cada toque se comporta
+   * como si Shift estuviera pulsado — añade o quita del grupo en vez de
+   * sustituir la selección.
+   */
+  const [seleccionMultipleActiva, setSeleccionMultipleActiva] = useState(false);
+  /**
    * La barra de herramientas (+ Texto, + Imagen...) tiene más de 20
    * botones — en pantalla estrecha, siempre desplegada, ocupaba casi toda
    * la pantalla y dejaba el lienzo reducido a una rendija abajo del todo
@@ -786,7 +797,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
         data-elemento-id={elemento.id}
         className={`${editorStyles.elemento} ${seleccionado ? editorStyles.elementoSeleccionado : ''} ${elemento.bloqueado ? editorStyles.elementoBloqueado : ''}`}
         style={{ left: posicion.x, top: posicion.y, width: tamano.ancho, height: tamano.alto, transform: `rotate(${rotacion}deg)`, opacity: elemento.opacidad, zIndex: elemento.capa }}
-        onMouseDown={(e) => { e.stopPropagation(); if (!editando) seleccionarElemento(elemento.id, { extender: e.shiftKey, paginaId: pagina.id }); }}
+        onMouseDown={(e) => { e.stopPropagation(); if (!editando) seleccionarElemento(elemento.id, { extender: e.shiftKey || seleccionMultipleActiva, paginaId: pagina.id }); }}
         onDoubleClick={() => { if (definicion.editableEnLienzo && !elemento.bloqueado && !elemento.restricciones.soloLectura) setEditandoId(elemento.id); }}
       >
         <definicion.Render
@@ -1024,6 +1035,15 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
         <div className={editorStyles.separador} />
         <button className={editorStyles.btnHerramienta} onClick={deshacer} disabled={pasado.length === 0}>↶ Deshacer</button>
         <button className={editorStyles.btnHerramienta} onClick={rehacer} disabled={futuro.length === 0}>↷ Rehacer</button>
+        <div className={editorStyles.separador} />
+        <button
+          className={editorStyles.btnHerramienta}
+          style={seleccionMultipleActiva ? { background: 'var(--topo-tinte)', borderColor: 'var(--topo)' } : undefined}
+          onClick={() => setSeleccionMultipleActiva((v) => !v)}
+          title="Con esto activado, cada elemento que toques se añade a la selección en vez de sustituirla — útil en móvil/tablet, donde no existe la tecla Shift."
+        >
+          {seleccionMultipleActiva ? '✓ Selección múltiple' : 'Selección múltiple'}
+        </button>
         <div className={editorStyles.separador} />
         <button className={editorStyles.btnHerramienta} onClick={duplicarSeleccionActual} disabled={seleccion.length === 0}>Duplicar</button>
         <button className={editorStyles.btnHerramienta} onClick={eliminarSeleccionActual} disabled={seleccion.length === 0}>Eliminar</button>
