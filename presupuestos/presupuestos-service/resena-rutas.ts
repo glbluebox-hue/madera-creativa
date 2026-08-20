@@ -1,6 +1,7 @@
 import express from 'express';
 import { limitadorResena } from './rate-limit.middleware.js';
 import { PresupuestosService } from './presupuestos-service.js';
+import { IMAGEN_RESENA_BASE64 } from './resena-imagen.js';
 
 /**
  * Destino final de toda solicitud de reseña — la ficha de Google My
@@ -10,6 +11,33 @@ import { PresupuestosService } from './presupuestos-service.js';
  */
 const URL_RESENA_GOOGLE = 'https://g.page/r/CdtYE6HZ9ap5EBM/review';
 
+const PAGINA_NO_DISPONIBLE =
+  '<!doctype html><html lang="es"><meta charset="utf-8">' +
+  '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+  '<title>Enlace no disponible</title>' +
+  '<body style="font-family:system-ui,sans-serif;max-width:420px;margin:15vh auto;text-align:center;color:#3a332b;padding:0 1.5rem">' +
+  '<p style="font-size:1.05rem">Este enlace ya no está disponible.</p>' +
+  '<p style="font-size:0.9rem;color:#8a8175">Pide uno nuevo a quien te lo compartió.</p>' +
+  '</body></html>';
+
+/**
+ * Página que ve el cliente al abrir su enlace/QR — el cartel de
+ * agradecimiento de la empresa (`resena-imagen.ts`) seguido de un botón
+ * grande hacia Google (petición del usuario, 20/08/2026: antes esta ruta
+ * redirigía directo a Google sin que el cliente viera nada de la app).
+ */
+function paginaResena(): string {
+  return (
+    '<!doctype html><html lang="es"><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+    '<title>Déjanos tu reseña — Madera Creativa</title>' +
+    '<body style="margin:0;font-family:system-ui,sans-serif;background:#f3ede4;display:flex;flex-direction:column;align-items:center;padding:1.5rem 1rem 3rem">' +
+    `<img src="data:image/jpeg;base64,${IMAGEN_RESENA_BASE64}" alt="Madera Creativa — Gracias por confiar en nosotros" style="width:100%;max-width:420px;border-radius:18px;box-shadow:0 12px 32px rgba(24,20,15,0.18)">` +
+    `<a href="${URL_RESENA_GOOGLE}" style="margin-top:1.75rem;width:100%;max-width:420px;box-sizing:border-box;text-align:center;background:#3a2e22;color:#fff;font-size:1.05rem;font-weight:700;text-decoration:none;padding:1rem;border-radius:12px;box-shadow:0 4px 14px rgba(24,20,15,0.2)">Dejar mi reseña en Google →</a>` +
+    '</body></html>'
+  );
+}
+
 /**
  * Ruta pública que resuelve el enlace individual de reseña de un cliente
  * (`GET /resena/:token`) — montada SIN `requireAuth` (mismo patrón que
@@ -17,15 +45,13 @@ const URL_RESENA_GOOGLE = 'https://g.page/r/CdtYE6HZ9ap5EBM/review';
  * sesión, y nunca identifica al cliente en la respuesta.
  *
  * Deliberadamente un único segmento (`/resena/:token`, no `/resena/enlaces/:token`
- * como el Portal): a diferencia del Portal, esta ruta no compite con ninguna
- * página propia del frontend — el cliente que escanea el QR o pulsa el
- * enlace nunca ve una pantalla de esta app, solo la redirección final a
- * Google, así que no hace falta reservar el segmento simple para una ruta
- * de React.
+ * como el Portal): esta ruta no compite con ninguna página propia del
+ * frontend — todo lo que ve el cliente (cartel + botón) lo sirve esta
+ * misma ruta como HTML plano, sin pasar por el SPA de React.
  *
  * Si el token no existe o ya fue revocado (p. ej. se generó uno nuevo y
  * este es un QR antiguo que sigue circulando), se responde con una página
- * mínima explicándolo en vez de redirigir igualmente a Google — un enlace
+ * mínima explicándolo en vez de mostrar igualmente el cartel — un enlace
  * revocado debe dejar de funcionar de verdad, no solo dejar de mostrarse
  * en la app.
  */
@@ -43,17 +69,9 @@ export function crearRouterResena(): express.Router {
   router.get('/:token', limitadorResena, async (req, res) => {
     try {
       await svc.registrarClicResena(req.params.token);
-      res.redirect(302, URL_RESENA_GOOGLE);
+      res.send(paginaResena());
     } catch {
-      res.status(410).send(
-        '<!doctype html><html lang="es"><meta charset="utf-8">' +
-          '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-          '<title>Enlace no disponible</title>' +
-          '<body style="font-family:system-ui,sans-serif;max-width:420px;margin:15vh auto;text-align:center;color:#3a332b;padding:0 1.5rem">' +
-          '<p style="font-size:1.05rem">Este enlace ya no está disponible.</p>' +
-          '<p style="font-size:0.9rem;color:#8a8175">Pide uno nuevo a quien te lo compartió.</p>' +
-          '</body></html>'
-      );
+      res.status(410).send(PAGINA_NO_DISPONIBLE);
     }
   });
 

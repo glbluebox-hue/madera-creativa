@@ -18,8 +18,9 @@ export type SolicitudResenaProps = {
 /**
  * Botón "Pedir reseña" de la cabecera de la ficha — genera un enlace/QR
  * individual y seguro para ESTE cliente (uno por cliente, revocando el
- * anterior al regenerarlo) que, al abrirse o escanearse, lleva directo a
- * dejar una reseña en la ficha de Google del negocio. El QR se genera en el
+ * anterior al regenerarlo) que, al abrirse o escanearse, muestra el cartel
+ * de agradecimiento de la empresa y un botón hacia la reseña de Google
+ * (ver `resena-rutas.ts`). El QR se genera en el
  * propio navegador con el mismo paquete (`qrcode`) que ya usa el Motor
  * Documental para el elemento "Código QR" — no hace falta pedirlo al
  * servidor.
@@ -79,7 +80,7 @@ export function SolicitudResena({ clienteId }: SolicitudResenaProps) {
           >
             <p style={{ margin: 0, fontWeight: 700, fontSize: '0.95rem' }}>Solicitar reseña</p>
             <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--topo-claro)' }}>
-              Genera un enlace y código QR propios de este cliente. Al pulsarlo o escanearlo, se le lleva directo a dejar una reseña en Google.
+              Genera un enlace y código QR propios de este cliente. Al pulsarlo o escanearlo, verá el cartel de agradecimiento y un botón para dejar la reseña en Google.
             </p>
 
             {error && <p style={{ color: 'var(--rojo)', fontSize: '0.82rem', margin: 0 }}>{error}</p>}
