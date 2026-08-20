@@ -997,7 +997,7 @@
 
 @media (max-width: 640px) {
   .clienteFilaSub { max-width: 140px; }
-  .pillEstado { display: none; }
+  .pillEstado { font-size: 0.62rem; padding: 0.28rem 0.55rem; }
 }
 
 /* ===== GRID DE TARJETAS CLIENTES ===== */

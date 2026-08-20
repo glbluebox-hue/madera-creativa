@@ -197,7 +197,7 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
               <p className={styles.fichaDesde}>{proyecto.proyecto || 'Proyecto'} · desde {formatoFecha(proyecto.creado)}</p>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.6rem' }}>
             <select
               className={styles.select}
               value={proyecto.estado}
