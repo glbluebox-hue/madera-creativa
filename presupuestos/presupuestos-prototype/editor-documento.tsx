@@ -142,6 +142,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const lienzoContenedorRef = useRef<HTMLDivElement>(null);
+  const paginaActivaElRef = useRef<HTMLDivElement | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nombreEstiloNuevo, setNombreEstiloNuevo] = useState('');
@@ -374,14 +375,33 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
 
   const insertarElemento = useCallback((tipo: string) => {
     const definicion = obtenerTipoRender(tipo);
-    // Centrado en la página activa, no en una esquina fija — un elemento
-    // nuevo en (60,60) caía sistemáticamente encima del membrete (reporte
-    // real del usuario, 19/08/2026: "me lo abre encima del logo").
     const pagina = documento.paginas.find((p) => p.id === paginaActivaId) ?? documento.paginas[0];
     const config = pagina.configuracion ?? documento.configuracionPorDefecto;
+    // Centrado en la parte de la hoja que se ve AHORA en pantalla, no en el
+    // centro de toda la hoja A4 — con zoom/scroll, el centro de la hoja
+    // completa cae fácilmente fuera de la vista, y el elemento nuevo
+    // "aparece" muy por debajo de donde el carpintero está mirando, obligando
+    // a buscarlo con scroll para poder escribir (reporte real, 20/08/2026:
+    // "ese mismo sitio tiene que ser mi recuadro... no quiero otro más abajo").
+    let centroX = config.ancho / 2;
+    let centroY = config.alto / 2;
+    const contenedor = lienzoContenedorRef.current;
+    const paginaEl = pagina.id === paginaActivaId ? paginaActivaElRef.current : null;
+    if (contenedor && paginaEl) {
+      const rectContenedor = contenedor.getBoundingClientRect();
+      const rectPagina = paginaEl.getBoundingClientRect();
+      const visibleIzq = Math.max(0, rectContenedor.left - rectPagina.left);
+      const visibleArriba = Math.max(0, rectContenedor.top - rectPagina.top);
+      const visibleDer = Math.min(rectPagina.width, rectContenedor.right - rectPagina.left);
+      const visibleAbajo = Math.min(rectPagina.height, rectContenedor.bottom - rectPagina.top);
+      if (visibleDer > visibleIzq && visibleAbajo > visibleArriba) {
+        centroX = (visibleIzq + visibleDer) / 2 / zoom;
+        centroY = (visibleArriba + visibleAbajo) / 2 / zoom;
+      }
+    }
     const posicionInicial = {
-      x: Math.max(0, Math.round((config.ancho - definicion.tamanoInicial.ancho) / 2)),
-      y: Math.max(0, Math.round((config.alto - definicion.tamanoInicial.alto) / 2)),
+      x: Math.min(Math.max(0, config.ancho - definicion.tamanoInicial.ancho), Math.max(0, Math.round(centroX - definicion.tamanoInicial.ancho / 2))),
+      y: Math.min(Math.max(0, config.alto - definicion.tamanoInicial.alto), Math.max(0, Math.round(centroY - definicion.tamanoInicial.alto / 2))),
     };
     const base = crearElementoBase(tipo, posicionInicial, definicion.tamanoInicial);
     const elemento: ElementoMC = {
@@ -1275,6 +1295,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
             return (
               <div
                 key={pagina.id}
+                ref={pagina.id === paginaActivaId ? paginaActivaElRef : undefined}
                 className={`${editorStyles.pagina} ${pagina.id === paginaActivaId ? editorStyles.paginaActiva : ''}`}
                 style={{ width: config.ancho * zoom, height: config.alto * zoom, ...estiloFondo }}
                 onMouseDown={(e) => e.stopPropagation()}
