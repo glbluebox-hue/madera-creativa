@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Cliente, Estancia } from './types.js';
+import type { Proyecto, Estancia } from './types.js';
 import { generarId } from './mock.js';
 import { generarDespiece } from './despiece.js';
 import styles from './styles.module.css';
@@ -7,10 +7,10 @@ import { PizarraMedidas, type DibujoGuardado } from './pizarra-medidas.js';
 
 /** Props del panel de mediciones. */
 export type TabMedicionesProps = {
-  /** Cliente con sus estancias. */
-  cliente: Cliente;
+  /** Proyecto con sus estancias. */
+  proyecto: Proyecto;
   /** Guarda los cambios. */
-  onActualizar: (cliente: Cliente) => void;
+  onActualizar: (proyecto: Proyecto) => void;
 };
 
 /**
@@ -18,12 +18,12 @@ export type TabMedicionesProps = {
  * (altura, anchura, profundidad, ángulos, desniveles, escuadra) y permite
  * generar un despiece automático por estancia.
  */
-export function TabMediciones({ cliente, onActualizar }: TabMedicionesProps) {
-  const estancias = cliente.estancias ?? [];
+export function TabMediciones({ proyecto, onActualizar }: TabMedicionesProps) {
+  const estancias = proyecto.estancias ?? [];
   const [despiecePara, setDespiecePara] = useState<string | null>(null);
 
   const guardarEstancias = (nuevas: Estancia[]) =>
-    onActualizar({ ...cliente, estancias: nuevas });
+    onActualizar({ ...proyecto, estancias: nuevas });
 
   const anadir = () =>
     guardarEstancias([
@@ -37,16 +37,16 @@ export function TabMediciones({ cliente, onActualizar }: TabMedicionesProps) {
   const borrar = (id: string) => guardarEstancias(estancias.filter((e) => e.id !== id));
 
   const guardarDibujo = (dibujo: DibujoGuardado) => {
-    const previos = cliente.dibujos ?? [];
+    const previos = proyecto.dibujos ?? [];
     const idx = previos.findIndex(d => d.id === dibujo.id);
     const nuevos = idx >= 0 ? previos.map((d, i) => i === idx ? dibujo : d) : [...previos, dibujo];
-    onActualizar({ ...cliente, dibujos: nuevos });
+    onActualizar({ ...proyecto, dibujos: nuevos });
   };
 
   return (
     <div className={styles.tabPanel}>
       {/* Pizarra de medidas con pantalla completa, voz y dibujos guardados */}
-      <PizarraMedidas dibujos={cliente.dibujos ?? []} onGuardar={guardarDibujo} />
+      <PizarraMedidas dibujos={proyecto.dibujos ?? []} onGuardar={guardarDibujo} />
 
       <div className={styles.barraSeccion} style={{ marginTop: '2rem' }}>
         <h3 style={{ margin: 0 }}>Mediciones por estancia</h3>

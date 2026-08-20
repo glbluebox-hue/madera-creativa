@@ -21,7 +21,7 @@ export const contextoAsistenteGlobal: ConstructorContexto = {
     const anioActual = Number(hoy.slice(0, 4));
 
     const [clientes, facturasAnio, resumenTotal] = await Promise.all([
-      svc.listarClientesResumen(usuarioId),
+      svc.listarProyectosResumen(usuarioId),
       svc.listarFacturasPorAnio(usuarioId, anioActual),
       svc.resumenFacturas(usuarioId),
     ]);
@@ -33,8 +33,13 @@ export const contextoAsistenteGlobal: ConstructorContexto = {
       .filter((f) => f.tipo === 'gasto' && String(f.fecha ?? '').startsWith(mesActual))
       .reduce((suma, f) => suma + (f.importe || 0), 0);
 
-    const clienteAbiertoId = typeof referencias.clienteAbierto === 'string' ? referencias.clienteAbierto : undefined;
-    const clienteAbierto = clienteAbiertoId ? await svc.obtenerCliente(clienteAbiertoId, usuarioId) : null;
+    // `referencias.clienteAbierto` en realidad ya identifica un PROYECTO
+    // (incremento "Cliente ≠ Proyecto", 20/08/2026) — la clave se mantiene
+    // sin renombrar porque la fija el frontend en `referencias de pantalla`
+    // y no aporta nada cambiarla aquí.
+    const proyectoAbiertoId = typeof referencias.clienteAbierto === 'string' ? referencias.clienteAbierto : undefined;
+    const proyectoAbierto = proyectoAbiertoId ? await svc.obtenerProyecto(proyectoAbiertoId, usuarioId) : null;
+    const clienteDelProyectoAbierto = proyectoAbierto ? await svc.obtenerCliente((proyectoAbierto as any).clienteId, usuarioId) : null;
 
     const resumenClientes = clientes.map((c) => ({
       id: c.id, nombre: c.nombre, proyecto: c.proyecto, estado: c.estado, presupuesto: c.presupuesto,
@@ -51,7 +56,7 @@ export const contextoAsistenteGlobal: ConstructorContexto = {
       `RESUMEN FINANCIERO DE TODA LA HISTORIA (todas las facturas, cualquier año): ingresos ${resumenTotal.totalIngresos.toFixed(2)} €, gastos ${resumenTotal.totalGastos.toFixed(2)} €, balance ${resumenTotal.balance.toFixed(2)} € (${resumenTotal.numFacturas} facturas en total)`,
       `RESUMEN FINANCIERO SOLO DEL MES ACTUAL (${mesActual}): ingresos ${ingresosMes.toFixed(2)} €, gastos ${gastosMes.toFixed(2)} €, beneficio ${(ingresosMes - gastosMes).toFixed(2)} €`,
       `CLIENTES Y PROYECTOS (${resumenClientes.length} en total): ${JSON.stringify(resumenClientes)}`,
-      clienteAbierto ? `CLIENTE ACTUALMENTE ABIERTO EN PANTALLA: ${JSON.stringify({ id: clienteAbierto.id, nombre: (clienteAbierto as any).nombre })}` : '',
+      proyectoAbierto ? `PROYECTO ACTUALMENTE ABIERTO EN PANTALLA: ${JSON.stringify({ id: proyectoAbierto.id, proyecto: (proyectoAbierto as any).proyecto, cliente: (clienteDelProyectoAbierto as any)?.nombre })}` : '',
       `CONTEXTO DE PANTALLA: ${JSON.stringify(referencias)}`,
     ].filter(Boolean).join('\n');
 

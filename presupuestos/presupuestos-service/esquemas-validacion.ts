@@ -329,12 +329,40 @@ function tamanoBytesAlmacenados(valor: string): number {
   return Buffer.byteLength(valor, 'utf8');
 }
 
+/**
+ * Identidad de un cliente — desde el incremento "Cliente ≠ Proyecto"
+ * (especificación del usuario, 20/08/2026) ya no lleva ningún dato de un
+ * trabajo concreto (eso vive en `esquemaProyecto`, más abajo). Un cliente
+ * puede tener muchos proyectos; sus datos de contacto se editan una sola
+ * vez y valen para todos.
+ */
 export const esquemaCliente = z.object({
   id: z.string().min(1).max(128),
   nombre: z.string().trim().min(1).max(200),
-  proyecto: z.string().max(300).optional().default(''),
   telefono: z.string().max(50).optional().default(''),
   email: z.string().max(254).optional().default(''),
+  creado: z.string().min(1).max(64),
+});
+
+/** Cuerpo de POST /clientes — crea solo la identidad; el primer proyecto se crea aparte con `esquemaProyectoEntrada`. */
+export const esquemaClienteEntrada = z.object({
+  nombre: z.string().trim().min(1).max(200),
+  telefono: z.string().max(50).optional().default(''),
+  email: z.string().max(254).optional().default(''),
+});
+
+/**
+ * Un proyecto/expediente de trabajo — mismo shape que el `Cliente` de
+ * antes de este incremento, menos los campos de identidad, más
+ * `clienteId`. La gestión económica y documental de cada proyecto es
+ * exclusiva suya: crear un proyecto nuevo para un cliente ya existente
+ * nunca copia gastos/ingresos/documentos/mediciones/fotos de otro proyecto
+ * suyo (petición explícita del usuario).
+ */
+export const esquemaProyecto = z.object({
+  id: z.string().min(1).max(128),
+  clienteId: z.string().min(1).max(128),
+  proyecto: z.string().max(300).optional().default(''),
   direccion: z.string().max(500).optional().default(''),
   presupuesto: z.number().finite().optional().default(0),
   tarifaHora: z.number().finite().optional().default(0),
@@ -350,7 +378,6 @@ export const esquemaCliente = z.object({
   fechaMedicion: z.string().max(32).optional(),
   fechaMontaje: z.string().max(32).optional(),
   estancias: z.array(esquemaEstancia).optional(),
-  notas: z.array(esquemaNota).optional(),
   tareas: z.array(esquemaTarea).optional(),
   movimientos: z.array(esquemaMovimiento).optional().default([]),
   horas: z.array(esquemaRegistroHoras).optional().default([]),
@@ -358,15 +385,40 @@ export const esquemaCliente = z.object({
   fotos: z.array(esquemaFotoProyecto).optional().default([]),
   dibujos: z.array(esquemaDibujoGuardado).optional(),
 }).refine(
-  (cliente) => {
+  (proyecto) => {
     const total =
-      (cliente.fotos ?? []).reduce((suma, f) => suma + tamanoBytesAlmacenados(f.url), 0) +
-      (cliente.adjuntos ?? []).reduce((suma, a) => suma + tamanoBytesAlmacenados(a.url), 0) +
-      (cliente.dibujos ?? []).reduce((suma, d) => suma + tamanoBytesAlmacenados(d.dataUrl), 0);
+      (proyecto.fotos ?? []).reduce((suma, f) => suma + tamanoBytesAlmacenados(f.url), 0) +
+      (proyecto.adjuntos ?? []).reduce((suma, a) => suma + tamanoBytesAlmacenados(a.url), 0) +
+      (proyecto.dibujos ?? []).reduce((suma, d) => suma + tamanoBytesAlmacenados(d.dataUrl), 0);
     return total <= LIMITE_BLOBS_CLIENTE_BYTES;
   },
   { message: `El total de fotos, adjuntos y dibujos supera el límite de ${LIMITE_BLOBS_CLIENTE_BYTES / (1024 * 1024)} MB por proyecto.` }
 );
+
+/**
+ * Cuerpo de POST /proyectos — crea un proyecto nuevo (para un cliente
+ * nuevo o ya existente, da igual: `clienteId` siempre lo decide quien
+ * llama). Deliberadamente SIN `movimientos`/`horas`/`adjuntos`/`fotos`/
+ * `dibujos`/`estancias`/`tareas`/`margenAvisado`: un proyecto nuevo
+ * siempre empieza completamente en cero (especificación del usuario,
+ * punto 4) — esos campos ni se aceptan aquí, los pone el servidor a `[]`.
+ */
+export const esquemaProyectoEntrada = z.object({
+  clienteId: z.string().min(1).max(128),
+  proyecto: z.string().max(300).optional().default(''),
+  direccion: z.string().max(500).optional().default(''),
+  presupuesto: z.number().finite().optional().default(0),
+  tarifaHora: z.number().finite().optional().default(0),
+  whatsapp: z.string().max(50).optional(),
+  ubicacion: z.string().max(500).optional(),
+  codigoPuerta: z.string().max(50).optional(),
+  planta: z.string().max(50).optional(),
+  ascensor: z.boolean().optional(),
+  zonaCarga: z.string().max(300).optional(),
+  observacionesAcceso: z.string().max(1000).optional(),
+  fechaMedicion: z.string().max(32).optional(),
+  fechaMontaje: z.string().max(32).optional(),
+});
 
 // ── Factura ───────────────────────────────────────────────────────────────────
 
@@ -482,6 +534,8 @@ export const LIMITE_CONTENIDO_PRESUPUESTO_BYTES = 4 * 1024 * 1024;
 export const esquemaPresupuestoMC = z.object({
   id: z.string().min(1).max(64),
   clienteId: z.string().min(1).max(128),
+  /** Proyecto/expediente al que pertenece (incremento "Cliente ≠ Proyecto", 20/08/2026) — `''` si se creó fuera de la ficha de un proyecto (p. ej. el asistente global). */
+  proyectoId: z.string().max(128).optional().default(''),
   titulo: z.string().trim().min(1).max(200),
   formato: z.enum(['simple', 'lienzo', 'documento']).optional().default('simple'),
   descripcion: z.string().max(10000).optional().default(''),
@@ -768,8 +822,10 @@ export const esquemaPaginacionFacturas = z.object({
   anio: z.coerce.number().int().min(2000).max(2200).optional(),
   /** Junto con `anio`, acota el año completo a un único trimestre (1-4) — para navegar las facturas por carpetas. */
   trimestre: z.coerce.number().int().min(1).max(4).optional(),
-  /** Devuelve, sin paginar, las facturas de un cliente concreto (p. ej. los gastos de un proyecto en su ficha). */
+  /** Devuelve, sin paginar, las facturas de un cliente concreto — incluye las de TODOS sus proyectos; para una ficha de proyecto usa `proyectoId`. */
   clienteId: z.string().max(128).optional(),
+  /** Devuelve, sin paginar, las facturas de UN proyecto concreto (incremento "Cliente ≠ Proyecto", 20/08/2026) — nunca mezcla las de otro proyecto del mismo cliente. */
+  proyectoId: z.string().max(128).optional(),
   /** Devuelve, sin paginar, las facturas cuyo proveedor coincide (búsqueda difusa) con este nombre. */
   proveedor: z.string().max(300).optional(),
 });

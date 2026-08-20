@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { Factura, Proveedor } from './types.js';
 import { EscanerDocumento } from './escaner-documento.js';
 import type { ResultadoEscaneo } from './escaner-documento.js';
@@ -6,6 +6,7 @@ import { ImporteInput } from './importe-input.js';
 import { leerArchivoComoBase64 } from './archivos.js';
 import { comprimirImagen } from './procesamiento-imagenes.js';
 import { Z_DESPLEGABLE } from './z-index.js';
+import { etiquetaEstado } from './estado-utils.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
 
@@ -15,6 +16,15 @@ export type EscanerFacturaProps = {
   clientes: { id: string; nombre: string }[];
   /** Lista de proveedores para el desplegable. */
   proveedores?: Proveedor[];
+  /**
+   * Proyecto ya conocido (incremento "Cliente ≠ Proyecto", 20/08/2026) —
+   * se pasa cuando el escáner se abre DESDE la ficha de un proyecto
+   * concreto (`ficha-cliente.tsx`): el cliente y el proyecto quedan fijos
+   * y no hace falta volver a elegirlos. Si no se pasa (pantalla global de
+   * Facturas o "Escanear" del menú), el usuario elige cliente y, si tiene
+   * más de un proyecto, también el proyecto — nunca se adivina.
+   */
+  proyectoFijo?: { id: string; clienteId: string; nombre: string };
   /** Callback al guardar la factura procesada. */
   onGuardar: (f: Factura) => void;
   /** Callback al cerrar sin guardar. */
@@ -45,7 +55,7 @@ const IA_FACTURA_DISPONIBLE = true;
  * Modal para añadir facturas manualmente o con captura de imagen.
  * Soporta múltiples hojas/páginas que se combinan como un único documento.
  */
-export function EscanerFactura({ clientes, proveedores = [], onGuardar, onCerrar, facturaEditar }: EscanerFacturaProps) {
+export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGuardar, onCerrar, facturaEditar }: EscanerFacturaProps) {
   const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
   const esEdicion = !!facturaEditar;
   const [paginas, setPaginas] = useState<Pagina[]>(() => {
@@ -73,7 +83,30 @@ export function EscanerFactura({ clientes, proveedores = [], onGuardar, onCerrar
   const [concepto, setConcepto] = useState(facturaEditar?.concepto ?? '');
   const [proveedor, setProveedor] = useState(facturaEditar?.proveedor ?? '');
   const [proveedorId, setProveedorId] = useState(facturaEditar?.proveedorId ?? '');
-  const [clienteId, setClienteId] = useState(facturaEditar?.clienteId ?? '');
+  const [clienteId, setClienteId] = useState(facturaEditar?.clienteId ?? proyectoFijo?.clienteId ?? '');
+  /**
+   * Proyectos del cliente elegido — se piden en cuanto se selecciona un
+   * cliente (incremento "Cliente ≠ Proyecto", 20/08/2026), para poder
+   * pedir explícitamente A QUÉ proyecto pertenece el gasto cuando el
+   * cliente tiene más de uno. Con `proyectoFijo` no hace falta: cliente y
+   * proyecto ya vienen decididos por la ficha desde la que se abrió.
+   */
+  const [proyectosDelCliente, setProyectosDelCliente] = useState<{ id: string; proyecto: string; estado: string }[]>([]);
+  const [proyectoId, setProyectoId] = useState(facturaEditar?.proyectoId ?? proyectoFijo?.id ?? '');
+  useEffect(() => {
+    if (proyectoFijo || !clienteId) { setProyectosDelCliente([]); return; }
+    let cancelado = false;
+    api.obtenerProyectosDeCliente(clienteId).then((lista) => {
+      if (cancelado) return;
+      setProyectosDelCliente(lista);
+      // Un único proyecto → sin ambigüedad, se preselecciona (el usuario
+      // puede dejarlo así o, si hubiera más adelante, cambiarlo). Con 0 o
+      // 2+, nunca se adivina: el campo se deja vacío para que sea una
+      // elección explícita, o quede pendiente de vincular a propósito.
+      setProyectoId((actual) => (lista.length === 1 ? lista[0].id : (lista.some((p) => p.id === actual) ? actual : '')));
+    }).catch(() => setProyectosDelCliente([]));
+    return () => { cancelado = true; };
+  }, [clienteId, proyectoFijo]);
   const [numeroFactura, setNumeroFactura] = useState(facturaEditar?.numeroFactura ?? '');
   const [cifNif, setCifNif] = useState(facturaEditar?.cifNif ?? '');
   const [categoria, setCategoria] = useState(facturaEditar?.categoria ?? '');
@@ -204,7 +237,8 @@ export function EscanerFactura({ clientes, proveedores = [], onGuardar, onCerrar
       importe: parseFloat(String(importe).replace(',', '.')) || 0,
       proveedor,
       proveedorId,
-      clienteId: tipo === 'gasto' ? clienteId : '',
+      clienteId: tipo === 'gasto' ? (proyectoFijo?.clienteId || clienteId) : '',
+      proyectoId: tipo === 'gasto' ? (proyectoFijo?.id || proyectoId) : '',
       imagen: paginasImagen[0]?.dataUrl ?? (esSoloPdf ? '' : facturaEditar?.imagen ?? ''),
       imagenes: paginas.length ? paginasImagen.map(p => p.dataUrl) : facturaEditar?.imagenes ?? [],
       paginas: paginas.length
@@ -466,15 +500,51 @@ export function EscanerFactura({ clientes, proveedores = [], onGuardar, onCerrar
             <input className={styles.input} type="text" placeholder="Descripción de la factura" value={concepto} onChange={(e) => setConcepto(e.target.value)} />
           </label>
 
-          {tipo === 'gasto' && clientes.length > 0 && (
-            <label className={styles.label}>Vincular a cliente (opcional)
-              <select className={styles.select} value={clienteId} onChange={(e) => setClienteId(e.target.value)}>
-                <option value="">Sin cliente</option>
-                {clientes.map((c) => (
-                  <option key={c.id} value={c.id}>{c.nombre}</option>
-                ))}
-              </select>
-            </label>
+          {tipo === 'gasto' && proyectoFijo && (
+            <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--topo-claro)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+              Este gasto se vinculará al proyecto: <strong>{proyectoFijo.nombre}</strong>
+            </p>
+          )}
+
+          {tipo === 'gasto' && !proyectoFijo && clientes.length > 0 && (
+            <>
+              <label className={styles.label}>Vincular a cliente (opcional)
+                <select className={styles.select} value={clienteId} onChange={(e) => setClienteId(e.target.value)}>
+                  <option value="">Sin cliente</option>
+                  {clientes.map((c) => (
+                    <option key={c.id} value={c.id}>{c.nombre}</option>
+                  ))}
+                </select>
+              </label>
+              {/*
+               * Selector de proyecto — solo aparece con un cliente elegido
+               * que tenga algún proyecto. Con 2+ proyectos NUNCA se
+               * preselecciona ninguno (incremento "Cliente ≠ Proyecto",
+               * 20/08/2026): es preferible una factura pendiente de
+               * vincular a un proyecto concreto que vinculada al que no
+               * es. El aviso de abajo deja claro qué va a pasar si se
+               * deja sin elegir.
+               */}
+              {clienteId && proyectosDelCliente.length > 0 && (
+                <label className={styles.label}>Proyecto {proyectosDelCliente.length > 1 ? '*' : '(opcional)'}
+                  <select className={styles.select} value={proyectoId} onChange={(e) => setProyectoId(e.target.value)}>
+                    <option value="">{proyectosDelCliente.length > 1 ? 'Selecciona un proyecto…' : 'Sin proyecto'}</option>
+                    {proyectosDelCliente.map((p) => (
+                      <option key={p.id} value={p.id}>{p.proyecto || 'Proyecto sin nombre'} — {etiquetaEstado[p.estado as keyof typeof etiquetaEstado] ?? p.estado}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {clienteId && proyectosDelCliente.length > 1 && !proyectoId && (
+                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--ocre, #a67c00)' }}>
+                  Este cliente tiene varios proyectos — si no eliges uno, el gasto se guardará sin vincular a ningún proyecto (nunca se adivina cuál).
+                </p>
+              )}
+              {clienteId && proyectosDelCliente.length === 0 && (
+                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--topo-claro)' }}>Este cliente todavía no tiene ningún proyecto.</p>
+              )}
+            </>
           )}
 
           <button type="button" className={styles.btn} style={{ alignSelf: 'flex-start', fontSize: '0.78rem', padding: '0.35rem 0' }}

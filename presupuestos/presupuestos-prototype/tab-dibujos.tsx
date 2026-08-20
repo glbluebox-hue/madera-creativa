@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import type { Cliente, Dibujo } from './types.js';
+import type { Proyecto, Dibujo } from './types.js';
 import { useDibujos } from './use-dibujos.js';
 import { useCarpetas } from './use-carpetas.js';
 import { EditorDibujo } from './editor-dibujo.js';
@@ -8,9 +8,9 @@ import { formatoFecha } from './calculos.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
 
-/** Props del apartado "Dibujos" de la ficha de un cliente. */
+/** Props del apartado "Dibujos" de la ficha de un proyecto. */
 export type TabDibujosProps = {
-  cliente: Cliente;
+  proyecto: Proyecto;
 };
 
 const IconoDibujo = ({ s = 40 }: { s?: number }) => (
@@ -46,9 +46,14 @@ const SIN_CARPETA = '';
  * entre vista de carpetas, contenido de una carpeta y resultados de
  * búsqueda — así cambiar de carpeta no dispara peticiones nuevas.
  */
-export function TabDibujos({ cliente }: TabDibujosProps) {
-  const { dibujos, cargando: cargandoDibujos, guardar, borrar, duplicar } = useDibujos(true, { clienteId: cliente.id });
-  const { carpetas, cargando: cargandoCarpetas, crear, renombrar: renombrarCarpeta, borrar: borrarCarpetaApi } = useCarpetas(true, cliente.id);
+export function TabDibujos({ proyecto }: TabDibujosProps) {
+  // El parámetro sigue llamándose `clienteId` en estos hooks/API — aquí se
+  // le pasa el id del PROYECTO (incremento "Cliente ≠ Proyecto",
+  // 20/08/2026), que es la clave real de aislamiento entre los distintos
+  // trabajos de un mismo cliente (mismo criterio que la migración: el
+  // `clienteId` guardado en Dibujo/Carpeta ya apuntaba a este id).
+  const { dibujos, cargando: cargandoDibujos, guardar, borrar, duplicar } = useDibujos(true, { clienteId: proyecto.id });
+  const { carpetas, cargando: cargandoCarpetas, crear, renombrar: renombrarCarpeta, borrar: borrarCarpetaApi } = useCarpetas(true, proyecto.id);
 
   const [carpetaId, setCarpetaId] = useState<string | null>(null); // null = vista de carpetas
   const [busqueda, setBusqueda] = useState('');
@@ -142,7 +147,7 @@ export function TabDibujos({ cliente }: TabDibujosProps) {
     return (
       <EditorDibujo
         dibujo={editando.dibujo}
-        clienteId={cliente.id}
+        clienteId={proyecto.id}
         carpetaId={carpetaId ?? SIN_CARPETA}
         onVolver={() => setEditando(null)}
         onGuardar={async (d) => { await guardar(d); setEditando(null); }}

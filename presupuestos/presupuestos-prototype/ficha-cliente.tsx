@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { Cliente, Movimiento, RegistroHoras, Adjunto, Factura, Proveedor } from './types.js';
+import type { Cliente, Proyecto, Movimiento, RegistroHoras, Adjunto, Factura, Proveedor } from './types.js';
 import * as api from './api.js';
 import { GaleriaFotos } from './galeria-fotos.js';
 import type { FotoProyecto } from './galeria-fotos.js';
@@ -25,10 +25,17 @@ import { TabContratos } from './tab-contratos.js';
 import type { Empresa } from './use-empresa.js';
 import styles from './styles.module.css';
 
-/** Props de la ficha detallada de un cliente. */
+/**
+ * Props de la ficha detallada de un proyecto (incremento "Cliente ≠
+ * Proyecto", 20/08/2026 — antes esta pantalla mostraba un `Cliente`
+ * completo, que mezclaba identidad y datos del trabajo en el mismo
+ * objeto; ahora recibe los dos por separado).
+ */
 export type FichaClienteProps = {
-  /** Cliente a mostrar. */
+  /** Cliente (identidad) al que pertenece el proyecto. */
   cliente: Cliente;
+  /** Proyecto/expediente a mostrar. */
+  proyecto: Proyecto;
   /** Lista completa de clientes para el escáner. */
   clientes?: { id: string; nombre: string }[];
   /** Lista de proveedores para desplegable y vinculación automática. */
@@ -41,11 +48,13 @@ export type FichaClienteProps = {
   onActualizarEmpresa: (cambios: Partial<Empresa>) => void;
   /** Volver a la lista. */
   onVolver: () => void;
-  /** Actualizar el cliente completo. */
-  onActualizar: (cliente: Cliente) => void;
-  /** Borra por completo este cliente/proyecto (con confirmación) y vuelve a la lista. */
+  /** Actualiza los datos de identidad del cliente (nombre/teléfono/email). */
+  onActualizarCliente: (cliente: Cliente) => void;
+  /** Actualiza los datos propios del proyecto. */
+  onActualizarProyecto: (proyecto: Proyecto) => void;
+  /** Borra por completo este proyecto (con confirmación) y vuelve a la lista — nunca borra al cliente ni sus otros proyectos. */
   onBorrar?: (id: string) => void;
-  /** Guardar una factura de gasto vinculada a este cliente. */
+  /** Guardar una factura de gasto vinculada a este proyecto. */
   onGuardarFactura?: (f: Factura) => void;
   /** Crear un nuevo proveedor si no existe al guardar la factura. */
   onCrearProveedor?: (p: Omit<Proveedor, 'id' | 'creado'>) => Proveedor;
@@ -65,91 +74,93 @@ const PESTANAS: { id: Pestana; label: string }[] = [
 ];
 
 /**
- * Ficha completa de un cliente, organizada por pestañas (Dirección
+ * Ficha completa de un proyecto, organizada por pestañas (Dirección
  * Creativa): Resumen, Proyectos (fotos, medidas, documentos, datos de
- * acceso), Presupuestos (ingresos/gastos/horas/margen), Facturas y Notas.
- * Ninguna función existente se ha quitado — solo se ha reorganizado.
+ * acceso), Control de gasto (ingresos/gastos/horas/margen — exclusivos de
+ * ESTE proyecto), Facturas y Notas. Ninguna función existente se ha
+ * quitado — solo se ha reorganizado (incremento "Cliente ≠ Proyecto").
  */
-export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa, privado, onActualizarEmpresa, onVolver, onActualizar, onBorrar, onGuardarFactura, onCrearProveedor }: FichaClienteProps) {
+export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [], empresa, privado, onActualizarEmpresa, onVolver, onActualizarCliente, onActualizarProyecto, onBorrar, onGuardarFactura, onCrearProveedor }: FichaClienteProps) {
   const [pestana, setPestana] = useState<Pestana>('resumen');
   /** Contador-disparador: cada incremento fuerza `TabDatos` a abrirse en modo edición (botón "Editar" de la cabecera, ver más abajo). */
   const [abrirEdicionDatos, setAbrirEdicionDatos] = useState(0);
   const editarDatos = () => { setPestana('proyectos'); setAbrirEdicionDatos((n) => n + 1); };
   const [escanerAbierto, setEscanerAbierto] = useState(false);
-  const [facturasCliente, setFacturasCliente] = useState<Factura[]>([]);
+  const [facturasProyecto, setFacturasProyecto] = useState<Factura[]>([]);
   // Los adjuntos ya no llegan con la ficha (ver comentario en api.ts) — se
   // piden aparte para que abrir la ficha no dependa de transferir varios MB.
-  const [adjuntosCliente, setAdjuntosCliente] = useState<Adjunto[]>([]);
+  const [adjuntosProyecto, setAdjuntosProyecto] = useState<Adjunto[]>([]);
   useEffect(() => {
-    api.obtenerAdjuntosCliente(cliente.id).then(setAdjuntosCliente).catch(() => setAdjuntosCliente([]));
-  }, [cliente.id]);
+    api.obtenerAdjuntosProyecto(proyecto.id).then(setAdjuntosProyecto).catch(() => setAdjuntosProyecto([]));
+  }, [proyecto.id]);
 
   /**
-   * Pide sus propios gastos al servidor en vez de recibir `facturas`
-   * completo por props (Incremento 1.5): con la lista general de facturas
-   * paginada, ya no hay garantía de que el gasto de este proyecto esté en
-   * la página cargada.
+   * Pide sus propios gastos al servidor filtrando por `proyectoId` — nunca
+   * por `clienteId` (incremento "Cliente ≠ Proyecto", 20/08/2026): antes
+   * de este incremento mostraba TODAS las facturas del cliente, mezclando
+   * las de sus distintos proyectos.
    */
-  const cargarFacturasCliente = useCallback(() => {
-    api.obtenerFacturasDeCliente(cliente.id)
-      .then((todas) => setFacturasCliente(todas.filter((f) => f.tipo === 'gasto')))
-      .catch(() => setFacturasCliente([]));
-  }, [cliente.id]);
+  const cargarFacturasProyecto = useCallback(() => {
+    api.obtenerFacturasDeProyecto(proyecto.id)
+      .then((todas) => setFacturasProyecto(todas.filter((f) => f.tipo === 'gasto')))
+      .catch(() => setFacturasProyecto([]));
+  }, [proyecto.id]);
 
-  useEffect(() => { cargarFacturasCliente(); }, [cargarFacturasCliente]);
+  useEffect(() => { cargarFacturasProyecto(); }, [cargarFacturasProyecto]);
 
-  const totalFacturasGasto = facturasCliente.reduce((s, f) => s + f.importe, 0);
-  const r = calcularResumen(cliente);
+  const totalFacturasGasto = facturasProyecto.reduce((s, f) => s + f.importe, 0);
+  const r = calcularResumen(proyecto);
 
   /** Guarda la factura, vincula proveedor automáticamente si el nombre coincide con uno existente, y recarga la lista. */
   const guardarFacturaConProveedor = (f: Factura) => {
     autoCrearProveedorDeFactura(f, proveedores, onCrearProveedor);
     onGuardarFactura?.(f);
-    cargarFacturasCliente();
+    cargarFacturasProyecto();
   };
 
   /**
    * Movimientos, tareas, estado y presupuesto usan sus propias rutas
-   * quirúrgicas (Hardening Fase 2) en vez de reenviar el cliente completo
+   * quirúrgicas (Hardening Fase 2) en vez de reenviar el proyecto completo
    * — así una edición en esta ficha nunca puede pisar una escritura
    * automática (aceptar presupuesto, sincronizar factura) hecha mientras
-   * esta pantalla estaba abierta con datos desactualizados. `onActualizar`
-   * sigue llamándose con la respuesta fresca del servidor para refrescar
-   * la lista/caché local, igual que ya hace el resto de la app.
+   * esta pantalla estaba abierta con datos desactualizados.
+   * `onActualizarProyecto` sigue llamándose con la respuesta fresca del
+   * servidor para refrescar la lista/caché local, igual que ya hace el
+   * resto de la app.
    */
   const anadirMovimiento = (m: Movimiento) => {
     const { id: _id, facturaId: _facturaId, ...datos } = m;
-    api.anadirMovimientoCliente(cliente.id, datos).then(onActualizar);
+    api.anadirMovimientoProyecto(proyecto.id, datos).then(onActualizarProyecto);
   };
 
   const borrarMovimiento = (id: string) =>
-    api.borrarMovimientoCliente(cliente.id, id).then(onActualizar);
+    api.borrarMovimientoProyecto(proyecto.id, id).then(onActualizarProyecto);
 
   const editarMovimiento = (m: Movimiento) => {
     const { id, facturaId: _facturaId, ...datos } = m;
-    api.editarMovimientoCliente(cliente.id, id, datos).then(onActualizar);
+    api.editarMovimientoProyecto(proyecto.id, id, datos).then(onActualizarProyecto);
   };
 
   const anadirHoras = (h: RegistroHoras) =>
-    onActualizar({ ...cliente, horas: [...cliente.horas, h] });
+    onActualizarProyecto({ ...proyecto, horas: [...proyecto.horas, h] });
 
   const borrarHoras = (id: string) =>
-    onActualizar({ ...cliente, horas: cliente.horas.filter((x) => x.id !== id) });
+    onActualizarProyecto({ ...proyecto, horas: proyecto.horas.filter((x) => x.id !== id) });
 
   const anadirAdjunto = (a: Adjunto) => {
-    const nuevos = [...adjuntosCliente, a];
-    setAdjuntosCliente(nuevos);
-    onActualizar({ ...cliente, adjuntos: nuevos });
+    const nuevos = [...adjuntosProyecto, a];
+    setAdjuntosProyecto(nuevos);
+    onActualizarProyecto({ ...proyecto, adjuntos: nuevos });
   };
 
   const borrarAdjunto = (id: string) => {
-    const nuevos = adjuntosCliente.filter((x) => x.id !== id);
-    setAdjuntosCliente(nuevos);
-    onActualizar({ ...cliente, adjuntos: nuevos });
+    const nuevos = adjuntosProyecto.filter((x) => x.id !== id);
+    setAdjuntosProyecto(nuevos);
+    onActualizarProyecto({ ...proyecto, adjuntos: nuevos });
   };
 
-  const cambiarEstado = (estado: Cliente['estado']) =>
-    api.cambiarEstadoCliente(cliente.id, estado).then(onActualizar);
+  const cambiarEstado = (estado: Proyecto['estado']) =>
+    api.cambiarEstadoProyecto(proyecto.id, estado).then(onActualizarProyecto);
 
   return (
     <div>
@@ -168,7 +179,7 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa
         Volver a clientes
       </button>
 
-      {/* Cabecera con datos del cliente */}
+      {/* Cabecera con datos del cliente/proyecto */}
       <div className={styles.fichaCabecera}>
         <div className={styles.barraSeccion} style={{ marginBottom: 0 }}>
           <div className={styles.fichaIdentidad}>
@@ -178,18 +189,18 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa
             <div>
               <h2 className={styles.h2} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                 {cliente.nombre}
-                <span className={`${styles.pillEstado} ${grupoEstado[cliente.estado] === 'curso' ? styles.pillEstadoCurso : styles.pillEstadoFin}`}>
-                  {etiquetaEstado[cliente.estado]}
+                <span className={`${styles.pillEstado} ${grupoEstado[proyecto.estado] === 'curso' ? styles.pillEstadoCurso : styles.pillEstadoFin}`}>
+                  {etiquetaEstado[proyecto.estado]}
                 </span>
               </h2>
-              <p className={styles.fichaDesde}>Cliente desde {formatoFecha(cliente.creado)}</p>
+              <p className={styles.fichaDesde}>{proyecto.proyecto || 'Proyecto'} · desde {formatoFecha(proyecto.creado)}</p>
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
             <select
               className={styles.select}
-              value={cliente.estado}
-              onChange={(e) => cambiarEstado(e.target.value as Cliente['estado'])}
+              value={proyecto.estado}
+              onChange={(e) => cambiarEstado(e.target.value as Proyecto['estado'])}
               title="Cambiar estado"
             >
               <option value="presupuestado">{etiquetaEstado.presupuestado}</option>
@@ -204,8 +215,8 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa
             {onBorrar && (
               <ConfirmarBorrado
                 label="Eliminar"
-                titulo="Eliminar este cliente y todo su proyecto"
-                onConfirmar={() => onBorrar(cliente.id)}
+                titulo="Eliminar este proyecto"
+                onConfirmar={() => onBorrar(proyecto.id)}
               />
             )}
           </div>
@@ -224,10 +235,10 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa
               {cliente.email}
             </div>
           )}
-          {cliente.direccion && (
+          {proyecto.direccion && (
             <div className={styles.fichaContactoItem}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 1 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
-              {cliente.direccion}
+              {proyecto.direccion}
             </div>
           )}
         </div>
@@ -249,9 +260,9 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa
       {/* ── RESUMEN ── */}
       {pestana === 'resumen' && (
         <TabResumen
-          cliente={cliente}
-          facturasGasto={facturasCliente}
-          adjuntos={adjuntosCliente}
+          proyecto={proyecto}
+          facturasGasto={facturasProyecto}
+          adjuntos={adjuntosProyecto}
           totalIngresos={r.totalIngresos}
           privado={privado}
           onIrAProyecto={() => setPestana('proyectos')}
@@ -263,21 +274,21 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa
       {pestana === 'proyectos' && (
         <div className={styles.tabPanel}>
           <GaleriaFotos
-            fotos={cliente.fotos || []}
-            onAnadir={(f: FotoProyecto) => onActualizar({ ...cliente, fotos: [...(cliente.fotos || []), f] })}
-            onBorrar={(id: string) => onActualizar({ ...cliente, fotos: (cliente.fotos || []).filter((f) => f.id !== id) })}
+            fotos={proyecto.fotos || []}
+            onAnadir={(f: FotoProyecto) => onActualizarProyecto({ ...proyecto, fotos: [...(proyecto.fotos || []), f] })}
+            onBorrar={(id: string) => onActualizarProyecto({ ...proyecto, fotos: (proyecto.fotos || []).filter((f) => f.id !== id) })}
           />
           <PanelAdjuntos
-            adjuntos={adjuntosCliente}
+            adjuntos={adjuntosProyecto}
             onAnadir={anadirAdjunto}
             onBorrar={borrarAdjunto}
           />
-          <TabMediciones cliente={cliente} onActualizar={onActualizar} />
-          <TabDatos cliente={cliente} onActualizar={onActualizar} abrirEdicion={abrirEdicionDatos} />
+          <TabMediciones proyecto={proyecto} onActualizar={onActualizarProyecto} />
+          <TabDatos cliente={cliente} proyecto={proyecto} onActualizarCliente={onActualizarCliente} onActualizarProyecto={onActualizarProyecto} abrirEdicion={abrirEdicionDatos} />
         </div>
       )}
 
-      {/* ── PRESUPUESTOS: ingresos/gastos, horas, margen ── */}
+      {/* ── CONTROL DE GASTO: ingresos/gastos, horas, margen — exclusivos de este proyecto ── */}
       {pestana === 'presupuestos' && (
         <div className={styles.tabPanel}>
           <div className={styles.kpiGrid}>
@@ -323,20 +334,20 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa
           </div>
 
           <TablaMovimientos
-            movimientos={cliente.movimientos}
+            movimientos={proyecto.movimientos}
             onAnadir={anadirMovimiento}
             onBorrar={borrarMovimiento}
             onEditar={editarMovimiento}
           />
 
           <TablaHoras
-            horas={cliente.horas}
-            tarifaHora={cliente.tarifaHora}
+            horas={proyecto.horas}
+            tarifaHora={proyecto.tarifaHora}
             onAnadir={anadirHoras}
             onBorrar={borrarHoras}
           />
 
-          <TablaMargen resumen={r} presupuesto={cliente.presupuesto} privado={privado} />
+          <TablaMargen resumen={r} presupuesto={proyecto.presupuesto} privado={privado} />
         </div>
       )}
 
@@ -356,14 +367,14 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa
                 </button>
               )}
             </div>
-            {facturasCliente.length === 0 ? (
+            {facturasProyecto.length === 0 ? (
               <p style={{ color: 'var(--topo-claro)', fontSize: '0.85rem', margin: 0 }}>No hay facturas de gasto vinculadas a este proyecto.</p>
             ) : (
               <>
                 <table className={styles.tabla} style={{ width: '100%', marginBottom: '0.75rem' }}>
                   <thead><tr><th>Fecha</th><th>Proveedor / Concepto</th><th style={{ textAlign: 'right' }}>Importe</th></tr></thead>
                   <tbody>
-                    {facturasCliente.map((f) => (
+                    {facturasProyecto.map((f) => (
                       <tr key={f.id}>
                         <td>{f.fecha}</td>
                         <td><strong>{f.proveedor || '—'}</strong>{f.concepto && <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>{f.concepto}</span>}</td>
@@ -384,25 +395,25 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa
       {/* ── NOTAS y checklist de tareas ── */}
       {pestana === 'notas' && (
         <div className={styles.tabPanel}>
-          <TabTareas cliente={cliente} onActualizar={onActualizar} />
-          <TabNotas cliente={cliente} onActualizar={onActualizar} />
+          <TabTareas proyecto={proyecto} onActualizar={onActualizarProyecto} />
+          <TabNotas cliente={cliente} proyecto={proyecto} onActualizar={onActualizarProyecto} />
         </div>
       )}
 
-      {/* ── DIBUJOS: repositorio de documentación gráfica del cliente (Fase 2.2) ── */}
-      {pestana === 'dibujos' && <TabDibujos cliente={cliente} />}
+      {/* ── DIBUJOS: repositorio de documentación gráfica del proyecto (Fase 2.2) ── */}
+      {pestana === 'dibujos' && <TabDibujos proyecto={proyecto} />}
 
       {/* ── PRESUPUESTOS IA: presupuestos narrativos creados/modificados por el asistente (Fase 5) ── */}
       {pestana === 'presupuestosIA' && (
         <div className={styles.tabPanel}>
-          <TabPresupuestosIA cliente={cliente} empresa={empresa} onActualizarEmpresa={onActualizarEmpresa} onActualizarCliente={onActualizar} />
+          <TabPresupuestosIA cliente={cliente} proyecto={proyecto} empresa={empresa} onActualizarEmpresa={onActualizarEmpresa} onActualizarProyecto={onActualizarProyecto} />
         </div>
       )}
 
       {/* ── CONTRATOS: segundo tipo de documento del Motor Documental (Incremento 12) — mismo editor, mismo núcleo ── */}
       {pestana === 'contratos' && (
         <div className={styles.tabPanel}>
-          <TabContratos cliente={cliente} empresa={empresa} onActualizarEmpresa={onActualizarEmpresa} />
+          <TabContratos cliente={cliente} proyecto={proyecto} empresa={empresa} onActualizarEmpresa={onActualizarEmpresa} />
         </div>
       )}
 
@@ -410,7 +421,8 @@ export function FichaCliente({ cliente, clientes = [], proveedores = [], empresa
         <EscanerFactura
           clientes={clientes}
           proveedores={proveedores}
-          onGuardar={(f) => { guardarFacturaConProveedor({ ...f, clienteId: cliente.id, tipo: 'gasto' }); setEscanerAbierto(false); }}
+          proyectoFijo={{ id: proyecto.id, clienteId: cliente.id, nombre: proyecto.proyecto || cliente.nombre }}
+          onGuardar={(f) => { guardarFacturaConProveedor({ ...f, clienteId: cliente.id, proyectoId: proyecto.id, tipo: 'gasto' }); setEscanerAbierto(false); }}
           onCerrar={() => setEscanerAbierto(false)}
         />
       )}

@@ -3,7 +3,7 @@ import { SeccionPresupuestos } from './seccion-presupuestos.js';
 import { PresupuestosListaGlobal } from './presupuestos-lista-global.js';
 import { PlantillasVista } from './plantillas-vista.js';
 import type { Empresa } from './use-empresa.js';
-import type { Cliente } from './types.js';
+import type { Proyecto } from './types.js';
 import styles from './styles.module.css';
 
 export type SeccionPresupuestosContenedorProps = {
@@ -11,8 +11,8 @@ export type SeccionPresupuestosContenedorProps = {
   clientes: { id: string; nombre: string }[];
   empresa: Empresa;
   onActualizarEmpresa: (cambios: Partial<Empresa>) => void;
-  /** Crea una ficha de cliente real sin salir de esta sección — usado por "+ Nuevo cliente" dentro del selector de "+ Crear presupuesto". */
-  onCrearCliente: (cliente: Cliente) => void;
+  /** Crea un cliente y su primer proyecto reales sin salir de esta sección — usado por "+ Nuevo cliente" dentro del selector de "+ Crear presupuesto". */
+  onCrearProyecto: (proyecto: Proyecto) => void;
 };
 
 type SubPestana = 'resumen' | 'documentos' | 'plantillas';
@@ -31,7 +31,7 @@ type SubPestana = 'resumen' | 'documentos' | 'plantillas';
  * resumen (de solo lectura, sin ningún botón de creación), dejando el
  * editor del Motor Documental sin punto de entrada visible.
  */
-export function SeccionPresupuestosContenedor({ onAbrirCliente, clientes, empresa, onActualizarEmpresa, onCrearCliente }: SeccionPresupuestosContenedorProps) {
+export function SeccionPresupuestosContenedor({ onAbrirCliente, clientes, empresa, onActualizarEmpresa, onCrearProyecto }: SeccionPresupuestosContenedorProps) {
   const [pestana, setPestana] = useState<SubPestana>('documentos');
 
   return (
@@ -64,7 +64,7 @@ export function SeccionPresupuestosContenedor({ onAbrirCliente, clientes, empres
           empresa={empresa}
           onActualizarEmpresa={onActualizarEmpresa}
           onAbrirCliente={onAbrirCliente}
-          onCrearCliente={onCrearCliente}
+          onCrearProyecto={onCrearProyecto}
         />
       )}
       {pestana === 'plantillas' && (

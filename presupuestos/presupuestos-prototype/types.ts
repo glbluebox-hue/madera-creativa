@@ -236,18 +236,41 @@ export type Carpeta = {
   actualizadoEn: string;
 };
 
-/** Ficha completa de un cliente / proyecto. */
+/**
+ * Identidad de un cliente — solo datos de contacto. Hasta el incremento
+ * "Cliente ≠ Proyecto" (especificación del usuario, 20/08/2026) este tipo
+ * tenía además todos los campos de un trabajo concreto; ahora esos viven
+ * en `Proyecto` (justo abajo) — un cliente puede tener tantos proyectos
+ * como trabajos reales tenga, cada uno con su propia gestión económica y
+ * documental, sin mezclarse entre sí.
+ */
 export type Cliente = {
   /** Identificador único del cliente. */
   id: string;
   /** Nombre del cliente. */
   nombre: string;
-  /** Nombre o descripción del proyecto. */
-  proyecto: string;
   /** Teléfono de contacto. */
   telefono: string;
   /** Email de contacto. */
   email: string;
+  /** Fecha de alta en formato ISO. */
+  creado: string;
+};
+
+/**
+ * Un proyecto/expediente de trabajo — mismo shape que el antiguo `Cliente`
+ * menos los campos de identidad, más `clienteId`. Gastos, ingresos,
+ * mediciones, tareas, fotos, adjuntos y dibujos son exclusivos de CADA
+ * proyecto: crear un proyecto nuevo para un cliente ya existente nunca
+ * copia nada de otro proyecto suyo.
+ */
+export type Proyecto = {
+  /** Identificador único del proyecto. */
+  id: string;
+  /** Cliente (identidad) al que pertenece. */
+  clienteId: string;
+  /** Nombre o descripción del proyecto. */
+  proyecto: string;
   /** Dirección del lugar del trabajo. */
   direccion: string;
   /** Presupuesto estimado acordado con el cliente (en euros). */

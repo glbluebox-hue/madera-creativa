@@ -1,4 +1,4 @@
-import type { Cliente, Factura, Proveedor, Producto, Dibujo, Carpeta, GastoPeriodico, Movimiento, Tarea } from './types.js';
+import type { Cliente, Proyecto, Factura, Proveedor, Producto, Dibujo, Carpeta, GastoPeriodico, Movimiento, Tarea } from './types.js';
 import type { NotaMC } from './notas-modelo.js';
 import type { CodigoQRMC } from './codigos-qr-modelo.js';
 import type { PresupuestoMC, PresupuestoPublico } from './presupuestos-modelo.js';
@@ -209,6 +209,19 @@ export async function obtenerAniosConFacturas(): Promise<number[]> {
 export async function obtenerFacturasDeCliente(clienteId: string): Promise<Factura[]> {
   const res = await fetchConAuth(`/facturas?clienteId=${encodeURIComponent(clienteId)}`);
   await comprobarRespuesta(res, 'No se pudieron cargar las facturas del cliente');
+  const datos: Pagina<Factura> = await res.json();
+  return datos.items;
+}
+
+/**
+ * Facturas de UN proyecto concreto (incremento "Cliente ≠ Proyecto",
+ * 20/08/2026) — a diferencia de `obtenerFacturasDeCliente`, nunca mezcla
+ * las facturas de otro proyecto del mismo cliente. Es lo que debe usar la
+ * ficha de proyecto.
+ */
+export async function obtenerFacturasDeProyecto(proyectoId: string): Promise<Factura[]> {
+  const res = await fetchConAuth(`/facturas?proyectoId=${encodeURIComponent(proyectoId)}`);
+  await comprobarRespuesta(res, 'No se pudieron cargar las facturas del proyecto');
   const datos: Pagina<Factura> = await res.json();
   return datos.items;
 }
@@ -447,36 +460,19 @@ export async function borrarCarpeta(id: string): Promise<void> {
   await comprobarRespuestaConMotivo(res, 'No se pudo borrar la carpeta');
 }
 
-/* ===== CLIENTES ===== */
+/* ===== CLIENTES (identidad) ===== */
+// Incremento "Cliente ≠ Proyecto" (20/08/2026): un Cliente es solo
+// nombre/teléfono/email. La gestión de un trabajo concreto vive en
+// Proyecto (sección siguiente) — ver types.ts para el porqué completo.
 
-/**
- * Recupera una ficha completa de cliente por su id (incluye adjuntos).
- * @param id Identificador del cliente.
- * @returns El cliente completo.
- */
+/** Recupera un cliente (identidad) por su id. */
 export async function obtenerCliente(id: string): Promise<Cliente> {
   const res = await fetchConAuth(`/clientes/${id}`);
   await comprobarRespuesta(res, 'No se pudo cargar el cliente');
   return res.json();
 }
 
-/**
- * Recupera solo los adjuntos de un cliente — aparte de `obtenerCliente`,
- * que ya no los incluye (algunos clientes reales tienen adjuntos
- * históricos de varios MB; pedirlos aparte evita que abrir la ficha
- * tarde tanto que el proxy de desarrollo corte la conexión).
- * @param id Identificador del cliente.
- */
-export async function obtenerAdjuntosCliente(id: string): Promise<Cliente['adjuntos']> {
-  const res = await fetchConAuth(`/clientes/${id}/adjuntos`);
-  await comprobarRespuesta(res, 'No se pudieron cargar los adjuntos');
-  return res.json();
-}
-
-/**
- * Recupera una página de fichas de cliente desde el servidor.
- * @returns Página de clientes.
- */
+/** Recupera una página de clientes desde el servidor. */
 export async function obtenerClientes(pagina = 1, limite = 30): Promise<Pagina<Cliente>> {
   const res = await fetchConAuth(`/clientes?pagina=${pagina}&limite=${limite}`);
   await comprobarRespuesta(res, 'No se pudieron cargar los clientes'); // incluye código HTTP para detectar 401
@@ -485,7 +481,8 @@ export async function obtenerClientes(pagina = 1, limite = 30): Promise<Pagina<C
 
 /**
  * Recupera solo `id`+`nombre` de todos los clientes, sin paginar — para
- * selectores (p. ej. el desplegable de cliente al crear una factura).
+ * selectores (desplegable de cliente al crear una factura, selector
+ * "cliente existente" al crear un proyecto nuevo).
  */
 export async function obtenerNombresClientes(): Promise<{ id: string; nombre: string }[]> {
   const res = await fetchConAuth('/clientes/nombres');
@@ -493,24 +490,18 @@ export async function obtenerNombresClientes(): Promise<{ id: string; nombre: st
   return res.json();
 }
 
-/** Cliente sin sus campos pesados (fotos/adjuntos/dibujos/movimientos), para vistas que necesitan el conjunto completo. */
-export type ClienteResumen = { id: string; nombre: string; proyecto: string; estado: string; presupuesto: number; creado: string };
-
-/**
- * Recupera un resumen ligero de todos los clientes, sin paginar — para
- * `SeccionPresupuestos`, que organiza el conjunto completo por año y carpeta.
- */
-export async function obtenerResumenClientes(): Promise<ClienteResumen[]> {
-  const res = await fetchConAuth('/clientes/resumen');
-  await comprobarRespuesta(res, 'No se pudieron cargar los presupuestos');
+/** Crea un cliente nuevo (solo identidad) — el primer proyecto se crea aparte con `crearProyecto`. */
+export async function crearCliente(datos: { nombre: string; telefono?: string; email?: string }): Promise<Cliente> {
+  const res = await fetchConAuth('/clientes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(datos),
+  });
+  await comprobarRespuesta(res, 'No se pudo crear el cliente');
   return res.json();
 }
 
-/**
- * Crea o actualiza una ficha de cliente en el servidor.
- * @param cliente La ficha del cliente a guardar.
- * @returns El cliente guardado.
- */
+/** Edita los datos de identidad de un cliente ya existente. */
 export async function guardarCliente(cliente: Cliente): Promise<Cliente> {
   const res = await fetchConAuth(`/clientes/${cliente.id}`, {
     method: 'PUT',
@@ -521,13 +512,92 @@ export async function guardarCliente(cliente: Cliente): Promise<Cliente> {
   return res.json();
 }
 
+/** Borra un cliente del servidor (falla si todavía tiene proyectos asociados). */
+export async function borrarCliente(id: string): Promise<void> {
+  const res = await fetchConAuth(`/clientes/${id}`, { method: 'DELETE' });
+  await comprobarRespuesta(res, 'No se pudo borrar el cliente');
+}
+
+/* ===== PROYECTOS (expedientes de trabajo) ===== */
+
+/** Recupera una ficha completa de proyecto por su id (incluye adjuntos). */
+export async function obtenerProyecto(id: string): Promise<Proyecto> {
+  const res = await fetchConAuth(`/proyectos/${id}`);
+  await comprobarRespuesta(res, 'No se pudo cargar el proyecto');
+  return res.json();
+}
+
 /**
- * Rutas quirúrgicas dedicadas (Hardening Fase 2) — `guardarCliente` ya no
- * acepta cambios en movimientos/tareas/estado/presupuesto tras la
- * creación; estas son ahora la única forma de cambiarlos.
+ * Recupera solo los adjuntos de un proyecto — aparte de `obtenerProyecto`,
+ * que ya no los incluye (algunos proyectos reales tienen adjuntos
+ * históricos de varios MB; pedirlos aparte evita que abrir la ficha tarde
+ * tanto que el proxy de desarrollo corte la conexión).
  */
-export async function anadirMovimientoCliente(clienteId: string, m: Omit<Movimiento, 'id' | 'facturaId'>): Promise<Cliente> {
-  const res = await fetchConAuth(`/clientes/${clienteId}/movimientos`, {
+export async function obtenerAdjuntosProyecto(id: string): Promise<Proyecto['adjuntos']> {
+  const res = await fetchConAuth(`/proyectos/${id}/adjuntos`);
+  await comprobarRespuesta(res, 'No se pudieron cargar los adjuntos');
+  return res.json();
+}
+
+/** Recupera los proyectos de un cliente concreto — para el selector "cliente existente" y "otros proyectos de este cliente". */
+export async function obtenerProyectosDeCliente(clienteId: string): Promise<{ id: string; proyecto: string; estado: string; presupuesto: number; creado: string }[]> {
+  const res = await fetchConAuth(`/clientes/${clienteId}/proyectos`);
+  await comprobarRespuesta(res, 'No se pudieron cargar los proyectos del cliente');
+  return res.json();
+}
+
+/** Proyecto sin sus campos pesados (fotos/adjuntos/dibujos/movimientos), con el nombre del cliente ya resuelto — para vistas que necesitan el conjunto completo. */
+export type ProyectoResumen = {
+  id: string; clienteId: string; nombre: string; proyecto: string; estado: Proyecto['estado']; presupuesto: number; creado: string;
+  /** Solo para el panel principal ("Próximos montajes y mediciones") — únicas dos fechas que necesita sin pedir la ficha completa. */
+  fechaMontaje?: string; fechaMedicion?: string;
+};
+
+/** Recupera un resumen ligero de TODOS los proyectos, sin paginar — para `ListaClientes`/`SeccionPresupuestos`, que organizan el conjunto completo por año y carpeta. */
+export async function obtenerResumenProyectos(): Promise<ProyectoResumen[]> {
+  const res = await fetchConAuth('/proyectos/resumen');
+  await comprobarRespuesta(res, 'No se pudieron cargar los proyectos');
+  return res.json();
+}
+
+/**
+ * Crea un proyecto nuevo — para un cliente nuevo o ya existente, da igual
+ * (`clienteId` siempre lo decide quien llama). Empieza completamente en
+ * cero: nunca copia gastos/ingresos/documentos/mediciones/fotos/notas de
+ * otro proyecto del mismo cliente.
+ */
+export async function crearProyecto(datos: {
+  clienteId: string; proyecto?: string; direccion?: string; presupuesto?: number; tarifaHora?: number;
+  whatsapp?: string; ubicacion?: string; codigoPuerta?: string; planta?: string; ascensor?: boolean;
+  zonaCarga?: string; observacionesAcceso?: string; fechaMedicion?: string; fechaMontaje?: string;
+}): Promise<Proyecto> {
+  const res = await fetchConAuth('/proyectos', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(datos),
+  });
+  await comprobarRespuesta(res, 'No se pudo crear el proyecto');
+  return res.json();
+}
+
+/** Actualiza los campos propios de un proyecto ya existente (nombre del trabajo, dirección, presupuesto, tarifa, datos de acceso, fotos/adjuntos/dibujos). */
+export async function guardarProyecto(proyecto: Proyecto): Promise<Proyecto> {
+  const res = await fetchConAuth(`/proyectos/${proyecto.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(proyecto),
+  });
+  await comprobarRespuesta(res, 'No se pudo guardar el proyecto');
+  return res.json();
+}
+
+/**
+ * Rutas quirúrgicas dedicadas — `guardarProyecto` ya no acepta cambios en
+ * movimientos/tareas/estado/presupuesto; estas son la única forma de
+ * cambiarlos.
+ */
+export async function anadirMovimientoProyecto(proyectoId: string, m: Omit<Movimiento, 'id' | 'facturaId'>): Promise<Proyecto> {
+  const res = await fetchConAuth(`/proyectos/${proyectoId}/movimientos`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(m),
@@ -536,8 +606,8 @@ export async function anadirMovimientoCliente(clienteId: string, m: Omit<Movimie
   return res.json();
 }
 
-export async function editarMovimientoCliente(clienteId: string, movimientoId: string, m: Omit<Movimiento, 'id' | 'facturaId'>): Promise<Cliente> {
-  const res = await fetchConAuth(`/clientes/${clienteId}/movimientos/${movimientoId}`, {
+export async function editarMovimientoProyecto(proyectoId: string, movimientoId: string, m: Omit<Movimiento, 'id' | 'facturaId'>): Promise<Proyecto> {
+  const res = await fetchConAuth(`/proyectos/${proyectoId}/movimientos/${movimientoId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(m),
@@ -546,14 +616,14 @@ export async function editarMovimientoCliente(clienteId: string, movimientoId: s
   return res.json();
 }
 
-export async function borrarMovimientoCliente(clienteId: string, movimientoId: string): Promise<Cliente> {
-  const res = await fetchConAuth(`/clientes/${clienteId}/movimientos/${movimientoId}`, { method: 'DELETE' });
+export async function borrarMovimientoProyecto(proyectoId: string, movimientoId: string): Promise<Proyecto> {
+  const res = await fetchConAuth(`/proyectos/${proyectoId}/movimientos/${movimientoId}`, { method: 'DELETE' });
   await comprobarRespuesta(res, 'No se pudo borrar el movimiento');
   return res.json();
 }
 
-export async function guardarTareasCliente(clienteId: string, tareas: Tarea[]): Promise<Cliente> {
-  const res = await fetchConAuth(`/clientes/${clienteId}/tareas`, {
+export async function guardarTareasProyecto(proyectoId: string, tareas: Tarea[]): Promise<Proyecto> {
+  const res = await fetchConAuth(`/proyectos/${proyectoId}/tareas`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tareas }),
@@ -562,8 +632,8 @@ export async function guardarTareasCliente(clienteId: string, tareas: Tarea[]): 
   return res.json();
 }
 
-export async function cambiarEstadoCliente(clienteId: string, estado: Cliente['estado']): Promise<Cliente> {
-  const res = await fetchConAuth(`/clientes/${clienteId}/estado`, {
+export async function cambiarEstadoProyecto(proyectoId: string, estado: Proyecto['estado']): Promise<Proyecto> {
+  const res = await fetchConAuth(`/proyectos/${proyectoId}/estado`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ estado }),
@@ -572,8 +642,8 @@ export async function cambiarEstadoCliente(clienteId: string, estado: Cliente['e
   return res.json();
 }
 
-export async function cambiarPresupuestoCliente(clienteId: string, presupuesto: number): Promise<Cliente> {
-  const res = await fetchConAuth(`/clientes/${clienteId}/presupuesto`, {
+export async function cambiarPresupuestoProyecto(proyectoId: string, presupuesto: number): Promise<Proyecto> {
+  const res = await fetchConAuth(`/proyectos/${proyectoId}/presupuesto`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ presupuesto }),
@@ -582,13 +652,10 @@ export async function cambiarPresupuestoCliente(clienteId: string, presupuesto: 
   return res.json();
 }
 
-/**
- * Borra una ficha de cliente del servidor.
- * @param id Identificador del cliente.
- */
-export async function borrarCliente(id: string): Promise<void> {
-  const res = await fetchConAuth(`/clientes/${id}`, { method: 'DELETE' });
-  await comprobarRespuesta(res, 'No se pudo borrar el cliente');
+/** Borra un proyecto del servidor (no borra el cliente ni sus otros proyectos). */
+export async function borrarProyecto(id: string): Promise<void> {
+  const res = await fetchConAuth(`/proyectos/${id}`, { method: 'DELETE' });
+  await comprobarRespuesta(res, 'No se pudo borrar el proyecto');
 }
 
 /* ===== PROVEEDORES ===== */
@@ -775,6 +842,18 @@ export async function confirmarPropuestaIA(params: {
  */
 export async function obtenerPresupuestos(clienteId: string): Promise<PresupuestoMC[]> {
   const res = await fetchConAuth(`/presupuestos?clienteId=${encodeURIComponent(clienteId)}`);
+  await comprobarRespuesta(res, 'No se pudieron cargar los presupuestos');
+  return res.json();
+}
+
+/**
+ * Presupuestos de UN proyecto concreto (incremento "Cliente ≠ Proyecto",
+ * 20/08/2026) — a diferencia de `obtenerPresupuestos` (por cliente), nunca
+ * mezcla los presupuestos de otro proyecto del mismo cliente. Es lo que
+ * debe usar la ficha de proyecto.
+ */
+export async function obtenerPresupuestosDeProyecto(proyectoId: string): Promise<PresupuestoMC[]> {
+  const res = await fetchConAuth(`/presupuestos?proyectoId=${encodeURIComponent(proyectoId)}`);
   await comprobarRespuesta(res, 'No se pudieron cargar los presupuestos');
   return res.json();
 }

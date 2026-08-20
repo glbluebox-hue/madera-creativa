@@ -1,16 +1,24 @@
 import { useState, useEffect } from 'react';
-import type { Cliente } from './types.js';
+import type { Cliente, Proyecto } from './types.js';
 import { formatoEuro } from './calculos.js';
 import { ImporteInput } from './importe-input.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
 
-/** Props del panel de datos del cliente. */
+/** Datos combinados de identidad (Cliente) + proyecto, tal como los edita este formulario en un único sitio. */
+type FormDatos = Pick<Cliente, 'nombre' | 'telefono' | 'email'> &
+  Pick<Proyecto, 'proyecto' | 'direccion' | 'presupuesto' | 'tarifaHora' | 'whatsapp' | 'ubicacion' | 'codigoPuerta' | 'planta' | 'ascensor' | 'zonaCarga' | 'observacionesAcceso' | 'fechaMedicion' | 'fechaMontaje'>;
+
+/** Props del panel de datos del cliente/proyecto. */
 export type TabDatosProps = {
-  /** Cliente a mostrar/editar. */
+  /** Cliente (identidad) al que pertenece el proyecto. */
   cliente: Cliente;
-  /** Guarda los cambios del cliente. */
-  onActualizar: (cliente: Cliente) => void;
+  /** Proyecto a mostrar/editar. */
+  proyecto: Proyecto;
+  /** Guarda los cambios de identidad (nombre/teléfono/email) — incremento "Cliente ≠ Proyecto", 20/08/2026. */
+  onActualizarCliente: (cliente: Cliente) => void;
+  /** Guarda los cambios propios del proyecto (dirección, datos de acceso, fechas...). */
+  onActualizarProyecto: (proyecto: Proyecto) => void;
   /**
    * Cambia (cualquier valor distinto del anterior) para forzar la apertura
    * en modo edición desde fuera — usado por el botón "Editar" de la
@@ -20,59 +28,82 @@ export type TabDatosProps = {
   abrirEdicion?: number;
 };
 
+function formDesde(cliente: Cliente, proyecto: Proyecto): FormDatos {
+  return {
+    nombre: cliente.nombre, telefono: cliente.telefono, email: cliente.email,
+    proyecto: proyecto.proyecto, direccion: proyecto.direccion, presupuesto: proyecto.presupuesto, tarifaHora: proyecto.tarifaHora,
+    whatsapp: proyecto.whatsapp, ubicacion: proyecto.ubicacion, codigoPuerta: proyecto.codigoPuerta, planta: proyecto.planta,
+    ascensor: proyecto.ascensor, zonaCarga: proyecto.zonaCarga, observacionesAcceso: proyecto.observacionesAcceso,
+    fechaMedicion: proyecto.fechaMedicion, fechaMontaje: proyecto.fechaMontaje,
+  };
+}
+
 /**
- * Pestaña "Datos": muestra y permite editar todos los datos de contacto,
- * acceso a la obra y fechas clave del proyecto.
+ * Pestaña "Datos": muestra y permite editar los datos de contacto del
+ * cliente y, en el mismo formulario, los datos propios del proyecto
+ * (acceso a la obra, fechas clave, presupuesto estimado) — dos entidades
+ * distintas desde el incremento "Cliente ≠ Proyecto" (20/08/2026), pero se
+ * siguen editando juntas en una sola pantalla porque así es como el
+ * carpintero las piensa. Al guardar, cada mitad viaja a su propio destino.
  */
-export function TabDatos({ cliente, onActualizar, abrirEdicion }: TabDatosProps) {
+export function TabDatos({ cliente, proyecto, onActualizarCliente, onActualizarProyecto, abrirEdicion }: TabDatosProps) {
   const [edit, setEdit] = useState(false);
-  const [form, setForm] = useState<Cliente>(cliente);
+  const [form, setForm] = useState<FormDatos>(() => formDesde(cliente, proyecto));
 
   useEffect(() => {
-    if (abrirEdicion) { setForm(cliente); setEdit(true); }
+    if (abrirEdicion) { setForm(formDesde(cliente, proyecto)); setEdit(true); }
     // Solo debe reaccionar a que `abrirEdicion` cambie (un "disparador"),
-    // nunca a que cambien `cliente`/`abrirEdicion` fuente — si `cliente` se
-    // añadiera a las dependencias, cualquier guardado en segundo plano
+    // nunca a que cambien `cliente`/`proyecto`/`abrirEdicion` fuente — si se
+    // añadieran a las dependencias, cualquier guardado en segundo plano
     // reabriría el formulario solo.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abrirEdicion]);
 
-  const set = (campo: keyof Cliente, valor: unknown) =>
+  const set = (campo: keyof FormDatos, valor: unknown) =>
     setForm((f) => ({ ...f, [campo]: valor }));
 
   const guardar = () => {
-    // El presupuesto usa su propia ruta quirúrgica (Hardening Fase 2) —
-    // `onActualizar` (guardado genérico del cliente) ya no persiste este
-    // campo tras la creación, ver comentario en `ficha-cliente.tsx`.
-    if (form.presupuesto !== cliente.presupuesto) {
-      api.cambiarPresupuestoCliente(cliente.id, form.presupuesto || 0);
+    // El presupuesto usa su propia ruta quirúrgica — `onActualizarProyecto`
+    // (guardado genérico del proyecto) ya no persiste este campo tras la
+    // creación, ver comentario en `ficha-cliente.tsx`.
+    if (form.presupuesto !== proyecto.presupuesto) {
+      api.cambiarPresupuestoProyecto(proyecto.id, form.presupuesto || 0);
     }
-    onActualizar(form);
+    if (form.nombre !== cliente.nombre || form.telefono !== cliente.telefono || form.email !== cliente.email) {
+      onActualizarCliente({ ...cliente, nombre: form.nombre, telefono: form.telefono, email: form.email });
+    }
+    onActualizarProyecto({
+      ...proyecto,
+      proyecto: form.proyecto, direccion: form.direccion, presupuesto: form.presupuesto, tarifaHora: form.tarifaHora,
+      whatsapp: form.whatsapp, ubicacion: form.ubicacion, codigoPuerta: form.codigoPuerta, planta: form.planta,
+      ascensor: form.ascensor, zonaCarga: form.zonaCarga, observacionesAcceso: form.observacionesAcceso,
+      fechaMedicion: form.fechaMedicion, fechaMontaje: form.fechaMontaje,
+    });
     setEdit(false);
   };
 
   if (!edit) {
     const filas: { label: string; valor: string }[] = [
       { label: 'Teléfono', valor: cliente.telefono || '—' },
-      { label: 'WhatsApp', valor: cliente.whatsapp || '—' },
+      { label: 'WhatsApp', valor: proyecto.whatsapp || '—' },
       { label: 'Email', valor: cliente.email || '—' },
-      { label: 'Dirección', valor: cliente.direccion || '—' },
-      { label: 'Ubicación / Maps', valor: cliente.ubicacion || '—' },
-      { label: 'Código de puerta', valor: cliente.codigoPuerta || '—' },
-      { label: 'Planta', valor: cliente.planta || '—' },
-      { label: 'Ascensor', valor: cliente.ascensor ? 'Sí' : 'No' },
-      { label: 'Zona de carga', valor: cliente.zonaCarga || '—' },
-      { label: 'Observaciones de acceso', valor: cliente.observacionesAcceso || '—' },
-      { label: 'Fecha de medición', valor: cliente.fechaMedicion || '—' },
-      { label: 'Fecha de montaje', valor: cliente.fechaMontaje || '—' },
-      { label: 'Presupuesto acordado', valor: formatoEuro(cliente.presupuesto) },
-      { label: 'Tarifa por hora', valor: formatoEuro(cliente.tarifaHora) },
+      { label: 'Dirección', valor: proyecto.direccion || '—' },
+      { label: 'Ubicación / Maps', valor: proyecto.ubicacion || '—' },
+      { label: 'Código de puerta', valor: proyecto.codigoPuerta || '—' },
+      { label: 'Planta', valor: proyecto.planta || '—' },
+      { label: 'Ascensor', valor: proyecto.ascensor ? 'Sí' : 'No' },
+      { label: 'Zona de carga', valor: proyecto.zonaCarga || '—' },
+      { label: 'Observaciones de acceso', valor: proyecto.observacionesAcceso || '—' },
+      { label: 'Fecha de medición', valor: proyecto.fechaMedicion || '—' },
+      { label: 'Fecha de montaje', valor: proyecto.fechaMontaje || '—' },
+      { label: 'Presupuesto acordado', valor: formatoEuro(proyecto.presupuesto) },
+      { label: 'Tarifa por hora', valor: formatoEuro(proyecto.tarifaHora) },
     ];
     return (
       <div className={styles.tabPanel}>
         <div className={styles.barraSeccion}>
           <h3 className={styles.h3 ?? ''}>Datos del cliente</h3>
-          <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={() => { setForm(cliente); setEdit(true); }}>
+          <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={() => { setForm(formDesde(cliente, proyecto)); setEdit(true); }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
             Editar
           </button>
@@ -85,10 +116,10 @@ export function TabDatos({ cliente, onActualizar, abrirEdicion }: TabDatosProps)
             </div>
           ))}
         </div>
-        {cliente.ubicacion && (
+        {proyecto.ubicacion && (
           <a
             className={`${styles.btn} ${styles.btnSecundario}`}
-            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(cliente.ubicacion)}`}
+            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(proyecto.ubicacion)}`}
             target="_blank"
             rel="noreferrer"
             style={{ alignSelf: 'flex-start' }}

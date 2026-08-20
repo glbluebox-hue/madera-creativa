@@ -1,6 +1,6 @@
 import { randomUUID, createHash } from 'node:crypto';
 import type { PipelineStage } from 'mongoose';
-import { ClienteModel, EmpresaModel, FacturaModel, ProveedorModel, ProductoModel, DibujoModel, CarpetaModel, NotaModel, PresupuestoModel, PlantillaModel, RecursoModel, ComponenteModel, CodigoQRModel, AutomatizacionModel, ContratoModel, GastoPeriodicoModel, conectar } from './cliente.model.js';
+import { ClienteModel, ProyectoModel, EmpresaModel, FacturaModel, ProveedorModel, ProductoModel, DibujoModel, CarpetaModel, NotaModel, PresupuestoModel, PlantillaModel, RecursoModel, ComponenteModel, CodigoQRModel, AutomatizacionModel, ContratoModel, GastoPeriodicoModel, conectar } from './cliente.model.js';
 import { UsuarioModel, conectarUsuarios } from './usuario.model.js';
 import { crearEnlacePresupuesto, buscarEnlacePorToken, reclamarEnlaceAceptado, guardarFirmaEnlace, formatoTokenValido } from './enlace-presupuesto.model.js';
 import { almacenamiento } from './almacenamiento.service.js';
@@ -62,8 +62,11 @@ function generarCobrosDesdeCondiciones(condicionesPago: string, precioTotal: num
   return resultado;
 }
 
-/** Estructura de una ficha de cliente tal como la maneja el servicio. */
+/** Estructura de una ficha de cliente (identidad) tal como la maneja el servicio. */
 export type ClienteDoc = Record<string, unknown> & { id: string };
+
+/** Estructura de un proyecto/expediente tal como la maneja el servicio (incremento "Cliente ≠ Proyecto", 20/08/2026). */
+export type ProyectoDoc = Record<string, unknown> & { id: string; clienteId: string };
 
 /**
  * Error de negocio esperado (no un fallo del servidor) — su mensaje es
@@ -277,20 +280,18 @@ const CABECERA_PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a
  * empresa en MongoDB, siempre aislados por `usuarioId`.
  */
 export class PresupuestosService {
+  // ── Cliente (identidad) — incremento "Cliente ≠ Proyecto", 20/08/2026 ──
+  //
+  // Un `Cliente` es solo nombre/teléfono/email. Toda la gestión económica
+  // y documental de un trabajo concreto vive en `Proyecto` (más abajo) —
+  // un cliente puede tener tantos proyectos como trabajos reales tenga, y
+  // crear uno nuevo nunca copia ni mezcla los datos de los anteriores
+  // (especificación del usuario). Ver `cliente.model.ts` para el porqué
+  // completo y cómo se migraron los datos existentes.
+
   /**
-   * Devuelve una página de fichas de cliente del usuario indicado, ordenadas
-   * por fecha de creación descendente (Incremento 1.5).
-   *
-   * Excluye explícitamente los campos pesados (fotos, adjuntos, dibujos,
-   * estancias, notas, movimientos, horas, tareas) — la vista de lista
-   * (`ListaClientes`) solo necesita nombre/proyecto/estado, y algunos
-   * clientes reales tienen documentos de varios MB por fotos históricas
-   * embebidas. Sin esta exclusión, cada página tarda varios segundos en
-   * transferirse desde Atlas y supera el timeout del proxy de desarrollo
-   * (síntoma real observado: "Sin conexión con el servidor" al abrir
-   * Clientes, aunque el servidor sí respondía, solo que tarde). La ficha
-   * completa (con fotos/adjuntos) se sigue pidiendo aparte con
-   * `obtenerCliente(id)` cuando el usuario abre una ficha concreta.
+   * Devuelve una página de clientes (identidad) del usuario indicado,
+   * ordenados por fecha de creación descendente.
    * @param usuarioId Propietario de los datos.
    * @param opciones Página (1-indexada) y tamaño de página.
    */
@@ -298,13 +299,7 @@ export class PresupuestosService {
     await conectar();
     const salto = (opciones.pagina - 1) * opciones.limite;
     const [docs, total] = await Promise.all([
-      ClienteModel.find({ usuarioId })
-        .select('-fotos -adjuntos -dibujos -estancias -notas -movimientos -horas -tareas')
-        .sort({ creado: -1 })
-        .skip(salto)
-        .limit(opciones.limite)
-        .lean()
-        .exec(),
+      ClienteModel.find({ usuarioId }).sort({ creado: -1 }).skip(salto).limit(opciones.limite).lean().exec(),
       ClienteModel.countDocuments({ usuarioId }).exec(),
     ]);
     return { items: docs.map((d) => this.limpiar(d)), total };
@@ -312,11 +307,8 @@ export class PresupuestosService {
 
   /**
    * Devuelve únicamente `id` y `nombre` de todos los clientes del usuario,
-   * sin paginar — pensado para selectores/autocompletados (p. ej. el
-   * desplegable de cliente al crear una factura), donde se necesita poder
-   * referenciar cualquier cliente, no solo los de la página cargada. Al no
-   * incluir fotos/adjuntos/dibujos, el payload es pequeño incluso con miles
-   * de clientes.
+   * sin paginar — selectores/autocompletados (desplegable de cliente al
+   * crear una factura, selector "cliente existente" al crear un proyecto).
    * @param usuarioId Propietario de los datos.
    */
   async listarClientesNombres(usuarioId: string): Promise<{ id: string; nombre: string }[]> {
@@ -326,111 +318,196 @@ export class PresupuestosService {
   }
 
   /**
-   * Devuelve un resumen ligero (sin fotos/adjuntos/dibujos/movimientos) de
-   * todos los clientes del usuario, sin paginar — para vistas que necesitan
-   * organizar el conjunto completo (p. ej. `SeccionPresupuestos`, agrupada
-   * por año y por carpeta de estado). Al excluir los campos pesados, el
-   * payload es pequeño incluso con muchos clientes.
+   * Crea un cliente nuevo (solo identidad) — el primer proyecto se crea
+   * aparte con `crearProyecto`. Separado de `guardarCliente` (edición) para
+   * que quede claro que aquí siempre se genera un id nuevo, nunca se
+   * reutiliza uno existente (evita duplicar clientes por error).
+   */
+  async crearCliente(datos: { nombre: string; telefono?: string; email?: string }, usuarioId: string): Promise<ClienteDoc> {
+    await conectar();
+    const doc = await ClienteModel.create({
+      id: randomUUID(), usuarioId,
+      nombre: datos.nombre, telefono: datos.telefono ?? '', email: datos.email ?? '',
+      creado: new Date().toISOString(),
+    });
+    busEventos.publicar({ nombre: 'cliente.creado', usuarioId, entidadId: doc.id, datos: { nombre: doc.nombre } });
+    return this.limpiar(doc.toObject());
+  }
+
+  /** Edita los datos de identidad de un cliente ya existente (nombre/teléfono/email). */
+  async guardarCliente(cliente: { id: string; nombre: string; telefono?: string; email?: string }, usuarioId: string): Promise<ClienteDoc> {
+    await conectar();
+    const doc = await ClienteModel.findOneAndUpdate(
+      { id: cliente.id, usuarioId },
+      { $set: { nombre: cliente.nombre, telefono: cliente.telefono ?? '', email: cliente.email ?? '' } },
+      { new: true }
+    ).lean().exec();
+    if (!doc) throw new ErrorDeNegocio('Cliente no encontrado', 400);
+    busEventos.publicar({ nombre: 'cliente.actualizado', usuarioId, entidadId: cliente.id, datos: { nombre: cliente.nombre } });
+    return this.limpiar(doc);
+  }
+
+  /**
+   * Devuelve un cliente (identidad) por id, solo si pertenece al usuario.
+   * @param id Identificador del cliente.
    * @param usuarioId Propietario de los datos.
    */
-  async listarClientesResumen(usuarioId: string): Promise<
-    { id: string; nombre: string; proyecto: string; estado: string; presupuesto: number; creado: string }[]
+  async obtenerCliente(id: string, usuarioId: string): Promise<ClienteDoc | null> {
+    await conectar();
+    const doc = await ClienteModel.findOne({ id, usuarioId }).lean().exec();
+    if (!doc) return null;
+    return this.limpiar(doc as Record<string, unknown>);
+  }
+
+  /**
+   * Borra un cliente (solo si pertenece al usuario) — rechaza el borrado
+   * si todavía tiene algún proyecto enlazado, para no dejar proyectos
+   * huérfanos sin identidad; hay que borrar (o mover) sus proyectos antes.
+   * @param id Identificador del cliente.
+   * @param usuarioId Propietario de los datos.
+   */
+  async borrarCliente(id: string, usuarioId: string): Promise<void> {
+    await conectar();
+    const tieneProyectos = await ProyectoModel.exists({ clienteId: id, usuarioId });
+    if (tieneProyectos) throw new ErrorDeNegocio('Este cliente todavía tiene proyectos asociados — bórralos primero.', 400);
+    await ClienteModel.deleteOne({ id, usuarioId }).exec();
+  }
+
+  // ── Proyecto (expediente de trabajo) ──────────────────────────────────
+  //
+  // Gastos, ingresos, mediciones, tareas, fotos, adjuntos y dibujos son
+  // exclusivos de CADA proyecto — nunca se mezclan entre los distintos
+  // proyectos de un mismo cliente (esa mezcla era el fallo real que
+  // motivó este incremento).
+
+  /**
+   * Devuelve los proyectos de un cliente concreto (resumen, sin
+   * fotos/adjuntos/dibujos/movimientos) — para el selector "cliente
+   * existente → nuevo proyecto" y la cabecera de la ficha de proyecto
+   * ("otros proyectos de este cliente").
+   */
+  async listarProyectosDeCliente(clienteId: string, usuarioId: string): Promise<
+    { id: string; proyecto: string; estado: string; presupuesto: number; creado: string }[]
   > {
     await conectar();
-    const docs = await ClienteModel.find({ usuarioId })
-      .select('id nombre proyecto estado presupuesto creado')
+    const docs = await ProyectoModel.find({ clienteId, usuarioId })
+      .select('id proyecto estado presupuesto creado')
+      .sort({ creado: -1 })
       .lean()
       .exec();
     return (docs as any[]).map((d) => ({
-      id: d.id, nombre: d.nombre, proyecto: d.proyecto || '',
-      estado: d.estado, presupuesto: d.presupuesto || 0, creado: d.creado,
+      id: d.id, proyecto: d.proyecto || '', estado: d.estado, presupuesto: d.presupuesto || 0, creado: d.creado,
     }));
   }
 
   /**
-   * Crea o actualiza (upsert) una ficha de cliente para el usuario indicado.
-   * @param cliente La ficha completa del cliente.
+   * Devuelve un resumen ligero (sin fotos/adjuntos/dibujos/movimientos) de
+   * TODOS los proyectos del usuario, con el nombre de su cliente ya
+   * resuelto — sin paginar, para vistas que necesitan organizar el
+   * conjunto completo (`ListaClientes`, `SeccionPresupuestos`, agrupada
+   * por año y por carpeta de estado). Sustituye a la antigua
+   * `listarClientesResumen` (mismo shape de salida, más `clienteId`).
    * @param usuarioId Propietario de los datos.
    */
-  async guardarCliente(cliente: ClienteDoc, usuarioId: string): Promise<ClienteDoc> {
+  async listarProyectosResumen(usuarioId: string): Promise<
+    { id: string; clienteId: string; nombre: string; proyecto: string; estado: string; presupuesto: number; creado: string; fechaMontaje?: string; fechaMedicion?: string }[]
+  > {
     await conectar();
-    const anterior = await ClienteModel.findOne({ id: cliente.id, usuarioId }).lean().exec() as any;
-
-    // Sube a almacenamiento externo cualquier foto/adjunto/dibujo nuevo
-    // (Base64) — los que ya eran una URL de un guardado anterior no se
-    // tocan (Incremento 1.7). El contrato de la API no cambia: el frontend
-    // sigue enviando Base64 igual que siempre.
-    const fotos = await procesarFotos((cliente as any).fotos);
-    const adjuntos = await procesarAdjuntos((cliente as any).adjuntos);
-    const dibujos = await procesarDibujos((cliente as any).dibujos);
-
-    // Hardening (Fase 2) — `movimientos`, `tareas`, `estado` y `presupuesto`
-    // ya no se tocan en una edición: el navegador siempre reenvía el
-    // cliente completo tal como lo tenía en memoria, y estos cuatro campos
-    // también los escriben de forma automática y quirúrgica otras rutas
-    // (aceptar presupuesto, sincronizar factura). Guardar aquí el valor
-    // desactualizado del formulario borraba en silencio esas escrituras —
-    // detectado por Opus 5 al revisar la sincronización de facturas. Ahora
-    // solo se aceptan en la CREACIÓN (`anterior` nulo); después, únicamente
-    // las rutas dedicadas (`/clientes/:id/movimientos`, `/tareas`,
-    // `/estado`, `/presupuesto`) pueden cambiarlos — mismo patrón que ya
-    // usa `Presupuesto.estado`.
-    const { movimientos: _movimientos, tareas: _tareas, estado: _estado, presupuesto: _presupuesto, ...clienteSinCamposProtegidos } = cliente as any;
-
-    const doc = await ClienteModel.findOneAndUpdate(
-      { id: cliente.id, usuarioId },
-      {
-        ...clienteSinCamposProtegidos,
-        fotos, adjuntos, dibujos, usuarioId,
-        ...(anterior ? {} : {
-          movimientos: _movimientos ?? [],
-          tareas: _tareas ?? [],
-          estado: _estado ?? 'presupuestado',
-          presupuesto: _presupuesto ?? 0,
-        }),
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    ).lean().exec();
-
-    if (anterior) {
-      await borrarBlobsHuerfanos(anterior.fotos, fotos);
-      await borrarBlobsHuerfanos(anterior.adjuntos, adjuntos);
-      await borrarBlobsHuerfanos(anterior.dibujos, dibujos);
-    }
-
-    busEventos.publicar({
-      nombre: anterior ? 'cliente.actualizado' : 'cliente.creado',
-      usuarioId,
-      entidadId: cliente.id,
-      datos: { nombre: (cliente as any).nombre, estado: (doc as any).estado },
-    });
-
-    return this.limpiar(doc);
+    const [proyectos, clientes] = await Promise.all([
+      ProyectoModel.find({ usuarioId }).select('id clienteId proyecto estado presupuesto creado fechaMontaje fechaMedicion').lean().exec() as Promise<any[]>,
+      ClienteModel.find({ usuarioId }).select('id nombre').lean().exec() as Promise<any[]>,
+    ]);
+    const nombresPorClienteId = new Map(clientes.map((c) => [c.id, c.nombre as string]));
+    return proyectos.map((p) => ({
+      id: p.id, clienteId: p.clienteId, nombre: nombresPorClienteId.get(p.clienteId) || '',
+      proyecto: p.proyecto || '', estado: p.estado, presupuesto: p.presupuesto || 0, creado: p.creado,
+      fechaMontaje: p.fechaMontaje || undefined, fechaMedicion: p.fechaMedicion || undefined,
+    }));
   }
 
   /**
-   * Añade un movimiento manual (Hardening Fase 2) — ruta quirúrgica
-   * dedicada; `guardarCliente` ya no acepta cambios en `movimientos` tras
-   * la creación. Nunca lleva `facturaId`: los movimientos vinculados a una
-   * factura solo los crea `sincronizarMovimientoFactura`.
+   * Crea un proyecto nuevo — para un cliente nuevo o ya existente, da
+   * igual: siempre empieza completamente en cero (gastos, ingresos,
+   * documentos, mediciones, fotos, notas — especificación del usuario,
+   * punto 4), nunca copia nada de otros proyectos del mismo cliente.
    */
-  async anadirMovimientoCliente(clienteId: string, usuarioId: string, datos: { fecha: string; concepto: string; categoria: string; tipo: 'gasto' | 'ingreso'; importe: number }): Promise<ClienteDoc> {
+  async crearProyecto(datos: {
+    clienteId: string; proyecto?: string; direccion?: string; presupuesto?: number; tarifaHora?: number;
+    whatsapp?: string; ubicacion?: string; codigoPuerta?: string; planta?: string; ascensor?: boolean;
+    zonaCarga?: string; observacionesAcceso?: string; fechaMedicion?: string; fechaMontaje?: string;
+  }, usuarioId: string): Promise<ProyectoDoc> {
+    await conectar();
+    const clienteExiste = await ClienteModel.exists({ id: datos.clienteId, usuarioId });
+    if (!clienteExiste) throw new ErrorDeNegocio('Cliente no encontrado', 400);
+    const doc = await ProyectoModel.create({
+      id: randomUUID(), usuarioId, clienteId: datos.clienteId,
+      proyecto: datos.proyecto ?? '', direccion: datos.direccion ?? '',
+      presupuesto: datos.presupuesto ?? 0, tarifaHora: datos.tarifaHora ?? 0,
+      creado: new Date().toISOString(), estado: 'presupuestado',
+      whatsapp: datos.whatsapp, ubicacion: datos.ubicacion, codigoPuerta: datos.codigoPuerta,
+      planta: datos.planta, ascensor: datos.ascensor, zonaCarga: datos.zonaCarga,
+      observacionesAcceso: datos.observacionesAcceso, fechaMedicion: datos.fechaMedicion, fechaMontaje: datos.fechaMontaje,
+      estancias: [], tareas: [], movimientos: [], horas: [], adjuntos: [], fotos: [], dibujos: [], margenAvisado: false,
+    });
+    busEventos.publicar({ nombre: 'proyecto.creado', usuarioId, entidadId: doc.id, datos: { clienteId: datos.clienteId, proyecto: doc.proyecto } });
+    return this.limpiarProyecto(doc.toObject());
+  }
+
+  /**
+   * Edita los campos propios de un proyecto (nombre del trabajo, dirección,
+   * presupuesto estimado, tarifa/hora, datos de acceso a obra, fotos/
+   * adjuntos/dibujos). Protege `movimientos`/`tareas`/`estado` de
+   * sobrescrituras — mismo motivo y mismo patrón que ya usaba
+   * `guardarCliente` antes de este incremento: solo las rutas dedicadas
+   * (`/proyectos/:id/movimientos`, `/tareas`, `/estado`) pueden cambiarlos.
+   */
+  async guardarProyecto(proyecto: ProyectoDoc, usuarioId: string): Promise<ProyectoDoc> {
+    await conectar();
+    const anterior = await ProyectoModel.findOne({ id: proyecto.id, usuarioId }).lean().exec() as any;
+    if (!anterior) throw new ErrorDeNegocio('Proyecto no encontrado', 400);
+
+    const fotos = await procesarFotos((proyecto as any).fotos);
+    const adjuntos = await procesarAdjuntos((proyecto as any).adjuntos);
+    const dibujos = await procesarDibujos((proyecto as any).dibujos);
+
+    const { movimientos: _movimientos, tareas: _tareas, estado: _estado, clienteId: _clienteId, ...proyectoSinCamposProtegidos } = proyecto as any;
+
+    const doc = await ProyectoModel.findOneAndUpdate(
+      { id: proyecto.id, usuarioId },
+      { ...proyectoSinCamposProtegidos, fotos, adjuntos, dibujos, usuarioId },
+      { new: true }
+    ).lean().exec();
+
+    await borrarBlobsHuerfanos(anterior.fotos, fotos);
+    await borrarBlobsHuerfanos(anterior.adjuntos, adjuntos);
+    await borrarBlobsHuerfanos(anterior.dibujos, dibujos);
+
+    return this.limpiarProyecto(doc);
+  }
+
+  /**
+   * Añade un movimiento manual a un proyecto — ruta quirúrgica dedicada;
+   * `guardarProyecto` ya no acepta cambios en `movimientos`. Nunca lleva
+   * `facturaId`: los movimientos vinculados a una factura solo los crea
+   * `sincronizarMovimientoFactura`.
+   */
+  async anadirMovimientoProyecto(proyectoId: string, usuarioId: string, datos: { fecha: string; concepto: string; categoria: string; tipo: 'gasto' | 'ingreso'; importe: number }): Promise<ProyectoDoc> {
     await conectar();
     const movimiento = { id: randomUUID(), facturaId: '', ...datos };
-    const doc = await ClienteModel.findOneAndUpdate(
-      { id: clienteId, usuarioId },
+    const doc = await ProyectoModel.findOneAndUpdate(
+      { id: proyectoId, usuarioId },
       { $push: { movimientos: movimiento } },
       { new: true }
     ).lean().exec();
-    if (!doc) throw new ErrorDeNegocio('Cliente no encontrado', 400);
-    return this.limpiar(doc);
+    if (!doc) throw new ErrorDeNegocio('Proyecto no encontrado', 400);
+    return this.limpiarProyecto(doc);
   }
 
-  /** Edita un movimiento existente (manual o vinculado a factura) por su id. Hardening Fase 2. */
-  async editarMovimientoCliente(clienteId: string, usuarioId: string, movimientoId: string, datos: { fecha: string; concepto: string; categoria: string; tipo: 'gasto' | 'ingreso'; importe: number }): Promise<ClienteDoc> {
+  /** Edita un movimiento existente (manual o vinculado a factura) por su id. */
+  async editarMovimientoProyecto(proyectoId: string, usuarioId: string, movimientoId: string, datos: { fecha: string; concepto: string; categoria: string; tipo: 'gasto' | 'ingreso'; importe: number }): Promise<ProyectoDoc> {
     await conectar();
-    const doc = await ClienteModel.findOneAndUpdate(
-      { id: clienteId, usuarioId, 'movimientos.id': movimientoId },
+    const doc = await ProyectoModel.findOneAndUpdate(
+      { id: proyectoId, usuarioId, 'movimientos.id': movimientoId },
       { $set: {
           'movimientos.$.fecha': datos.fecha,
           'movimientos.$.concepto': datos.concepto,
@@ -441,111 +518,116 @@ export class PresupuestosService {
       { new: true }
     ).lean().exec();
     if (!doc) throw new ErrorDeNegocio('Movimiento no encontrado', 400);
-    return this.limpiar(doc);
+    return this.limpiarProyecto(doc);
   }
 
-  /** Borra un movimiento por su id. Hardening Fase 2. */
-  async borrarMovimientoCliente(clienteId: string, usuarioId: string, movimientoId: string): Promise<ClienteDoc> {
+  /** Borra un movimiento por su id. */
+  async borrarMovimientoProyecto(proyectoId: string, usuarioId: string, movimientoId: string): Promise<ProyectoDoc> {
     await conectar();
-    const doc = await ClienteModel.findOneAndUpdate(
-      { id: clienteId, usuarioId },
+    const doc = await ProyectoModel.findOneAndUpdate(
+      { id: proyectoId, usuarioId },
       { $pull: { movimientos: { id: movimientoId } } },
       { new: true }
     ).lean().exec();
-    if (!doc) throw new ErrorDeNegocio('Cliente no encontrado', 400);
-    return this.limpiar(doc);
+    if (!doc) throw new ErrorDeNegocio('Proyecto no encontrado', 400);
+    return this.limpiarProyecto(doc);
   }
 
   /**
-   * Reemplaza la lista completa de tareas (Hardening Fase 2) — la pestaña
-   * de tareas ya gestiona el array entero en el propio navegador (marcar
+   * Reemplaza la lista completa de tareas de un proyecto — la pestaña de
+   * tareas ya gestiona el array entero en el propio navegador (marcar
    * hecha, reordenar, añadir, borrar) y lo reenvía completo; esta ruta solo
-   * garantiza que ese reenvío nunca pisa `movimientos`/`estado`/
-   * `presupuesto`, que ya no viajan en el mismo guardado.
+   * garantiza que ese reenvío nunca pisa `movimientos`/`estado`.
    */
-  async guardarTareasCliente(clienteId: string, usuarioId: string, tareas: { id: string; texto: string; hecha: boolean }[]): Promise<ClienteDoc> {
+  async guardarTareasProyecto(proyectoId: string, usuarioId: string, tareas: { id: string; texto: string; hecha: boolean }[]): Promise<ProyectoDoc> {
     await conectar();
-    const doc = await ClienteModel.findOneAndUpdate(
-      { id: clienteId, usuarioId },
+    const doc = await ProyectoModel.findOneAndUpdate(
+      { id: proyectoId, usuarioId },
       { $set: { tareas } },
       { new: true }
     ).lean().exec();
-    if (!doc) throw new ErrorDeNegocio('Cliente no encontrado', 400);
-    return this.limpiar(doc);
+    if (!doc) throw new ErrorDeNegocio('Proyecto no encontrado', 400);
+    return this.limpiarProyecto(doc);
   }
 
-  /** Cambia el estado del cliente/proyecto a mano. Hardening Fase 2. */
-  async cambiarEstadoCliente(clienteId: string, usuarioId: string, estado: string): Promise<ClienteDoc> {
+  /** Cambia el estado del proyecto a mano (presupuestado/en_curso/finalizado/rechazado — "finalizado" es lo que lo archiva). */
+  async cambiarEstadoProyecto(proyectoId: string, usuarioId: string, estado: string): Promise<ProyectoDoc> {
     await conectar();
-    const doc = await ClienteModel.findOneAndUpdate(
-      { id: clienteId, usuarioId },
+    const doc = await ProyectoModel.findOneAndUpdate(
+      { id: proyectoId, usuarioId },
       { $set: { estado } },
       { new: true }
     ).lean().exec();
-    if (!doc) throw new ErrorDeNegocio('Cliente no encontrado', 400);
-    return this.limpiar(doc);
+    if (!doc) throw new ErrorDeNegocio('Proyecto no encontrado', 400);
+    return this.limpiarProyecto(doc);
   }
 
-  /** Cambia el presupuesto acordado a mano. Hardening Fase 2. */
-  async cambiarPresupuestoCliente(clienteId: string, usuarioId: string, presupuesto: number): Promise<ClienteDoc> {
+  /** Cambia el presupuesto acordado a mano. */
+  async cambiarPresupuestoProyecto(proyectoId: string, usuarioId: string, presupuesto: number): Promise<ProyectoDoc> {
     await conectar();
-    const doc = await ClienteModel.findOneAndUpdate(
-      { id: clienteId, usuarioId },
+    const doc = await ProyectoModel.findOneAndUpdate(
+      { id: proyectoId, usuarioId },
       { $set: { presupuesto } },
       { new: true }
     ).lean().exec();
-    if (!doc) throw new ErrorDeNegocio('Cliente no encontrado', 400);
-    return this.limpiar(doc);
+    if (!doc) throw new ErrorDeNegocio('Proyecto no encontrado', 400);
+    return this.limpiarProyecto(doc);
   }
 
   /**
-   * Devuelve una ficha de cliente (solo si pertenece al usuario), sin los
-   * adjuntos — algunos clientes reales tienen archivos adjuntos históricos
-   * de varios MB embebidos (anteriores a la compresión de imágenes de la
-   * Fase 1), y transferirlos siempre para abrir la ficha hacía que la
-   * apertura tardara varios segundos y superara el timeout del proxy de
-   * desarrollo (síntoma real: la ficha no llegaba a abrirse). Los adjuntos
-   * se piden aparte con `obtenerAdjuntosCliente`, en segundo plano, sin
-   * bloquear la apertura de la ficha.
-   * @param id Identificador del cliente.
+   * Devuelve un proyecto (solo si pertenece al usuario), sin los adjuntos
+   * — algunos proyectos reales tienen archivos adjuntos históricos de
+   * varios MB embebidos, y transferirlos siempre hacía que la apertura de
+   * la ficha tardara varios segundos (mismo motivo que ya tenía
+   * `obtenerCliente` antes de este incremento). Los adjuntos se piden
+   * aparte con `obtenerAdjuntosProyecto`, en segundo plano.
+   * @param id Identificador del proyecto.
    * @param usuarioId Propietario de los datos.
    */
-  async obtenerCliente(id: string, usuarioId: string): Promise<ClienteDoc | null> {
+  async obtenerProyecto(id: string, usuarioId: string): Promise<ProyectoDoc | null> {
     await conectar();
-    const doc = await ClienteModel.findOne({ id, usuarioId }).select('-adjuntos').lean().exec();
+    const doc = await ProyectoModel.findOne({ id, usuarioId }).select('-adjuntos').lean().exec();
     if (!doc) return null;
-    return this.limpiar(doc as Record<string, unknown>);
+    return this.limpiarProyecto(doc as Record<string, unknown>);
   }
 
   /**
-   * Devuelve únicamente los adjuntos de un cliente (solo si pertenece al
-   * usuario) — ver el comentario de `obtenerCliente` sobre por qué se
+   * Devuelve únicamente los adjuntos de un proyecto (solo si pertenece al
+   * usuario) — ver el comentario de `obtenerProyecto` sobre por qué se
    * piden aparte.
-   * @param id Identificador del cliente.
-   * @param usuarioId Propietario de los datos.
    */
-  async obtenerAdjuntosCliente(id: string, usuarioId: string): Promise<unknown[]> {
+  async obtenerAdjuntosProyecto(id: string, usuarioId: string): Promise<unknown[]> {
     await conectar();
-    const doc = await ClienteModel.findOne({ id, usuarioId }).select('adjuntos').lean().exec();
+    const doc = await ProyectoModel.findOne({ id, usuarioId }).select('adjuntos').lean().exec();
     if (!doc) return [];
-    return this.limpiar(doc as Record<string, unknown>).adjuntos as unknown[] ?? [];
+    return this.limpiarProyecto(doc as Record<string, unknown>).adjuntos as unknown[] ?? [];
   }
 
   /**
-   * Borra una ficha de cliente (solo si pertenece al usuario).
-   * @param id Identificador del cliente.
+   * Borra un proyecto (solo si pertenece al usuario) — borra también sus
+   * blobs (fotos/adjuntos/dibujos) de almacenamiento externo. NO borra el
+   * cliente ni sus otros proyectos, ni las Facturas/Notas/Presupuestos/
+   * Contratos/Carpetas/Dibujos vinculados por `proyectoId` (quedan
+   * huérfanos de proyecto pero no se pierden — fuera de alcance de este
+   * incremento decidir su limpieza).
+   * @param id Identificador del proyecto.
    * @param usuarioId Propietario de los datos.
    */
-  async borrarCliente(id: string, usuarioId: string): Promise<void> {
+  async borrarProyecto(id: string, usuarioId: string): Promise<void> {
     await conectar();
-    const doc = await ClienteModel.findOne({ id, usuarioId }).lean().exec() as any;
+    const doc = await ProyectoModel.findOne({ id, usuarioId }).lean().exec() as any;
     if (doc) {
       const todos = [...(doc.fotos ?? []), ...(doc.adjuntos ?? []), ...(doc.dibujos ?? [])];
       for (const item of todos) {
         if (item.claveAlmacenamiento) await almacenamiento.borrar(item.claveAlmacenamiento).catch(() => {});
       }
     }
-    await ClienteModel.deleteOne({ id, usuarioId }).exec();
+    await ProyectoModel.deleteOne({ id, usuarioId }).exec();
+  }
+
+  /** Igual que `limpiar()`, pero tipada para `ProyectoDoc` — misma lógica (quita `_id`/`__v`/`claveAlmacenamiento`), campos distintos. */
+  private limpiarProyecto(doc: Record<string, unknown>): ProyectoDoc {
+    return this.limpiar(doc) as unknown as ProyectoDoc;
   }
 
   /**
@@ -725,6 +807,24 @@ export class PresupuestosService {
   }
 
   /**
+   * Facturas de UN proyecto concreto (incremento "Cliente ≠ Proyecto",
+   * 20/08/2026) — a diferencia de `listarFacturasDeCliente`, nunca mezcla
+   * las facturas de otro proyecto del mismo cliente. Es lo que debe usar
+   * la ficha de proyecto.
+   * @param usuarioId Propietario.
+   * @param proyectoId Proyecto al que pertenecen las facturas.
+   */
+  async listarFacturasDeProyecto(usuarioId: string, proyectoId: string): Promise<Record<string, unknown>[]> {
+    await conectar();
+    const docs = await FacturaModel.aggregate([
+      { $match: { usuarioId, proyectoId } },
+      { $sort: { creado: -1 } },
+      ...this.pipelineTieneDocumentoFactura(),
+    ]).exec();
+    return docs.map((d) => this.limpiar(d as Record<string, unknown>));
+  }
+
+  /**
    * Todas las facturas cuyo proveedor coincide (misma búsqueda difusa que
    * usaba el frontend: substring insensible a mayúsculas, o coincidencia
    * exacta) con el nombre indicado, sin paginar — para la ficha de un
@@ -829,50 +929,72 @@ export class PresupuestosService {
   }
 
   /**
-   * Sincroniza el Movimiento del cliente ligado a una factura (Fase 2 —
-   * hoy Factura y Cliente.movimientos están completamente desconectados,
-   * así que el margen de ganancia no refleja facturas ya escaneadas). El
-   * movimiento se localiza por `facturaId`, nunca por posición ni
-   * recreando el array — eso es lo que hace la operación idempotente:
-   * reguardar la misma factura actualiza el mismo movimiento, nunca
-   * duplica. La actualización es una única operación atómica por
-   * documento (pipeline update de Mongo), sin ventana de carrera entre
-   * "comprobar si existe" y "crear".
+   * Resuelve a qué proyecto pertenece de verdad una factura, para la
+   * sincronización de abajo (incremento "Cliente ≠ Proyecto", 20/08/2026):
+   * - Si la factura ya trae `proyectoId` explícito, se usa tal cual.
+   * - Si no, y el cliente tiene EXACTAMENTE un proyecto, se asume ese —
+   *   mantiene el comportamiento de siempre para el caso normal (un
+   *   cliente, un proyecto), sin exigir tocar todavía las pantallas de
+   *   facturas/escáner para elegir proyecto explícitamente.
+   * - Si el cliente tiene 0 o 2+ proyectos, NUNCA se adivina — la factura
+   *   simplemente no se sincroniza con ningún "Control de gasto" hasta que
+   *   se le asigne un proyecto explícito. Adivinar aquí sería exactamente
+   *   el fallo de mezcla de datos que motivó este incremento.
+   */
+  private async resolverProyectoDeFactura(clienteId: string, proyectoIdExplicito: string, usuarioId: string): Promise<string> {
+    if (proyectoIdExplicito) return proyectoIdExplicito;
+    if (!clienteId) return '';
+    const proyectos = await ProyectoModel.find({ clienteId, usuarioId }).select('id').limit(2).lean().exec();
+    return proyectos.length === 1 ? (proyectos[0] as any).id : '';
+  }
+
+  /**
+   * Sincroniza el Movimiento del proyecto ligado a una factura (Fase 2 —
+   * antes Factura y Cliente.movimientos estaban completamente
+   * desconectados, así que el margen de ganancia no reflejaba facturas ya
+   * escaneadas; desde el incremento "Cliente ≠ Proyecto" sincroniza contra
+   * el PROYECTO, nunca contra el cliente, para no mezclar los gastos de
+   * dos proyectos distintos del mismo cliente). El movimiento se localiza
+   * por `facturaId`, nunca por posición ni recreando el array — eso es lo
+   * que hace la operación idempotente: reguardar la misma factura
+   * actualiza el mismo movimiento, nunca duplica. La actualización es una
+   * única operación atómica por documento (pipeline update de Mongo), sin
+   * ventana de carrera entre "comprobar si existe" y "crear".
    *
-   * No lanza si el cliente ya no existe (factura huérfana tras borrar el
-   * cliente) — se registra y se continúa, igual que en
-   * `ejecutarConsecuenciasAceptacion`; la factura nunca debe dejar de
-   * guardarse por un fallo en esta sincronización derivada.
+   * No lanza si el proyecto ya no existe/no se pudo resolver — se registra
+   * y se continúa, igual que en `ejecutarConsecuenciasAceptacion`; la
+   * factura nunca debe dejar de guardarse por un fallo en esta
+   * sincronización derivada.
    */
   private async sincronizarMovimientoFactura(params: {
     usuarioId: string;
     facturaId: string;
-    /** Cliente al que estaba vinculada la factura antes de este guardado ('' si no tenía o es nueva). */
-    clienteIdAnterior: string;
-    /** Cliente al que queda vinculada tras este guardado ('' si se quita el cliente). */
-    clienteIdNuevo: string;
+    /** Proyecto al que estaba vinculada la factura antes de este guardado ('' si no tenía o es nueva). */
+    proyectoIdAnterior: string;
+    /** Proyecto al que queda vinculada tras este guardado ('' si no se pudo resolver ninguno). */
+    proyectoIdNuevo: string;
     fecha: string;
     concepto: string;
     categoria: string;
     tipo: 'gasto' | 'ingreso';
     importe: number;
   }): Promise<void> {
-    const { usuarioId, facturaId, clienteIdAnterior, clienteIdNuevo, fecha, concepto, categoria, tipo, importe } = params;
+    const { usuarioId, facturaId, proyectoIdAnterior, proyectoIdNuevo, fecha, concepto, categoria, tipo, importe } = params;
     if (!facturaId) return; // Nunca vincular/retirar por un facturaId vacío — coincidiría con movimientos manuales (que lo tienen '' por defecto).
     try {
-      // El cliente cambió (o se quitó) respecto al guardado anterior:
-      // retirar el movimiento del cliente que ya no corresponde.
-      if (clienteIdAnterior && clienteIdAnterior !== clienteIdNuevo) {
-        await ClienteModel.updateOne(
-          { id: clienteIdAnterior, usuarioId },
+      // El proyecto cambió (o se quitó) respecto al guardado anterior:
+      // retirar el movimiento del proyecto que ya no corresponde.
+      if (proyectoIdAnterior && proyectoIdAnterior !== proyectoIdNuevo) {
+        await ProyectoModel.updateOne(
+          { id: proyectoIdAnterior, usuarioId },
           { $pull: { movimientos: { facturaId } } }
         ).exec();
       }
 
-      if (!clienteIdNuevo) return;
+      if (!proyectoIdNuevo) return;
 
-      const resultado = await ClienteModel.updateOne(
-        { id: clienteIdNuevo, usuarioId },
+      const resultado = await ProyectoModel.updateOne(
+        { id: proyectoIdNuevo, usuarioId },
         [
           {
             $set: {
@@ -907,10 +1029,10 @@ export class PresupuestosService {
       ).exec();
 
       if (resultado.matchedCount === 0) {
-        logger.warn({ facturaId, clienteId: clienteIdNuevo, usuarioId }, '[factura.sincronizarMovimiento] El cliente de la factura ya no existe — se omite la sincronización.');
+        logger.warn({ facturaId, proyectoId: proyectoIdNuevo, usuarioId }, '[factura.sincronizarMovimiento] El proyecto de la factura ya no existe — se omite la sincronización.');
       }
     } catch (err) {
-      logger.error({ err, facturaId, clienteIdAnterior, clienteIdNuevo, usuarioId }, '[factura.sincronizarMovimiento] Fallo sincronizando el movimiento — la factura se guarda igualmente.');
+      logger.error({ err, facturaId, proyectoIdAnterior, proyectoIdNuevo, usuarioId }, '[factura.sincronizarMovimiento] Fallo sincronizando el movimiento — la factura se guarda igualmente.');
     }
   }
 
@@ -1009,20 +1131,34 @@ export class PresupuestosService {
       datos: { tipo: (factura as any).tipo, importe: (factura as any).importe, clienteId: (factura as any).clienteId },
     });
 
-    // Fase 2 — mantiene Cliente.movimientos (y por tanto el margen de
-    // ganancia, que se calcula a partir de él) en sincronía con la
-    // factura, sin duplicar la fórmula de margen existente.
+    // Mantiene Proyecto.movimientos (y por tanto el margen de ganancia, que
+    // se calcula a partir de él) en sincronía con la factura, sin duplicar
+    // la fórmula de margen existente. Nunca contra Cliente.movimientos
+    // (incremento "Cliente ≠ Proyecto", 20/08/2026) — mezclaría los gastos
+    // de dos proyectos distintos del mismo cliente.
+    const proyectoIdAnterior = await this.resolverProyectoDeFactura((anterior?.clienteId as string) || '', (anterior?.proyectoId as string) || '', usuarioId);
+    const proyectoIdNuevo = await this.resolverProyectoDeFactura(((doc as any).clienteId as string) || '', ((doc as any).proyectoId as string) || '', usuarioId);
     await this.sincronizarMovimientoFactura({
       usuarioId,
       facturaId: String(factura.id),
-      clienteIdAnterior: (anterior?.clienteId as string) || '',
-      clienteIdNuevo: ((doc as any).clienteId as string) || '',
+      proyectoIdAnterior,
+      proyectoIdNuevo,
       fecha: (doc as any).fecha,
       concepto: (doc as any).concepto || (doc as any).proveedor || 'Factura',
       categoria: (doc as any).categoria || 'General',
       tipo: (doc as any).tipo,
       importe: (doc as any).importe,
     });
+
+    // Si `proyectoId` se auto-resolvió (la factura no lo traía explícito
+    // pero el cliente solo tenía un proyecto), se deja escrito en la propia
+    // factura — si no, `listarFacturasDeProyecto` (la pestaña "Facturas" de
+    // la ficha de proyecto) nunca la encontraría, aunque el movimiento sí
+    // se hubiera sincronizado correctamente.
+    if (proyectoIdNuevo && !(doc as any).proyectoId) {
+      await FacturaModel.updateOne({ id: factura.id, usuarioId }, { $set: { proyectoId: proyectoIdNuevo } }).exec();
+      (doc as any).proyectoId = proyectoIdNuevo;
+    }
 
     return this.limpiar(doc as Record<string, unknown>);
   }
@@ -1045,13 +1181,14 @@ export class PresupuestosService {
         const clave = almacenamiento.claveDesdeUrl(url);
         if (clave) await almacenamiento.borrar(clave).catch(() => {});
       }
-      // Fase 2 — evita un movimiento huérfano que siguiera afectando al
-      // margen de ganancia de un cliente tras borrar la factura de origen.
-      if (doc.clienteId && id) {
-        await ClienteModel.updateOne(
-          { id: doc.clienteId, usuarioId },
+      // Evita un movimiento huérfano que siguiera afectando al margen de
+      // ganancia de un proyecto tras borrar la factura de origen.
+      const proyectoId = await this.resolverProyectoDeFactura(doc.clienteId || '', doc.proyectoId || '', usuarioId);
+      if (proyectoId && id) {
+        await ProyectoModel.updateOne(
+          { id: proyectoId, usuarioId },
           { $pull: { movimientos: { facturaId: id } } }
-        ).exec().catch((err) => logger.error({ err, facturaId: id, clienteId: doc.clienteId, usuarioId }, '[factura.borrar] No se pudo retirar el movimiento vinculado — la factura se borra igualmente.'));
+        ).exec().catch((err) => logger.error({ err, facturaId: id, proyectoId, usuarioId }, '[factura.borrar] No se pudo retirar el movimiento vinculado — la factura se borra igualmente.'));
       }
     }
     await FacturaModel.deleteOne({ id, usuarioId }).exec();
@@ -1307,6 +1444,20 @@ export class PresupuestosService {
   async listarPresupuestosDeCliente(usuarioId: string, clienteId: string): Promise<Record<string, unknown>[]> {
     await conectar();
     const docs = await PresupuestoModel.find({ usuarioId, clienteId }).sort({ creado: -1 }).lean().exec();
+    return docs.map((d) => this.limpiar(d as Record<string, unknown>));
+  }
+
+  /**
+   * Presupuestos de UN proyecto concreto (incremento "Cliente ≠ Proyecto",
+   * 20/08/2026) — a diferencia de `listarPresupuestosDeCliente`, nunca
+   * mezcla los presupuestos de otro proyecto del mismo cliente. Es lo que
+   * usa la ficha de proyecto; `listarPresupuestosDeCliente` queda para
+   * quien de verdad necesite ver todos los presupuestos de un cliente a
+   * través de sus proyectos.
+   */
+  async listarPresupuestosDeProyecto(usuarioId: string, proyectoId: string): Promise<Record<string, unknown>[]> {
+    await conectar();
+    const docs = await PresupuestoModel.find({ usuarioId, proyectoId }).sort({ creado: -1 }).lean().exec();
     return docs.map((d) => this.limpiar(d as Record<string, unknown>));
   }
 
@@ -1690,20 +1841,26 @@ export class PresupuestosService {
    */
   private async ejecutarConsecuenciasAceptacion(presupuesto: Record<string, unknown>, usuarioId: string): Promise<void> {
     const clienteId = presupuesto.clienteId as string;
+    // Incremento "Cliente ≠ Proyecto" (20/08/2026): estado/tareas/presupuesto
+    // acordado son campos del PROYECTO, nunca del cliente — resuelve a qué
+    // proyecto pertenece de verdad este presupuesto con el mismo criterio
+    // (y la misma cautela contra mezclar proyectos) que ya usa
+    // `resolverProyectoDeFactura`.
+    const proyectoId = await this.resolverProyectoDeFactura(clienteId, (presupuesto.proyectoId as string) || '', usuarioId);
+    const proyecto = proyectoId ? await ProyectoModel.findOne({ id: proyectoId, usuarioId }).lean().exec() as any : null;
     const cliente = await ClienteModel.findOne({ id: clienteId, usuarioId }).lean().exec() as any;
-    if (!cliente) {
-      logger.warn({ presupuestoId: presupuesto.id, clienteId }, '[presupuesto.aceptar] El cliente del presupuesto ya no existe — se omiten las consecuencias sobre el proyecto.');
-      return;
+    if (!proyecto) {
+      logger.warn({ presupuestoId: presupuesto.id, clienteId, proyectoId }, '[presupuesto.aceptar] No se pudo resolver un proyecto único para este presupuesto — se omiten las consecuencias sobre el proyecto (tareas/estado).');
+    } else {
+      const cambios: Record<string, unknown> = { estado: 'en_curso' };
+      if (!proyecto.tareas || proyecto.tareas.length === 0) {
+        cambios.tareas = TAREAS_BASE_PRESUPUESTO_ACEPTADO.map((texto) => ({ id: randomUUID(), texto, hecha: false }));
+      }
+      if (!proyecto.presupuesto) {
+        cambios.presupuesto = (presupuesto.precioTotal as number) || 0;
+      }
+      await ProyectoModel.findOneAndUpdate({ id: proyecto.id, usuarioId }, { $set: cambios }).exec();
     }
-
-    const cambios: Record<string, unknown> = { estado: 'en_curso' };
-    if (!cliente.tareas || cliente.tareas.length === 0) {
-      cambios.tareas = TAREAS_BASE_PRESUPUESTO_ACEPTADO.map((texto) => ({ id: randomUUID(), texto, hecha: false }));
-    }
-    if (!cliente.presupuesto) {
-      cambios.presupuesto = (presupuesto.precioTotal as number) || 0;
-    }
-    await ClienteModel.findOneAndUpdate({ id: clienteId, usuarioId }, { $set: cambios }).exec();
 
     // Cobros pendientes (roadmap, 18/08/2026) — se generan solo la primera
     // vez (presupuesto recién aceptado, `cobros` todavía vacío); a partir

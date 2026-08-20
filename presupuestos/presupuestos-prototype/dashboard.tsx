@@ -1,7 +1,8 @@
 import { useState, useEffect, type ReactNode } from 'react';
-import type { Cliente, Factura } from './types.js';
+import type { Factura } from './types.js';
 import type { ResumenFacturas } from './use-facturas.js';
 import type { PresupuestoMC } from './presupuestos-modelo.js';
+import type { ProyectoResumen } from './api.js';
 import { calcularMetricas } from './dashboard-calculos.js';
 import { formatoEuroPrivado, VALOR_OCULTO, formatoFecha } from './calculos.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
@@ -12,8 +13,8 @@ import styles from './styles.module.css';
 export type DashboardProps = {
   /** Nombre para el saludo. */
   nombre: string;
-  /** Lista de clientes/proyectos (ya cargados). */
-  clientes: Cliente[];
+  /** Lista de proyectos (ya cargados), con el nombre de su cliente resuelto. */
+  proyectos: ProyectoResumen[];
   /** Facturas más recientes primero (ya vienen así del servidor). */
   facturas: Factura[];
   /** Totales ya resueltos por el servidor sobre toda la colección de facturas. */
@@ -22,12 +23,12 @@ export type DashboardProps = {
   privado: boolean;
   /** Activa/desactiva el modo privacidad. */
   onAlternarPrivacidad: () => void;
-  /** Abre la ficha de un cliente. */
+  /** Abre la ficha de un proyecto. */
   onAbrir: (id: string) => void;
   /** Borra una factura (Actividad reciente). */
   onBorrarFactura: (id: string) => void;
-  /** Guarda un cliente actualizado (Próximos montajes y mediciones). */
-  onActualizarCliente: (cliente: Cliente) => void;
+  /** Cambia la fecha de montaje/medición de un proyecto (Próximos montajes y mediciones). */
+  onActualizarRecordatorio: (proyectoId: string, cambios: { fechaMontaje?: string; fechaMedicion?: string }) => void;
 };
 
 const ICONOS: Record<string, ReactNode> = {
@@ -68,8 +69,8 @@ type ItemActividad =
   | { tipo: 'factura'; fecha: string; factura: Factura }
   | { tipo: 'presupuestoAceptado'; fecha: string; presupuesto: PresupuestoMC };
 
-export function Dashboard({ nombre, clientes, facturas, resumen, privado, onAlternarPrivacidad, onAbrir, onBorrarFactura, onActualizarCliente }: DashboardProps) {
-  const m = calcularMetricas(clientes);
+export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlternarPrivacidad, onAbrir, onBorrarFactura, onActualizarRecordatorio }: DashboardProps) {
+  const m = calcularMetricas(proyectos);
   const primerNombre = (nombre || '').split(' ')[0];
 
   /**
@@ -101,22 +102,15 @@ export function Dashboard({ nombre, clientes, facturas, resumen, privado, onAlte
   const [nuevaFecha, setNuevaFecha] = useState('');
 
   const guardarRecordatorio = () => {
-    const cliente = clientes.find((c) => c.id === nuevoClienteId);
-    if (!cliente || !nuevaFecha) return;
-    onActualizarCliente({
-      ...cliente,
-      ...(nuevoTipo === 'montaje' ? { fechaMontaje: nuevaFecha } : { fechaMedicion: nuevaFecha }),
-    });
+    if (!nuevoClienteId || !nuevaFecha) return;
+    onActualizarRecordatorio(nuevoClienteId, nuevoTipo === 'montaje' ? { fechaMontaje: nuevaFecha } : { fechaMedicion: nuevaFecha });
     setAgregando(false);
     setNuevoClienteId('');
     setNuevaFecha('');
   };
 
-  const borrarRecordatorio = (cliente: Cliente, tipo: 'montaje' | 'medicion') => {
-    onActualizarCliente({
-      ...cliente,
-      ...(tipo === 'montaje' ? { fechaMontaje: '' } : { fechaMedicion: '' }),
-    });
+  const borrarRecordatorio = (proyecto: ProyectoResumen, tipo: 'montaje' | 'medicion') => {
+    onActualizarRecordatorio(proyecto.id, tipo === 'montaje' ? { fechaMontaje: '' } : { fechaMedicion: '' });
   };
 
   return (
@@ -174,13 +168,13 @@ export function Dashboard({ nombre, clientes, facturas, resumen, privado, onAlte
                 </div>
               </div>
             ) : (
-              <div key={`p-${item.presupuesto.id}`} className={styles.actividadItem} onClick={() => onAbrir(item.presupuesto.clienteId)} style={{ cursor: 'pointer' }}>
+              <div key={`p-${item.presupuesto.id}`} className={styles.actividadItem} onClick={() => onAbrir(item.presupuesto.proyectoId || item.presupuesto.clienteId)} style={{ cursor: 'pointer' }}>
                 <div className={styles.kpiIconoChipTopo} style={{ width: 34, height: 34 }}>
                   {ICONOS.presupuestos}
                 </div>
                 <div className={styles.actividadCuerpo}>
                   <span className={styles.actividadTitulo}>Presupuesto aceptado</span>
-                  <span className={styles.actividadSub}>{clientes.find((c) => c.id === item.presupuesto.clienteId)?.nombre || item.presupuesto.titulo}</span>
+                  <span className={styles.actividadSub}>{proyectos.find((p) => p.id === (item.presupuesto.proyectoId || item.presupuesto.clienteId))?.nombre || item.presupuesto.titulo}</span>
                 </div>
                 <div className={styles.actividadDerecha} style={{ flexDirection: 'row', alignItems: 'center', gap: '0.6rem' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
@@ -204,10 +198,10 @@ export function Dashboard({ nombre, clientes, facturas, resumen, privado, onAlte
           {agregando && (
             <div className={styles.formInline} style={{ marginTop: 0, marginBottom: '1rem' }}>
               <div className={styles.campo}>
-                <label className={styles.campoLabel}>Cliente</label>
+                <label className={styles.campoLabel}>Proyecto</label>
                 <select className={styles.select} value={nuevoClienteId} onChange={(e) => setNuevoClienteId(e.target.value)}>
                   <option value="">Selecciona…</option>
-                  {clientes.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                  {proyectos.map((p) => <option key={p.id} value={p.id}>{p.nombre}{p.proyecto ? ` — ${p.proyecto}` : ''}</option>)}
                 </select>
               </div>
               <div className={styles.campo}>
@@ -232,14 +226,14 @@ export function Dashboard({ nombre, clientes, facturas, resumen, privado, onAlte
           ) : (
             m.proximos.map((p, i) => (
               <div key={i} className={styles.actividadItem}>
-                <div className={styles.kpiIconoChip} style={{ width: 34, height: 34, cursor: 'pointer' }} onClick={() => onAbrir(p.cliente.id)}>{ICONOS[p.tipo]}</div>
-                <div className={styles.actividadCuerpo} style={{ cursor: 'pointer' }} onClick={() => onAbrir(p.cliente.id)}>
-                  <span className={styles.actividadTitulo}>{p.cliente.nombre}</span>
-                  <span className={styles.actividadSub}>{p.tipo === 'montaje' ? 'Montaje' : 'Medición'} — {p.cliente.proyecto || 'Sin proyecto'}</span>
+                <div className={styles.kpiIconoChip} style={{ width: 34, height: 34, cursor: 'pointer' }} onClick={() => onAbrir(p.proyecto.id)}>{ICONOS[p.tipo]}</div>
+                <div className={styles.actividadCuerpo} style={{ cursor: 'pointer' }} onClick={() => onAbrir(p.proyecto.id)}>
+                  <span className={styles.actividadTitulo}>{p.proyecto.nombre}</span>
+                  <span className={styles.actividadSub}>{p.tipo === 'montaje' ? 'Montaje' : 'Medición'} — {p.proyecto.proyecto || 'Sin proyecto'}</span>
                 </div>
                 <div className={styles.actividadDerecha} style={{ flexDirection: 'row', alignItems: 'center', gap: '0.5rem' }}>
                   <span className={styles.actividadFecha}>{formatoFecha(p.fecha)}</span>
-                  <ConfirmarBorrado titulo="Quitar recordatorio" onConfirmar={() => borrarRecordatorio(p.cliente, p.tipo)} />
+                  <ConfirmarBorrado titulo="Quitar recordatorio" onConfirmar={() => borrarRecordatorio(p.proyecto, p.tipo)} />
                 </div>
               </div>
             ))

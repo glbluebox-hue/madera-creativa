@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Cliente, Tarea } from './types.js';
+import type { Proyecto, Tarea } from './types.js';
 import { generarId } from './mock.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
@@ -12,23 +12,23 @@ const TAREAS_BASE = [
 
 /** Props del panel de tareas. */
 export type TabTareasProps = {
-  /** Cliente con su checklist. */
-  cliente: Cliente;
+  /** Proyecto con su checklist. */
+  proyecto: Proyecto;
   /** Guarda los cambios. */
-  onActualizar: (cliente: Cliente) => void;
+  onActualizar: (proyecto: Proyecto) => void;
 };
 
 /**
  * Pestaña "Tareas": checklist del proyecto con las fases de carpintería.
  * Permite marcar, añadir y eliminar tareas.
  */
-export function TabTareas({ cliente, onActualizar }: TabTareasProps) {
-  const tareas = cliente.tareas ?? [];
+export function TabTareas({ proyecto, onActualizar }: TabTareasProps) {
+  const tareas = proyecto.tareas ?? [];
   const [nueva, setNueva] = useState('');
 
   // Ruta quirúrgica dedicada (Hardening Fase 2) — ver comentario en
-  // `ficha-cliente.tsx`.
-  const guardar = (nuevas: Tarea[]) => api.guardarTareasCliente(cliente.id, nuevas).then(onActualizar);
+  // `ficha-proyecto.tsx`.
+  const guardar = (nuevas: Tarea[]) => api.guardarTareasProyecto(proyecto.id, nuevas).then(onActualizar);
 
   const crearBase = () =>
     guardar(TAREAS_BASE.map((t) => ({ id: generarId(), texto: t, hecha: false })));

@@ -1,16 +1,16 @@
 import { useMemo, useState } from 'react';
-import type { Cliente } from './types.js';
+import type { ProyectoResumen } from './api.js';
 import { colorAvatar, iniciales } from './avatar-utils.js';
 import { etiquetaEstado, grupoEstado } from './estado-utils.js';
 import styles from './styles.module.css';
 
-/** Props de la lista de clientes. */
+/** Props de la lista de proyectos. */
 export type ListaClientesProps = {
-  /** Clientes a mostrar (la página cargada hasta ahora). */
-  clientes: Cliente[];
-  /** Se llama al pulsar el botón de nuevo cliente. */
+  /** Proyectos a mostrar, con el nombre de su cliente ya resuelto. */
+  clientes: ProyectoResumen[];
+  /** Se llama al pulsar el botón de nuevo proyecto. */
   onNuevo: () => void;
-  /** Se llama al seleccionar una ficha de cliente. */
+  /** Se llama al seleccionar una ficha de proyecto. */
   onAbrir: (id: string) => void;
   /** true si quedan más clientes por cargar (Incremento 1.5). */
   hayMas?: boolean;
@@ -23,8 +23,12 @@ export type ListaClientesProps = {
 type Filtro = 'todos' | 'curso' | 'fin';
 
 /**
- * Vista principal: lista de clientes con avatar, proyecto e insignia de
- * estado — búsqueda y filtro por estado sobre los clientes ya cargados.
+ * Vista principal: lista de proyectos con avatar del cliente, nombre del
+ * proyecto e insignia de estado — búsqueda y filtro por estado sobre los
+ * proyectos ya cargados. Cada fila es un PROYECTO, no un cliente
+ * (incremento "Cliente ≠ Proyecto", 20/08/2026): un mismo cliente puede
+ * aparecer en varias filas si tiene varios proyectos — el filtro
+ * "Finalizados" es, en la práctica, la sección de proyectos archivados.
  */
 export function ListaClientes({ clientes, onNuevo, onAbrir, hayMas, cargandoMas, onCargarMas }: ListaClientesProps) {
   const [busqueda, setBusqueda] = useState('');
@@ -61,7 +65,7 @@ export function ListaClientes({ clientes, onNuevo, onAbrir, hayMas, cargandoMas,
         <button className={`${styles.filtroPill} ${filtro === 'todos' ? styles.filtroPillActivo : ''}`} onClick={() => setFiltro('todos')}>Todos</button>
         <button className={`${styles.filtroPill} ${filtro === 'curso' ? styles.filtroPillActivo : ''}`} onClick={() => setFiltro('curso')}>En curso</button>
         <button className={`${styles.filtroPill} ${filtro === 'fin' ? styles.filtroPillActivo : ''}`} onClick={() => setFiltro('fin')}>Finalizados</button>
-        <button className={styles.btnCirculoOscuro} onClick={onNuevo} title="Nueva ficha de cliente" style={{ marginLeft: 'auto' }}>
+        <button className={styles.btnCirculoOscuro} onClick={onNuevo} title="Nuevo proyecto" style={{ marginLeft: 'auto' }}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
         </button>
       </div>
@@ -71,9 +75,9 @@ export function ListaClientes({ clientes, onNuevo, onAbrir, hayMas, cargandoMas,
           <div className={styles.vacioIcono} style={{ display: 'flex', justifyContent: 'center' }}>
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
           </div>
-          <p>Aún no tienes ninguna ficha de cliente.</p>
+          <p>Aún no tienes ningún proyecto.</p>
           <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={onNuevo}>
-            Crear mi primera ficha
+            Crear mi primer proyecto
           </button>
         </div>
       ) : visibles.length === 0 ? (
@@ -84,7 +88,7 @@ export function ListaClientes({ clientes, onNuevo, onAbrir, hayMas, cargandoMas,
         <div className={styles.listaClientesFilas}>
           {visibles.map((c) => (
             <div key={c.id} className={styles.clienteFila} onClick={() => onAbrir(c.id)}>
-              <div className={styles.clienteAvatar} style={{ background: colorAvatar(c.id) }}>{iniciales(c.nombre)}</div>
+              <div className={styles.clienteAvatar} style={{ background: colorAvatar(c.clienteId) }}>{iniciales(c.nombre)}</div>
               <div className={styles.clienteFilaCuerpo}>
                 <span className={styles.clienteFilaNombre}>{c.nombre}</span>
                 <span className={styles.clienteFilaSub}>{c.proyecto || 'Sin proyecto definido'}</span>

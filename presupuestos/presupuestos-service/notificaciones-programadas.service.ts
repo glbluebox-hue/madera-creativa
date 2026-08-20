@@ -1,4 +1,4 @@
-import { ClienteModel, PresupuestoModel, conectar } from './cliente.model.js';
+import { ProyectoModel, PresupuestoModel, conectar } from './cliente.model.js';
 import { UsuarioModel, conectarUsuarios, leerPreferenciaNotif } from './usuario.model.js';
 import { enviarNotificacion } from './push.service.js';
 import type { PushSub } from './push.service.js';
@@ -93,7 +93,7 @@ export async function ejecutarAvisoCobrosPendientes(ahora: Date = new Date()): P
   }
 }
 
-/** Margen bajo: una vez por proyecto mientras siga por debajo del umbral (ver `Cliente.margenAvisado`). `ahora` decide a quién le toca. Exportada aparte, mismo motivo. */
+/** Margen bajo: una vez por proyecto mientras siga por debajo del umbral (ver `Proyecto.margenAvisado`). `ahora` decide a quién le toca. Exportada aparte, mismo motivo. */
 export async function ejecutarAvisoMargenBajo(ahora: Date = new Date()): Promise<void> {
   await conectar();
   await conectarUsuarios();
@@ -108,28 +108,28 @@ export async function ejecutarAvisoMargenBajo(ahora: Date = new Date()): Promise
     if (ultimaFechaPorClave.get(clave) === hoy) continue;
     ultimaFechaPorClave.set(clave, hoy);
 
-    const clientesActivos = await ClienteModel.find({ usuarioId: usuario.id, estado: 'en_curso' })
-      .select('nombre movimientos horas tarifaHora margenAvisado')
+    const proyectosActivos = await ProyectoModel.find({ usuarioId: usuario.id, estado: 'en_curso' })
+      .select('id proyecto movimientos horas tarifaHora margenAvisado')
       .lean()
       .exec() as any[];
 
-    for (const cliente of clientesActivos) {
-      const margenPorcentaje = calcularMargenPorcentaje(cliente);
+    for (const proyecto of proyectosActivos) {
+      const margenPorcentaje = calcularMargenPorcentaje(proyecto);
       const bajo = margenPorcentaje < UMBRAL_MARGEN_BAJO;
 
-      if (bajo && !cliente.margenAvisado) {
-        await ClienteModel.updateOne({ id: cliente.id }, { $set: { margenAvisado: true } }).exec();
+      if (bajo && !proyecto.margenAvisado) {
+        await ProyectoModel.updateOne({ id: proyecto.id }, { $set: { margenAvisado: true } }).exec();
         for (const sub of subs) {
           await enviarNotificacion(
             sub,
             'Margen bajo',
-            `El margen de "${cliente.nombre || 'un proyecto'}" ha bajado al ${margenPorcentaje.toFixed(1)}%.`,
-            { tipo: 'margen-bajo', clienteId: cliente.id }
+            `El margen de "${proyecto.proyecto || 'un proyecto'}" ha bajado al ${margenPorcentaje.toFixed(1)}%.`,
+            { tipo: 'margen-bajo', proyectoId: proyecto.id }
           ).catch((err) => logger.error({ err, usuarioId: usuario.id }, '[notificaciones] Error enviando aviso de margen bajo'));
         }
-      } else if (!bajo && cliente.margenAvisado) {
+      } else if (!bajo && proyecto.margenAvisado) {
         // Se recupera por encima del umbral — se limpia la guarda para que una caída futura sí vuelva a avisar.
-        await ClienteModel.updateOne({ id: cliente.id }, { $set: { margenAvisado: false } }).exec();
+        await ProyectoModel.updateOne({ id: proyecto.id }, { $set: { margenAvisado: false } }).exec();
       }
     }
   }
@@ -151,7 +151,7 @@ export async function ejecutarBriefingDiario(ahora: Date = new Date()): Promise<
     ultimaFechaPorClave.set(clave, hoy);
 
     const [numActivos, presupuestos] = await Promise.all([
-      ClienteModel.countDocuments({ usuarioId: usuario.id, estado: 'en_curso' }).exec(),
+      ProyectoModel.countDocuments({ usuarioId: usuario.id, estado: 'en_curso' }).exec(),
       PresupuestoModel.find({ usuarioId: usuario.id, estado: 'aceptado' }).select('cobros').lean().exec() as Promise<any[]>,
     ]);
     let totalPendiente = 0;

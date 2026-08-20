@@ -115,15 +115,50 @@ const EstanciaSchema = new Schema(
   { _id: false }
 );
 
-/** Esquema principal de una ficha de cliente / proyecto. */
+/**
+ * Ficha de identidad de un cliente — SOLO datos de contacto. Hasta el
+ * incremento "Cliente ≠ Proyecto" (especificación del usuario, 20/08/2026),
+ * este mismo esquema tenía además todos los campos de un trabajo concreto
+ * (proyecto, dirección de obra, estado, presupuesto, mediciones, gastos...),
+ * lo que mezclaba en un mismo documento la identidad de la persona con el
+ * expediente de un trabajo — al crear un segundo proyecto para el mismo
+ * cliente, sus gastos/ingresos/documentos se mezclaban con los del primero,
+ * porque todo vivía en la misma ficha (reporte real del usuario).
+ *
+ * Los documentos YA guardados en la colección `clientes` siguen teniendo
+ * físicamente todos esos campos antiguos — Mongoose simplemente ya no los
+ * declara ni los lee/escribe aquí. `migracion-proyectos.ts` los traspasa a
+ * `ProyectoModel` (mismo `id`, ver ese archivo) sin borrar ni modificar
+ * ni un solo documento de esta colección.
+ */
 const ClienteSchema = new Schema({
   id: { type: String, required: true, unique: true, index: true },
   /** ID del usuario propietario — aísla los datos por cuenta. */
   usuarioId: { type: String, required: true, index: true, default: 'admin' },
   nombre: { type: String, required: true },
-  proyecto: { type: String, default: '' },
   telefono: { type: String, default: '' },
   email: { type: String, default: '' },
+  creado: { type: String, required: true },
+});
+
+/**
+ * Un proyecto/expediente de trabajo — la gestión económica y documental
+ * (gastos, ingresos, mediciones, tareas, fotos, adjuntos, dibujos) es
+ * exclusiva de CADA proyecto, nunca compartida entre los distintos
+ * proyectos de un mismo cliente. `clienteId` enlaza con la identidad
+ * (`ClienteSchema`, arriba) — un cliente puede tener tantos `Proyecto`
+ * como trabajos reales tenga, cada uno con su propio ciclo de vida
+ * (`estado`) independiente. Mismo shape que el antiguo `ClienteSchema`
+ * (sección "hoy" de arriba) menos los campos de identidad, para que
+ * `migracion-proyectos.ts` pueda copiar cada ficha vieja tal cual, campo a
+ * campo, sin perder ni transformar ningún dato existente.
+ */
+const ProyectoSchema = new Schema({
+  id: { type: String, required: true, unique: true, index: true },
+  usuarioId: { type: String, required: true, index: true, default: 'admin' },
+  /** Cliente (identidad) al que pertenece este proyecto. */
+  clienteId: { type: String, required: true, index: true },
+  proyecto: { type: String, default: '' },
   direccion: { type: String, default: '' },
   presupuesto: { type: Number, default: 0 },
   tarifaHora: { type: Number, default: 0 },
@@ -133,12 +168,7 @@ const ClienteSchema = new Schema({
     enum: ['presupuestado', 'en_curso', 'finalizado', 'rechazado'],
     default: 'presupuestado',
   },
-  // Datos de acceso a la obra (pestaña "Datos") — faltaban en este esquema
-  // por completo: Mongoose descarta en silencio, al guardar, cualquier
-  // campo que no esté declarado aquí, así que se veían marcados/rellenos
-  // en pantalla pero nunca llegaban a persistirse de verdad (reportado por
-  // el usuario para "Tareas del proyecto"; mismo fallo afectaba también a
-  // estos campos y a "Mediciones").
+  // Datos de acceso a la obra (pestaña "Datos").
   whatsapp: { type: String },
   ubicacion: { type: String },
   codigoPuerta: { type: String },
@@ -164,6 +194,7 @@ const ClienteSchema = new Schema({
    */
   margenAvisado: { type: Boolean, default: false },
 });
+ProyectoSchema.index({ usuarioId: 1, clienteId: 1, creado: -1 });
 
 /** Esquema de configuración de empresa — uno por usuario. */
 const EmpresaSchema = new Schema({
@@ -250,6 +281,7 @@ const NotaSchema = new Schema({
   prioridad: { type: String, enum: ['alta', 'media', 'baja'], default: 'media' },
   estado: { type: String, enum: ['abierta', 'hecha'], default: 'abierta' },
   clienteId: { type: String, default: '' },
+  /** Proyecto/expediente al que pertenece — desde el incremento "Cliente ≠ Proyecto" (20/08/2026) es la clave real de aislamiento entre trabajos del mismo cliente; `clienteId` se mantiene para poder ver "todas las notas de este cliente" a través de sus proyectos. */
   proyectoId: { type: String, default: '' },
   etiquetas: { type: [String], default: [] },
   origen: { type: String, enum: ['texto', 'voz'], default: 'texto' },
@@ -257,6 +289,7 @@ const NotaSchema = new Schema({
   actualizado: { type: String, required: true },
 });
 NotaSchema.index({ usuarioId: 1, clienteId: 1 });
+NotaSchema.index({ usuarioId: 1, proyectoId: 1 });
 NotaSchema.index({ usuarioId: 1, creado: -1 });
 
 /**
@@ -335,6 +368,8 @@ const PresupuestoSchema = new Schema({
   id: { type: String, required: true, unique: true, index: true },
   usuarioId: { type: String, required: true, index: true, default: 'admin' },
   clienteId: { type: String, required: true, index: true },
+  /** Proyecto/expediente al que pertenece (incremento "Cliente ≠ Proyecto", 20/08/2026) — `''` en presupuestos guardados antes de ese incremento, hasta que pasen por `migracion-proyectos.ts`. */
+  proyectoId: { type: String, default: '', index: true },
   titulo: { type: String, required: true },
   formato: { type: String, enum: ['simple', 'lienzo', 'documento'], default: 'simple' },
   /**
@@ -466,6 +501,8 @@ const ContratoSchema = new Schema({
   id: { type: String, required: true, unique: true, index: true },
   usuarioId: { type: String, required: true, index: true, default: 'admin' },
   clienteId: { type: String, required: true, index: true },
+  /** Proyecto/expediente al que pertenece (incremento "Cliente ≠ Proyecto", 20/08/2026) — `''` en contratos guardados antes de ese incremento, hasta que pasen por `migracion-proyectos.ts`. */
+  proyectoId: { type: String, default: '', index: true },
   titulo: { type: String, required: true },
   contenidoDocumento: { type: Schema.Types.Mixed, default: {} },
   creado: { type: String, required: true },
@@ -482,8 +519,15 @@ ContratoSchema.index({ usuarioId: 1, clienteId: 1, creado: -1 });
  */
 ClienteSchema.index({ usuarioId: 1, creado: -1 });
 
-/** Modelo Mongoose de Cliente (reutiliza el existente si ya está registrado). */
+/** Modelo Mongoose de Cliente — identidad (nombre/teléfono/email), reutiliza el existente si ya está registrado. */
 export const ClienteModel: Model<any> = models.Cliente || model('Cliente', ClienteSchema);
+
+/**
+ * Modelo Mongoose de Proyecto — colección nueva `proyectos` (incremento
+ * "Cliente ≠ Proyecto", 20/08/2026). `migracion-proyectos.ts` la puebla a
+ * partir de los documentos existentes en `clientes`, sin tocarlos.
+ */
+export const ProyectoModel: Model<any> = models.Proyecto || model('Proyecto', ProyectoSchema);
 
 /**
  * Modelo Mongoose de Proveedor. Sin nombre de colección explícito: Mongoose
@@ -557,7 +601,8 @@ const FacturaSchema = new Schema({
   porcentajeImpuesto: { type: Number },
   importeImpuesto: { type: Number },
   categoria: { type: String, default: '' },
-  proyectoId: { type: String, default: '' },
+  /** Proyecto/expediente al que pertenece — desde el incremento "Cliente ≠ Proyecto" (20/08/2026) es la clave real de aislamiento entre trabajos del mismo cliente; `clienteId` se mantiene apuntando a la identidad. */
+  proyectoId: { type: String, default: '', index: true },
   /** Relación real al proveedor — `proveedor` (texto) se mantiene como respaldo/compatibilidad con facturas antiguas. */
   proveedorId: { type: String, default: '', index: true },
   /** Cómo entró el documento al sistema. */
@@ -639,8 +684,8 @@ const DibujoSchema = new Schema({
   clienteId: { type: String, default: '', index: true },
   /** Carpeta del cliente que lo contiene — vacío si aún no se ha archivado. */
   carpetaId: { type: String, default: '', index: true },
-  /** Reservado para agrupar dibujos por proyecto en una fase futura. */
-  proyectoId: { type: String, default: '' },
+  /** Proyecto/expediente al que pertenece (incremento "Cliente ≠ Proyecto", 20/08/2026) — `clienteId` se mantiene apuntando a la identidad. */
+  proyectoId: { type: String, default: '', index: true },
   nombre: { type: String, required: true },
   /** URL en almacenamiento externo tras subir el Base64 recibido (Incremento 1.7). */
   miniatura: { type: String, default: '' },
@@ -674,6 +719,8 @@ const CarpetaSchema = new Schema({
   id: { type: String, required: true, unique: true, index: true },
   usuarioId: { type: String, required: true, index: true, default: 'admin' },
   clienteId: { type: String, required: true, index: true },
+  /** Proyecto/expediente al que pertenece (incremento "Cliente ≠ Proyecto", 20/08/2026) — `''` en carpetas creadas antes de ese incremento, hasta que pasen por `migracion-proyectos.ts`. */
+  proyectoId: { type: String, default: '', index: true },
   nombre: { type: String, required: true },
   creadoEn: { type: String, required: true },
   actualizadoEn: { type: String, required: true },

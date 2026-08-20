@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { ClienteResumen } from './api.js';
+import type { ProyectoResumen } from './api.js';
 import * as api from './api.js';
 import { formatoEuro } from './calculos.js';
 import { formatoFecha } from './calculos.js';
@@ -26,14 +26,14 @@ const CARPETAS: { id: Carpeta; label: string; color: string; bg: string }[] = [
 ];
 
 /** Clasifica un cliente en su carpeta. */
-function carpetaDe(c: ClienteResumen): Carpeta {
+function carpetaDe(c: ProyectoResumen): Carpeta {
   if (c.estado === 'rechazado') return 'rechazados';
   if (c.estado === 'presupuestado') return 'pendientes';
   return 'aceptados'; // en_curso | finalizado
 }
 
 /** Año de creación de un cliente. */
-function anioCliente(c: ClienteResumen): number {
+function anioCliente(c: ProyectoResumen): number {
   return new Date(c.creado).getFullYear();
 }
 
@@ -49,11 +49,11 @@ function anioCliente(c: ClienteResumen): number {
 export function SeccionPresupuestos({ onAbrirCliente }: SeccionPresupuestosProps) {
   const [carpeta, setCarpeta] = useState<Carpeta>('aceptados');
   const [anio, setAnio] = useState(new Date().getFullYear());
-  const [clientes, setClientes] = useState<ClienteResumen[]>([]);
+  const [clientes, setClientes] = useState<ProyectoResumen[]>([]);
   const [cargando, setCargando] = useState(true);
 
   useEffect(() => {
-    api.obtenerResumenClientes().then(setClientes).finally(() => setCargando(false));
+    api.obtenerResumenProyectos().then(setClientes).finally(() => setCargando(false));
   }, []);
 
   const aniosDisponibles = [...new Set(clientes.map(anioCliente))].sort((a, b) => b - a);
@@ -61,13 +61,13 @@ export function SeccionPresupuestos({ onAbrirCliente }: SeccionPresupuestosProps
 
   const delAnio = clientes.filter((c) => anioCliente(c) === anio);
 
-  const porCarpeta: Record<Carpeta, ClienteResumen[]> = {
+  const porCarpeta: Record<Carpeta, ProyectoResumen[]> = {
     aceptados: delAnio.filter((c) => carpetaDe(c) === 'aceptados'),
     pendientes: delAnio.filter((c) => carpetaDe(c) === 'pendientes'),
     rechazados: delAnio.filter((c) => carpetaDe(c) === 'rechazados'),
   };
 
-  const totalCarpeta = (lista: ClienteResumen[]) => lista.reduce((s, c) => s + (c.presupuesto || 0), 0);
+  const totalCarpeta = (lista: ProyectoResumen[]) => lista.reduce((s, c) => s + (c.presupuesto || 0), 0);
   const totalAceptados = totalCarpeta(porCarpeta.aceptados);
   const totalPendientes = totalCarpeta(porCarpeta.pendientes);
   const totalRechazados = totalCarpeta(porCarpeta.rechazados);

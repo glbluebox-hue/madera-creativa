@@ -3,7 +3,7 @@ import * as api from './api.js';
 import type { PresupuestoMC } from './presupuestos-modelo.js';
 import type { Empresa } from './use-empresa.js';
 import type { PlantillaMC } from './documento-modelo.js';
-import type { Cliente } from './types.js';
+import type { Proyecto } from './types.js';
 import { AbrirDocumento } from './abrir-documento.js';
 import { generarId } from './mock.js';
 import { resolverVariables } from './documento-registro-variables.js';
@@ -20,8 +20,8 @@ export type PresupuestosListaGlobalProps = {
   onActualizarEmpresa: (cambios: Partial<Empresa>) => void;
   /** Navega a la ficha de un cliente — usado para abrir presupuestos en modo simple (esta vista no los edita directamente). */
   onAbrirCliente: (clienteId: string) => void;
-  /** Crea una ficha de cliente real, sin salir de este selector — "+ Nuevo cliente" dentro de "+ Crear presupuesto". */
-  onCrearCliente: (cliente: Cliente) => void;
+  /** Crea un cliente y su primer proyecto reales, sin salir de este selector — "+ Nuevo cliente" dentro de "+ Crear presupuesto". */
+  onCrearProyecto: (proyecto: Proyecto) => void;
 };
 
 /**
@@ -39,7 +39,7 @@ export type PresupuestosListaGlobalProps = {
  * editor. El borrador se abre sin guardar todavía: el primer "Guardar" del
  * editor hace el alta real vía `PUT /presupuestos/:id`.
  */
-export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa, onAbrirCliente, onCrearCliente }: PresupuestosListaGlobalProps) {
+export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa, onAbrirCliente, onCrearProyecto }: PresupuestosListaGlobalProps) {
   const [presupuestos, setPresupuestos] = useState<PresupuestoMC[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -155,19 +155,16 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
     api.obtenerPlantillas().then(setPlantillas).catch(() => setPlantillas([]));
   };
 
-  /** "+ Nuevo cliente" del propio selector — crea la ficha real (mismo mecanismo que la sección Clientes) y continúa el flujo con ese cliente ya elegido, sin salir de "+ Crear presupuesto". */
-  const crearClienteYContinuar = () => {
+  /** "+ Nuevo cliente" del propio selector — crea el cliente y un primer proyecto reales (mismo mecanismo que la sección Clientes) y continúa el flujo con ese cliente ya elegido, sin salir de "+ Crear presupuesto". */
+  const crearClienteYContinuar = async () => {
     const nombre = nombreClienteNuevo.trim();
     if (!nombre) return;
-    const nuevo: Cliente = {
-      id: generarId(), nombre, proyecto: '', telefono: '', email: '', direccion: '',
-      presupuesto: 0, tarifaHora: 0, creado: new Date().toISOString().slice(0, 10), estado: 'presupuestado',
-      movimientos: [], horas: [], adjuntos: [], fotos: [],
-    };
-    onCrearCliente(nuevo);
+    const cliente = await api.crearCliente({ nombre });
+    const proyecto = await api.crearProyecto({ clienteId: cliente.id });
+    onCrearProyecto(proyecto);
     setNuevoClienteAbierto(false);
     setNombreClienteNuevo('');
-    setClienteElegidoId(nuevo.id);
+    setClienteElegidoId(cliente.id);
   };
 
   /** Abre un borrador nuevo en `formato:'documento'` sin guardar todavía — en blanco o resuelto a partir de una plantilla. */

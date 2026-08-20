@@ -42,6 +42,9 @@ import {
   esquemaPerfil,
   esquemaCambiarAcceso,
   esquemaCliente,
+  esquemaClienteEntrada,
+  esquemaProyecto,
+  esquemaProyectoEntrada,
   esquemaFactura,
   esquemaEmpresa,
   esquemaPushSubscribe,
@@ -941,31 +944,28 @@ export function run() {
     } catch (err) { responderError(req, res, err); }
   });
 
-  // ── Clientes — aislados por usuarioId ──
+  // ── Clientes (identidad) — aislados por usuarioId ──
+  //
+  // Incremento "Cliente ≠ Proyecto" (20/08/2026): un `Cliente` es solo
+  // nombre/teléfono/email. Toda la gestión económica y documental de un
+  // trabajo concreto vive en `Proyecto` (rutas `/proyectos/...`, más
+  // abajo) — un cliente puede tener tantos proyectos como trabajos reales
+  // tenga, y cada uno se gestiona de forma completamente independiente.
 
-  /**
-   * Lista clientes paginada (Incremento 1.5). Registrada antes de
-   * `/clientes/nombres` y `/clientes/:id` no aplica aquí porque no colisiona
-   * con ellas, pero mantenemos el orden explícito: rutas específicas antes
-   * de rutas con parámetro.
-   */
+  /** Lista clientes paginada. Registrada antes de `/clientes/nombres` y `/clientes/:id` — rutas específicas antes de rutas con parámetro. */
   app.get('/clientes', requireAuth, validar(esquemaPaginacionClientes, 'query'), async (req: AuthRequest, res) => {
     try {
       const { pagina, limite } = req.query as unknown as { pagina: number; limite: number };
       const { items, total } = await svc.listarClientes(req.usuarioId!, { pagina, limite });
-      const slim = items.map((c: any) => ({
-        ...c,
-        adjuntos: (c.adjuntos || []).map(({ url: _url, ...rest }: any) => rest),
-      }));
-      res.json({ items: slim, pagina, limite, total, totalPaginas: Math.max(1, Math.ceil(total / limite)) });
+      res.json({ items, pagina, limite, total, totalPaginas: Math.max(1, Math.ceil(total / limite)) });
     } catch (err) { responderError(req, res, err); }
   });
 
   /**
-   * Solo `id`+`nombre` de todos los clientes, sin paginar — para selectores
-   * (p. ej. el desplegable de cliente al crear una factura), que necesitan
-   * poder referenciar cualquier cliente, no solo los de la página cargada.
-   * Debe registrarse antes de `/clientes/:id` para no colisionar con él.
+   * Solo `id`+`nombre` de todos los clientes, sin paginar — para
+   * selectores (desplegable de cliente al crear una factura, selector
+   * "cliente existente" al crear un proyecto nuevo). Debe registrarse
+   * antes de `/clientes/:id` para no colisionar con él.
    */
   app.get('/clientes/nombres', requireAuth, async (req: AuthRequest, res) => {
     try {
@@ -973,16 +973,9 @@ export function run() {
     } catch (err) { responderError(req, res, err); }
   });
 
-  /**
-   * Resumen ligero (sin fotos/adjuntos/dibujos) de todos los clientes, sin
-   * paginar — para vistas que necesitan organizar el conjunto completo
-   * (p. ej. `SeccionPresupuestos`, por año y carpeta). Debe registrarse
-   * antes de `/clientes/:id` para no colisionar con él.
-   */
-  app.get('/clientes/resumen', requireAuth, async (req: AuthRequest, res) => {
-    try {
-      res.json(await svc.listarClientesResumen(req.usuarioId!));
-    } catch (err) { responderError(req, res, err); }
+  app.post('/clientes', requireAuth, validar(esquemaClienteEntrada), async (req: AuthRequest, res) => {
+    try { res.json(await svc.crearCliente(req.body, req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
   });
 
   app.get('/clientes/:id', requireAuth, async (req: AuthRequest, res) => {
@@ -993,14 +986,13 @@ export function run() {
     } catch (err) { responderError(req, res, err); }
   });
 
-  // Adjuntos pedidos aparte de la ficha — ver comentario de `obtenerCliente`.
-  app.get('/clientes/:id/adjuntos', requireAuth, async (req: AuthRequest, res) => {
-    try {
-      res.json(await svc.obtenerAdjuntosCliente(req.params.id, req.usuarioId!));
-    } catch (err) { responderError(req, res, err); }
+  /** Proyectos de un cliente concreto — para el selector "cliente existente → nuevo proyecto" y "otros proyectos de este cliente" en la ficha. */
+  app.get('/clientes/:id/proyectos', requireAuth, async (req: AuthRequest, res) => {
+    try { res.json(await svc.listarProyectosDeCliente(req.params.id, req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
   });
 
-  app.put('/clientes/:id', requireAuth, validar(esquemaCliente), async (req: AuthRequest, res) => {
+  app.put('/clientes/:id', requireAuth, validar(esquemaClienteEntrada), async (req: AuthRequest, res) => {
     try {
       const cliente = await svc.guardarCliente({ ...req.body, id: req.params.id }, req.usuarioId!);
       res.json(cliente);
@@ -1014,39 +1006,94 @@ export function run() {
     } catch (err) { responderError(req, res, err); }
   });
 
+  // ── Proyectos (expedientes de trabajo) — aislados por usuarioId ──
+
+  /**
+   * Resumen ligero (sin fotos/adjuntos/dibujos/movimientos) de TODOS los
+   * proyectos del usuario, con el nombre de su cliente ya resuelto — para
+   * vistas que necesitan organizar el conjunto completo (`ListaClientes`,
+   * `SeccionPresupuestos`, por año y carpeta). Sustituye a la antigua
+   * `/clientes/resumen`. Registrada antes de `/proyectos/:id`.
+   */
+  app.get('/proyectos/resumen', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      res.json(await svc.listarProyectosResumen(req.usuarioId!));
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /**
+   * Crea un proyecto nuevo — para un cliente nuevo o ya existente, da
+   * igual: `clienteId` en el cuerpo siempre lo decide quien llama. Siempre
+   * empieza completamente en cero (especificación del usuario) — nunca
+   * copia nada de otros proyectos del mismo cliente.
+   */
+  app.post('/proyectos', requireAuth, validar(esquemaProyectoEntrada), async (req: AuthRequest, res) => {
+    try { res.json(await svc.crearProyecto(req.body, req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.get('/proyectos/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const proyecto = await svc.obtenerProyecto(req.params.id, req.usuarioId!);
+      if (!proyecto) { res.status(404).json({ error: 'No encontrado' }); return; }
+      res.json(proyecto);
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  // Adjuntos pedidos aparte de la ficha — ver comentario de `obtenerProyecto`.
+  app.get('/proyectos/:id/adjuntos', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      res.json(await svc.obtenerAdjuntosProyecto(req.params.id, req.usuarioId!));
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  app.put('/proyectos/:id', requireAuth, validar(esquemaProyecto), async (req: AuthRequest, res) => {
+    try {
+      const proyecto = await svc.guardarProyecto({ ...req.body, id: req.params.id }, req.usuarioId!);
+      res.json(proyecto);
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  app.delete('/proyectos/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      await svc.borrarProyecto(req.params.id, req.usuarioId!);
+      res.json({ ok: true });
+    } catch (err) { responderError(req, res, err); }
+  });
+
   /**
    * Rutas quirúrgicas dedicadas para movimientos/tareas/estado/presupuesto
-   * (Hardening Fase 2) — desde ahora son la ÚNICA forma de cambiar estos
-   * campos tras crear el cliente; `guardarCliente` ya los ignora en
-   * cualquier edición (ver comentario en `presupuestos-service.ts`).
+   * — la ÚNICA forma de cambiar estos campos tras crear el proyecto;
+   * `guardarProyecto` ya los ignora en cualquier edición (ver comentario en
+   * `presupuestos-service.ts`).
    */
-  app.post('/clientes/:id/movimientos', requireAuth, validar(esquemaMovimientoEntrada), async (req: AuthRequest, res) => {
-    try { res.json(await svc.anadirMovimientoCliente(req.params.id, req.usuarioId!, req.body)); }
+  app.post('/proyectos/:id/movimientos', requireAuth, validar(esquemaMovimientoEntrada), async (req: AuthRequest, res) => {
+    try { res.json(await svc.anadirMovimientoProyecto(req.params.id, req.usuarioId!, req.body)); }
     catch (err) { responderError(req, res, err); }
   });
 
-  app.put('/clientes/:id/movimientos/:movId', requireAuth, validar(esquemaMovimientoEntrada), async (req: AuthRequest, res) => {
-    try { res.json(await svc.editarMovimientoCliente(req.params.id, req.usuarioId!, req.params.movId, req.body)); }
+  app.put('/proyectos/:id/movimientos/:movId', requireAuth, validar(esquemaMovimientoEntrada), async (req: AuthRequest, res) => {
+    try { res.json(await svc.editarMovimientoProyecto(req.params.id, req.usuarioId!, req.params.movId, req.body)); }
     catch (err) { responderError(req, res, err); }
   });
 
-  app.delete('/clientes/:id/movimientos/:movId', requireAuth, async (req: AuthRequest, res) => {
-    try { res.json(await svc.borrarMovimientoCliente(req.params.id, req.usuarioId!, req.params.movId)); }
+  app.delete('/proyectos/:id/movimientos/:movId', requireAuth, async (req: AuthRequest, res) => {
+    try { res.json(await svc.borrarMovimientoProyecto(req.params.id, req.usuarioId!, req.params.movId)); }
     catch (err) { responderError(req, res, err); }
   });
 
-  app.put('/clientes/:id/tareas', requireAuth, validar(esquemaTareasEntrada), async (req: AuthRequest, res) => {
-    try { res.json(await svc.guardarTareasCliente(req.params.id, req.usuarioId!, req.body.tareas)); }
+  app.put('/proyectos/:id/tareas', requireAuth, validar(esquemaTareasEntrada), async (req: AuthRequest, res) => {
+    try { res.json(await svc.guardarTareasProyecto(req.params.id, req.usuarioId!, req.body.tareas)); }
     catch (err) { responderError(req, res, err); }
   });
 
-  app.put('/clientes/:id/estado', requireAuth, validar(esquemaEstadoClienteEntrada), async (req: AuthRequest, res) => {
-    try { res.json(await svc.cambiarEstadoCliente(req.params.id, req.usuarioId!, req.body.estado)); }
+  app.put('/proyectos/:id/estado', requireAuth, validar(esquemaEstadoClienteEntrada), async (req: AuthRequest, res) => {
+    try { res.json(await svc.cambiarEstadoProyecto(req.params.id, req.usuarioId!, req.body.estado)); }
     catch (err) { responderError(req, res, err); }
   });
 
-  app.put('/clientes/:id/presupuesto', requireAuth, validar(esquemaPresupuestoClienteEntrada), async (req: AuthRequest, res) => {
-    try { res.json(await svc.cambiarPresupuestoCliente(req.params.id, req.usuarioId!, req.body.presupuesto)); }
+  app.put('/proyectos/:id/presupuesto', requireAuth, validar(esquemaPresupuestoClienteEntrada), async (req: AuthRequest, res) => {
+    try { res.json(await svc.cambiarPresupuestoProyecto(req.params.id, req.usuarioId!, req.body.presupuesto)); }
     catch (err) { responderError(req, res, err); }
   });
 
@@ -1179,14 +1226,19 @@ export function run() {
    */
   app.get('/facturas', requireAuth, validar(esquemaPaginacionFacturas, 'query'), async (req: AuthRequest, res) => {
     try {
-      const { pagina, limite, tipo, anio, trimestre, clienteId, proveedor } = req.query as unknown as {
+      const { pagina, limite, tipo, anio, trimestre, clienteId, proyectoId, proveedor } = req.query as unknown as {
         pagina: number; limite: number; tipo: 'ingreso' | 'gasto' | 'todas'; anio?: number; trimestre?: number;
-        clienteId?: string; proveedor?: string;
+        clienteId?: string; proyectoId?: string; proveedor?: string;
       };
-      // clienteId/proveedor/anio devuelven un conjunto completo sin paginar
-      // (acotado por diseño: las facturas de un proyecto, de un proveedor o
-      // de un año concreto) — se comprueban en este orden porque son usos
-      // mutuamente excluyentes en la práctica.
+      // proyectoId/clienteId/proveedor/anio devuelven un conjunto completo
+      // sin paginar (acotado por diseño: las facturas de un proyecto, de un
+      // proveedor o de un año concreto) — se comprueban en este orden
+      // porque son usos mutuamente excluyentes en la práctica.
+      if (proyectoId !== undefined) {
+        const items = await svc.listarFacturasDeProyecto(req.usuarioId!, proyectoId);
+        res.json({ items, pagina: 1, limite: items.length, total: items.length, totalPaginas: 1 });
+        return;
+      }
       if (clienteId !== undefined) {
         const items = await svc.listarFacturasDeCliente(req.usuarioId!, clienteId);
         res.json({ items, pagina: 1, limite: items.length, total: items.length, totalPaginas: 1 });
@@ -1409,11 +1461,14 @@ export function run() {
 
   app.get('/presupuestos', requireAuth, async (req: AuthRequest, res) => {
     try {
+      const proyectoId = typeof req.query.proyectoId === 'string' ? req.query.proyectoId : '';
       const clienteId = typeof req.query.clienteId === 'string' ? req.query.clienteId : '';
       res.json(
-        clienteId
-          ? await svc.listarPresupuestosDeCliente(req.usuarioId!, clienteId)
-          : await svc.listarPresupuestos(req.usuarioId!)
+        proyectoId
+          ? await svc.listarPresupuestosDeProyecto(req.usuarioId!, proyectoId)
+          : clienteId
+            ? await svc.listarPresupuestosDeCliente(req.usuarioId!, clienteId)
+            : await svc.listarPresupuestos(req.usuarioId!)
       );
     } catch (err) { responderError(req, res, err); }
   });

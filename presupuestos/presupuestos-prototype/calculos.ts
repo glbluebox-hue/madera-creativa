@@ -1,6 +1,6 @@
-import type { Cliente } from './types.js';
+import type { Proyecto } from './types.js';
 
-/** Resumen económico calculado de un cliente. */
+/** Resumen económico calculado de un proyecto. */
 export type ResumenCliente = {
   /** Suma de todos los ingresos. */
   totalIngresos: number;
@@ -19,22 +19,22 @@ export type ResumenCliente = {
 };
 
 /**
- * Calcula el resumen económico de un cliente a partir de sus
+ * Calcula el resumen económico de un proyecto a partir de sus
  * movimientos y horas registradas.
- * @param cliente La ficha del cliente.
+ * @param proyecto El proyecto/expediente.
  * @returns El resumen económico con totales y margen.
  */
-export function calcularResumen(cliente: Cliente): ResumenCliente {
-  const totalIngresos = cliente.movimientos
+export function calcularResumen(proyecto: Proyecto): ResumenCliente {
+  const totalIngresos = proyecto.movimientos
     .filter((m) => m.tipo === 'ingreso')
     .reduce((s, m) => s + m.importe, 0);
 
-  const totalGastos = cliente.movimientos
+  const totalGastos = proyecto.movimientos
     .filter((m) => m.tipo === 'gasto')
     .reduce((s, m) => s + m.importe, 0);
 
-  const totalHoras = cliente.horas.reduce((s, h) => s + h.horas, 0);
-  const costeManoObra = totalHoras * cliente.tarifaHora;
+  const totalHoras = proyecto.horas.reduce((s, h) => s + h.horas, 0);
+  const costeManoObra = totalHoras * proyecto.tarifaHora;
   const costeTotal = totalGastos + costeManoObra;
   const margen = totalIngresos - costeTotal;
   const margenPorcentaje = totalIngresos > 0 ? (margen / totalIngresos) * 100 : 0;

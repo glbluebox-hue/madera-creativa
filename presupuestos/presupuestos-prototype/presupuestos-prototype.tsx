@@ -14,7 +14,7 @@ import { SeccionDibujos } from './seccion-dibujos.js';
 import { SeccionProveedores } from './seccion-proveedores.js';
 import { useProveedores } from './use-proveedores.js';
 import { useEmpresa } from './use-empresa.js';
-import { useClientes } from './use-clientes.js';
+import { useProyectos } from './use-proyectos.js';
 import { useFacturas } from './use-facturas.js';
 import { useAuth } from './use-auth.js';
 import { LoginPage } from './login-page.js';
@@ -27,7 +27,7 @@ import { usePerfil } from './use-perfil.js';
 import { usePrivacidad } from './use-privacidad.js';
 import { AjustesPerfil } from './ajustes-perfil.js';
 import { PanelNotificaciones } from './panel-notificaciones.js';
-import type { Cliente, Factura } from './types.js';
+import type { Cliente, Proyecto, Factura } from './types.js';
 import * as api from './api.js';
 import logoMadera from './assets/logo.png';
 import styles from './styles.module.css';
@@ -48,9 +48,9 @@ export function PresupuestosPrototype() {
   // (Dirección Creativa).
   const listo = autenticado && !verificando;
   const {
-    clientes, cargando, cargandoMas: clientesCargandoMas, hayMas: clientesHayMas,
-    error, crear, actualizar: actualizarCliente, borrar: borrarCliente, cargar, cargarMas: clientesCargarMas,
-  } = useClientes(listo);
+    proyectos, cargando, error, actualizar: actualizarProyecto, actualizarRecordatorio,
+    borrar: borrarProyecto, cargar,
+  } = useProyectos(listo);
   const {
     facturas, resumen: resumenFacturas, cargandoMas: facturasCargandoMas, hayMas: facturasHayMas,
     filtro: filtroFacturas, establecerFiltro: establecerFiltroFacturas,
@@ -64,7 +64,8 @@ export function PresupuestosPrototype() {
     api.obtenerNombresClientes().then(setNombresClientes).catch(() => setNombresClientes([]));
   }, [listo]);
   const [seleccionado, setSeleccionado] = useState<string | null>(null);
-  const [clienteActual, setClienteActual] = useState<Cliente | null>(null);
+  const [proyectoActual, setProyectoActual] = useState<Proyecto | null>(null);
+  const [clienteActualIdentidad, setClienteActualIdentidad] = useState<Cliente | null>(null);
   const [creando, setCreando] = useState(false);
   const [ajustes, setAjustes] = useState(false);
   const [ajustesBiometria, setAjustesBiometria] = useState(false);
@@ -133,46 +134,53 @@ export function PresupuestosPrototype() {
     );
   }
 
-  const abrirCliente = async (id: string) => {
+  const abrirProyecto = async (id: string) => {
     cambiarSeccion('clientes');
     setSeleccionado(id);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     try {
-      const completo = await api.obtenerCliente(id);
-      setClienteActual(completo);
+      const proyectoFresco = await api.obtenerProyecto(id);
+      setProyectoActual(proyectoFresco);
+      setClienteActualIdentidad(await api.obtenerCliente(proyectoFresco.clienteId));
     } catch {
-      setClienteActual(clientes.find((c) => c.id === id) || null);
+      setProyectoActual(null);
+      setClienteActualIdentidad(null);
     }
   };
 
   const volverALista = () => {
     setSeleccionado(null);
-    setClienteActual(null);
+    setProyectoActual(null);
+    setClienteActualIdentidad(null);
   };
 
-  const crearCliente = (cliente: Cliente) => {
-    crear(cliente);
-    setNombresClientes((prev) => [{ id: cliente.id, nombre: cliente.nombre }, ...prev]);
+  /** Refresca la lista ligera de nombres de cliente (selectores/autocompletados) tras crear uno nuevo. */
+  const refrescarNombresClientes = () => {
+    api.obtenerNombresClientes().then(setNombresClientes).catch(() => {});
+  };
+
+  const alCrearProyecto = async (proyecto: Proyecto) => {
+    cargar();
+    refrescarNombresClientes();
     setCreando(false);
-    // Abrimos la ficha directamente con el objeto recién creado,
-    // sin ir al servidor (que aún puede no tenerlo guardado).
-    setSeleccionado(cliente.id);
-    setClienteActual(cliente);
+    // Abrimos la ficha directamente con el proyecto recién creado; su
+    // cliente (identidad) sí se pide al servidor porque el formulario no
+    // lo devuelve completo.
+    setSeleccionado(proyecto.id);
+    setProyectoActual(proyecto);
+    api.obtenerCliente(proyecto.clienteId).then(setClienteActualIdentidad).catch(() => setClienteActualIdentidad(null));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   /**
-   * Crea un cliente nuevo SIN cambiar de sección ni abrir su ficha — usado
-   * por "+ Nuevo cliente" dentro del selector de "+ Crear presupuesto"
-   * (`PresupuestosListaGlobal`), para no obligar a salir de ese flujo. Es
-   * el mismo `crear()` real (misma ficha, mismo guardado) que usa
-   * `crearCliente`; la única diferencia es que aquí no se navega a la
-   * ficha del cliente porque quien llama sigue con la creación del
-   * presupuesto.
+   * Crea un proyecto (y su cliente, si es nuevo) SIN cambiar de sección ni
+   * abrir su ficha — usado por "+ Nuevo cliente" dentro del selector de
+   * "+ Crear presupuesto" (`PresupuestosListaGlobal`), para no obligar a
+   * salir de ese flujo.
    */
-  const crearClienteRapido = (cliente: Cliente) => {
-    crear(cliente);
-    setNombresClientes((prev) => [{ id: cliente.id, nombre: cliente.nombre }, ...prev]);
+  const alCrearProyectoRapido = (_proyecto: Proyecto) => {
+    cargar();
+    refrescarNombresClientes();
   };
 
   const nombreParaMostrar = perfil.nombreMostrar.trim() || sesion?.nombre || '';
@@ -377,14 +385,14 @@ export function PresupuestosPrototype() {
         {seccion === 'inicio' && (
           <Dashboard
             nombre={nombreParaMostrar}
-            clientes={clientes}
+            proyectos={proyectos}
             facturas={facturas}
             resumen={resumenFacturas}
             privado={privado}
             onAlternarPrivacidad={alternarPrivacidad}
-            onAbrir={(id) => { cambiarSeccion('clientes'); abrirCliente(id); }}
+            onAbrir={(id) => { cambiarSeccion('clientes'); abrirProyecto(id); }}
             onBorrarFactura={borrarFactura}
-            onActualizarCliente={actualizarCliente}
+            onActualizarRecordatorio={actualizarRecordatorio}
           />
         )}
 
@@ -415,11 +423,11 @@ export function PresupuestosPrototype() {
         {/* ── SECCIÓN PRESUPUESTOS ── */}
         {seccion === 'presupuestos' && (
           <SeccionPresupuestosContenedor
-            onAbrirCliente={(id) => { cambiarSeccion('clientes'); abrirCliente(id); }}
+            onAbrirCliente={(id) => { cambiarSeccion('clientes'); abrirProyecto(id); }}
             clientes={nombresClientes}
             empresa={empresa}
             onActualizarEmpresa={actualizar}
-            onCrearCliente={crearClienteRapido}
+            onCrearProyecto={alCrearProyectoRapido}
           />
         )}
 
@@ -446,21 +454,23 @@ export function PresupuestosPrototype() {
         {seccion === 'clientes' && (
           <>
             {/* La ficha siempre tiene prioridad, independientemente del estado de carga */}
-            {clienteActual ? (
+            {proyectoActual && clienteActualIdentidad ? (
               <FichaCliente
-                cliente={clienteActual}
+                cliente={clienteActualIdentidad}
+                proyecto={proyectoActual}
                 clientes={nombresClientes}
                 empresa={empresa}
                 privado={privado}
                 onActualizarEmpresa={actualizar}
                 onVolver={volverALista}
-                onActualizar={(c) => { setClienteActual(c); actualizarCliente(c); }}
-                onBorrar={(id) => { borrarCliente(id); volverALista(); }}
+                onActualizarCliente={(c) => { setClienteActualIdentidad(c); api.guardarCliente(c); refrescarNombresClientes(); }}
+                onActualizarProyecto={(p) => { setProyectoActual(p); actualizarProyecto(p); }}
+                onBorrar={(id) => { borrarProyecto(id); volverALista(); }}
                 onGuardarFactura={(f: Factura) => guardarFactura(f)}
                 proveedores={proveedores}
                 onCrearProveedor={crearProveedor}
               />
-            ) : cargando && clientes.length === 0 ? (
+            ) : cargando && proyectos.length === 0 ? (
               <div className={styles.vacio}>
                 <div className={styles.vacioIcono} style={{ display: 'flex', justifyContent: 'center' }}>
                   <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
@@ -469,7 +479,7 @@ export function PresupuestosPrototype() {
               </div>
             ) : (
               <>
-                {error && clientes.length === 0 && (
+                {error && proyectos.length === 0 && (
                   <div style={{ padding: '0.75rem 1rem', background: 'var(--rojo-bg)', borderRadius: 6, marginBottom: '1rem', fontSize: '0.82rem', color: 'var(--rojo)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12" y2="17" /></svg>
@@ -482,12 +492,9 @@ export function PresupuestosPrototype() {
                   </div>
                 )}
                 <ListaClientes
-                  clientes={clientes}
+                  clientes={proyectos}
                   onNuevo={() => setCreando(true)}
-                  onAbrir={abrirCliente}
-                  hayMas={clientesHayMas}
-                  cargandoMas={clientesCargandoMas}
-                  onCargarMas={clientesCargarMas}
+                  onAbrir={abrirProyecto}
                 />
               </>
             )}
@@ -498,7 +505,7 @@ export function PresupuestosPrototype() {
       </div>
 
       {creando && (
-        <FormularioCliente onGuardar={crearCliente} onCerrar={() => setCreando(false)} />
+        <FormularioCliente onGuardar={alCrearProyecto} onCerrar={() => setCreando(false)} />
       )}
 
       {ajustes && (
@@ -531,10 +538,10 @@ export function PresupuestosPrototype() {
       <AsistenteIA
         abiertoProp={asistente}
         onCambiarAbierto={setAsistente}
-        contexto={{ seccionActual: seleccionado ? `ficha-cliente:${clienteActual?.nombre || ''}` : seccion, clienteAbierto: clienteActual?.nombre } as ContextoApp}
+        contexto={{ seccionActual: seleccionado ? `ficha-cliente:${clienteActualIdentidad?.nombre || ''}` : seccion, clienteAbierto: proyectoActual?.id } as ContextoApp}
         clientes={nombresClientes}
         onNavegar={(s) => { cambiarSeccion(s as Seccion); volverALista(); }}
-        onAbrirCliente={abrirCliente}
+        onAbrirCliente={abrirProyecto}
         onCrearCliente={() => setCreando(true)}
       />
 

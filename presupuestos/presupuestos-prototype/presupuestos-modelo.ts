@@ -17,6 +17,8 @@ export type ElementoPresupuesto = {
 export type PresupuestoMC = {
   id: string;
   clienteId: string;
+  /** Proyecto/expediente al que pertenece (incremento "Cliente ≠ Proyecto", 20/08/2026) — vacío si se creó fuera de la ficha de un proyecto. */
+  proyectoId?: string;
   titulo: string;
   /**
    * 'simple' (formulario/IA conversacional), 'lienzo' (editor legado sobre

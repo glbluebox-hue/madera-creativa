@@ -33,6 +33,8 @@ import { logger } from './logger.service.js';
 export const NOMBRES_EVENTO = [
   'cliente.creado',
   'cliente.actualizado',
+  /** Proyecto/expediente nuevo (incremento "Cliente ≠ Proyecto", 20/08/2026). Se publica en `crearProyecto`. */
+  'proyecto.creado',
   'presupuesto.creado',
   'presupuesto.aprobado',
   'factura.guardada',
