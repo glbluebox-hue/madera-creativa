@@ -82,6 +82,11 @@ export async function buscarEnlaceResenaPorToken(tokenPlano: string): Promise<an
  * actualización: incrementa `usos` y, solo si `primerUsoEn` seguía a
  * `null`, lo fija a ahora. Una sola escritura, sin condición de carrera
  * entre leer y decidir si es el primer uso.
+ *
+ * `updatePipeline: true` es obligatorio en esta versión de Mongoose (9.x)
+ * para pasar un array (pipeline de agregación) como segundo argumento —
+ * sin ella lanza "Cannot pass an array to query updates unless the
+ * `updatePipeline` option is set" (confirmado en pruebas locales).
  */
 export async function registrarUsoEnlaceResena(tokenPlano: string): Promise<void> {
   const ahora = new Date();
