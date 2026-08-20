@@ -201,9 +201,9 @@
   position: fixed;
   z-index: 550;
   background: var(--fondo-panel);
-  border: 1px solid var(--borde);
+  border: 1.5px solid var(--topo);
   border-radius: 10px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.28);
   padding: 0.5rem 0.6rem;
   max-width: min(90vw, 360px);
 }

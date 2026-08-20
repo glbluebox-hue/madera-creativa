@@ -223,9 +223,17 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
    * pero Moveable nunca se entera por su cuenta, así que su caja de
    * selección se queda "plantada" en el sitio antiguo mientras la página
    * se desplaza por debajo (fallo real reportado por el usuario,
-   * 19/08/2026, con captura de pantalla). `updateRect()` es el método que
-   * la propia librería expone para forzar remedir; se llama en cada evento
-   * de scroll del contenedor del lienzo.
+   * 19/08/2026 y de nuevo 20/08/2026, con captura de pantalla y comparado
+   * contra Canva). `updateRect()` es el método que la propia librería
+   * expone para forzar remedir, pero por sí solo NO basta: sin la opción
+   * `useAccuratePosition` (desactivada por defecto en react-moveable),
+   * `updateRect()` no vuelve a leer `getBoundingClientRect()` del target,
+   * así que la caja seguía exactamente en el mismo sitio tras el scroll
+   * — comprobado con un arnés de pruebas aislado comparando la posición
+   * real del elemento contra la de `.moveable-control-box` antes/después
+   * de forzar `updateRect()`. Con `useAccuratePosition` en los dos
+   * `<Moveable>` de abajo, la llamada en cada evento de scroll del
+   * contenedor del lienzo sí recalcula la posición real.
    */
   const moveableUnicoRef = useRef<{ updateRect: () => void } | null>(null);
   const moveableGrupoRef = useRef<{ updateRect: () => void } | null>(null);
@@ -913,22 +921,36 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
    */
   const idElementoFlotante = elementoUnicoSeleccionado?.id ?? null;
   const [rectBarraFlotante, setRectBarraFlotante] = useState<{ left: number; top: number; abajo: boolean } | null>(null);
+  /**
+   * Recalcula la posición de la barra flotante a partir del DOM real del
+   * elemento — se llama también DESDE `onDragUnico`/`onResizeUnico` (no
+   * solo desde el efecto de abajo), porque durante un arrastre en curso
+   * `target.style.left/top` se muta directamente sin pasar por
+   * `documento` (ver nota junto a `previewMoverRef`) — sin esta llamada
+   * explícita la barra se quedaba "congelada" en su sitio de antes
+   * mientras el recuadro se movía debajo, pareciendo un elemento suelto y
+   * desconectado (fallo real reportado por el usuario, 20/08/2026: "no la
+   * puedo visualizar... quiero que se mueva todo junto con los puntos").
+   */
+  const actualizarRectBarraFlotante = useCallback((nodo: HTMLElement) => {
+    const r = nodo.getBoundingClientRect();
+    const abajo = r.top < 90; // sin sitio arriba (barra superior + herramientas) — se ancla debajo en su lugar.
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - 360 - 8));
+    setRectBarraFlotante({ left, top: abajo ? r.bottom + 8 : r.top - 8, abajo });
+  }, []);
   useEffect(() => {
     if (!idElementoFlotante) { setRectBarraFlotante(null); return; }
     const actualizar = () => {
       const nodo = refsElementos.current.get(idElementoFlotante);
       if (!nodo) { setRectBarraFlotante(null); return; }
-      const r = nodo.getBoundingClientRect();
-      const abajo = r.top < 90; // sin sitio arriba (barra superior + herramientas) — se ancla debajo en su lugar.
-      const left = Math.max(8, Math.min(r.left, window.innerWidth - 360 - 8));
-      setRectBarraFlotante({ left, top: abajo ? r.bottom + 8 : r.top - 8, abajo });
+      actualizarRectBarraFlotante(nodo);
     };
     actualizar();
     const contenedor = lienzoContenedorRef.current;
     contenedor?.addEventListener('scroll', actualizar);
     window.addEventListener('resize', actualizar);
     return () => { contenedor?.removeEventListener('scroll', actualizar); window.removeEventListener('resize', actualizar); };
-  }, [idElementoFlotante, zoom, documento]);
+  }, [idElementoFlotante, zoom, documento, actualizarRectBarraFlotante]);
 
   // ── Guías de alineación (regla/medidor de centrado) — al arrastrar o
   // redimensionar, Moveable dibuja líneas de guía cuando el elemento
@@ -957,6 +979,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
     (target as HTMLElement).style.left = `${left}px`;
     (target as HTMLElement).style.top = `${top}px`;
     previewMoverRef.current = { ids: [original.id], deltaX: left - original.posicion.x, deltaY: top - original.posicion.y };
+    actualizarRectBarraFlotante(target as HTMLElement);
   };
   const onDragGroupUnico = ({ events }: OnDragGroup) => {
     if (events.length === 0) return;
@@ -986,6 +1009,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
     t.style.left = `${drag.left}px`;
     t.style.top = `${drag.top}px`;
     previewResizeRef.current = { id: original.id, tamano, posicion: { x: drag.left, y: drag.top } };
+    actualizarRectBarraFlotante(t);
   };
   const onResizeEnd = () => {
     const preview = previewResizeRef.current;
@@ -1412,6 +1436,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
           key={`${elementoUnicoSeleccionado.id}-${elementoUnicoSeleccionado.posicion.x}-${elementoUnicoSeleccionado.posicion.y}-${elementoUnicoSeleccionado.tamano.ancho}-${elementoUnicoSeleccionado.tamano.alto}`}
           ref={moveableUnicoRef}
           target={targetsMoveable[0]}
+          useAccuratePosition
           draggable resizable
           onDrag={onDragUnico}
           onDragEnd={onDragEnd}
@@ -1433,6 +1458,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
           }).join('|')}
           ref={moveableGrupoRef}
           target={targetsMoveable}
+          useAccuratePosition
           draggable
           onDragGroup={onDragGroupUnico}
           onDragGroupEnd={onDragEnd}
