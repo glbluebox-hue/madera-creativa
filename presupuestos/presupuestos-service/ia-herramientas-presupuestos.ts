@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { HerramientaIA } from './ia-herramienta.js';
 import { PresupuestosService } from './presupuestos-service.js';
-import { generarDocumentoPresupuesto } from './documento-generador-presupuesto.js';
+import { generarDocumentoPresupuesto, generarDocumentoPresupuestoDesdePlantilla } from './documento-generador-presupuesto.js';
+import { resolverVariables } from './documento-registro-variables.js';
+import type { DocumentoMC, ElementoMC } from './documento-modelo.js';
 
 /**
  * Herramientas de escritura del copiloto de Presupuestos (Fase 5 — primera
@@ -126,6 +128,15 @@ const esquemaCrearPresupuestoDocumento = z.object({
    */
   clienteDireccion: z.string().trim().max(300).optional(),
   clienteTelefono: z.string().trim().max(60).optional(),
+  /**
+   * Id de una `PlantillaMC` real del usuario a rellenar, en vez de generar
+   * el documento desde cero (ver `generarDocumentoPresupuestoDesdePlantilla`).
+   * SIEMPRE lo añade la propia pantalla al confirmar la propuesta (nunca lo
+   * decide el modelo) — se declara `optional` en el esquema solo porque el
+   * chat general (sin selector de plantilla) sigue pudiendo usar esta
+   * herramienta sin él, generando el documento por defecto.
+   */
+  plantillaId: z.string().trim().min(1).optional(),
 });
 
 /**
@@ -156,18 +167,56 @@ export const herramientaCrearPresupuestoDocumento: HerramientaIA<z.infer<typeof 
     const condicionesPago = params.condicionesPago ?? empresa.condicionesPagoDefecto;
     const condicionesGenerales = params.condicionesGenerales ?? '';
 
-    const { documento, precioTotal } = generarDocumentoPresupuesto(params.secciones, {
-      cliente: {
-        nombre: (cliente as any).nombre,
-        email: (cliente as any).email,
-        telefono: params.clienteTelefono || (cliente as any).telefono,
-        direccion: params.clienteDireccion || (cliente as any).direccion,
-      },
-      empresa: { nombre: empresa.nombre, telefono: empresa.telefono, email: empresa.email, iban: empresa.iban, logo: empresa.logo },
-      titulo: params.titulo,
-      condicionesPago,
-      condicionesGenerales,
-    });
+    const datosCliente = {
+      nombre: (cliente as any).nombre,
+      email: (cliente as any).email,
+      telefono: params.clienteTelefono || (cliente as any).telefono,
+      direccion: params.clienteDireccion || (cliente as any).direccion,
+    };
+
+    let documento: DocumentoMC;
+    let precioTotal: number;
+
+    if (params.plantillaId) {
+      const plantillas = await svc.listarPlantillas(ctx.usuarioId);
+      const plantilla = plantillas.find((p) => p.id === params.plantillaId);
+      if (!plantilla) return { error: 'No se encontró la plantilla seleccionada — puede que se haya borrado. Elige otra o genera el documento sin plantilla.' };
+
+      const componentes = await svc.listarComponentes(ctx.usuarioId);
+      const componenteSeccion = componentes.find((c) => String(c.nombre).trim() === 'Sección de presupuesto');
+      if (!componenteSeccion) {
+        return {
+          error: 'No existe ningún componente llamado exactamente "Sección de presupuesto" — créalo en el editor ' +
+            '(un texto con "{{seccion.titulo}}", otro con "{{seccion.descripcion}}", y un elemento de Precio destacado), ' +
+            'guárdalo como componente con ese nombre exacto, y colócalo en tu plantilla.',
+        };
+      }
+
+      const resultado = generarDocumentoPresupuestoDesdePlantilla(
+        plantilla.documentoBase as unknown as DocumentoMC,
+        { id: String(componenteSeccion.id), nombre: String(componenteSeccion.nombre), elementos: componenteSeccion.elementos as unknown as ElementoMC[] },
+        params.secciones
+      );
+      if (resultado.error) return { error: resultado.error };
+
+      precioTotal = resultado.precioTotal;
+      documento = resolverVariables(resultado.documento, {
+        cliente: datosCliente,
+        empresa: { nombre: empresa.nombre, telefono: empresa.telefono, email: empresa.email, iban: empresa.iban },
+        presupuesto: { titulo: params.titulo, precioTotal },
+        fecha: new Date(),
+      });
+    } else {
+      const generado = generarDocumentoPresupuesto(params.secciones, {
+        cliente: datosCliente,
+        empresa: { nombre: empresa.nombre, telefono: empresa.telefono, email: empresa.email, iban: empresa.iban, logo: empresa.logo },
+        titulo: params.titulo,
+        condicionesPago,
+        condicionesGenerales,
+      });
+      documento = generado.documento;
+      precioTotal = generado.precioTotal;
+    }
 
     const ahora = new Date().toISOString();
     const presupuesto = await svc.guardarPresupuesto({

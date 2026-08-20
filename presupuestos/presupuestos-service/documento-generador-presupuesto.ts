@@ -231,3 +231,125 @@ export function generarDocumentoPresupuesto(secciones: SeccionPresupuesto[], con
 
   return { documento, precioTotal };
 }
+
+// ── Generación a partir de una plantilla real diseñada por el usuario (20/08/2026) ──
+
+/**
+ * Genera un presupuesto rellenando la PLANTILLA REAL del usuario (diseñada
+ * en el editor), en vez de construir un documento desde cero con el
+ * esqueleto fijo de arriba — petición explícita del usuario tras ver que
+ * el diseño generado automáticamente no se parecía a su plantilla
+ * corporativa real.
+ *
+ * Convención necesaria en la plantilla (documentada al usuario, no
+ * inventada aquí sin más): debe contener UNA instancia de un componente
+ * reutilizable llamado exactamente "Sección de presupuesto"
+ * (`Insertar componente` en el editor), con tres elementos dentro:
+ * - un texto cuyo contenido literal sea `{{seccion.titulo}}`
+ * - un texto cuyo contenido literal sea `{{seccion.descripcion}}`
+ * - un elemento de tipo "Precio destacado"
+ *
+ * Esa instancia marca DÓNDE empiezan las secciones (su posición) y CÓMO
+ * se ven (el propio componente es la plantilla visual de cada sección) —
+ * se sustituye por tantas copias como partidas tenga el trabajo,
+ * paginando automáticamente igual que `generarDocumentoPresupuesto`. El
+ * resto de la plantilla (membrete, datos de cliente/empresa ya puestos a
+ * mano o vía `{{cliente.nombre}}` etc.) se resuelve con `resolverVariables`,
+ * sin tocar aquí.
+ */
+export type ResultadoGeneracionDesdePlantilla = { documento: DocumentoMC; precioTotal: number; error?: undefined } | { error: string; documento?: undefined; precioTotal?: undefined };
+
+const NOMBRE_COMPONENTE_SECCION = 'Sección de presupuesto';
+
+export function generarDocumentoPresupuestoDesdePlantilla(
+  plantillaBase: DocumentoMC,
+  componenteSeccion: { id: string; nombre: string; elementos: ElementoMC[] },
+  secciones: SeccionPresupuesto[]
+): ResultadoGeneracionDesdePlantilla {
+  const documento = structuredClone(plantillaBase);
+
+  let paginaMarcador: PaginaMC | undefined;
+  let indiceMarcador = -1;
+  for (const pagina of documento.paginas) {
+    const idx = pagina.elementos.findIndex(
+      (e) => e.tipo === 'instanciaComponente' && (e.contenido as any)?.componenteId === componenteSeccion.id
+    );
+    if (idx !== -1) { paginaMarcador = pagina; indiceMarcador = idx; break; }
+  }
+  if (!paginaMarcador) {
+    return {
+      error: `Esta plantilla no tiene ningún marcador del componente "${NOMBRE_COMPONENTE_SECCION}" colocado — ` +
+        `en el editor, con la plantilla abierta, usa "Insertar componente" y coloca una instancia de "${NOMBRE_COMPONENTE_SECCION}" ` +
+        `donde quieras que empiecen las secciones, y guarda la plantilla otra vez.`,
+    };
+  }
+  const elementoMarcador = paginaMarcador.elementos[indiceMarcador];
+
+  const elTitulo = componenteSeccion.elementos.find((e) => e.tipo === 'texto' && String((e.contenido as any)?.texto ?? '').trim() === '{{seccion.titulo}}');
+  const elDescripcion = componenteSeccion.elementos.find((e) => e.tipo === 'texto' && String((e.contenido as any)?.texto ?? '').trim() === '{{seccion.descripcion}}');
+  const elPrecio = componenteSeccion.elementos.find((e) => e.tipo === 'precioDestacado');
+  if (!elTitulo || !elDescripcion || !elPrecio) {
+    return {
+      error: `El componente "${NOMBRE_COMPONENTE_SECCION}" debe tener un texto con el contenido exacto "{{seccion.titulo}}", ` +
+        `otro texto con "{{seccion.descripcion}}", y un elemento de tipo "Precio destacado" — revísalo y guárdalo de nuevo.`,
+    };
+  }
+
+  const alturaComponente = Math.max(...componenteSeccion.elementos.map((e) => e.posicion.y + e.tamano.alto));
+  const fondoDescripcionOriginal = elDescripcion.posicion.y + elDescripcion.tamano.alto;
+  const configPagina = paginaMarcador.configuracion ?? documento.configuracionPorDefecto;
+  const alturaMembrete =
+    documento.encabezadoPorDefecto && documento.encabezadoPorDefecto !== 'ninguno' ? documento.encabezadoPorDefecto.altura : 0;
+  const alturaUtilPagina = configPagina.alto - configPagina.margenes.abajo;
+  const yInicioPaginaNueva = alturaMembrete + (alturaMembrete > 0 ? GAP_ENTRE_BLOQUES : configPagina.margenes.arriba);
+
+  /** Materializa una sección: copia los elementos del componente, ids nuevos, contenido real, y crece la caja de descripción si el texto real no cabe en la altura diseñada (empujando hacia abajo lo que esté debajo, ej. el precio). */
+  const crearBloqueSeccion = (seccion: SeccionPresupuesto, x: number, y: number): { elementos: ElementoMC[]; alto: number } => {
+    const fontSize = Number((elDescripcion.estilo as any)?.fontSize ?? 13);
+    const lineHeight = Number((elDescripcion.estilo as any)?.lineHeight ?? 1.4);
+    const alturaRealDescripcion = Math.max(elDescripcion.tamano.alto, estimarAlturaTexto(seccion.descripcion, elDescripcion.tamano.ancho, fontSize, lineHeight));
+    const alturaExtra = alturaRealDescripcion - elDescripcion.tamano.alto;
+
+    const elementos = componenteSeccion.elementos.map((hijo) => {
+      const seEmpuja = alturaExtra > 0 && hijo.posicion.y >= fondoDescripcionOriginal;
+      let contenido: unknown = hijo.contenido;
+      let alto = hijo.tamano.alto;
+      if (hijo.id === elTitulo.id) contenido = { ...(hijo.contenido as Record<string, unknown>), texto: seccion.titulo };
+      else if (hijo.id === elDescripcion.id) { contenido = { ...(hijo.contenido as Record<string, unknown>), texto: seccion.descripcion }; alto = alturaRealDescripcion; }
+      else if (hijo.id === elPrecio.id) contenido = { modo: 'fijo', valor: formatoMoneda.format(seccion.precio) };
+      return {
+        ...hijo,
+        id: randomUUID(),
+        posicion: { x: x + (hijo.posicion.x - elementoMarcador.posicion.x), y: y + hijo.posicion.y + (seEmpuja ? alturaExtra : 0) },
+        tamano: { ...hijo.tamano, alto },
+        grupoId: null,
+        origenComponente: null,
+        contenido,
+      };
+    });
+    return { elementos, alto: alturaComponente + Math.max(0, alturaExtra) };
+  };
+
+  // Quita el elemento marcador — se sustituye por las secciones reales.
+  paginaMarcador.elementos.splice(indiceMarcador, 1);
+
+  let paginaActual = paginaMarcador;
+  let cursorY = elementoMarcador.posicion.y;
+  for (const seccion of secciones) {
+    const bloque = crearBloqueSeccion(seccion, elementoMarcador.posicion.x, cursorY);
+    if (cursorY + bloque.alto > alturaUtilPagina && cursorY > yInicioPaginaNueva) {
+      paginaActual = nuevaPagina(documento.paginas.length, '');
+      documento.paginas.push(paginaActual);
+      cursorY = yInicioPaginaNueva;
+      const reintento = crearBloqueSeccion(seccion, elementoMarcador.posicion.x, cursorY);
+      paginaActual.elementos.push(...reintento.elementos);
+      cursorY += reintento.alto + GAP_ENTRE_BLOQUES;
+      continue;
+    }
+    paginaActual.elementos.push(...bloque.elementos);
+    cursorY += bloque.alto + GAP_ENTRE_BLOQUES;
+  }
+
+  const precioTotal = secciones.reduce((suma, s) => suma + s.precio, 0);
+  return { documento, precioTotal };
+}

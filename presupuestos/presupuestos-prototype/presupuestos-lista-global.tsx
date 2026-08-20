@@ -56,6 +56,8 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
   /** "Generar con IA" dentro del selector — campo libre para describir el trabajo, ver `generarConIA`. */
   const [campoIAAbierto, setCampoIAAbierto] = useState(false);
   const [descripcionIA, setDescripcionIA] = useState('');
+  /** Plantilla real elegida para que la IA la rellene, en vez de generar el documento desde cero — `null` = diseño automático (comportamiento anterior). */
+  const [plantillaIAId, setPlantillaIAId] = useState<string | null>(null);
   const [generandoIA, setGenerandoIA] = useState(false);
   const [errorIA, setErrorIA] = useState<string | null>(null);
 
@@ -236,10 +238,14 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
             : 'La IA no ha podido generar el presupuesto — prueba a describir el trabajo con más detalle (partes y precios).'
         );
       }
+      // La plantilla elegida se añade aquí, después de que la IA proponga sus
+      // argumentos — nunca se le pide al modelo que la decida o la recuerde,
+      // es una elección determinista de la propia pantalla.
+      const argumentos = plantillaIAId ? { ...propuesta.argumentos, plantillaId: plantillaIAId } : propuesta.argumentos;
       const { resultado } = await api.confirmarPropuestaIA({
         capacidad: 'asistente-global',
         nombre: propuesta.nombre,
-        argumentos: propuesta.argumentos,
+        argumentos,
         toolCallId: propuesta.id,
         referencias: { clienteId },
       });
@@ -252,6 +258,7 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
       setClienteElegidoId(null);
       setCampoIAAbierto(false);
       setDescripcionIA('');
+      setPlantillaIAId(null);
       setEditor({ presupuesto: creado, clienteId, clienteNombre });
     } catch (e) {
       setErrorIA(e instanceof Error ? e.message : 'No se pudo generar el presupuesto.');
@@ -328,6 +335,23 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
 
                 {campoIAAbierto ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                    {plantillas.length > 0 && (
+                      <label style={{ fontSize: '0.78rem', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                        Plantilla a rellenar
+                        <select
+                          className={styles.input}
+                          value={plantillaIAId ?? ''}
+                          onChange={(e) => setPlantillaIAId(e.target.value || null)}
+                          disabled={generandoIA}
+                          style={{ fontSize: '0.82rem' }}
+                        >
+                          <option value="">Diseño automático (sin plantilla)</option>
+                          {plantillas.map((pl) => (
+                            <option key={pl.id} value={pl.id}>{pl.nombre}{pl.ambito === 'corporativa' ? ' · corporativa' : ''}</option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
                     <textarea
                       className={styles.input}
                       autoFocus
