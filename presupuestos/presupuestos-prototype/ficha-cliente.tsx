@@ -15,6 +15,7 @@ import { colorAvatar, iniciales } from './avatar-utils.js';
 import { etiquetaEstado, grupoEstado } from './estado-utils.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
 import { SolicitudResena } from './solicitud-resena.js';
+import { VisorFactura } from './visor-factura.js';
 import { TabResumen } from './tab-resumen.js';
 import { TabDatos } from './tab-datos.js';
 import { TabMediciones } from './tab-mediciones.js';
@@ -88,6 +89,8 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
   const editarDatos = () => { setPestana('proyectos'); setAbrirEdicionDatos((n) => n + 1); };
   const [escanerAbierto, setEscanerAbierto] = useState(false);
   const [facturasProyecto, setFacturasProyecto] = useState<Factura[]>([]);
+  /** Factura abierta en el visor de imagen/PDF (petición del usuario, 20/08/2026 — antes esta tabla no tenía forma de ver el documento adjunto, solo sus datos). */
+  const [viendoFacturaId, setViendoFacturaId] = useState<string | null>(null);
   // Los adjuntos ya no llegan con la ficha (ver comentario en api.ts) — se
   // piden aparte para que abrir la ficha no dependa de transferir varios MB.
   const [adjuntosProyecto, setAdjuntosProyecto] = useState<Adjunto[]>([]);
@@ -118,6 +121,7 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
     onGuardarFactura?.(f);
     cargarFacturasProyecto();
   };
+
 
   /**
    * Movimientos, tareas, estado y presupuesto usan sus propias rutas
@@ -374,13 +378,20 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
             ) : (
               <>
                 <table className={styles.tabla} style={{ width: '100%', marginBottom: '0.75rem' }}>
-                  <thead><tr><th>Fecha</th><th>Proveedor / Concepto</th><th style={{ textAlign: 'right' }}>Importe</th></tr></thead>
+                  <thead><tr><th>Fecha</th><th>Proveedor / Concepto</th><th style={{ textAlign: 'right' }}>Importe</th><th /></tr></thead>
                   <tbody>
                     {facturasProyecto.map((f) => (
                       <tr key={f.id}>
                         <td>{f.fecha}</td>
                         <td><strong>{f.proveedor || '—'}</strong>{f.concepto && <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>{f.concepto}</span>}</td>
                         <td style={{ textAlign: 'right', color: 'var(--rojo)', fontWeight: 600 }}>{!privado && '-'}{formatoEuroPrivado(f.importe, privado)}</td>
+                        <td style={{ textAlign: 'right' }}>
+                          {(f.tieneDocumento || f.paginas?.length || f.imagenes?.length || f.imagen || f.pdfOriginalUrl) && (
+                            <button className={styles.btnIcono} title="Ver factura" aria-label="Ver factura" onClick={() => setViendoFacturaId(f.id)}>
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -426,6 +437,15 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
           proyectoFijo={{ id: proyecto.id, clienteId: cliente.id, nombre: proyecto.proyecto || cliente.nombre }}
           onGuardar={(f) => { guardarFacturaConProveedor({ ...f, clienteId: cliente.id, proyectoId: proyecto.id, tipo: 'gasto' }); setEscanerAbierto(false); }}
           onCerrar={() => setEscanerAbierto(false)}
+        />
+      )}
+
+      {viendoFacturaId && (
+        <VisorFactura
+          facturaId={viendoFacturaId}
+          onCerrar={() => setViendoFacturaId(null)}
+          onDescargarPdf={api.descargarPdfFactura}
+          privado={privado}
         />
       )}
     </div>

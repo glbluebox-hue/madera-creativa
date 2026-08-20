@@ -5,6 +5,7 @@ import type { ResultadoEscaneo } from './escaner-documento.js';
 import { ImporteInput } from './importe-input.js';
 import { leerArchivoComoBase64 } from './archivos.js';
 import { comprimirImagen } from './procesamiento-imagenes.js';
+import { urlImagenFiable } from './imagen-fallback.js';
 import { Z_DESPLEGABLE } from './z-index.js';
 import { etiquetaEstado } from './estado-utils.js';
 import * as api from './api.js';
@@ -333,7 +334,7 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
                         <span style={{ fontSize: '0.55rem', fontWeight: 700 }}>PDF</span>
                       </div>
                     ) : (
-                      <img src={p.dataUrl} alt={`Hoja ${i + 1}`}
+                      <img src={urlImagenFiable(p.dataUrl)} alt={`Hoja ${i + 1}`}
                         style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     )}
                     <span style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
@@ -360,10 +361,10 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
               {paginaActual && (
                 <div style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--borde)', background: 'var(--fondo)' }}>
                   {paginaActual.tipo === 'pdf' ? (
-                    <iframe src={paginaActual.dataUrl} title={`Vista previa PDF — Hoja ${paginaVista + 1}`}
+                    <iframe src={urlImagenFiable(paginaActual.dataUrl)} title={`Vista previa PDF — Hoja ${paginaVista + 1}`}
                       style={{ width: '100%', height: 220, border: 'none', display: 'block' }} />
                   ) : (
-                    <img src={paginaActual.dataUrl} alt={`Hoja ${paginaVista + 1}`}
+                    <img src={urlImagenFiable(paginaActual.dataUrl)} alt={`Hoja ${paginaVista + 1}`}
                       style={{ width: '100%', maxHeight: 180, objectFit: 'contain', display: 'block' }} />
                   )}
                   {/* Controles de la hoja activa */}
