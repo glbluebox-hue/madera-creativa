@@ -20,15 +20,22 @@ export type ListaClientesProps = {
   onCargarMas?: () => void;
 };
 
-type Filtro = 'todos' | 'curso' | 'fin';
+type Filtro = 'todos' | 'fin';
 
 /**
  * Vista principal: lista de proyectos con avatar del cliente, nombre del
  * proyecto e insignia de estado — búsqueda y filtro por estado sobre los
  * proyectos ya cargados. Cada fila es un PROYECTO, no un cliente
  * (incremento "Cliente ≠ Proyecto", 20/08/2026): un mismo cliente puede
- * aparecer en varias filas si tiene varios proyectos — el filtro
- * "Finalizados" es, en la práctica, la sección de proyectos archivados.
+ * aparecer en varias filas si tiene varios proyectos.
+ *
+ * "Todos" muestra los proyectos activos (presupuestado/en curso) — los
+ * finalizados o no aceptados se archivan fuera de la vista por defecto y
+ * solo se ven en "Finalizados" (petición del usuario, 20/08/2026: un
+ * proyecto cerrado no debe quedarse mezclado con el trabajo activo). La
+ * insignia de estado de cada fila permite distinguir presupuestado/en
+ * curso sin entrar en la ficha, así que no hace falta un filtro aparte
+ * para eso.
  */
 export function ListaClientes({ clientes, onNuevo, onAbrir, hayMas, cargandoMas, onCargarMas }: ListaClientesProps) {
   const [busqueda, setBusqueda] = useState('');
@@ -37,7 +44,7 @@ export function ListaClientes({ clientes, onNuevo, onAbrir, hayMas, cargandoMas,
   const visibles = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
     return clientes.filter((c) => {
-      if (filtro !== 'todos' && grupoEstado[c.estado] !== filtro) return false;
+      if (grupoEstado[c.estado] !== (filtro === 'fin' ? 'fin' : 'curso')) return false;
       if (q && !c.nombre.toLowerCase().includes(q) && !(c.proyecto || '').toLowerCase().includes(q)) return false;
       return true;
     });
@@ -63,7 +70,6 @@ export function ListaClientes({ clientes, onNuevo, onAbrir, hayMas, cargandoMas,
           dejando el "+" sin poder pulsarse (fallo real reportado). */}
       <div className={styles.filtrosPill}>
         <button className={`${styles.filtroPill} ${filtro === 'todos' ? styles.filtroPillActivo : ''}`} onClick={() => setFiltro('todos')}>Todos</button>
-        <button className={`${styles.filtroPill} ${filtro === 'curso' ? styles.filtroPillActivo : ''}`} onClick={() => setFiltro('curso')}>En curso</button>
         <button className={`${styles.filtroPill} ${filtro === 'fin' ? styles.filtroPillActivo : ''}`} onClick={() => setFiltro('fin')}>Finalizados</button>
         <button className={styles.btnCirculoOscuro} onClick={onNuevo} title="Nuevo proyecto" style={{ marginLeft: 'auto' }}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
