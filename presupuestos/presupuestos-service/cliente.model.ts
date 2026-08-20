@@ -233,6 +233,25 @@ const EmpresaSchema = new Schema({
   temaPorDefecto: { type: Schema.Types.Mixed, default: null },
   /** Ancho en píxeles del logo en la barra lateral — ajustable a mano por el usuario (antes fijo a 187px en CSS). */
   logoTamano: { type: Number, default: 187 },
+  /**
+   * Enlace de la ficha de Google My Business del negocio (sección
+   * "Solicitud de reseñas", 20/08/2026) — destino final de los enlaces/QR
+   * individuales por cliente (`enlace-resena.model.ts`). Por empresa, no
+   * global: antes vivía como una constante fija en el backend, que enviaba
+   * a TODOS los clientes de TODAS las cuentas a la ficha de Google de
+   * Madera Creativa (hallazgo real del usuario, dueño de la cuenta admin,
+   * al pensar en qué pasaría con una cuenta nueva). Vacío hasta que el
+   * negocio lo configura en Ajustes de empresa — sin él, "Pedir reseña" no
+   * se ofrece.
+   */
+  enlaceResenaGoogle: { type: String, default: '' },
+  /**
+   * Cartel de agradecimiento propio del negocio, en base64 (mismo patrón
+   * que `logo`) — se muestra en la página de solicitud de reseña antes del
+   * botón hacia Google. Opcional: vacío, la página se salta el cartel y
+   * muestra solo el botón.
+   */
+  imagenResena: { type: String, default: '' },
 });
 
 /**

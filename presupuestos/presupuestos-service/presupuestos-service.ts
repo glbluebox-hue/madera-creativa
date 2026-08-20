@@ -194,6 +194,10 @@ export type EmpresaDoc = {
   repepActivo: boolean;
   /** Ancho en píxeles del logo en la barra lateral — ajustable a mano por el usuario. */
   logoTamano: number;
+  /** Enlace de Google My Business — destino de "Pedir reseña". Vacío hasta que el negocio lo configura. */
+  enlaceResenaGoogle: string;
+  /** Cartel de agradecimiento en base64 para la página de solicitud de reseña — opcional. */
+  imagenResena: string;
 };
 
 // ── Portal del cliente (enlace público de un presupuesto) ──────────────────────
@@ -655,6 +659,8 @@ export class PresupuestosService {
       regionFiscal: (doc as any).regionFiscal || '',
       repepActivo: !!(doc as any).repepActivo,
       logoTamano: (doc as any).logoTamano || 187,
+      enlaceResenaGoogle: (doc as any).enlaceResenaGoogle || '',
+      imagenResena: (doc as any).imagenResena || '',
     };
   }
 
@@ -684,6 +690,8 @@ export class PresupuestosService {
       regionFiscal: (doc as any).regionFiscal || '',
       repepActivo: !!(doc as any).repepActivo,
       logoTamano: (doc as any).logoTamano || 187,
+      enlaceResenaGoogle: (doc as any).enlaceResenaGoogle || '',
+      imagenResena: (doc as any).imagenResena || '',
     };
   }
 
@@ -1827,27 +1835,43 @@ export class PresupuestosService {
    * devuelve el token: la URL completa la construye el frontend con su
    * propio origen (`${window.location.origin}/resena/${token}`), igual que
    * ya hace con el enlace del Portal.
+   *
+   * Exige que la empresa ya tenga configurado su enlace de Google My
+   * Business (Ajustes de empresa) — sin esto, el enlace generado no
+   * llevaría a ningún sitio útil al abrirse (hallazgo del usuario,
+   * 20/08/2026: antes el destino era una constante fija de Madera
+   * Creativa, compartida por todas las cuentas).
    */
   async generarEnlaceResena(clienteId: string, usuarioId: string): Promise<{ token: string }> {
     await conectar();
     const cliente = await ClienteModel.findOne({ id: clienteId, usuarioId }).lean().exec();
     if (!cliente) throw new ErrorDeNegocio('Cliente no encontrado', 400);
+    const empresa = await EmpresaModel.findOne({ usuarioId }).lean().exec() as any;
+    if (!empresa?.enlaceResenaGoogle) {
+      throw new ErrorDeNegocio('Configura tu enlace de reseñas de Google en Ajustes de empresa antes de generar enlaces para tus clientes.', 400);
+    }
     return crearEnlaceResena({ clienteId, usuarioId });
   }
 
   /**
-   * Valida y registra un clic/escaneo del enlace público de reseña — sin
-   * sesión, solo el token. Lanza `ErrorDeNegocio` si el token no tiene el
-   * formato esperado, no existe, o ya fue revocado; `resena-rutas.ts` trata
-   * cualquier fallo como "enlace no disponible" sin distinguir el motivo,
-   * para no filtrar si un token concreto llegó a existir alguna vez.
+   * Valida un enlace público de reseña y resuelve el destino real de ESA
+   * empresa (no una constante global) — sin sesión, solo el token. Lanza
+   * `ErrorDeNegocio` si el token no tiene el formato esperado, no existe,
+   * ya fue revocado, o la empresa ya no tiene un enlace de Google
+   * configurado (pudo borrarlo después de generar este enlace);
+   * `resena-rutas.ts` trata cualquier fallo como "enlace no disponible"
+   * sin distinguir el motivo, para no filtrar si un token concreto llegó a
+   * existir alguna vez.
    */
-  async registrarClicResena(tokenPlano: string): Promise<void> {
+  async resolverEnlaceResena(tokenPlano: string): Promise<{ urlGoogle: string; imagenResena: string }> {
     if (!formatoTokenValidoResena(tokenPlano)) throw new ErrorDeNegocio('Enlace no válido.', 400);
     await conectar();
     const enlace = await buscarEnlaceResenaPorToken(tokenPlano);
     if (!enlace || enlace.revocadoEn) throw new ErrorDeNegocio('Enlace no válido.', 400);
+    const empresa = await EmpresaModel.findOne({ usuarioId: enlace.usuarioId }).lean().exec() as any;
+    if (!empresa?.enlaceResenaGoogle) throw new ErrorDeNegocio('Enlace no válido.', 400);
     await registrarUsoEnlaceResena(tokenPlano);
+    return { urlGoogle: empresa.enlaceResenaGoogle, imagenResena: empresa.imagenResena || '' };
   }
 
   /**

@@ -1,15 +1,6 @@
 import express from 'express';
 import { limitadorResena } from './rate-limit.middleware.js';
 import { PresupuestosService } from './presupuestos-service.js';
-import { IMAGEN_RESENA_BASE64 } from './resena-imagen.js';
-
-/**
- * Destino final de toda solicitud de reseña — la ficha de Google My
- * Business del negocio. Es un único perfil público (no hay uno distinto
- * por cliente ni por cuenta), así que vive aquí como constante en vez de
- * en la base de datos.
- */
-const URL_RESENA_GOOGLE = 'https://g.page/r/CdtYE6HZ9ap5EBM/review';
 
 const PAGINA_NO_DISPONIBLE =
   '<!doctype html><html lang="es"><meta charset="utf-8">' +
@@ -20,20 +11,31 @@ const PAGINA_NO_DISPONIBLE =
   '<p style="font-size:0.9rem;color:#8a8175">Pide uno nuevo a quien te lo compartió.</p>' +
   '</body></html>';
 
+/** Escapa para insertar de forma segura dentro de un atributo HTML entre comillas dobles. */
+function escaparAtributoHtml(valor: string): string {
+  return valor.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 /**
  * Página que ve el cliente al abrir su enlace/QR — el cartel de
- * agradecimiento de la empresa (`resena-imagen.ts`) seguido de un botón
- * grande hacia Google (petición del usuario, 20/08/2026: antes esta ruta
- * redirigía directo a Google sin que el cliente viera nada de la app).
+ * agradecimiento propio de la empresa (si lo subió en Ajustes de empresa)
+ * seguido de un botón grande hacia SU ficha de Google (petición del
+ * usuario, 20/08/2026: antes esta ruta redirigía directo a una URL fija de
+ * Madera Creativa, compartida por todas las cuentas — ver
+ * `resolverEnlaceResena` en `presupuestos-service.ts`).
  */
-function paginaResena(): string {
+function paginaResena(urlGoogle: string, imagenResena: string): string {
+  const urlEscapada = escaparAtributoHtml(urlGoogle);
+  const imagen = imagenResena
+    ? `<img src="${escaparAtributoHtml(imagenResena)}" alt="Gracias por confiar en nosotros" style="width:100%;max-width:420px;border-radius:18px;box-shadow:0 12px 32px rgba(24,20,15,0.18)">`
+    : '';
   return (
     '<!doctype html><html lang="es"><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-    '<title>Déjanos tu reseña — Madera Creativa</title>' +
+    '<title>Déjanos tu reseña</title>' +
     '<body style="margin:0;font-family:system-ui,sans-serif;background:#f3ede4;display:flex;flex-direction:column;align-items:center;padding:1.5rem 1rem 3rem">' +
-    `<img src="data:image/jpeg;base64,${IMAGEN_RESENA_BASE64}" alt="Madera Creativa — Gracias por confiar en nosotros" style="width:100%;max-width:420px;border-radius:18px;box-shadow:0 12px 32px rgba(24,20,15,0.18)">` +
-    `<a href="${URL_RESENA_GOOGLE}" style="margin-top:1.75rem;width:100%;max-width:420px;box-sizing:border-box;text-align:center;background:#3a2e22;color:#fff;font-size:1.05rem;font-weight:700;text-decoration:none;padding:1rem;border-radius:12px;box-shadow:0 4px 14px rgba(24,20,15,0.2)">Dejar mi reseña en Google →</a>` +
+    imagen +
+    `<a href="${urlEscapada}" style="margin-top:1.75rem;width:100%;max-width:420px;box-sizing:border-box;text-align:center;background:#3a2e22;color:#fff;font-size:1.05rem;font-weight:700;text-decoration:none;padding:1rem;border-radius:12px;box-shadow:0 4px 14px rgba(24,20,15,0.2)">Dejar mi reseña en Google →</a>` +
     '</body></html>'
   );
 }
@@ -49,9 +51,9 @@ function paginaResena(): string {
  * frontend — todo lo que ve el cliente (cartel + botón) lo sirve esta
  * misma ruta como HTML plano, sin pasar por el SPA de React.
  *
- * Si el token no existe o ya fue revocado (p. ej. se generó uno nuevo y
- * este es un QR antiguo que sigue circulando), se responde con una página
- * mínima explicándolo en vez de mostrar igualmente el cartel — un enlace
+ * Si el token no existe, ya fue revocado, o la empresa ya no tiene un
+ * enlace de Google configurado, se responde con una página mínima
+ * explicándolo en vez de mostrar cualquier cosa a medias — un enlace
  * revocado debe dejar de funcionar de verdad, no solo dejar de mostrarse
  * en la app.
  */
@@ -68,8 +70,8 @@ export function crearRouterResena(): express.Router {
 
   router.get('/:token', limitadorResena, async (req, res) => {
     try {
-      await svc.registrarClicResena(req.params.token);
-      res.send(paginaResena());
+      const { urlGoogle, imagenResena } = await svc.resolverEnlaceResena(req.params.token);
+      res.send(paginaResena(urlGoogle, imagenResena));
     } catch {
       res.status(410).send(PAGINA_NO_DISPONIBLE);
     }

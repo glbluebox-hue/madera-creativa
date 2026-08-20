@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import logoMadera from './assets/logo.png';
+import cartelResenaMadera from './assets/cartel-resena.jpg';
 import * as api from './api.js';
 import type { TemaMC } from './documento-modelo.js';
 
@@ -31,6 +32,10 @@ export type Empresa = {
   repepActivo: boolean;
   /** Ancho en píxeles del logo en la barra lateral — ajustable a mano por el usuario (Ajustes de empresa). */
   logoTamano: number;
+  /** Enlace de Google My Business — destino de "Pedir reseña". Vacío hasta que el negocio lo configura en Ajustes de empresa; sin él, ese botón no se ofrece. */
+  enlaceResenaGoogle: string;
+  /** Cartel de agradecimiento (imagen) mostrado antes del botón de reseña — opcional, mismo formato que `logo`. */
+  imagenResena: string | null;
 };
 
 /** Datos por defecto para el admin — marca Madera Creativa. */
@@ -51,6 +56,8 @@ const EMPRESA_ADMIN: Empresa = {
   regionFiscal: 'canarias',
   repepActivo: true,
   logoTamano: 187,
+  enlaceResenaGoogle: 'https://g.page/r/CdtYE6HZ9ap5EBM/review',
+  imagenResena: cartelResenaMadera,
 };
 
 /** Datos vacíos para usuarios normales — cada uno pone su propia marca. */
@@ -71,6 +78,8 @@ const EMPRESA_USUARIO: Empresa = {
   regionFiscal: '',
   repepActivo: false,
   logoTamano: 187,
+  enlaceResenaGoogle: '',
+  imagenResena: null,
 };
 
 /**
@@ -134,6 +143,8 @@ export function useEmpresa(autenticado = false, esAdmin = false): {
           regionFiscal: datos.regionFiscal ?? inicial.regionFiscal,
           repepActivo: datos.repepActivo ?? inicial.repepActivo,
           logoTamano: datos.logoTamano ?? inicial.logoTamano,
+          enlaceResenaGoogle: datos.enlaceResenaGoogle || inicial.enlaceResenaGoogle,
+          imagenResena: datos.imagenResena || inicial.imagenResena,
         });
       })
       .catch(() => { /* sin conexión: mantener valores por defecto */ })

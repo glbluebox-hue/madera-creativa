@@ -38,9 +38,12 @@ export type AjustesEmpresaProps = {
  */
 export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const inputResenaRef = useRef<HTMLInputElement>(null);
   const [nombre, setNombre] = useState(empresa.nombre);
   const [eslogan, setEslogan] = useState(empresa.eslogan);
   const [logo, setLogo] = useState<string | null>(empresa.logo);
+  const [enlaceResenaGoogle, setEnlaceResenaGoogle] = useState(empresa.enlaceResenaGoogle);
+  const [imagenResena, setImagenResena] = useState<string | null>(empresa.imagenResena);
   const [nifCif, setNifCif] = useState(empresa.nifCif);
   const [telefono, setTelefono] = useState(empresa.telefono);
   const [email, setEmail] = useState(empresa.email);
@@ -62,6 +65,15 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
       .then(setLogo);
   };
 
+  /** A diferencia del logo, el cartel de reseña es una imagen fotográfica/póster (nunca necesita fondo transparente) que se ve a tamaño casi completo en el móvil del cliente — mayor dimensión máxima que el logo, sin quitar el fondo. */
+  const subirImagenResena = (files: FileList | null) => {
+    const file = files?.[0];
+    if (!file || !file.type.startsWith('image/')) return;
+    comprimirImagen(file, { maxDim: 1200, calidad: 0.85 })
+      .then(({ blob }) => leerArchivoComoBase64(blob))
+      .then(setImagenResena);
+  };
+
   const guardar = async () => {
     setErrorGuardar('');
     setGuardando(true);
@@ -79,6 +91,8 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
       regionFiscal,
       repepActivo: regionFiscal === 'canarias' ? repepActivo : false,
       logoTamano,
+      enlaceResenaGoogle: enlaceResenaGoogle.trim(),
+      imagenResena,
     });
     setGuardando(false);
     if (!ok) { setErrorGuardar('No se pudo guardar. Comprueba tu conexión e inténtalo de nuevo.'); return; }
@@ -207,6 +221,51 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
               </label>
             )}
           </div>
+          <div className={`${styles.campo} ${styles.full}`}>
+            <label className={styles.campoLabel}>Enlace de reseñas de Google (Google My Business)</label>
+            <input
+              className={styles.input}
+              type="url"
+              value={enlaceResenaGoogle}
+              onChange={(e) => setEnlaceResenaGoogle(e.target.value)}
+              placeholder="https://g.page/r/…/review"
+            />
+            <p className={styles.logoAyuda}>Destino del botón "Pedir reseña" de cada cliente. Sin este enlace, ese botón no se ofrece.</p>
+          </div>
+
+          <div className={`${styles.campo} ${styles.full}`}>
+            <label className={styles.campoLabel}>Cartel de la página de reseña (opcional)</label>
+            <div className={styles.logoZona} style={{ marginBottom: 0 }}>
+              <div className={styles.logoPreview}>
+                {imagenResena ? (
+                  <img src={imagenResena} alt="Cartel de reseña" className={styles.logoPreviewImg} />
+                ) : (
+                  <span className={styles.logoPlaceholder} style={{ display: 'flex', color: 'var(--topo-muy-claro)' }}>
+                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>
+                  </span>
+                )}
+              </div>
+              <div className={styles.logoAcciones}>
+                <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={() => inputResenaRef.current?.click()}>
+                  {imagenResena ? 'Cambiar cartel' : 'Subir cartel'}
+                </button>
+                {imagenResena && (
+                  <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={() => setImagenResena(null)}>
+                    Quitar cartel
+                  </button>
+                )}
+                <input
+                  ref={inputResenaRef}
+                  type="file"
+                  accept="image/*"
+                  className={styles.inputFile}
+                  onChange={(e) => subirImagenResena(e.target.files)}
+                />
+                <p className={styles.logoAyuda}>Se muestra antes del botón de Google. Sin cartel, la página va directa al botón.</p>
+              </div>
+            </div>
+          </div>
+
           <div className={`${styles.campo} ${styles.full}`}>
             <label className={styles.campoLabel}>Tema corporativo (Motor Documental) — con el que arranca todo documento nuevo</label>
             <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>

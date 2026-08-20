@@ -847,6 +847,19 @@ export const esquemaEmpresa = z.object({
   repepActivo: z.boolean().optional().default(false),
   /** Ancho en píxeles del logo en la barra lateral — ajustable a mano por el usuario, ver `sidebarLogoImg`. */
   logoTamano: z.number().min(40).max(400).optional().default(187),
+  /**
+   * Enlace de Google My Business — destino de "Pedir reseña" (ver
+   * `enlace-resena.model.ts`). Se sirve dentro de un atributo `href` en
+   * HTML generado a mano (`resena-rutas.ts`, sin React) — exigir un
+   * esquema http(s) descarta `javascript:` y similares antes de guardarlo,
+   * además del escapado de HTML al servirlo.
+   */
+  enlaceResenaGoogle: z.string().max(500).optional().default('').refine(
+    (v) => v === '' || /^https?:\/\//i.test(v),
+    'El enlace debe empezar por http:// o https://'
+  ),
+  /** Cartel de agradecimiento en base64, mismo patrón sin límite que `logo`. */
+  imagenResena: z.string().optional().default(''),
 });
 
 // ── Notificaciones push ───────────────────────────────────────────────────────

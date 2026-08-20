@@ -1094,6 +1094,8 @@ export async function obtenerEmpresa(): Promise<Empresa> {
     regionFiscal: data.regionFiscal || '',
     repepActivo: !!data.repepActivo,
     logoTamano: data.logoTamano || 187,
+    enlaceResenaGoogle: data.enlaceResenaGoogle || '',
+    imagenResena: data.imagenResena || null,
   };
 }
 
@@ -1106,7 +1108,7 @@ export async function guardarEmpresa(empresa: Partial<Empresa>): Promise<Empresa
   const res = await fetchConAuth('/empresa', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...empresa, logo: empresa.logo ?? '' }),
+    body: JSON.stringify({ ...empresa, logo: empresa.logo ?? '', imagenResena: empresa.imagenResena ?? '' }),
   });
   await comprobarRespuesta(res, 'No se pudo guardar la empresa');
   const data = await res.json();
@@ -1124,6 +1126,8 @@ export async function guardarEmpresa(empresa: Partial<Empresa>): Promise<Empresa
     regionFiscal: data.regionFiscal || '',
     repepActivo: !!data.repepActivo,
     logoTamano: data.logoTamano || 187,
+    enlaceResenaGoogle: data.enlaceResenaGoogle || '',
+    imagenResena: data.imagenResena || null,
   };
 }
 
