@@ -25,6 +25,7 @@ import { limitadorGeneral, limitadorAuth } from './rate-limit.middleware.js';
 import { crearRouterIA } from './ia-rutas.js';
 import { crearRouterWebAuthn } from './webauthn-rutas.js';
 import { crearRouterPortal } from './portal-rutas.js';
+import { crearRouterResena } from './resena-rutas.js';
 import { validar } from './validacion.middleware.js';
 import { hashPassword, verificarPassword, verificarPasswordLegado } from './password.service.js';
 import { firmarAccessToken, verificarAccessToken } from './token.service.js';
@@ -705,6 +706,13 @@ export function run() {
   app.use('/portal', crearRouterPortal());
 
   /**
+   * Solicitud de reseña (enlace/QR individual por cliente → redirige a
+   * Google) — montado sin `requireAuth`, mismo motivo que `/portal`. Ver
+   * `resena-rutas.ts`.
+   */
+  app.use('/resena', crearRouterResena());
+
+  /**
    * Verifica si una sesión sigue activa. El id sale siempre de la sesión ya
    * autenticada (`requireAuth`), nunca de un campo que mande el cliente —
    * antes se aceptaba `usuarioId` en el body sin exigir sesión, así que
@@ -1004,6 +1012,16 @@ export function run() {
       await svc.borrarCliente(req.params.id, req.usuarioId!);
       res.json({ ok: true });
     } catch (err) { responderError(req, res, err); }
+  });
+
+  /**
+   * Genera (o regenera, revocando el anterior) el enlace individual de
+   * solicitud de reseña de este cliente. Ver `crearEnlaceResena` en
+   * `enlace-resena.model.ts`.
+   */
+  app.post('/clientes/:id/resena-enlace', requireAuth, async (req: AuthRequest, res) => {
+    try { res.json(await svc.generarEnlaceResena(req.params.id, req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
   });
 
   // ── Proyectos (expedientes de trabajo) — aislados por usuarioId ──

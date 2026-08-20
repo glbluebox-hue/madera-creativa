@@ -3,6 +3,7 @@ import type { PipelineStage } from 'mongoose';
 import { ClienteModel, ProyectoModel, EmpresaModel, FacturaModel, ProveedorModel, ProductoModel, DibujoModel, CarpetaModel, NotaModel, PresupuestoModel, PlantillaModel, RecursoModel, ComponenteModel, CodigoQRModel, AutomatizacionModel, ContratoModel, GastoPeriodicoModel, conectar } from './cliente.model.js';
 import { UsuarioModel, conectarUsuarios } from './usuario.model.js';
 import { crearEnlacePresupuesto, buscarEnlacePorToken, reclamarEnlaceAceptado, guardarFirmaEnlace, formatoTokenValido } from './enlace-presupuesto.model.js';
+import { crearEnlaceResena, buscarEnlaceResenaPorToken, registrarUsoEnlaceResena, formatoTokenValidoResena } from './enlace-resena.model.js';
 import { almacenamiento } from './almacenamiento.service.js';
 import { busEventos } from './eventos.service.js';
 import { enviarNotificacion } from './push.service.js';
@@ -1818,6 +1819,35 @@ export class PresupuestosService {
 
     const { transicionOcurrioAhora } = await this.aceptarPresupuesto(enlace.presupuestoId, enlace.usuarioId);
     return { ok: true, yaEstabaAceptado: !transicionOcurrioAhora };
+  }
+
+  /**
+   * Genera (o regenera, revocando el anterior) el enlace individual de
+   * solicitud de reseña de un cliente — ver `crearEnlaceResena`. Solo
+   * devuelve el token: la URL completa la construye el frontend con su
+   * propio origen (`${window.location.origin}/resena/${token}`), igual que
+   * ya hace con el enlace del Portal.
+   */
+  async generarEnlaceResena(clienteId: string, usuarioId: string): Promise<{ token: string }> {
+    await conectar();
+    const cliente = await ClienteModel.findOne({ id: clienteId, usuarioId }).lean().exec();
+    if (!cliente) throw new ErrorDeNegocio('Cliente no encontrado', 400);
+    return crearEnlaceResena({ clienteId, usuarioId });
+  }
+
+  /**
+   * Valida y registra un clic/escaneo del enlace público de reseña — sin
+   * sesión, solo el token. Lanza `ErrorDeNegocio` si el token no tiene el
+   * formato esperado, no existe, o ya fue revocado; `resena-rutas.ts` trata
+   * cualquier fallo como "enlace no disponible" sin distinguir el motivo,
+   * para no filtrar si un token concreto llegó a existir alguna vez.
+   */
+  async registrarClicResena(tokenPlano: string): Promise<void> {
+    if (!formatoTokenValidoResena(tokenPlano)) throw new ErrorDeNegocio('Enlace no válido.', 400);
+    await conectar();
+    const enlace = await buscarEnlaceResenaPorToken(tokenPlano);
+    if (!enlace || enlace.revocadoEn) throw new ErrorDeNegocio('Enlace no válido.', 400);
+    await registrarUsoEnlaceResena(tokenPlano);
   }
 
   /**

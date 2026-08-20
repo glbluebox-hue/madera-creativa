@@ -518,6 +518,13 @@ export async function borrarCliente(id: string): Promise<void> {
   await comprobarRespuesta(res, 'No se pudo borrar el cliente');
 }
 
+/** Genera (o regenera, revocando el anterior) el enlace individual de solicitud de reseña de un cliente. */
+export async function generarEnlaceResena(clienteId: string): Promise<{ token: string }> {
+  const res = await fetchConAuth(`/clientes/${clienteId}/resena-enlace`, { method: 'POST' });
+  await comprobarRespuestaConMotivo(res, 'No se pudo generar el enlace');
+  return res.json();
+}
+
 /* ===== PROYECTOS (expedientes de trabajo) ===== */
 
 /** Recupera una ficha completa de proyecto por su id (incluye adjuntos). */

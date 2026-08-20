@@ -111,3 +111,19 @@ export const limitadorPortalAceptar = rateLimit({
   keyGenerator: (req) => String(req.params.token || req.ip),
   message: { error: 'Demasiados intentos. Inténtalo de nuevo en unos minutos.' },
 });
+
+/**
+ * Resolver un enlace de solicitud de reseña (`GET /resena/:token`) — por
+ * IP, generoso como `limitadorPortalVer`: el enlace se comparte en un QR
+ * físico o por WhatsApp, y una vista previa de enlace también dispara esta
+ * ruta sin que sea el cliente real escaneando. No hay nada sensible detrás
+ * (siempre redirige al mismo perfil público de Google), así que el límite
+ * solo está para frenar abuso automatizado, no para proteger datos.
+ */
+export const limitadorResena = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiadas peticiones. Inténtalo de nuevo en unos minutos.' },
+});
