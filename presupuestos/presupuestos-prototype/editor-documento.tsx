@@ -22,7 +22,7 @@ import {
   establecerOpacidad, establecerVisibilidad, establecerSoloLectura, establecerObligatorio,
   actualizarContenido, actualizarEstilo, actualizarPropiedadesEspecificas, duplicarElementos,
   agruparElementos, desagruparElementos, establecerBloqueo, cambiarCapa, alinear, distribuir,
-  anadirPagina, eliminarPagina, establecerFondoPagina, localizarElemento,
+  anadirPagina, eliminarPagina, duplicarPagina, moverPagina, establecerFondoPagina, localizarElemento,
   crearEstiloNombrado, eliminarEstiloNombrado, renombrarEstiloNombrado, aplicarEstiloNombrado,
   establecerTema, sincronizarEstiloConNombrado,
   crearElementoInstanciaComponente, desvincularInstancia,
@@ -319,6 +319,15 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /** Botón "Ajustar" del control de zoom fijo — mismo cálculo que el ajuste automático de arriba, pero disparado a mano en cualquier momento (no solo cuando la hoja no cabe). */
+  const ajustarZoomAVentana = useCallback(() => {
+    const contenedor = lienzoContenedorRef.current;
+    if (!contenedor) return;
+    const configPagina = documento.paginas.find((p) => p.id === paginaActivaId)?.configuracion ?? documento.configuracionPorDefecto;
+    const anchoDisponible = contenedor.clientWidth - 32;
+    if (anchoDisponible > 0) setZoom(Math.max(0.25, Math.min(2, anchoDisponible / configPagina.ancho)));
+  }, [documento, paginaActivaId]);
+
   /** Aplica un comando (DocumentoMC actual -> nuevo) empujando el estado previo al historial de deshacer. Único punto de mutación del documento en todo el editor — nunca se llama a setDocumento directamente fuera de aquí (Regla de Oro 3). */
   const ejecutar = useCallback((comando: (doc: DocumentoMC) => DocumentoMC) => {
     setDocumento((actual) => {
@@ -512,6 +521,21 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
     setSeleccion([]);
     if (paginaId === paginaActivaId) setPaginaActivaId(documento.paginas.find((p) => p.id !== paginaId)?.id ?? documento.paginas[0].id);
   }, [ejecutar, paginaActivaId, documento.paginas]);
+
+  const duplicarPaginaActual = useCallback((paginaId: string) => {
+    setDocumento((actual) => {
+      const { documento: siguiente, nuevaPaginaId } = duplicarPagina(actual, paginaId);
+      if (siguiente === actual) return actual;
+      setPasado((p) => [...p, actual]);
+      setFuturo([]);
+      setPaginaActivaId(nuevaPaginaId);
+      return siguiente;
+    });
+  }, []);
+
+  const moverPaginaActual = useCallback((paginaId: string, direccion: 'arriba' | 'abajo') => {
+    ejecutar((doc) => moverPagina(doc, paginaId, direccion));
+  }, [ejecutar]);
 
   // ── Resolución perezosa de instancias de componente (Incremento 6) ──────────
 
@@ -877,6 +901,35 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
   const targetsMoveable = seleccion.map((id) => refsElementos.current.get(id)).filter((el): el is HTMLDivElement => !!el);
   const bloqueadoSeleccion = elementoUnicoSeleccionado?.bloqueado ?? seleccion.some((id) => localizarElemento(documento, id)?.elemento.bloqueado);
 
+  /**
+   * Barra de formato flotante, anclada justo encima (o debajo si no cabe)
+   * del elemento seleccionado — igual que Canva: los controles de fuente/
+   * color/alineación viven pegados a lo que se está construyendo, no en un
+   * panel aparte al que hay que ir a buscarlos (petición explícita del
+   * usuario, 20/08/2026: "quiero poder editarlo en el mismo recuadro que
+   * estoy construyendo... no quiero otro más abajo"). Se recalcula en cada
+   * scroll/resize porque `getBoundingClientRect` es del viewport, no del
+   * documento — igual que ya hace el propio Moveable más abajo.
+   */
+  const idElementoFlotante = elementoUnicoSeleccionado?.id ?? null;
+  const [rectBarraFlotante, setRectBarraFlotante] = useState<{ left: number; top: number; abajo: boolean } | null>(null);
+  useEffect(() => {
+    if (!idElementoFlotante) { setRectBarraFlotante(null); return; }
+    const actualizar = () => {
+      const nodo = refsElementos.current.get(idElementoFlotante);
+      if (!nodo) { setRectBarraFlotante(null); return; }
+      const r = nodo.getBoundingClientRect();
+      const abajo = r.top < 90; // sin sitio arriba (barra superior + herramientas) — se ancla debajo en su lugar.
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - 360 - 8));
+      setRectBarraFlotante({ left, top: abajo ? r.bottom + 8 : r.top - 8, abajo });
+    };
+    actualizar();
+    const contenedor = lienzoContenedorRef.current;
+    contenedor?.addEventListener('scroll', actualizar);
+    window.addEventListener('resize', actualizar);
+    return () => { contenedor?.removeEventListener('scroll', actualizar); window.removeEventListener('resize', actualizar); };
+  }, [idElementoFlotante, zoom, documento]);
+
   // ── Guías de alineación (regla/medidor de centrado) — al arrastrar o
   // redimensionar, Moveable dibuja líneas de guía cuando el elemento
   // queda alineado (borde o centro) con otro elemento de la misma página,
@@ -940,6 +993,24 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
     previewResizeRef.current = null;
   };
   // ── Panel de propiedades ─────────────────────────────────────────────────────
+
+  /** Controles de formato de un elemento (fuente/color/alineación...) — se usa tanto en el panel derecho como en la barra flotante anclada al propio elemento. */
+  function panelEstiloDe(elemento: ElementoMC) {
+    const definicion = obtenerTipoRender(elemento.tipo);
+    return (
+      <definicion.PanelPropiedades
+        elemento={elemento}
+        onCambiarContenido={(contenido) => ejecutar((doc) => actualizarContenido(doc, elemento.id, contenido))}
+        onCambiarEstilo={(estilo) => ejecutar((doc) => actualizarEstilo(doc, [elemento.id], estilo))}
+        onCambiarPropiedades={(propiedades) => ejecutar((doc) => actualizarPropiedadesEspecificas(doc, elemento.id, propiedades))}
+        onSustituirArchivo={(file) => sustituirArchivoDe(elemento.id, elemento.tipo, file)}
+        onElegirDeBiblioteca={elemento.tipo === 'imagen' || elemento.tipo === 'logotipo' ? abrirBiblioteca : undefined}
+        onSubirABiblioteca={elemento.tipo === 'imagen' ? (file) => subirArchivoABiblioteca(elemento.id, 'imagen', file) : undefined}
+        onGenerarConIA={elemento.tipo === 'bloqueIA' ? (instrucciones) => generarBloqueIA(elemento.id, instrucciones) : undefined}
+        errorGenerarConIA={elemento.tipo === 'bloqueIA' ? errorGeneracionIA : undefined}
+      />
+    );
+  }
 
   function panelPropiedades() {
     if (seleccion.length === 0) return <p className={editorStyles.panelNota}>Selecciona un elemento para ver sus propiedades.</p>;
@@ -1017,17 +1088,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
           </div>
         </div>
         <p className={editorStyles.panelTituloSeccion}>Estilo</p>
-        <definicion.PanelPropiedades
-          elemento={elemento}
-          onCambiarContenido={(contenido) => ejecutar((doc) => actualizarContenido(doc, elemento.id, contenido))}
-          onCambiarEstilo={(estilo) => ejecutar((doc) => actualizarEstilo(doc, [elemento.id], estilo))}
-          onCambiarPropiedades={(propiedades) => ejecutar((doc) => actualizarPropiedadesEspecificas(doc, elemento.id, propiedades))}
-          onSustituirArchivo={(file) => sustituirArchivoDe(elemento.id, elemento.tipo, file)}
-          onElegirDeBiblioteca={elemento.tipo === 'imagen' || elemento.tipo === 'logotipo' ? abrirBiblioteca : undefined}
-          onSubirABiblioteca={elemento.tipo === 'imagen' ? (file) => subirArchivoABiblioteca(elemento.id, 'imagen', file) : undefined}
-          onGenerarConIA={elemento.tipo === 'bloqueIA' ? (instrucciones) => generarBloqueIA(elemento.id, instrucciones) : undefined}
-          errorGenerarConIA={elemento.tipo === 'bloqueIA' ? errorGeneracionIA : undefined}
-        />
+        {panelEstiloDe(elemento)}
       </>
     );
   }
@@ -1079,10 +1140,6 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
         <button className={editorStyles.btnHerramienta} onClick={() => alinearSeleccionActual('centroH')} disabled={seleccion.length < 2}>Centrar H</button>
         <button className={editorStyles.btnHerramienta} onClick={() => alinearSeleccionActual('derecha')} disabled={seleccion.length < 2}>Alinear der.</button>
         <button className={editorStyles.btnHerramienta} onClick={() => distribuirSeleccionActual('horizontal')} disabled={seleccion.length < 3}>Distribuir</button>
-        <div className={editorStyles.separador} />
-        <button className={editorStyles.btnHerramienta} onClick={() => setZoom((z) => Math.max(0.25, z - 0.1))}>− Zoom</button>
-        <span style={{ fontSize: '0.75rem', minWidth: '2.5rem', textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
-        <button className={editorStyles.btnHerramienta} onClick={() => setZoom((z) => Math.min(2, z + 0.1))}>+ Zoom</button>
         <div className={editorStyles.separador} />
         <button className={editorStyles.btnHerramienta} onClick={() => setPanelTemaAbierto((v) => !v)}>🎨 Tema y estilos</button>
         <button className={editorStyles.btnHerramienta} onClick={() => setPanelPlantillaAbierto(true)}>📄 Guardar como plantilla</button>
@@ -1242,7 +1299,12 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
           {documento.paginas.map((p, i) => (
             <div key={p.id} className={`${editorStyles.paginaFila} ${p.id === paginaActivaId ? editorStyles.paginaFilaActiva : ''}`} onClick={() => setPaginaActivaId(p.id)}>
               <span>{p.nombre || `Página ${i + 1}`}</span>
-              {documento.paginas.length > 1 && <button className={editorStyles.miniBtn} onClick={(e) => { e.stopPropagation(); eliminarPaginaActual(p.id); }}>✕</button>}
+              <div className={editorStyles.paginaFilaAcciones}>
+                <button className={editorStyles.miniBtn} onClick={(e) => { e.stopPropagation(); moverPaginaActual(p.id, 'arriba'); }} disabled={i === 0} title="Subir página">↑</button>
+                <button className={editorStyles.miniBtn} onClick={(e) => { e.stopPropagation(); moverPaginaActual(p.id, 'abajo'); }} disabled={i === documento.paginas.length - 1} title="Bajar página">↓</button>
+                <button className={editorStyles.miniBtn} onClick={(e) => { e.stopPropagation(); duplicarPaginaActual(p.id); }} title="Duplicar página">⧉</button>
+                {documento.paginas.length > 1 && <button className={editorStyles.miniBtn} onClick={(e) => { e.stopPropagation(); eliminarPaginaActual(p.id); }} title="Eliminar página">✕</button>}
+              </div>
             </div>
           ))}
           <button className={editorStyles.btnPanel} onClick={anadirPaginaActual}>+ Añadir página</button>
@@ -1315,6 +1377,24 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
           {panelPropiedades()}
         </div>
       </div>
+
+      <div className={editorStyles.zoomFlotante}>
+        <button className={editorStyles.miniBtn} onClick={() => setZoom((z) => Math.max(0.25, z - 0.1))} title="Reducir zoom">−</button>
+        <span>{Math.round(zoom * 100)}%</span>
+        <button className={editorStyles.miniBtn} onClick={() => setZoom((z) => Math.min(2, z + 0.1))} title="Aumentar zoom">+</button>
+        <div className={editorStyles.separador} />
+        <button className={editorStyles.miniBtn} onClick={ajustarZoomAVentana} title="Ajustar la hoja a la ventana">⤢ Ajustar</button>
+      </div>
+
+      {elementoUnicoSeleccionado && rectBarraFlotante && !elementoUnicoSeleccionado.bloqueado && (
+        <div
+          className={editorStyles.barraFlotanteFormato}
+          style={{ left: rectBarraFlotante.left, top: rectBarraFlotante.top, transform: rectBarraFlotante.abajo ? undefined : 'translateY(-100%)' }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {panelEstiloDe(elementoUnicoSeleccionado)}
+        </div>
+      )}
 
       {targetsMoveable.length === 1 && !bloqueadoSeleccion && editandoId !== elementoUnicoSeleccionado?.id && elementoUnicoSeleccionado && (
         <Moveable

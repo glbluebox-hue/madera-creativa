@@ -402,6 +402,42 @@ export function eliminarPagina(documento: DocumentoMC, paginaId: string): Docume
   return copia;
 }
 
+/** Copia una página entera (con todos sus elementos, ids nuevos para no chocar con la original) justo después de ella — mismo patrón de la barra de páginas de Canva. */
+export function duplicarPagina(documento: DocumentoMC, paginaId: string): { documento: DocumentoMC; nuevaPaginaId: string } {
+  const copia = clonar(documento);
+  const indiceOriginal = copia.paginas.findIndex((p) => p.id === paginaId);
+  if (indiceOriginal === -1) return { documento, nuevaPaginaId: paginaId };
+  const original = copia.paginas[indiceOriginal];
+  const mapaGrupos = new Map<string, string>();
+  const nuevaPaginaId = generarId();
+  const nuevaPagina: PaginaMC = {
+    ...original,
+    id: nuevaPaginaId,
+    elementos: original.elementos.map((elemento) => {
+      let grupoId: string | null = null;
+      if (elemento.grupoId) {
+        grupoId = mapaGrupos.get(elemento.grupoId) ?? generarId();
+        mapaGrupos.set(elemento.grupoId, grupoId);
+      }
+      return { ...elemento, id: generarId(), grupoId };
+    }),
+  };
+  copia.paginas.splice(indiceOriginal + 1, 0, nuevaPagina);
+  copia.paginas = copia.paginas.map((p, i) => ({ ...p, indice: i }));
+  return { documento: copia, nuevaPaginaId };
+}
+
+/** Sube o baja una página una posición en el orden — reordena el array y reindexa, igual que hace `eliminarPagina`. */
+export function moverPagina(documento: DocumentoMC, paginaId: string, direccion: 'arriba' | 'abajo'): DocumentoMC {
+  const copia = clonar(documento);
+  const i = copia.paginas.findIndex((p) => p.id === paginaId);
+  const j = direccion === 'arriba' ? i - 1 : i + 1;
+  if (i === -1 || j < 0 || j >= copia.paginas.length) return documento;
+  [copia.paginas[i], copia.paginas[j]] = [copia.paginas[j], copia.paginas[i]];
+  copia.paginas = copia.paginas.map((p, k) => ({ ...p, indice: k }));
+  return copia;
+}
+
 /** Fondo de una página (color, imagen subida por el usuario o ninguno) — `null` = usa el fondo blanco por defecto. */
 export function establecerFondoPagina(documento: DocumentoMC, paginaId: string, fondo: PaginaMC['fondo']): DocumentoMC {
   const copia = clonar(documento);

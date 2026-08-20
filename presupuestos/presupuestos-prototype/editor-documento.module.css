@@ -194,6 +194,45 @@
 
 .panelNota { font-size: 0.72rem; color: var(--topo-claro); margin: 0; word-break: break-all; }
 
+/* Barra de formato flotante anclada al elemento seleccionado (estilo
+   Canva) — reutiliza las mismas clases de campo que el panel derecho,
+   pero en fila en vez de en columna, porque aquí el espacio es horizontal. */
+.barraFlotanteFormato {
+  position: fixed;
+  z-index: 550;
+  background: var(--fondo-panel);
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  padding: 0.5rem 0.6rem;
+  max-width: min(90vw, 360px);
+}
+.barraFlotanteFormato .panelSeccion { flex-direction: row; flex-wrap: wrap; align-items: flex-end; gap: 0.5rem; }
+.barraFlotanteFormato .panelCampo { min-width: 3.4rem; }
+
+/* Control de zoom fijo, siempre visible sobre el lienzo (estilo Canva) —
+   a diferencia de los botones que antes vivían dentro de la barra de
+   herramientas, esta no se desplaza ni se oculta con ella. */
+.zoomFlotante {
+  position: fixed;
+  z-index: 500;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--fondo-panel);
+  border: 1px solid var(--borde);
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.18);
+  font-size: 0.78rem;
+  color: var(--topo);
+}
+.zoomFlotante .miniBtn { font-size: 0.9rem; padding: 0 0.3rem; }
+.zoomFlotante span { min-width: 2.6rem; text-align: center; font-variant-numeric: tabular-nums; }
+
 .marcadorVacio {
   width: 100%; height: 100%;
   display: flex; align-items: center; justify-content: center;
@@ -225,12 +264,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.4rem;
   padding: 0.4rem 0.5rem;
   border-radius: 6px;
   font-size: 0.78rem;
   cursor: pointer;
   margin-bottom: 0.25rem;
 }
+.paginaFila > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .paginaFilaActiva { background: var(--topo); color: #fff; }
 
 .miniBtn {
@@ -240,6 +281,14 @@
   font-size: 0.75rem;
   color: inherit;
   padding: 0 0.2rem;
+}
+.miniBtn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.paginaFilaAcciones {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex-shrink: 0;
 }
 
 /* Botón para cerrar un panel abierto en pantalla estrecha — no existe en
@@ -339,7 +388,7 @@
    se resuelve en React (`modoImpresion`, editor-documento.tsx), no aquí. */
 @media print {
   @page { margin: 0; }
-  .barraSuperior, .barraHerramientas, .panelIzquierdo, .panelDerecho { display: none !important; }
+  .barraSuperior, .barraHerramientas, .panelIzquierdo, .panelDerecho, .zoomFlotante, .barraFlotanteFormato { display: none !important; }
   .raiz { position: static; inset: auto; }
   .cuerpo { display: block; }
   .lienzoContenedor { padding: 0; gap: 0; overflow: visible; background: #fff; }
