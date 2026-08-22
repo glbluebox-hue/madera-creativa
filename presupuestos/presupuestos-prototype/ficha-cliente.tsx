@@ -377,7 +377,9 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
               <p style={{ color: 'var(--topo-claro)', fontSize: '0.85rem', margin: 0 }}>No hay facturas de gasto vinculadas a este proyecto.</p>
             ) : (
               <>
-                <table className={styles.tabla} style={{ width: '100%', marginBottom: '0.75rem' }}>
+                {/* Sin este contenedor, en móvil la tabla no cabe y la última columna (el ojo de "Ver factura") queda fuera de la pantalla sin forma de llegar a ella — mismo fallo real ya corregido en `facturas.tsx`. */}
+                <div style={{ overflowX: 'auto' }}>
+                <table className={styles.tabla} style={{ width: '100%', minWidth: 420, marginBottom: '0.75rem' }}>
                   <thead><tr><th>Fecha</th><th>Proveedor / Concepto</th><th style={{ textAlign: 'right' }}>Importe</th><th /></tr></thead>
                   <tbody>
                     {facturasProyecto.map((f) => (
@@ -396,6 +398,7 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
                     ))}
                   </tbody>
                 </table>
+                </div>
                 <p style={{ textAlign: 'right', fontWeight: 600, color: 'var(--rojo)', fontSize: '0.9rem', margin: 0 }}>
                   Total facturas de gasto: {!privado && '-'}{formatoEuroPrivado(totalFacturasGasto, privado)}
                 </p>
