@@ -809,7 +809,7 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, clientes, onGuardar
 
       const aGuardar: Dibujo = {
         id: dibujo?.id ?? generarId(),
-        clienteId: destino?.clienteId ?? dibujo?.clienteId ?? clienteId ?? '',
+        clienteId: destino?.proyectoId ?? dibujo?.clienteId ?? clienteId ?? '',
         carpetaId: destino?.carpetaId ?? dibujo?.carpetaId ?? carpetaId ?? '',
         proyectoId: dibujo?.proyectoId ?? '',
         nombre: nombre.trim() || 'Dibujo sin título',

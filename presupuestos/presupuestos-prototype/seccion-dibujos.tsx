@@ -78,7 +78,7 @@ export function SeccionDibujos({ clientes = [], onEditorAbierto }: SeccionDibujo
     if (!asignando) return;
     const d = asignando;
     setAsignando(null);
-    await guardar({ ...d, clienteId: destino.clienteId, carpetaId: destino.carpetaId });
+    await guardar({ ...d, clienteId: destino.proyectoId, carpetaId: destino.carpetaId });
   };
 
   if (editando) {

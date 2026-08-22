@@ -4,12 +4,23 @@ import { generarId } from './mock.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
 
-/** A qué cliente/carpeta debe quedar archivado un dibujo. */
-export type DestinoDibujo = { clienteId: string; carpetaId: string };
+/**
+ * A qué proyecto/carpeta debe quedar archivado un dibujo. `proyectoId`, no
+ * `clienteId` a propósito (incremento "Cliente ≠ Proyecto", 20/08/2026):
+ * `Dibujo.clienteId`/`Carpeta.clienteId` se filtran en la ficha por el id
+ * del PROYECTO (ver `tab-dibujos.tsx`), nunca por la identidad del cliente
+ * — un cliente con más de un proyecto tiene un id de identidad distinto de
+ * cada uno de sus proyectos. Antes este selector guardaba directamente la
+ * identidad elegida, así que un dibujo "asignado a un cliente" con varios
+ * proyectos acababa siempre en el proyecto más antiguo (el único que, por
+ * construcción de la migración, comparte id con la identidad) en vez de en
+ * el proyecto activo (reporte real del usuario, 22/08/2026).
+ */
+export type DestinoDibujo = { proyectoId: string; carpetaId: string };
 
 /** Props del selector de destino de guardado. */
 export type SelectorDestinoGuardadoProps = {
-  /** Lista ligera de clientes para el desplegable. */
+  /** Lista ligera de clientes (identidad) para el desplegable. */
   clientes: { id: string; nombre: string }[];
   onConfirmar: (destino: DestinoDibujo) => void;
   onCancelar: () => void;
@@ -31,12 +42,17 @@ const OPCION_NUEVA_CARPETA = '__nueva__';
 /**
  * Modal "¿Dónde quieres guardar este dibujo?" (Fase 2.2) — se muestra al
  * guardar un dibujo que todavía no tiene cliente asignado. Cliente
- * existente → carpeta de ese cliente (con opción de crear una nueva ahí
- * mismo) o temporal (sin cliente, va a la bandeja global).
+ * existente → proyecto de ese cliente (obligatorio si tiene más de uno,
+ * nunca se adivina — mismo criterio que ya usa `escaner-factura.tsx`) →
+ * carpeta de ese proyecto (con opción de crear una nueva ahí mismo), o
+ * temporal (sin cliente, va a la bandeja global).
  */
 export function SelectorDestinoGuardado({ clientes, onConfirmar, onCancelar, soloAsignarCliente }: SelectorDestinoGuardadoProps) {
   const [paso, setPaso] = useState<'elegir' | 'cliente'>(soloAsignarCliente ? 'cliente' : 'elegir');
   const [clienteId, setClienteId] = useState('');
+  const [proyectosDelCliente, setProyectosDelCliente] = useState<{ id: string; proyecto: string; estado: string }[]>([]);
+  const [cargandoProyectos, setCargandoProyectos] = useState(false);
+  const [proyectoId, setProyectoId] = useState('');
   const [carpetas, setCarpetas] = useState<Carpeta[]>([]);
   const [cargandoCarpetas, setCargandoCarpetas] = useState(false);
   const [carpetaId, setCarpetaId] = useState('');
@@ -45,19 +61,35 @@ export function SelectorDestinoGuardado({ clientes, onConfirmar, onCancelar, sol
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (paso !== 'cliente' || !clienteId) return;
+    if (!clienteId) { setProyectosDelCliente([]); setProyectoId(''); return; }
+    setCargandoProyectos(true);
+    api.obtenerProyectosDeCliente(clienteId)
+      .then((lista) => {
+        setProyectosDelCliente(lista);
+        // Un único proyecto → sin ambigüedad, se preselecciona. Con 0 o 2+,
+        // nunca se adivina: queda vacío hasta que el usuario elija a propósito.
+        setProyectoId(lista.length === 1 ? lista[0].id : '');
+      })
+      .catch(() => setProyectosDelCliente([]))
+      .finally(() => setCargandoProyectos(false));
+  }, [clienteId]);
+
+  useEffect(() => {
+    setCarpetaId('');
+    setCreandoCarpeta(false);
+    if (!proyectoId) { setCarpetas([]); return; }
     setCargandoCarpetas(true);
-    api.listarCarpetas(clienteId)
+    api.listarCarpetas(proyectoId)
       .then(setCarpetas)
       .catch(() => setCarpetas([]))
       .finally(() => setCargandoCarpetas(false));
-  }, [paso, clienteId]);
+  }, [proyectoId]);
 
   const confirmarNuevaCarpeta = async () => {
     const nombre = nombreNuevaCarpeta.trim();
     if (!nombre) { setCreandoCarpeta(false); return; }
     try {
-      const carpeta = await api.crearCarpeta({ id: generarId(), clienteId, nombre });
+      const carpeta = await api.crearCarpeta({ id: generarId(), clienteId: proyectoId, nombre });
       setCarpetas((prev) => [carpeta, ...prev]);
       setCarpetaId(carpeta.id);
       setCreandoCarpeta(false);
@@ -84,7 +116,7 @@ export function SelectorDestinoGuardado({ clientes, onConfirmar, onCancelar, sol
               <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={() => setPaso('cliente')}>
                 Guardar en un cliente existente
               </button>
-              <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={() => onConfirmar({ clienteId: '', carpetaId: '' })}>
+              <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={() => onConfirmar({ proyectoId: '', carpetaId: '' })}>
                 Guardar como dibujo temporal
               </button>
             </>
@@ -97,14 +129,33 @@ export function SelectorDestinoGuardado({ clientes, onConfirmar, onCancelar, sol
                 <select
                   className={styles.select}
                   value={clienteId}
-                  onChange={(e) => { setClienteId(e.target.value); setCarpetaId(''); setCreandoCarpeta(false); }}
+                  onChange={(e) => setClienteId(e.target.value)}
                 >
                   <option value="">Selecciona un cliente…</option>
                   {clientes.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                 </select>
               </label>
 
-              {clienteId && (
+              {clienteId && !cargandoProyectos && proyectosDelCliente.length > 1 && (
+                <label className={styles.campo}>
+                  <span className={styles.campoLabel}>Proyecto *</span>
+                  <select className={styles.select} value={proyectoId} onChange={(e) => setProyectoId(e.target.value)}>
+                    <option value="">Selecciona un proyecto…</option>
+                    {proyectosDelCliente.map((p) => <option key={p.id} value={p.id}>{p.proyecto || 'Proyecto sin nombre'}</option>)}
+                  </select>
+                  {!proyectoId && (
+                    <p style={{ margin: '0.4rem 0 0', fontSize: '0.75rem', color: 'var(--ocre, #a67c00)' }}>
+                      Este cliente tiene varios proyectos — elige a cuál pertenece este dibujo.
+                    </p>
+                  )}
+                </label>
+              )}
+
+              {clienteId && !cargandoProyectos && proyectosDelCliente.length === 0 && (
+                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--topo-claro)' }}>Este cliente todavía no tiene ningún proyecto.</p>
+              )}
+
+              {proyectoId && (
                 <label className={styles.campo}>
                   <span className={styles.campoLabel}>Carpeta</span>
                   {cargandoCarpetas ? (
@@ -141,8 +192,8 @@ export function SelectorDestinoGuardado({ clientes, onConfirmar, onCancelar, sol
                 </button>
                 <button
                   className={`${styles.btn} ${styles.btnPrimario}`}
-                  disabled={!clienteId}
-                  onClick={() => onConfirmar({ clienteId, carpetaId })}
+                  disabled={!proyectoId}
+                  onClick={() => onConfirmar({ proyectoId, carpetaId })}
                 >
                   Guardar aquí
                 </button>
