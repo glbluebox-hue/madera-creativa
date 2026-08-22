@@ -5,6 +5,7 @@ import { EditorDibujo } from './editor-dibujo.js';
 import { SelectorDestinoGuardado, type DestinoDibujo } from './selector-destino-guardado.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
 import { formatoFecha } from './calculos.js';
+import { urlImagenFiable } from './imagen-fallback.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
 
@@ -131,7 +132,7 @@ export function SeccionDibujos({ clientes = [], onEditorAbierto }: SeccionDibujo
           {visibles.map((d) => (
             <div key={d.id} className={styles.dibujoCard} onClick={() => abrirExistente(d)}>
               <div className={styles.dibujoCardMiniatura}>
-                {d.miniatura ? <img src={d.miniatura} alt={d.nombre} /> : <IconoDibujo s={28} />}
+                {d.miniatura ? <img src={urlImagenFiable(d.miniatura)} alt={d.nombre} /> : <IconoDibujo s={28} />}
               </div>
               <div className={styles.dibujoCardCuerpo}>
                 <span className={styles.dibujoCardNombre}>{d.nombre}</span>

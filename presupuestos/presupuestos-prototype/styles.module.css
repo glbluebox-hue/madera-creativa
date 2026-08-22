@@ -2186,19 +2186,20 @@
 .dibujoCardFecha { font-size: 0.7rem; color: var(--topo-muy-claro); }
 
 .dibujoCardAcciones {
+  /* Siempre visible, nunca solo al pasar el ratón (fallo real en móvil,
+     22/08/2026): sin "hover" de verdad en pantallas táctiles, un dedo
+     encima de la tarjeta abría el dibujo antes de poder llegar a estos
+     botones — no había forma fiable de tocarlos. */
   position: absolute;
   top: 0.5rem;
   right: 0.5rem;
   display: flex;
   align-items: center;
   gap: 0.15rem;
-  opacity: 0;
   background: rgba(255,255,255,0.88);
   border-radius: var(--radio-md);
   padding: 2px;
-  transition: var(--trans-fast);
 }
-.dibujoCard:hover .dibujoCardAcciones { opacity: 1; }
 .dibujoCardAcciones select { font-size: 0.7rem; padding: 2px 4px; max-width: 110px; }
 
 /* ── Carpetas de dibujos por cliente (Fase 2.2) ── */
@@ -2244,18 +2245,32 @@
   transform: translateY(-2px);
   border-color: var(--topo-muy-claro);
 }
+/* Mosaico de previsualización de una carpeta (petición del usuario, 23/08/2026) — hasta 4 miniaturas reales de los dibujos que contiene, en vez de siempre el icono genérico de carpeta. */
+.carpetaCardMosaico {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 2px;
+  border-radius: var(--radio-md);
+  overflow: hidden;
+  background: var(--fondo);
+}
+.carpetaCardMosaico img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.carpetaCardMosaicoUnica { grid-column: 1 / -1; grid-row: 1 / -1; }
 .carpetaCardNombre { font-weight: 700; font-size: 0.85rem; color: var(--negro); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .carpetaCardCuenta { font-size: 0.7rem; color: var(--topo-muy-claro); }
 .carpetaCardAcciones {
+  /* Siempre visible — mismo motivo que .dibujoCardAcciones: en móvil no
+     hay "hover" real, así que ocultarlas hasta pasar el ratón las dejaba
+     inalcanzables al tacto. */
   position: absolute;
   top: 0.4rem;
   right: 0.4rem;
   display: flex;
   gap: 0.1rem;
-  opacity: 0;
-  transition: var(--trans-fast);
 }
-.carpetaCard:hover .carpetaCardAcciones { opacity: 1; }
 
 /* ── Editor de dibujo — pantalla completa propia ── */
 

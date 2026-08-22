@@ -5,6 +5,7 @@ import { useCarpetas } from './use-carpetas.js';
 import { EditorDibujo } from './editor-dibujo.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
 import { formatoFecha } from './calculos.js';
+import { urlImagenFiable } from './imagen-fallback.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
 
@@ -39,6 +40,23 @@ const IconoMoverProyecto = () => (
 );
 
 const SIN_CARPETA = '';
+
+/** Icono de carpeta, o un mosaico de hasta 4 miniaturas reales de su contenido si las hay. */
+function VistaPreviaCarpeta({ miniaturas }: { miniaturas: Dibujo[] }) {
+  if (miniaturas.length === 0) return <IconoCarpeta />;
+  return (
+    <div className={styles.carpetaCardMosaico}>
+      {miniaturas.map((d) => (
+        <img
+          key={d.id}
+          src={urlImagenFiable(d.miniatura)}
+          alt={d.nombre}
+          className={miniaturas.length === 1 ? styles.carpetaCardMosaicoUnica : undefined}
+        />
+      ))}
+    </div>
+  );
+}
 
 /**
  * Apartado "Dibujos" de la ficha de un cliente (Fase 2.2) — repositorio
@@ -101,6 +119,10 @@ export function TabDibujos({ proyecto }: TabDibujosProps) {
   }, [dibujos, buscando, busqueda, carpetaId]);
 
   const nombreCarpetaDe = (id: string) => (id === SIN_CARPETA ? 'Sin carpeta' : carpetas.find((c) => c.id === id)?.nombre ?? '—');
+
+  /** Hasta 4 miniaturas reales de una carpeta, para previsualizar su contenido en la vista de carpetas sin tener que abrirla (petición del usuario, 23/08/2026). */
+  const miniaturasDe = (idCarpeta: string) =>
+    dibujos.filter((d) => d.carpetaId === idCarpeta && d.miniatura).slice(0, 4);
 
   const abrirNuevo = () => setEditando({ dibujo: null });
 
@@ -259,7 +281,7 @@ export function TabDibujos({ proyecto }: TabDibujosProps) {
                     />
                   ) : (
                     <>
-                      <IconoCarpeta />
+                      <VistaPreviaCarpeta miniaturas={miniaturasDe(c.id)} />
                       <span className={styles.carpetaCardNombre}>{c.nombre}</span>
                       <span className={styles.carpetaCardCuenta}>{dibujos.filter((d) => d.carpetaId === c.id).length} dibujo(s)</span>
                       <div className={styles.carpetaCardAcciones} onClick={(e) => e.stopPropagation()}>
@@ -274,7 +296,7 @@ export function TabDibujos({ proyecto }: TabDibujosProps) {
               ))}
               {dibujos.some((d) => d.carpetaId === SIN_CARPETA) && (
                 <div className={styles.carpetaCard} onClick={() => setCarpetaId(SIN_CARPETA)}>
-                  <IconoCarpeta />
+                  <VistaPreviaCarpeta miniaturas={miniaturasDe(SIN_CARPETA)} />
                   <span className={styles.carpetaCardNombre}>Sin carpeta</span>
                   <span className={styles.carpetaCardCuenta}>{dibujos.filter((d) => d.carpetaId === SIN_CARPETA).length} dibujo(s)</span>
                 </div>
@@ -309,7 +331,7 @@ export function TabDibujos({ proyecto }: TabDibujosProps) {
             {dibujosVisibles.map((d) => (
               <div key={d.id} className={styles.dibujoCard} onClick={() => abrirExistente(d)}>
                 <div className={styles.dibujoCardMiniatura}>
-                  {d.miniatura ? <img src={d.miniatura} alt={d.nombre} /> : <IconoDibujo s={28} />}
+                  {d.miniatura ? <img src={urlImagenFiable(d.miniatura)} alt={d.nombre} /> : <IconoDibujo s={28} />}
                 </div>
                 <div className={styles.dibujoCardCuerpo}>
                   {renombrandoDibujoId === d.id ? (
