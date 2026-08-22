@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import type { Proyecto, Dibujo } from './types.js';
 import { useDibujos } from './use-dibujos.js';
 import { useCarpetas } from './use-carpetas.js';
@@ -34,6 +34,9 @@ const IconoRenombrar = () => (
 const IconoMover = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
 );
+const IconoMoverProyecto = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1" /><path d="M14 6h7" /><path d="M18 2l4 4-4 4" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
+);
 
 const SIN_CARPETA = '';
 
@@ -67,6 +70,23 @@ export function TabDibujos({ proyecto }: TabDibujosProps) {
   const [renombrandoDibujoId, setRenombrandoDibujoId] = useState<string | null>(null);
   const [nombreDibujoNuevo, setNombreDibujoNuevo] = useState('');
   const [errorCarpeta, setErrorCarpeta] = useState<string | null>(null);
+
+  /**
+   * Otros proyectos de este mismo cliente, para poder mover un dibujo
+   * archivado en el proyecto equivocado sin tener que tocar la base de
+   * datos a mano (reporte real del usuario, 22/08/2026 — un dibujo de
+   * Walter Di Zio quedó archivado en un proyecto suyo antiguo por un fallo
+   * humano en el selector "asignar a cliente", y no había forma de
+   * corregirlo desde la propia app).
+   */
+  const [otrosProyectos, setOtrosProyectos] = useState<{ id: string; proyecto: string; estado: string }[]>([]);
+  const [moviendoAProyectoId, setMoviendoAProyectoId] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.obtenerProyectosDeCliente(proyecto.clienteId)
+      .then((lista) => setOtrosProyectos(lista.filter((p) => p.id !== proyecto.id)))
+      .catch(() => setOtrosProyectos([]));
+  }, [proyecto.clienteId, proyecto.id]);
 
   const carpetaActual = carpetaId !== null ? carpetas.find((c) => c.id === carpetaId) : undefined;
   const buscando = busqueda.trim().length > 0;
@@ -141,6 +161,19 @@ export function TabDibujos({ proyecto }: TabDibujosProps) {
     setMoviendoDibujoId(null);
     if (nuevaCarpetaId === d.carpetaId) return;
     await guardar({ ...d, carpetaId: nuevaCarpetaId });
+  };
+
+  /**
+   * Mueve un dibujo a OTRO proyecto de este mismo cliente — a "Sin carpeta"
+   * en el destino a propósito: no se conocen las carpetas del proyecto
+   * destino desde aquí, y adivinar una sería peor que dejarlo pendiente de
+   * organizar (mismo criterio de "nunca se adivina" que ya usa
+   * `escaner-factura.tsx`/`selector-destino-guardado.tsx`).
+   */
+  const moverDibujoAProyecto = async (d: Dibujo, nuevoProyectoId: string) => {
+    setMoviendoAProyectoId(null);
+    if (!nuevoProyectoId || nuevoProyectoId === d.clienteId) return;
+    await guardar({ ...d, clienteId: nuevoProyectoId, carpetaId: SIN_CARPETA });
   };
 
   if (editando) {
@@ -312,6 +345,24 @@ export function TabDibujos({ proyecto }: TabDibujosProps) {
                     <button className={styles.btnIcono} title="Mover a otra carpeta" onClick={() => setMoviendoDibujoId(d.id)}>
                       <IconoMover />
                     </button>
+                  )}
+                  {otrosProyectos.length > 0 && (
+                    moviendoAProyectoId === d.id ? (
+                      <select
+                        autoFocus
+                        className={styles.select}
+                        defaultValue=""
+                        onChange={(e) => moverDibujoAProyecto(d, e.target.value)}
+                        onBlur={() => setMoviendoAProyectoId(null)}
+                      >
+                        <option value="" disabled>Mover a…</option>
+                        {otrosProyectos.map((p) => <option key={p.id} value={p.id}>{p.proyecto || 'Proyecto sin nombre'}</option>)}
+                      </select>
+                    ) : (
+                      <button className={styles.btnIcono} title="Mover a otro proyecto de este cliente" onClick={() => setMoviendoAProyectoId(d.id)}>
+                        <IconoMoverProyecto />
+                      </button>
+                    )
                   )}
                   <button className={styles.btnIcono} title="Renombrar" onClick={() => { setRenombrandoDibujoId(d.id); setNombreDibujoNuevo(d.nombre); }}>
                     <IconoRenombrar />
