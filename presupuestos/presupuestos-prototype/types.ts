@@ -2,7 +2,6 @@
  * Tipos de dominio para la app de presupuestos de cliente.
  */
 import type { FotoProyecto } from './galeria-fotos.js';
-import type { DibujoGuardado } from './pizarra-medidas.js';
 
 /** Una estancia con dimensiones para el despiece. */
 export type Estancia = {
@@ -313,6 +312,4 @@ export type Proyecto = {
   adjuntos: Adjunto[];
   /** Fotos del proyecto acabado. */
   fotos: FotoProyecto[];
-  /** Dibujos de medidas guardados en la pizarra. */
-  dibujos?: import('./pizarra-medidas.js').DibujoGuardado[];
 };

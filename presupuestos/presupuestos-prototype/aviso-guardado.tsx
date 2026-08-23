@@ -2,9 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 
 /**
  * Hook para mostrar un aviso temporal de guardado correcto (Incremento
- * 1.8). Extraído del patrón que ya usaba `pizarra-medidas.tsx` (único sitio
- * de la app que daba alguna confirmación visual de guardado) para
- * reutilizarlo donde antes no había ninguna señal de éxito.
+ * 1.8), reutilizable donde antes no había ninguna señal de éxito.
  */
 export function useAvisoGuardado(duracionMs = 3000) {
   const [visible, setVisible] = useState(false);
@@ -19,7 +17,7 @@ export function useAvisoGuardado(duracionMs = 3000) {
   return { visible, mostrar };
 }
 
-/** Banner de aviso temporal — mismo estilo visual que ya validó `pizarra-medidas.tsx`. */
+/** Banner de aviso temporal. */
 export function AvisoGuardado({ visible, mensaje = 'Guardado correctamente' }: { visible: boolean; mensaje?: string }) {
   if (!visible) return null;
   return (

@@ -1603,52 +1603,6 @@
 .zonaSubida:hover { border-color: var(--topo); background: var(--fondo); color: var(--negro); }
 .inputFile { display: none; }
 
-/* ===== PIZARRA ===== */
-.pizarraToolbar {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-  margin-bottom: 1rem;
-  padding: 0.6rem 1rem;
-  background: var(--fondo);
-  border: 1px solid var(--borde);
-  border-radius: var(--radio-md);
-}
-
-.pizarraHerramientas { display: flex; gap: 0.4rem; align-items: center; }
-.pizarraColores { display: flex; gap: 0.4rem; align-items: center; padding-left: 1rem; border-left: 1px solid var(--borde); }
-
-.btnHerramienta {
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radio);
-  border: 1.5px solid transparent;
-  cursor: pointer;
-  font-size: 0.9rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 800;
-  transition: var(--trans);
-  background: var(--blanco);
-  color: var(--topo);
-}
-.btnHerramientaActivo { transform: scale(1.1); }
-.btnHerramientaLapiz { border-color: var(--negro); }
-.btnHerramientaLapiz.btnHerramientaActivo { background: var(--negro); color: #fff; }
-.btnHerramientaTexto { border-color: var(--azul); color: var(--azul); }
-.btnHerramientaTexto.btnHerramientaActivo { background: var(--azul); color: #fff; }
-.btnHerramientaBorrador { border-color: var(--ocre); color: var(--ocre); }
-.btnHerramientaBorrador.btnHerramientaActivo { background: var(--ocre); color: var(--blanco); }
-.btnHerramientaLimpiar { border-color: var(--rojo); color: var(--rojo); }
-.btnHerramientaLimpiar:hover { background: var(--rojo); color: #fff; }
-.btnHerramientaLinea { border-color: var(--morado); color: var(--morado); }
-.btnHerramientaLinea.btnHerramientaActivo { background: var(--morado); color: #fff; }
-.btnHerramientaDeshacer { border-color: var(--topo-claro); color: var(--topo); }
-.btnHerramientaDeshacer.btnHerramientaActivo { background: var(--topo); color: #fff; }
-.btnHerramientaDesactivado { opacity: 0.25; cursor: default; pointer-events: none; }
-
 .btnColor {
   width: 20px;
   height: 20px;
@@ -1659,43 +1613,6 @@
 }
 .btnColor:hover { transform: scale(1.2); }
 .btnColorActivo { border-color: var(--negro) !important; transform: scale(1.2); }
-
-.pizarraGrosor { display: flex; align-items: center; gap: 0.5rem; padding-left: 1rem; border-left: 1px solid var(--borde); }
-.rangeGrosor { width: 80px; cursor: pointer; accent-color: var(--topo); }
-
-.pizarraContenedor {
-  position: relative;
-  width: 100%;
-  border: 1px solid var(--borde);
-  border-radius: var(--radio-md);
-  overflow: hidden;
-  background: #f8f7f4;
-  touch-action: none;
-  min-height: 380px;
-  /* Proporción 4:3 en modo normal */
-  aspect-ratio: 4 / 3;
-}
-
-/* En pantalla completa el aspect-ratio lo gestiona el flex */
-:fullscreen .pizarraContenedor,
-:-webkit-full-screen .pizarraContenedor {
-  aspect-ratio: unset;
-  flex: 1;
-  min-height: 0;
-  border: none;
-  border-radius: 0;
-}
-
-.pizarraCanvas {
-  display: block;
-  /* El canvas se dimensiona vía JS (canvas.style.width/height) */
-  touch-action: none;
-  image-rendering: -webkit-optimize-contrast;
-  image-rendering: crisp-edges;
-}
-.anotacion { position: absolute; font-size: 13px; font-weight: 700; color: var(--topo); background: rgba(255,255,255,0.9); padding: 1px 5px; border-radius: 3px; white-space: nowrap; cursor: default; user-select: none; pointer-events: all; border: 1px solid var(--borde-fino); box-shadow: var(--sombra-xs); }
-.anotacionInput { position: absolute; font-size: 13px; font-weight: 700; color: var(--topo); background: rgba(255,255,255,0.97); border: 1.5px solid var(--topo); padding: 2px 6px; border-radius: 3px; outline: none; width: 110px; font-family: inherit; }
-.pizarraAyuda { margin: 0.75rem 0 0; font-size: 0.72rem; color: var(--topo-claro); letter-spacing: 0.02em; }
 
 /* ===== SECCIÓN FICHA ===== */
 .seccion {
@@ -2118,7 +2035,6 @@
   .formGrid { grid-template-columns: 1fr; }
   .grid { grid-template-columns: 1fr; gap: 0.75rem; }
   .resumenGrid { gap: 0.75rem; }
-  .pizarraToolbar { gap: 0.75rem; }
   .modal { padding: 1.75rem; border-radius: var(--radio-grande); }
   .kpiValor { font-size: 1.35rem; }
 }

@@ -74,18 +74,6 @@ const AdjuntoSchema = new Schema(
   { _id: false }
 );
 
-/** Subdocumento de un dibujo guardado en la pizarra de medidas. */
-const DibujoGuardadoSchema = new Schema(
-  {
-    id: { type: String, required: true },
-    nombre: { type: String, required: true },
-    dataUrl: { type: String, required: true },
-    fecha: { type: String, required: true },
-    ...metadatosArchivo,
-  },
-  { _id: false }
-);
-
 /** Subdocumento de una tarea del checklist de proyecto (ver `tab-tareas.tsx`). */
 const TareaSchema = new Schema(
   {
@@ -184,7 +172,6 @@ const ProyectoSchema = new Schema({
   horas: { type: [HorasSchema], default: [] },
   adjuntos: { type: [AdjuntoSchema], default: [] },
   fotos: { type: [FotoSchema], default: [] },
-  dibujos: { type: [DibujoGuardadoSchema], default: [] },
   /**
    * `true` mientras el margen de este proyecto sigue por debajo del umbral
    * de aviso (notificación "margen bajo", 18/08/2026) — evita repetir el
@@ -689,9 +676,9 @@ export const GastoPeriodicoModel: Model<any> = models.GastoPeriodico || model('G
 /**
  * Esquema de un dibujo del módulo profesional de dibujo (Fase 2.1).
  * Colección propia, independiente del cliente — antes los dibujos vivían
- * como subdocumentos dentro de `Cliente.dibujos[]` (base64 embebido, ver
- * `DibujoGuardadoSchema` arriba, que se mantiene solo para no romper los
- * dibujos ya guardados con la pizarra antigua). `contenido` es el snapshot
+ * como subdocumentos dentro de `Proyecto.dibujos[]` (base64 embebido, pizarra
+ * antigua, eliminada el 23/08/2026 tras confirmar que no quedaba ningún
+ * proyecto real con datos en ese campo). `contenido` es el snapshot
  * vectorial de tldraw: se guarda tal cual devuelve la librería (`Mixed`, sin
  * forma fija) porque su estructura interna no es responsabilidad de este
  * esquema — la valida `esquemaDibujo` en tamaño total, no campo a campo.

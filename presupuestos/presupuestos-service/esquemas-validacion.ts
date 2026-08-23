@@ -292,20 +292,10 @@ export const esquemaPresupuestoClienteEntrada = z.object({
   presupuesto: z.number().finite(),
 });
 
-const esquemaDibujoGuardado = z.object({
-  id: z.string().min(1).max(64),
-  nombre: z.string().max(200),
-  dataUrl: z.string(),
-  fecha: z.string().min(1).max(64),
-  tamano: z.number().finite().nonnegative().optional(),
-  tipoMime: z.string().max(120).optional(),
-  ...camposAlmacenamiento,
-});
-
 // ── Cliente ───────────────────────────────────────────────────────────────────
 
 /**
- * Límite defensivo del total de bytes en fotos + adjuntos + dibujos de un
+ * Límite defensivo del total de bytes en fotos + adjuntos de un
  * mismo cliente (Incremento 1.3). No es una regla de negocio: es una red de
  * seguridad frente al límite duro de 16 MB por documento de MongoDB, con
  * margen amplio incluso para el resto de campos del documento. La
@@ -383,16 +373,14 @@ export const esquemaProyecto = z.object({
   horas: z.array(esquemaRegistroHoras).optional().default([]),
   adjuntos: z.array(esquemaAdjunto).optional().default([]),
   fotos: z.array(esquemaFotoProyecto).optional().default([]),
-  dibujos: z.array(esquemaDibujoGuardado).optional(),
 }).refine(
   (proyecto) => {
     const total =
       (proyecto.fotos ?? []).reduce((suma, f) => suma + tamanoBytesAlmacenados(f.url), 0) +
-      (proyecto.adjuntos ?? []).reduce((suma, a) => suma + tamanoBytesAlmacenados(a.url), 0) +
-      (proyecto.dibujos ?? []).reduce((suma, d) => suma + tamanoBytesAlmacenados(d.dataUrl), 0);
+      (proyecto.adjuntos ?? []).reduce((suma, a) => suma + tamanoBytesAlmacenados(a.url), 0);
     return total <= LIMITE_BLOBS_CLIENTE_BYTES;
   },
-  { message: `El total de fotos, adjuntos y dibujos supera el límite de ${LIMITE_BLOBS_CLIENTE_BYTES / (1024 * 1024)} MB por proyecto.` }
+  { message: `El total de fotos y adjuntos supera el límite de ${LIMITE_BLOBS_CLIENTE_BYTES / (1024 * 1024)} MB por proyecto.` }
 );
 
 /**

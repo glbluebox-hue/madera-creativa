@@ -114,15 +114,6 @@ async function procesarAdjuntos(adjuntos: any[] | undefined): Promise<any[]> {
   }));
 }
 
-/** Sube los dibujos nuevos (Base64) de un cliente; deja los ya subidos tal cual. */
-async function procesarDibujos(dibujos: any[] | undefined): Promise<any[]> {
-  return Promise.all((dibujos ?? []).map(async (d) => {
-    const resultado = await subirSiEsBase64(d.dataUrl, 'dibujos');
-    if (!resultado) return d;
-    return { ...d, dataUrl: resultado.url, claveAlmacenamiento: resultado.clave, tamano: resultado.metadatos.tamano, tipoMime: resultado.metadatos.tipoMime, subidoEn: resultado.metadatos.subidoEn };
-  }));
-}
-
 /**
  * Borra del almacenamiento externo los archivos que estaban en `antes` pero
  * ya no están en `despues` (comparando por `id` del subdocumento) — evita
@@ -452,7 +443,7 @@ export class PresupuestosService {
       whatsapp: datos.whatsapp, ubicacion: datos.ubicacion, codigoPuerta: datos.codigoPuerta,
       planta: datos.planta, ascensor: datos.ascensor, zonaCarga: datos.zonaCarga,
       observacionesAcceso: datos.observacionesAcceso, fechaMedicion: datos.fechaMedicion, fechaMontaje: datos.fechaMontaje,
-      estancias: [], tareas: [], movimientos: [], horas: [], adjuntos: [], fotos: [], dibujos: [], margenAvisado: false,
+      estancias: [], tareas: [], movimientos: [], horas: [], adjuntos: [], fotos: [], margenAvisado: false,
     });
     busEventos.publicar({ nombre: 'proyecto.creado', usuarioId, entidadId: doc.id, datos: { clienteId: datos.clienteId, proyecto: doc.proyecto } });
     return this.limpiarProyecto(doc.toObject());
@@ -461,7 +452,7 @@ export class PresupuestosService {
   /**
    * Edita los campos propios de un proyecto (nombre del trabajo, dirección,
    * presupuesto estimado, tarifa/hora, datos de acceso a obra, fotos/
-   * adjuntos/dibujos). Protege `movimientos`/`tareas`/`estado` de
+   * adjuntos). Protege `movimientos`/`tareas`/`estado` de
    * sobrescrituras — mismo motivo y mismo patrón que ya usaba
    * `guardarCliente` antes de este incremento: solo las rutas dedicadas
    * (`/proyectos/:id/movimientos`, `/tareas`, `/estado`) pueden cambiarlos.
@@ -473,19 +464,17 @@ export class PresupuestosService {
 
     const fotos = await procesarFotos((proyecto as any).fotos);
     const adjuntos = await procesarAdjuntos((proyecto as any).adjuntos);
-    const dibujos = await procesarDibujos((proyecto as any).dibujos);
 
     const { movimientos: _movimientos, tareas: _tareas, estado: _estado, clienteId: _clienteId, ...proyectoSinCamposProtegidos } = proyecto as any;
 
     const doc = await ProyectoModel.findOneAndUpdate(
       { id: proyecto.id, usuarioId },
-      { ...proyectoSinCamposProtegidos, fotos, adjuntos, dibujos, usuarioId },
+      { ...proyectoSinCamposProtegidos, fotos, adjuntos, usuarioId },
       { new: true }
     ).lean().exec();
 
     await borrarBlobsHuerfanos(anterior.fotos, fotos);
     await borrarBlobsHuerfanos(anterior.adjuntos, adjuntos);
-    await borrarBlobsHuerfanos(anterior.dibujos, dibujos);
 
     return this.limpiarProyecto(doc);
   }
@@ -610,7 +599,7 @@ export class PresupuestosService {
 
   /**
    * Borra un proyecto (solo si pertenece al usuario) — borra también sus
-   * blobs (fotos/adjuntos/dibujos) de almacenamiento externo. NO borra el
+   * blobs (fotos/adjuntos) de almacenamiento externo. NO borra el
    * cliente ni sus otros proyectos, ni las Facturas/Notas/Presupuestos/
    * Contratos/Carpetas/Dibujos vinculados por `proyectoId` (quedan
    * huérfanos de proyecto pero no se pierden — fuera de alcance de este
@@ -622,7 +611,7 @@ export class PresupuestosService {
     await conectar();
     const doc = await ProyectoModel.findOne({ id, usuarioId }).lean().exec() as any;
     if (doc) {
-      const todos = [...(doc.fotos ?? []), ...(doc.adjuntos ?? []), ...(doc.dibujos ?? [])];
+      const todos = [...(doc.fotos ?? []), ...(doc.adjuntos ?? [])];
       for (const item of todos) {
         if (item.claveAlmacenamiento) await almacenamiento.borrar(item.claveAlmacenamiento).catch(() => {});
       }
