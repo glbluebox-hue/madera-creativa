@@ -11,12 +11,14 @@ import { ErrorProveedorInalcanzable } from './ia-proveedor.js';
 import { crearTrabajo, completarTrabajo, fallarTrabajo, obtenerTrabajo } from './ia-trabajos.js';
 import { limitadorIA, limitadorSondeoIA } from './rate-limit.middleware.js';
 // Importado solo por su efecto secundario: registra las capacidades
-// `asistente-global`, `redactar-presupuesto`, `generar-bloque-documento` y
-// `extraer-datos-factura` en `ia-registro-capacidades.ts` al cargar este módulo.
+// `asistente-global`, `redactar-presupuesto`, `generar-bloque-documento`,
+// `extraer-datos-factura` y `copiloto-presupuesto` en
+// `ia-registro-capacidades.ts` al cargar este módulo.
 import './ia-capacidad-asistente-global.js';
 import './ia-capacidad-redactar-presupuesto.js';
 import './ia-capacidad-generar-bloque-documento.js';
 import './ia-capacidad-extraer-factura.js';
+import './ia-capacidad-copiloto-presupuesto.js';
 
 /**
  * Router único del núcleo de IA — `POST /generar` (parametrizado por

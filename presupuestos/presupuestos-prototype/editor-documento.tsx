@@ -34,6 +34,8 @@ import './documento-tipos-avanzados-render.js'; // Tabla/Firma/Código QR/Dibujo
 import './documento-variables-iniciales.js'; // registro de variables inteligentes por efecto secundario (Incremento 4).
 import { leerArchivoComoBase64 } from './archivos.js';
 import * as api from './api.js';
+import { PanelIaPresupuesto } from './panel-ia-presupuesto.js';
+import { extraerContextoDocumento } from './documento-contexto-ia.js';
 import editorStyles from './editor-documento.module.css';
 import styles from './styles.module.css';
 
@@ -186,6 +188,8 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
   const [bibliotecaAbierta, setBibliotecaAbierta] = useState(false);
   const [recursosBiblioteca, setRecursosBiblioteca] = useState<RecursoMC[]>([]);
   const [errorGeneracionIA, setErrorGeneracionIA] = useState<string | null>(null);
+  /** IA del Presupuesto (23/08/2026) — panel propio, independiente del Asistente IA general y de `bloqueIA`. */
+  const [panelIaPresupuestoAbierto, setPanelIaPresupuestoAbierto] = useState(false);
   const [componentesCache, setComponentesCache] = useState<Map<string, ComponenteMC>>(new Map());
   const [selectorComponentesAbierto, setSelectorComponentesAbierto] = useState(false);
   const [panelGuardarComponenteAbierto, setPanelGuardarComponenteAbierto] = useState(false);
@@ -1173,6 +1177,14 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
         <button className={editorStyles.btnHerramienta} onClick={desvincularSeleccionActual} disabled={elementoUnicoSeleccionado?.tipo !== 'instanciaComponente'}>Desvincular</button>
         <div className={editorStyles.separador} />
         <button className={editorStyles.btnHerramienta} onClick={exportarPDF}>🖨️ Exportar a PDF</button>
+        <div className={editorStyles.separador} />
+        <button
+          className={editorStyles.btnHerramienta}
+          style={panelIaPresupuestoAbierto ? { background: 'var(--topo-tinte)', borderColor: 'var(--topo)' } : undefined}
+          onClick={() => setPanelIaPresupuestoAbierto((v) => !v)}
+        >
+          ✨ IA del presupuesto
+        </button>
       </div>
 
       {selectorComponentesAbierto && (
@@ -1401,6 +1413,17 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
           {panelPropiedades()}
         </div>
       </div>
+
+      <PanelIaPresupuesto
+        abierto={panelIaPresupuestoAbierto}
+        onCerrar={() => setPanelIaPresupuestoAbierto(false)}
+        clienteId={clienteId}
+        contextoDocumento={extraerContextoDocumento(documento)}
+        elementoSeleccionado={elementoUnicoSeleccionado}
+        onAplicarPropuesta={(texto) => {
+          if (elementoUnicoSeleccionado) ejecutar((doc) => actualizarContenido(doc, elementoUnicoSeleccionado.id, { texto }));
+        }}
+      />
 
       <div className={editorStyles.zoomFlotante}>
         <button className={editorStyles.miniBtn} onClick={() => setZoom((z) => Math.max(0.25, z - 0.1))} title="Reducir zoom">−</button>
