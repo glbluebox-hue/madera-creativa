@@ -100,7 +100,7 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
     setBioError('');
     const resultado = await iniciarSesionBiometrica();
     setBioCargando(false);
-    if (!resultado.ok) { setBioError(resultado.error); return; }
+    if (resultado.ok === false) { setBioError(resultado.error); return; }
     onLoginDirecto(resultado.id, resultado.nombre, resultado.esAdmin);
   };
 

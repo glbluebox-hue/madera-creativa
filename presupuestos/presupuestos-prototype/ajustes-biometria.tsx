@@ -81,7 +81,7 @@ export function AjustesBiometria({ onCerrar }: AjustesBiometriaProps) {
     setError('');
     const resultado = await registrarAccesoBiometrico(nombreNuevo);
     setRegistrando(false);
-    if (!resultado.ok) { setError(resultado.error); return; }
+    if (resultado.ok === false) { setError(resultado.error); return; }
     setNombreNuevo(sugerirNombreDispositivo());
     await cargar();
   };
