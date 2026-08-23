@@ -3,15 +3,17 @@ import * as api from './api.js';
 import type { ElementoMC } from './documento-modelo.js';
 import { textoDeElementoSeleccionado, puedeAplicarPropuestaA } from './documento-contexto-ia.js';
 import { reducirPanelIA, estadoInicialPanelIA, recortarConversacion } from './panel-ia-presupuesto-estado.js';
+import { validarImagenParaIA, comprimirImagen, MIME_IMAGEN_PERMITIDOS } from './procesamiento-imagenes.js';
+import { leerArchivoComoBase64 } from './archivos.js';
 import { Z_BARRA_FLOTANTE } from './z-index.js';
 import styles from './styles.module.css';
 
 /**
  * IA del Presupuesto (23/08/2026, ampliada el mismo día con conversación
- * multi-turno) — panel lateral propio del editor de documentos,
- * completamente separado del Asistente IA general (`asistente-ia.tsx`):
- * interfaz distinta, capacidad de IA distinta (`copiloto-presupuesto`), sin
- * banner compartido.
+ * multi-turno y con imagen activa — Fase 3, IA Visual) — panel lateral
+ * propio del editor de documentos, completamente separado del Asistente IA
+ * general (`asistente-ia.tsx`): interfaz distinta, capacidad de IA distinta
+ * (`copiloto-presupuesto`), sin banner compartido.
  *
  * Flujo obligatorio, sin excepciones: pedir → propuesta → Aceptar/Editar/
  * Regenerar/Cancelar → solo al Aceptar se aplica al documento. A diferencia
@@ -26,12 +28,15 @@ import styles from './styles.module.css';
  * tiene permiso de hacer (sigue sin herramientas, sigue sin poder escribir
  * nada por su cuenta).
  *
- * Preparado para la Fase 3 (imágenes): la llamada a `api.generarRespuestaIA`
- * ya acepta `imagenes` en el mensaje (mismo mecanismo que usa
- * `extraer-datos-factura`) y la capacidad `copiloto-presupuesto` ya declara
- * `perfilModelo: 'vision'` — añadir el selector de imagen en Fase 3 no
- * requiere cambiar esta llamada ni la conversación, solo añadir el campo al
- * mensaje del turno correspondiente.
+ * IMAGEN ACTIVA (Fase 3, IA Visual): el usuario puede adjuntar una foto
+ * (p. ej. de una cocina) que queda como `estado.imagenActiva` — una
+ * selección persistente del panel, no un campo de cada mensaje. Solo el
+ * mensaje saliente de la petición en curso incluye `imagenes:[dataUrl]`
+ * (mismo mecanismo que `extraer-datos-factura`: data URL en el body,
+ * `perfilModelo:'vision'`, nunca R2 ni MongoDB) — el historial de
+ * conversación nunca lleva la imagen, solo un texto y, si corresponde, la
+ * marca informativa `conImagen`. La imagen se valida (MIME + tamaño) y se
+ * comprime con el mismo pipeline que el resto de la app antes de enviarse.
  */
 export type PanelIaPresupuestoProps = {
   abierto: boolean;
@@ -49,7 +54,10 @@ export type PanelIaPresupuestoProps = {
 export function PanelIaPresupuesto({ abierto, onCerrar, clienteId, contextoDocumento, elementoSeleccionado, onAplicarPropuesta }: PanelIaPresupuestoProps) {
   const [estado, dispatch] = useReducer(reducirPanelIA, estadoInicialPanelIA);
   const [peticionActual, setPeticionActual] = useState('');
+  const [errorImagen, setErrorImagen] = useState('');
+  const [procesandoImagen, setProcesandoImagen] = useState(false);
   const enVueloRef = useRef(false);
+  const inputImagenRef = useRef<HTMLInputElement>(null);
 
   const textoSeleccionado = textoDeElementoSeleccionado(elementoSeleccionado);
   const puedeAplicar = puedeAplicarPropuestaA(elementoSeleccionado);
@@ -60,7 +68,9 @@ export function PanelIaPresupuesto({ abierto, onCerrar, clienteId, contextoDocum
   // puro. La conversación previa (recortada) viaja como turnos reales de
   // chat; el contexto del documento/selección viaja aparte, en `referencias`
   // — nunca se mezclan, para que la IA distinga "lo que ya hablamos" de
-  // "lo que ya está escrito en el presupuesto".
+  // "lo que ya está escrito en el presupuesto". La imagen (si `imagenIncluida`)
+  // se añade SOLO al último mensaje, nunca al historial — evita reenviar la
+  // misma data URL en cada turno.
   useEffect(() => {
     if (estado.fase !== 'enviando' || enVueloRef.current) return;
     enVueloRef.current = true;
@@ -70,9 +80,11 @@ export function PanelIaPresupuesto({ abierto, onCerrar, clienteId, contextoDocum
           role: (m.rol === 'usuario' ? 'user' : 'assistant') as 'user' | 'assistant',
           content: m.texto,
         }));
+        const ultimoMensaje: { role: 'user'; content: string; imagenes?: string[] } = { role: 'user', content: estado.peticion };
+        if (estado.imagenIncluida && estado.imagenActiva) ultimoMensaje.imagenes = [estado.imagenActiva.dataUrl];
         const resultado = await api.generarRespuestaIA({
           capacidad: 'copiloto-presupuesto',
-          mensajes: [...turnosPrevios, { role: 'user', content: estado.peticion }],
+          mensajes: [...turnosPrevios, ultimoMensaje],
           referencias: { clienteId, contextoDocumento, textoSeleccionado },
         });
         dispatch({ tipo: 'respuesta', texto: resultado.respuesta });
@@ -97,6 +109,30 @@ export function PanelIaPresupuesto({ abierto, onCerrar, clienteId, contextoDocum
     if (estado.fase !== 'propuesta') return;
     onAplicarPropuesta(estado.texto);
     dispatch({ tipo: 'aceptado' });
+  };
+
+  // Añadir/sustituir la imagen activa: valida MIME+tamaño ANTES de intentar
+  // decodificar nada, comprime con el mismo pipeline que el resto de la app
+  // (nunca se salta este paso) y solo entonces la codifica a data URL.
+  const seleccionarImagen = async (file: File) => {
+    setErrorImagen('');
+    const validacion = validarImagenParaIA(file);
+    if (validacion.valido === false) { setErrorImagen(validacion.motivo); return; }
+    setProcesandoImagen(true);
+    try {
+      const { blob } = await comprimirImagen(file, { forzarJpeg: true });
+      const dataUrl = await leerArchivoComoBase64(blob);
+      dispatch({ tipo: 'imagenSeleccionada', dataUrl, nombre: file.name });
+    } catch {
+      setErrorImagen('No se pudo procesar la imagen. Prueba con otra.');
+    } finally {
+      setProcesandoImagen(false);
+    }
+  };
+
+  const quitarImagen = () => {
+    dispatch({ tipo: 'imagenEliminada' });
+    setErrorImagen('');
   };
 
   // Turnos ya resueltos (no incluyen el par pendiente de la propuesta activa,
@@ -136,12 +172,12 @@ export function PanelIaPresupuesto({ abierto, onCerrar, clienteId, contextoDocum
               fontWeight: m.rol === 'usuario' ? 600 : 400,
             }}
           >
-            {m.rol === 'usuario' ? 'Tú: ' : ''}{m.texto}
+            {m.rol === 'usuario' ? 'Tú: ' : ''}{m.conImagen ? '🖼️ ' : ''}{m.texto}
           </p>
         ))}
 
         {(estado.fase === 'enviando' || estado.fase === 'error') && (
-          <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--topo)', fontWeight: 600 }}>Tú: {estado.peticion}</p>
+          <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--topo)', fontWeight: 600 }}>Tú: {estado.imagenIncluida ? '🖼️ ' : ''}{estado.peticion}</p>
         )}
         {estado.fase === 'enviando' && (
           <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--topo-claro)' }}>Pensando…</p>
@@ -159,7 +195,9 @@ export function PanelIaPresupuesto({ abierto, onCerrar, clienteId, contextoDocum
 
         {estado.fase === 'propuesta' && (
           <>
-            <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--topo)', fontWeight: 600 }}>Tú: {estado.peticion}</p>
+            <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--topo)', fontWeight: 600 }}>
+              Tú: {estado.conversacion[estado.conversacion.length - 2]?.conImagen ? '🖼️ ' : ''}{estado.peticion}
+            </p>
             <div style={{ background: 'var(--fondo)', border: '1px solid var(--borde)', borderRadius: 8, padding: '0.75rem' }}>
               <p style={{ margin: '0 0 0.5rem', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--topo-claro)', fontWeight: 700 }}>Propuesta</p>
               {estado.editando ? (
@@ -197,12 +235,56 @@ export function PanelIaPresupuesto({ abierto, onCerrar, clienteId, contextoDocum
         )}
       </div>
 
-      <div style={{ padding: '0.75rem 1rem', borderTop: '1px solid var(--borde)', display: 'flex', gap: '0.5rem' }}>
+      <div style={{ padding: '0.6rem 1rem 0', borderTop: '1px solid var(--borde)' }}>
+        {errorImagen && (
+          <p style={{ margin: '0 0 0.5rem', fontSize: '0.72rem', color: 'var(--rojo)' }}>{errorImagen}</p>
+        )}
+        {estado.imagenActiva ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+            <img
+              src={estado.imagenActiva.dataUrl}
+              alt={estado.imagenActiva.nombre}
+              style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--borde)' }}
+            />
+            <span style={{ fontSize: '0.72rem', color: 'var(--topo-claro)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {estado.imagenActiva.nombre}
+            </span>
+            <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.72rem' }} onClick={() => inputImagenRef.current?.click()}>
+              Sustituir
+            </button>
+            <button className={styles.btnIcono} onClick={quitarImagen} aria-label="Quitar imagen">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>
+          </div>
+        ) : (
+          <button
+            className={`${styles.btn} ${styles.btnSecundario}`}
+            style={{ fontSize: '0.72rem', marginBottom: '0.5rem' }}
+            onClick={() => inputImagenRef.current?.click()}
+            disabled={procesandoImagen}
+          >
+            {procesandoImagen ? 'Procesando imagen…' : '🖼️ Añadir imagen (p. ej. una foto del espacio)'}
+          </button>
+        )}
+        <input
+          ref={inputImagenRef}
+          type="file"
+          accept={MIME_IMAGEN_PERMITIDOS.join(',')}
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (file) seleccionarImagen(file);
+          }}
+        />
+      </div>
+
+      <div style={{ padding: '0.75rem 1rem', display: 'flex', gap: '0.5rem' }}>
         <textarea
           className={styles.input}
           style={{ flex: 1, resize: 'none', fontFamily: 'inherit' }}
           rows={2}
-          placeholder='Ej. "Redacta esta partida", "Hazla más formal"…'
+          placeholder='Ej. "Redacta esta partida", "Descríbeme esta cocina"…'
           value={peticionActual}
           onChange={(e) => setPeticionActual(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar(); } }}

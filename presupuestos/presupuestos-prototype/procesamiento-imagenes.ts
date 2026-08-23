@@ -7,6 +7,39 @@
  * `Blob` resultante.
  */
 
+/**
+ * Tipos MIME que el pipeline de compresión de este archivo sabe decodificar
+ * de forma fiable en todos los navegadores objetivo (vía `createImageBitmap`
+ * o `<img>` + canvas) — deliberadamente NO incluye HEIC/HEIF: aunque algunas
+ * fotos de iPhone llegan en ese formato, el soporte de decodificación en
+ * canvas es inconsistente entre navegadores, y fallar tarde (canvas vacío o
+ * excepción de `decodificarFuente`) es peor experiencia que rechazarlo antes
+ * con un mensaje claro (IA Visual del Presupuesto, Fase 3, 23/08/2026).
+ */
+export const MIME_IMAGEN_PERMITIDOS = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
+
+/** Tamaño máximo del archivo ORIGINAL (antes de comprimir) que se acepta para análisis por IA — una foto de móvil real rara vez supera esto; evita intentar decodificar algo desproporcionado. */
+export const TAMANO_MAXIMO_IMAGEN_IA_BYTES = 15 * 1024 * 1024;
+
+export type ResultadoValidacionImagen = { valido: true } | { valido: false; motivo: string };
+
+/**
+ * Valida un archivo ANTES de intentar decodificarlo/comprimirlo — usado por
+ * la IA Visual del Presupuesto para no llamar a `comprimirImagen()` (y por
+ * tanto a `decodificarFuente()`) con algo que no es una imagen soportada o
+ * que es irrazonablemente grande. Solo mira metadatos (`type`/`size`), nunca
+ * abre el archivo.
+ */
+export function validarImagenParaIA(file: { type: string; size: number }): ResultadoValidacionImagen {
+  if (!(MIME_IMAGEN_PERMITIDOS as readonly string[]).includes(file.type)) {
+    return { valido: false, motivo: 'El archivo debe ser una imagen en formato JPEG, PNG, WEBP o GIF.' };
+  }
+  if (file.size > TAMANO_MAXIMO_IMAGEN_IA_BYTES) {
+    return { valido: false, motivo: 'La imagen es demasiado grande (máximo 15 MB antes de comprimir).' };
+  }
+  return { valido: true };
+}
+
 /** Dimensión máxima (lado largo, en píxeles) a la que se redimensiona una imagen antes de comprimirla. */
 export const DIMENSION_MAXIMA_PX = 1600;
 

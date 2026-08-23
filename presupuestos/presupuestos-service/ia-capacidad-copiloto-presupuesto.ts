@@ -41,11 +41,10 @@ const contextoCopilotoPresupuesto: ConstructorContexto = {
  * propuesto se muestra siempre como propuesta (Aceptar/Editar/Regenerar/
  * Cancelar) antes de aplicarse con `actualizarContenido`, nunca automático.
  *
- * `perfilModelo: 'vision'` desde el principio, no `'rapido_economico'` —
- * aunque la Fase 2 no envía imágenes todavía, ambos perfiles resuelven hoy
- * al mismo modelo (`ia-selector-modelo.ts`) y declararlo así desde ahora
- * deja la Fase 3 (IA visual) lista para enviar imágenes sin tener que
- * cambiar el manifiesto de esta capacidad.
+ * `perfilModelo: 'vision'` desde la Fase 2 — se eligió así, en vez de
+ * `'rapido_economico'`, precisamente para que la Fase 3 (IA Visual,
+ * 23/08/2026) pudiera empezar a enviar imágenes (`panel-ia-presupuesto.tsx`,
+ * `imagenActiva`) sin tener que tocar este manifiesto.
  */
 export const capacidadCopilotoPresupuesto: CapacidadIA = {
   nombre: 'copiloto-presupuesto',
