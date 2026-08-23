@@ -3,7 +3,6 @@ import type { Proyecto, Estancia } from './types.js';
 import { generarId } from './mock.js';
 import { generarDespiece } from './despiece.js';
 import styles from './styles.module.css';
-import { PizarraMedidas, type DibujoGuardado } from './pizarra-medidas.js';
 
 /** Props del panel de mediciones. */
 export type TabMedicionesProps = {
@@ -36,19 +35,9 @@ export function TabMediciones({ proyecto, onActualizar }: TabMedicionesProps) {
 
   const borrar = (id: string) => guardarEstancias(estancias.filter((e) => e.id !== id));
 
-  const guardarDibujo = (dibujo: DibujoGuardado) => {
-    const previos = proyecto.dibujos ?? [];
-    const idx = previos.findIndex(d => d.id === dibujo.id);
-    const nuevos = idx >= 0 ? previos.map((d, i) => i === idx ? dibujo : d) : [...previos, dibujo];
-    onActualizar({ ...proyecto, dibujos: nuevos });
-  };
-
   return (
     <div className={styles.tabPanel}>
-      {/* Pizarra de medidas con pantalla completa, voz y dibujos guardados */}
-      <PizarraMedidas dibujos={proyecto.dibujos ?? []} onGuardar={guardarDibujo} />
-
-      <div className={styles.barraSeccion} style={{ marginTop: '2rem' }}>
+      <div className={styles.barraSeccion}>
         <h3 style={{ margin: 0 }}>Mediciones por estancia</h3>
         <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={anadir}>+ Añadir estancia</button>
       </div>
