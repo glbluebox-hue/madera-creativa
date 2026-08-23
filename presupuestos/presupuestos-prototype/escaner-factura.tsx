@@ -8,6 +8,7 @@ import { comprimirImagen } from './procesamiento-imagenes.js';
 import { urlImagenFiable } from './imagen-fallback.js';
 import { Z_DESPLEGABLE } from './z-index.js';
 import { etiquetaEstado } from './estado-utils.js';
+import { resolverEmisorReceptor, type EmpresaIdentificacion } from './identificacion-factura.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
 
@@ -123,6 +124,13 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
   const [extrayendo, setExtrayendo] = useState(false);
   const [errorExtraccion, setErrorExtraccion] = useState<string | null>(null);
   const [confianzaIA, setConfianzaIA] = useState<'alta' | 'media' | 'baja' | null>(null);
+  /** true si `resolverEmisorReceptor` no pudo determinar con seguridad quién es Madera Creativa en el documento — nunca se decide por adivinanza, se pide revisión explícita. */
+  const [avisoRevisarEmisor, setAvisoRevisarEmisor] = useState(false);
+  /** Nombre/CIF propios (Ajustes de empresa) — referencia para distinguir a Madera Creativa del cliente/proveedor del documento (auditoría emisor/receptor, 23/08/2026). */
+  const [empresa, setEmpresa] = useState<EmpresaIdentificacion | null>(null);
+  useEffect(() => {
+    api.obtenerEmpresa().then((e) => setEmpresa({ nombre: e.nombre ?? '', nifCif: e.nifCif ?? '' })).catch(() => setEmpresa({ nombre: '', nifCif: '' }));
+  }, []);
 
   const extraerConIA = async () => {
     const paginaImagen = paginas.find((p) => p.tipo === 'imagen');
@@ -130,6 +138,7 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
     setExtrayendo(true);
     setErrorExtraccion(null);
     setConfianzaIA(null);
+    setAvisoRevisarEmisor(false);
     try {
       const resp = await api.generarRespuestaIA({
         capacidad: 'extraer-datos-factura',
@@ -137,11 +146,26 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
       });
       const limpio = resp.respuesta.trim().replace(/^```json\s*|```$/g, '');
       const datos = JSON.parse(limpio);
+      // La IA describe el documento (emisor/receptor con nombre y CIF/NIF si
+      // constan); quién de los dos es Madera Creativa y qué va en
+      // `proveedor`/`cifNif` lo decide `resolverEmisorReceptor` comparando
+      // datos objetivos — nunca se asigna directamente lo que devuelve la IA.
+      const resuelto = resolverEmisorReceptor(
+        {
+          emisorNombre: datos.emisorNombre ?? null,
+          emisorCifNif: datos.emisorCifNif ?? null,
+          receptorNombre: datos.receptorNombre ?? null,
+          receptorCifNif: datos.receptorCifNif ?? null,
+          tipo: datos.tipo === 'ingreso' || datos.tipo === 'gasto' ? datos.tipo : null,
+        },
+        empresa ?? { nombre: '', nifCif: '' }
+      );
       // La IA propone — solo rellena los campos, el usuario debe revisar y
       // pulsar "Guardar factura" para confirmar. Nunca sobrescribe con
-      // `null` lo que el usuario ya hubiera escrito a mano.
-      if (datos.proveedor) { setProveedor(datos.proveedor); setProveedorId(''); }
-      if (datos.cifNif) setCifNif(datos.cifNif);
+      // `null`/vacío lo que el usuario ya hubiera escrito a mano.
+      if (resuelto.proveedor) { setProveedor(resuelto.proveedor); setProveedorId(''); }
+      if (resuelto.cifNif) setCifNif(resuelto.cifNif);
+      if (resuelto.tipo) setTipo(resuelto.tipo);
       if (datos.numeroFactura) setNumeroFactura(datos.numeroFactura);
       if (datos.fecha) setFecha(datos.fecha);
       if (typeof datos.baseImponible === 'number') setBaseImponible(String(datos.baseImponible));
@@ -149,10 +173,10 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
       if (typeof datos.importeImpuesto === 'number') setImporteImpuesto(String(datos.importeImpuesto));
       if (typeof datos.importe === 'number') setImporte(String(datos.importe));
       if (datos.concepto) setConcepto(datos.concepto);
-      if (datos.tipo === 'ingreso' || datos.tipo === 'gasto') setTipo(datos.tipo);
       if (datos.categoria) setCategoria(datos.categoria);
       if (datos.baseImponible || datos.porcentajeImpuesto) setDatosFiscalesAbierto(true);
-      setConfianzaIA(datos.confianza ?? null);
+      setConfianzaIA(resuelto.confianza);
+      setAvisoRevisarEmisor(resuelto.revisar);
     } catch {
       setErrorExtraccion('No se pudieron extraer los datos automáticamente. Revísalos a mano.');
     } finally {
@@ -411,6 +435,11 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
               {confianzaIA && (
                 <p style={{ margin: '0.4rem 0 0', fontSize: '0.72rem', color: confianzaIA === 'alta' ? 'var(--verde)' : confianzaIA === 'media' ? 'var(--ocre)' : 'var(--rojo)' }}>
                   Confianza de la lectura: {confianzaIA}. Revisa los campos antes de guardar.
+                </p>
+              )}
+              {avisoRevisarEmisor && (
+                <p style={{ margin: '0.4rem 0 0', fontSize: '0.72rem', color: 'var(--rojo)', fontWeight: 600 }}>
+                  No se ha podido verificar automáticamente quién es Madera Creativa en este documento — comprueba el tipo (ingreso/gasto) y el campo "Proveedor/Cliente" antes de guardar.
                 </p>
               )}
               {errorExtraccion && (

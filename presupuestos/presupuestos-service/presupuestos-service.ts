@@ -10,6 +10,7 @@ import { enviarNotificacion } from './push.service.js';
 import type { PushSub } from './push.service.js';
 import { logger } from './logger.service.js';
 import { procesarRecursosDocumento, borrarRecursosDocumentoHuerfanos } from './documento-procesar-recursos.js';
+import { esGastoPeriodicoDeducible } from './gasto-periodico-fiscal.js';
 import { subirORecuperarRecurso } from './documento-recursos-biblioteca.js';
 import type { DocumentoMC, TemaMC, RecursoMC } from './documento-modelo.js';
 
@@ -1264,7 +1265,10 @@ export class PresupuestosService {
     const NOMBRES_TRIMESTRE = ['1.er', '2.º', '3.er', '4.º'];
     const periodoLabel = `${NOMBRES_TRIMESTRE[trimestre - 1]} trimestre ${anio}`;
 
-    const gastosPeriodicosDelTrimestre = (gastosPeriodicos ?? []).map((g) => ({
+    // Mismo criterio que `Trimestres` (trimestres.tsx): un vehículo marcado
+    // como `afectacionExclusiva: false` no es deducible en IRPF, se excluye
+    // del documento del asesor sin borrar ni ocultar el gasto periódico en sí.
+    const gastosPeriodicosDelTrimestre = (gastosPeriodicos ?? []).filter(esGastoPeriodicoDeducible).map((g) => ({
       descripcion: g.descripcion, tipo: g.tipo,
       importe: g.periodicidad === 'mensual' ? g.importe * 3 : g.importe,
     }));

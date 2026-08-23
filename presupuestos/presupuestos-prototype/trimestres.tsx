@@ -2,6 +2,7 @@ import { formatoEuroPrivado } from './calculos.js';
 import * as api from './api.js';
 import type { GastoPeriodico } from './types.js';
 import { GastosPeriodicos } from './gastos-periodicos.js';
+import { esGastoPeriodicoDeducible } from './gasto-periodico-fiscal.js';
 import styles from './styles.module.css';
 
 /** Props del resumen trimestral. */
@@ -105,7 +106,7 @@ export function Trimestres({ anio, privado = false }: TrimestresProps) {
     const del = facturasFiltradas.filter((f) => trimestre(f.fecha) === t);
     const ingresos = del.filter((f) => f.tipo === 'ingreso').reduce((s, f) => s + f.importe, 0);
     const gastos = del.filter((f) => f.tipo === 'gasto').reduce((s, f) => s + f.importe, 0);
-    const gastosPeriodicosTrimestre = gastosPeriodicos.filter((g) => g.activo)
+    const gastosPeriodicosTrimestre = gastosPeriodicos.filter((g) => g.activo && esGastoPeriodicoDeducible(g))
       .reduce((s, g) => s + (g.periodicidad === 'mensual' ? g.importe * 3 : g.importe), 0);
     const beneficio = ingresos - gastos - gastosPeriodicosTrimestre;
     const irpf = beneficio > 0 ? beneficio * TIPO_IRPF : 0;
@@ -371,9 +372,9 @@ export function Trimestres({ anio, privado = false }: TrimestresProps) {
         display: 'flex', alignItems: 'flex-start', gap: '0.5rem',
       }}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12" y2="17" /></svg>
-        <span>Estimación orientativa basada en el <strong>Modelo 130</strong> (pago fraccionado IRPF autónomos, igual en toda España). Tipo aplicado: 20% sobre beneficio neto trimestral (incluye los gastos periódicos activos).
+        <span>Estimación orientativa basada en el <strong>Modelo 130</strong> (pago fraccionado IRPF autónomos, igual en toda España). Tipo aplicado: 20% sobre beneficio neto <strong>de cada trimestre por separado</strong> (incluye los gastos periódicos activos).
         {calculaIndirecto && ` El ${regionFiscal === 'canarias' ? 'IGIC' : 'IVA'} se calcula con los datos reales de cada factura cuando están disponibles, o estimado al tipo general (${(tipoGeneral * 100).toFixed(0)}%) cuando no.`}
-        {' '}No incluye retenciones previas, mínimo personal, ni deducciones específicas de tu situación. Consulta con tu asesor para la liquidación definitiva.</span>
+        {' '}El <strong>Modelo 130 oficial se calcula de forma acumulada desde el 1 de enero</strong>, restando lo ya pagado en trimestres anteriores del mismo año — este resumen no acumula entre trimestres, así que el resultado real puede ser distinto (especialmente si hay pérdidas en algún trimestre). Tampoco incluye retenciones previas, mínimo personal, ni deducciones específicas de tu situación. Esto es una estimación de apoyo, no una liquidación: la liquidación definitiva corresponde a tu asesor fiscal.</span>
       </p>
     </div>
   );
