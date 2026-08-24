@@ -356,14 +356,16 @@ registrarTipoRender({
   tipo: 'rectangulo', etiqueta: 'Rectángulo', insertableDesdeBarra: true, editableEnLienzo: false,
   tamanoInicial: { ancho: 160, alto: 100 },
   crearContenidoInicial: () => ({}),
-  // Grosor inicial visible (1px) — antes era 0, y combinado con el bug del
-  // campo de arriba, en la práctica era imposible obtener un borde sin
-  // pelear con el input (corrección 24/08/2026). El color de borde sigue
-  // siendo 'transparent' por defecto (fuera de alcance de esta corrección,
-  // solo se toca el campo de grosor) — un rectángulo recién creado ya
-  // parte de un grosor válido y no en 0, listo para que el usuario elija
-  // color de borde si quiere verlo.
-  crearEstiloInicial: () => ({ relleno: '#f5ede0', trazoColor: 'transparent', trazoAncho: 1, bordeRadio: 0 }),
+  // Grosor inicial visible (1px) + color de borde negro — antes el grosor
+  // era 0 y el color 'transparent', así que ni arreglando el input del
+  // grosor se veía ningún borde: 1px de un color transparente sigue
+  // siendo invisible (corrección 24/08/2026, reportado con captura: "yo
+  // cuando quito el rectángulo de edición no se quedan líneas alrededor").
+  // Un rectángulo recién creado ahora se ve de inmediato, con una línea
+  // igual que el resto de separadores del documento (p. ej. la de
+  // "condiciones de pago"). El usuario sigue pudiendo cambiar el color o
+  // ponerlo en transparente desde el panel si no quiere borde.
+  crearEstiloInicial: () => ({ relleno: '#f5ede0', trazoColor: '#000000', trazoAncho: 1, bordeRadio: 0 }),
   crearPropiedadesIniciales: () => ({}),
   Render: RenderRectangulo, PanelPropiedades: PanelRectangulo,
 });
