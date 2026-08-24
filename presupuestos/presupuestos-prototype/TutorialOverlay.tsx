@@ -164,19 +164,60 @@ export function TutorialOverlay({
   );
 }
 
-/** Posición del globo relativa al objetivo, recortada para no salirse de la ventana — mismo criterio ya usado para la barra flotante de formato del editor. */
-function posicionGlobo(rect: DOMRect, lado: PasoTutorial['posicion']): CSSProperties {
-  const centradoX = Math.min(Math.max(8, rect.left + rect.width / 2 - ANCHO_GLOBO_PX / 2), window.innerWidth - ANCHO_GLOBO_PX - 8);
-  const topAlturaLimite = window.innerHeight - 200;
+/** Altura estimada del globo — no se mide el DOM real (todavía no existe en el primer render), basta una estimación holgada para decidir si un lado tiene sitio de verdad. */
+const ALTURA_ESTIMADA_GLOBO_PX = 220;
+
+/**
+ * Posición del globo relativa al objetivo — corrección 24/08/2026 (bug
+ * real, reportado con captura: el globo tapaba el propio botón que había
+ * que pulsar en un paso interactivo, impidiendo continuar el tutorial).
+ *
+ * Causa: el código anterior SIEMPRE colocaba el globo en el lado
+ * preferido y solo recortaba (`Math.min`/`Math.max`) para no salirse de
+ * la ventana — si la ventana era demasiado estrecha para que el globo
+ * cupiera entero en ese lado, el recorte lo empujaba de vuelta ENCIMA del
+ * propio elemento señalado en vez de moverlo a otro lado. Ahora se
+ * calcula el espacio real disponible en los 4 lados y, si el lado
+ * preferido no tiene sitio de sobra, se elige el que más espacio tenga —
+ * el globo nunca se superpone al objetivo, así que el elemento real
+ * siempre queda pulsable.
+ */
+function posicionGlobo(rect: DOMRect, ladoPreferido: PasoTutorial['posicion']): CSSProperties {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
+  const espacio = {
+    izquierda: rect.left,
+    derecha: vw - rect.right,
+    arriba: rect.top,
+    abajo: vh - rect.bottom,
+  };
+  const necesarioHorizontal = ANCHO_GLOBO_PX + MARGEN_GLOBO_PX + 8;
+  const necesarioVertical = ALTURA_ESTIMADA_GLOBO_PX + MARGEN_GLOBO_PX + 8;
+  const cabe = {
+    izquierda: espacio.izquierda >= necesarioHorizontal,
+    derecha: espacio.derecha >= necesarioHorizontal,
+    arriba: espacio.arriba >= necesarioVertical,
+    abajo: espacio.abajo >= necesarioVertical,
+  };
+
+  let lado = ladoPreferido ?? 'abajo';
+  if (!cabe[lado]) {
+    // El lado pedido no tiene sitio de sobra — se elige el que más espacio real tenga, nunca se fuerza uno que taparía el objetivo.
+    lado = (Object.keys(espacio) as (keyof typeof espacio)[]).sort((a, b) => espacio[b] - espacio[a])[0];
+  }
+
+  const centradoX = Math.min(Math.max(8, rect.left + rect.width / 2 - ANCHO_GLOBO_PX / 2), vw - ANCHO_GLOBO_PX - 8);
+  const topAlturaLimite = vh - ALTURA_ESTIMADA_GLOBO_PX - 8;
   switch (lado) {
     case 'derecha':
-      return { top: Math.max(8, Math.min(rect.top, topAlturaLimite)), left: Math.min(rect.right + MARGEN_GLOBO_PX, window.innerWidth - ANCHO_GLOBO_PX - 8), width: ANCHO_GLOBO_PX };
+      return { top: Math.max(8, Math.min(rect.top, topAlturaLimite)), left: rect.right + MARGEN_GLOBO_PX, width: ANCHO_GLOBO_PX };
     case 'izquierda':
-      return { top: Math.max(8, Math.min(rect.top, topAlturaLimite)), left: Math.max(8, rect.left - ANCHO_GLOBO_PX - MARGEN_GLOBO_PX), width: ANCHO_GLOBO_PX };
+      return { top: Math.max(8, Math.min(rect.top, topAlturaLimite)), left: rect.left - ANCHO_GLOBO_PX - MARGEN_GLOBO_PX, width: ANCHO_GLOBO_PX };
     case 'arriba':
-      return { top: Math.max(8, rect.top - MARGEN_GLOBO_PX), left: centradoX, width: ANCHO_GLOBO_PX, transform: 'translateY(-100%)' };
+      return { top: rect.top - MARGEN_GLOBO_PX, left: centradoX, width: ANCHO_GLOBO_PX, transform: 'translateY(-100%)' };
     case 'abajo':
     default:
-      return { top: Math.min(rect.bottom + MARGEN_GLOBO_PX, topAlturaLimite), left: centradoX, width: ANCHO_GLOBO_PX };
+      return { top: rect.bottom + MARGEN_GLOBO_PX, left: centradoX, width: ANCHO_GLOBO_PX };
   }
 }
