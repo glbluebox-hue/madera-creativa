@@ -5,9 +5,17 @@
  * (`[data-theme]` en la raíz), sin duplicar esa lógica aquí.
  */
 
+/* `pointer-events: none` es imprescindible: sin esto, este contenedor a
+   pantalla completa intercepta los clics en TODA la pantalla — incluido el
+   hueco transparente sobre el propio elemento señalado, aunque ahí no haya
+   ningún panel `.velo` ni fondo visible. Los hijos que sí deben responder
+   al clic (los paneles `.velo` y el globo) reactivan `pointer-events: auto`
+   cada uno por su cuenta. Bug real, 24/08/2026: el paso interactivo del
+   tutorial nunca dejaba pulsar el botón real que señalaba. */
 .raiz {
   position: fixed;
   inset: 0;
+  pointer-events: none;
 }
 
 /* Panel oscuro — cada uno de los 4 lados alrededor del hueco de foco, posicionados en línea (top/left/width/height calculados en JS a partir del rect real del elemento). */
@@ -15,6 +23,7 @@
   position: fixed;
   background: rgba(24, 20, 15, 0.55);
   transition: var(--trans-fast);
+  pointer-events: auto;
 }
 
 .veloCompletado {
@@ -47,6 +56,14 @@
   flex-direction: column;
   gap: 0.5rem;
   max-width: 90vw;
+  /* Sin esto, el padding y el borde se SUMAN al `width` inline que pone
+     TutorialOverlay.tsx (ANCHO_GLOBO_PX) en vez de incluirse en él — el
+     globo renderiza ~37px más ancho de lo que `posicionGlobo()` calculó,
+     y en esquinas (p.ej. el botón "+" de clientes, pegado a la esquina
+     superior derecha) ese margen de más basta para tapar el propio
+     elemento señalado. Bug real, 24/08/2026. */
+  box-sizing: border-box;
+  pointer-events: auto;
 }
 
 .globoTitulo {
