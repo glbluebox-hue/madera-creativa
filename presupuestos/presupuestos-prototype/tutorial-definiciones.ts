@@ -23,7 +23,6 @@ import type { DefinicionTutorial } from './tutorial-motor.js';
  * - 'nuevo-cliente-btn' → botón "+" de la lista de clientes (`lista-clientes.tsx`)
  * - 'form-cliente-nombre' → campo "Nombre del cliente" del formulario (`formulario-cliente.tsx`)
  * - 'nav-dibujos' → botón "Pizarra de medición" del menú lateral
- * - 'dibujo-nuevo-btn' → botón "+" de la Pizarra de medición (`seccion-dibujos.tsx`)
  * - 'nav-presupuestos' → botón "Presupuestos" del menú lateral
  * - 'crear-presupuesto-btn' → botón "+" de la lista de presupuestos (`presupuestos-lista-global.tsx`)
  * - 'presupuesto-selector-cliente' → botón "+ Nuevo cliente" del selector de creación (`presupuestos-lista-global.tsx`)
@@ -86,21 +85,22 @@ export const TUTORIAL_APP: DefinicionTutorial = {
     {
       id: 'app-06-dibujos',
       titulo: 'Pizarra de medición',
-      texto: 'Un lienzo para dibujar y tomar medidas a mano alzada durante una visita o mientras hablas con el cliente. Un dibujo se puede dejar suelto o asignarlo después a un cliente concreto.',
+      texto: 'Un lienzo para dibujar y tomar medidas a mano alzada durante una visita o mientras hablas con el cliente. Pulsa "Nuevo dibujo" para crear uno — luego podrás asignarlo a un cliente concreto o dejarlo suelto.',
       targetId: 'nav-dibujos',
       posicion: 'derecha',
       tipo: 'informativo',
       requiereMenuMovil: true,
     },
-    {
-      id: 'app-06b-dibujo-nuevo',
-      titulo: 'Nuevo dibujo',
-      texto: 'Pulsa aquí para crear un dibujo nuevo. Es un botón real — tu clic hará exactamente lo mismo que si no estuvieras en el tutorial.',
-      targetId: 'dibujo-nuevo-btn',
-      posicion: 'izquierda',
-      tipo: 'interactivo',
-      seccionRequerida: 'dibujos',
-    },
+    // Deliberadamente SIN paso interactivo sobre "Nuevo dibujo": ese botón
+    // abre un editor a pantalla completa (`EditorDibujo`) que tapa el resto
+    // de la app por z-index sin desmontarla — el tutorial seguía
+    // "encontrando" el siguiente objetivo (el menú lateral, oculto detrás)
+    // y mostraba su globo fuera de contexto, encima del editor de dibujo.
+    // Bug real, reportado con captura, 25/08/2026. A diferencia de "Crear
+    // cliente"/"Crear presupuesto" (que abren un modal sobre la misma
+    // pantalla), aquí no hay un sitio razonable al que avanzar mientras el
+    // editor de dibujo sigue abierto — se explica en el texto del paso
+    // informativo de arriba en su lugar.
     {
       id: 'app-07-presupuestos',
       titulo: 'Presupuestos',
