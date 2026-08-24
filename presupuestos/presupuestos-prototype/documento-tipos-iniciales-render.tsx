@@ -274,6 +274,15 @@ function RenderRectangulo({ elemento }: RenderElementoProps) {
   return (
     <div style={{
       width: '100%', height: '100%',
+      // Sin esto, el navegador usa `content-box` por defecto: el borde se
+      // suma POR FUERA del 100%×100%, y como el contenedor padre
+      // (`.elemento`) tiene `overflow: hidden`, ese sobrante se recorta —
+      // el borde superior/izquierdo queda dentro del límite y se ve, pero
+      // el derecho/inferior sobresalen y desaparecen, dando un rectángulo
+      // que "no se cierra" (reportado con captura, 24/08/2026). Con
+      // `border-box` el borde queda incluido dentro del 100%×100%, así que
+      // encaja siempre en el hueco del padre, sea cual sea el grosor.
+      boxSizing: 'border-box',
       background: estilo.relleno ?? 'transparent',
       border: `${estilo.trazoAncho ?? 0}px solid ${estilo.trazoColor ?? 'transparent'}`,
       borderRadius: estilo.bordeRadio ?? 0,
