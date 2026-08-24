@@ -53,6 +53,19 @@
  * seleccionado. La conversación (y la imagen activa) ayudan a la IA a
  * entender mejor la petición; nunca son una vía para que algo se aplique sin
  * el paso explícito de Aceptar.
+ *
+ * ELEMENTO DE DESTINO (corrección 24/08/2026, bug real reportado por el
+ * usuario): `elementoId` recuerda QUÉ elemento estaba seleccionado cuando se
+ * hizo la petición — se fija al entrar en 'enviando' y viaja intacto por
+ * 'propuesta'/'error'/'regenerar' hasta 'aceptado'. Antes no se guardaba en
+ * ningún sitio: el componente aplicaba la propuesta al elemento que
+ * estuviera seleccionado EN EL MOMENTO de pulsar "Aceptar", no al que
+ * estaba seleccionado cuando se pidió — si el usuario cambiaba de elemento
+ * mientras la propuesta seguía abierta (p. ej. para mirar otra parte del
+ * documento) y luego pulsaba "Aceptar", el texto se aplicaba al elemento
+ * EQUIVOCADO, sin ningún aviso. `panel-ia-presupuesto.tsx` compara este
+ * campo contra el elemento realmente seleccionado ahora mismo antes de
+ * permitir "Aceptar".
  */
 
 export type MensajeConversacionIA = { rol: 'usuario' | 'ia'; texto: string; conImagen?: boolean };
@@ -72,12 +85,12 @@ type EstadoBase = { conversacion: MensajeConversacionIA[]; imagenActiva: ImagenA
 
 export type EstadoPanelIA =
   | ({ fase: 'inactivo' } & EstadoBase)
-  | ({ fase: 'enviando'; peticion: string; imagenIncluida: boolean } & EstadoBase)
-  | ({ fase: 'propuesta'; peticion: string; texto: string; editando: boolean } & EstadoBase)
-  | ({ fase: 'error'; peticion: string; mensaje: string; imagenIncluida: boolean } & EstadoBase);
+  | ({ fase: 'enviando'; peticion: string; imagenIncluida: boolean; elementoId: string | null } & EstadoBase)
+  | ({ fase: 'propuesta'; peticion: string; texto: string; editando: boolean; elementoId: string | null } & EstadoBase)
+  | ({ fase: 'error'; peticion: string; mensaje: string; imagenIncluida: boolean; elementoId: string | null } & EstadoBase);
 
 export type AccionPanelIA =
-  | { tipo: 'enviar'; peticion: string }
+  | { tipo: 'enviar'; peticion: string; elementoId: string | null }
   | { tipo: 'respuesta'; texto: string }
   | { tipo: 'error'; mensaje: string }
   | { tipo: 'entrarEdicion' }
@@ -103,8 +116,9 @@ export function reducirPanelIA(estado: EstadoPanelIA, accion: AccionPanelIA): Es
       // petición se añade solo si llega una respuesta real (ver 'respuesta').
       // `imagenIncluida` se fija AHORA, a partir de la imagen activa en este
       // instante — si se quita/sustituye después, no afecta a esta petición
-      // ya en curso.
-      return { fase: 'enviando', peticion: accion.peticion, imagenIncluida: !!estado.imagenActiva, conversacion: estado.conversacion, imagenActiva: estado.imagenActiva };
+      // ya en curso. `elementoId` igual: el elemento seleccionado AHORA, para
+      // poder comprobar más tarde si sigue siendo el mismo al aceptar.
+      return { fase: 'enviando', peticion: accion.peticion, imagenIncluida: !!estado.imagenActiva, elementoId: accion.elementoId, conversacion: estado.conversacion, imagenActiva: estado.imagenActiva };
 
     case 'respuesta': {
       if (estado.fase !== 'enviando') return estado;
@@ -113,13 +127,13 @@ export function reducirPanelIA(estado: EstadoPanelIA, accion: AccionPanelIA): Es
         { rol: 'usuario', texto: estado.peticion, ...(estado.imagenIncluida ? { conImagen: true } : {}) },
         { rol: 'ia', texto: accion.texto },
       ];
-      return { fase: 'propuesta', peticion: estado.peticion, texto: accion.texto, editando: false, conversacion, imagenActiva: estado.imagenActiva };
+      return { fase: 'propuesta', peticion: estado.peticion, texto: accion.texto, editando: false, elementoId: estado.elementoId, conversacion, imagenActiva: estado.imagenActiva };
     }
 
     case 'error':
       if (estado.fase !== 'enviando') return estado;
       // Un fallo no genera respuesta real — la conversación se queda tal como estaba.
-      return { fase: 'error', peticion: estado.peticion, mensaje: accion.mensaje, imagenIncluida: estado.imagenIncluida, conversacion: estado.conversacion, imagenActiva: estado.imagenActiva };
+      return { fase: 'error', peticion: estado.peticion, mensaje: accion.mensaje, imagenIncluida: estado.imagenIncluida, elementoId: estado.elementoId, conversacion: estado.conversacion, imagenActiva: estado.imagenActiva };
 
     case 'entrarEdicion':
       return estado.fase === 'propuesta' ? { ...estado, editando: true } : estado;
@@ -143,11 +157,14 @@ export function reducirPanelIA(estado: EstadoPanelIA, accion: AccionPanelIA): Es
       // petición original — nunca la reformula ni usa el texto editado como
       // nueva petición. `imagenIncluida` se recalcula igual que en 'enviar':
       // usa la imagen activa AHORA, no la que hubiera en el intento descartado.
+      // `elementoId` se mantiene del intento original (nunca se relee la
+      // selección actual) — regenerar sigue apuntando al mismo elemento que
+      // la petición inicial, tal como la propia petición no cambia.
       if (estado.fase === 'propuesta') {
-        return { fase: 'enviando', peticion: estado.peticion, imagenIncluida: !!estado.imagenActiva, conversacion: sinUltimoPar(estado.conversacion), imagenActiva: estado.imagenActiva };
+        return { fase: 'enviando', peticion: estado.peticion, imagenIncluida: !!estado.imagenActiva, elementoId: estado.elementoId, conversacion: sinUltimoPar(estado.conversacion), imagenActiva: estado.imagenActiva };
       }
       if (estado.fase === 'error') {
-        return { fase: 'enviando', peticion: estado.peticion, imagenIncluida: !!estado.imagenActiva, conversacion: estado.conversacion, imagenActiva: estado.imagenActiva };
+        return { fase: 'enviando', peticion: estado.peticion, imagenIncluida: !!estado.imagenActiva, elementoId: estado.elementoId, conversacion: estado.conversacion, imagenActiva: estado.imagenActiva };
       }
       return estado;
 

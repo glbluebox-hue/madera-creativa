@@ -4,8 +4,8 @@ import {
 } from './panel-ia-presupuesto-estado.js';
 
 /** Simula el ciclo completo enviar→respuesta que hace el componente real. */
-function pedirYResponder(estado: EstadoPanelIA, peticion: string, respuesta: string): EstadoPanelIA {
-  const enviando = reducirPanelIA(estado, { tipo: 'enviar', peticion });
+function pedirYResponder(estado: EstadoPanelIA, peticion: string, respuesta: string, elementoId: string | null = 'el-1'): EstadoPanelIA {
+  const enviando = reducirPanelIA(estado, { tipo: 'enviar', peticion, elementoId });
   return reducirPanelIA(enviando, { tipo: 'respuesta', texto: respuesta });
 }
 
@@ -14,7 +14,7 @@ describe('reducirPanelIA — conversación multi-turno (23/08/2026)', () => {
     const r = pedirYResponder(estadoInicialPanelIA, 'Descríbeme esta cocina.', 'Cocina en L con acabado mate.');
     expect(r).toEqual({
       fase: 'propuesta', peticion: 'Descríbeme esta cocina.', texto: 'Cocina en L con acabado mate.', editando: false,
-      imagenActiva: null,
+      elementoId: 'el-1', imagenActiva: null,
       conversacion: [
         { rol: 'usuario', texto: 'Descríbeme esta cocina.' },
         { rol: 'ia', texto: 'Cocina en L con acabado mate.' },
@@ -47,7 +47,7 @@ describe('reducirPanelIA — conversación multi-turno (23/08/2026)', () => {
   it('4. Regenerar: descarta el último par (intento rechazado) y repite la MISMA petición, no el texto editado', () => {
     const propuesta = pedirYResponder(estadoInicialPanelIA, 'Describe esto.', 'Primer intento, no me convence.');
     const regenerando = reducirPanelIA(propuesta, { tipo: 'regenerar' });
-    expect(regenerando).toEqual({ fase: 'enviando', peticion: 'Describe esto.', imagenIncluida: false, conversacion: [], imagenActiva: null });
+    expect(regenerando).toEqual({ fase: 'enviando', peticion: 'Describe esto.', imagenIncluida: false, elementoId: 'el-1', conversacion: [], imagenActiva: null });
 
     // Y si llega una respuesta nueva, sustituye limpiamente al intento descartado.
     const nuevaPropuesta = reducirPanelIA(regenerando, { tipo: 'respuesta', texto: 'Segundo intento, mejor.' });
@@ -62,16 +62,16 @@ describe('reducirPanelIA — conversación multi-turno (23/08/2026)', () => {
     const segundaFallida = pedirYResponder(primera, 'Más formal.', 'Intento fallido.');
     const regenerando = reducirPanelIA(segundaFallida, { tipo: 'regenerar' });
     expect(regenerando).toEqual({
-      fase: 'enviando', peticion: 'Más formal.', imagenIncluida: false, imagenActiva: null,
+      fase: 'enviando', peticion: 'Más formal.', imagenIncluida: false, elementoId: 'el-1', imagenActiva: null,
       conversacion: [{ rol: 'usuario', texto: 'Descríbeme esto.' }, { rol: 'ia', texto: 'Propuesta 1.' }],
     });
   });
 
   it('4c. Regenerar desde un error (reintentar) no toca la conversación, porque el error nunca la había modificado', () => {
-    const enviando = reducirPanelIA(estadoInicialPanelIA, { tipo: 'enviar', peticion: 'Redacta esto.' });
+    const enviando = reducirPanelIA(estadoInicialPanelIA, { tipo: 'enviar', peticion: 'Redacta esto.', elementoId: 'el-1' });
     const error = reducirPanelIA(enviando, { tipo: 'error', mensaje: 'Fallo de red' });
     const reintentando = reducirPanelIA(error, { tipo: 'regenerar' });
-    expect(reintentando).toEqual({ fase: 'enviando', peticion: 'Redacta esto.', imagenIncluida: false, conversacion: [], imagenActiva: null });
+    expect(reintentando).toEqual({ fase: 'enviando', peticion: 'Redacta esto.', imagenIncluida: false, elementoId: 'el-1', conversacion: [], imagenActiva: null });
   });
 
   it('5. Cancelación: descarta la propuesta pendiente Y su par de la conversación — "olvida esto"', () => {
@@ -104,7 +104,7 @@ describe('reducirPanelIA — conversación multi-turno (23/08/2026)', () => {
     const estados: EstadoPanelIA[] = [];
     let estado = estadoInicialPanelIA;
     for (const accion of [
-      { tipo: 'enviar' as const, peticion: 'x' },
+      { tipo: 'enviar' as const, peticion: 'x', elementoId: 'el-1' },
       { tipo: 'respuesta' as const, texto: 'y' },
       { tipo: 'entrarEdicion' as const },
       { tipo: 'editarTexto' as const, texto: 'y editado' },
@@ -114,8 +114,10 @@ describe('reducirPanelIA — conversación multi-turno (23/08/2026)', () => {
       estado = reducirPanelIA(estado, accion);
       estados.push(estado);
     }
-    // El único conjunto de claves posible en cualquier estado es este — nunca aparece un campo de documento/elemento.
-    const clavesPermitidas = new Set(['fase', 'conversacion', 'peticion', 'texto', 'editando', 'mensaje', 'imagenActiva', 'imagenIncluida']);
+    // El único conjunto de claves posible en cualquier estado es este — `elementoId` identifica
+    // el elemento seleccionado al pedir (para poder comparar contra la selección actual antes de
+    // aplicar), nunca el contenido del documento en sí.
+    const clavesPermitidas = new Set(['fase', 'conversacion', 'peticion', 'texto', 'editando', 'mensaje', 'imagenActiva', 'imagenIncluida', 'elementoId']);
     for (const e of estados) {
       for (const clave of Object.keys(e)) expect(clavesPermitidas.has(clave)).toBe(true);
     }
@@ -134,6 +136,47 @@ describe('reducirPanelIA — conversación multi-turno (23/08/2026)', () => {
     const sesionB = estadoInicialPanelIA;
     expect(sesionB.conversacion).toHaveLength(0);
     expect(sesionB.imagenActiva).toBeNull();
+  });
+});
+
+describe('reducirPanelIA — elemento de destino (corrección 24/08/2026, bug real: aplicar la propuesta al elemento equivocado)', () => {
+  it('1. "enviar" fija elementoId a partir del elemento seleccionado en ese momento', () => {
+    const enviando = reducirPanelIA(estadoInicialPanelIA, { tipo: 'enviar', peticion: 'Mejora esto.', elementoId: 'el-42' });
+    expect(enviando).toMatchObject({ fase: 'enviando', elementoId: 'el-42' });
+  });
+
+  it('2. Sin ningún elemento seleccionado, elementoId es null', () => {
+    const enviando = reducirPanelIA(estadoInicialPanelIA, { tipo: 'enviar', peticion: 'Redacta algo.', elementoId: null });
+    expect(enviando).toMatchObject({ fase: 'enviando', elementoId: null });
+  });
+
+  it('3. elementoId viaja intacto de "enviando" a "propuesta"', () => {
+    const propuesta = pedirYResponder(estadoInicialPanelIA, 'Mejora esto.', 'Texto mejorado.', 'el-7');
+    expect(propuesta).toMatchObject({ fase: 'propuesta', elementoId: 'el-7' });
+  });
+
+  it('4. elementoId viaja intacto de "enviando" a "error"', () => {
+    const enviando = reducirPanelIA(estadoInicialPanelIA, { tipo: 'enviar', peticion: 'x', elementoId: 'el-7' });
+    const error = reducirPanelIA(enviando, { tipo: 'error', mensaje: 'Fallo' });
+    expect(error).toMatchObject({ fase: 'error', elementoId: 'el-7' });
+  });
+
+  it('5. Regenerar mantiene el elementoId ORIGINAL, nunca relee la selección actual', () => {
+    const propuesta = pedirYResponder(estadoInicialPanelIA, 'Mejora esto.', 'Primer intento.', 'el-7');
+    // Aunque en la app real el usuario pudiera haber cambiado de selección mientras tanto,
+    // 'regenerar' no recibe ningún elementoId nuevo — no tiene forma de "verlo", y no debe inventarlo.
+    const regenerando = reducirPanelIA(propuesta, { tipo: 'regenerar' });
+    expect(regenerando).toMatchObject({ fase: 'enviando', elementoId: 'el-7' });
+  });
+
+  it('6. Elementos distintos en peticiones sucesivas: cada una recuerda el suyo propio, no se mezclan', () => {
+    const primera = pedirYResponder(estadoInicialPanelIA, 'Mejora esto.', 'Texto A.', 'el-A');
+    expect(primera).toMatchObject({ elementoId: 'el-A' });
+    // Si el usuario cambia de elemento y pide otra cosa (tras aceptar o cancelar la anterior),
+    // la nueva petición recuerda el elemento nuevo.
+    const inactivo = reducirPanelIA(primera, { tipo: 'aceptado' });
+    const segunda = pedirYResponder(inactivo, 'Mejora esto también.', 'Texto B.', 'el-B');
+    expect(segunda).toMatchObject({ elementoId: 'el-B' });
   });
 });
 
@@ -164,14 +207,14 @@ describe('reducirPanelIA — imagen activa (Fase 3, IA Visual, 23/08/2026)', () 
 
   it('5. Petición con imagen activa: imagenIncluida se fija en true al entrar en "enviando", y el turno de conversación queda marcado con conImagen', () => {
     const conImagen = reducirPanelIA(estadoInicialPanelIA, { tipo: 'imagenSeleccionada', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' });
-    const enviando = reducirPanelIA(conImagen, { tipo: 'enviar', peticion: 'Descríbeme esta cocina.' });
+    const enviando = reducirPanelIA(conImagen, { tipo: 'enviar', peticion: 'Descríbeme esta cocina.', elementoId: 'el-1' });
     expect(enviando).toMatchObject({ fase: 'enviando', imagenIncluida: true });
     const propuesta = reducirPanelIA(enviando, { tipo: 'respuesta', texto: 'Cocina en L, isla central visible.' });
     expect(propuesta.conversacion[0]).toEqual({ rol: 'usuario', texto: 'Descríbeme esta cocina.', conImagen: true });
   });
 
   it('6. Petición sin imagen activa: imagenIncluida es false y el turno no lleva la marca conImagen', () => {
-    const enviando = reducirPanelIA(estadoInicialPanelIA, { tipo: 'enviar', peticion: 'Redacta esta partida.' });
+    const enviando = reducirPanelIA(estadoInicialPanelIA, { tipo: 'enviar', peticion: 'Redacta esta partida.', elementoId: 'el-1' });
     expect(enviando).toMatchObject({ fase: 'enviando', imagenIncluida: false });
     const propuesta = reducirPanelIA(enviando, { tipo: 'respuesta', texto: 'Fabricación de mueble a medida.' });
     expect(propuesta.conversacion[0]).toEqual({ rol: 'usuario', texto: 'Redacta esta partida.' });
