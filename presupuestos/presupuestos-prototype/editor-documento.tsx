@@ -73,6 +73,15 @@ export type EditorDocumentoProps = {
    * que vincularse todavía.
    */
   precioVinculado?: number;
+  /**
+   * `contenedor` es en realidad una `PlantillaMC` que se está editando
+   * directamente (abierta desde `PlantillasVista`), no un presupuesto. Sin
+   * esto, "Guardar como plantilla" no tenía forma de saberlo y creaba
+   * SIEMPRE una plantilla nueva con un id al azar — nunca actualizaba la
+   * que el usuario tenía delante, así que los cambios "desaparecían" al
+   * volver a abrirla (bug real, reportado 25/08/2026).
+   */
+  esPlantilla?: boolean;
   onGuardar: (c: DocumentoContenedorMC) => Promise<void>;
   onVolver: () => void;
   onCambiarLogoEmpresa?: (logo: string) => void;
@@ -134,7 +143,7 @@ function documentoVacio(): DocumentoMC {
  * incremento posterior — con la selección actual, redimensionar/rotar
  * solo actúa cuando hay un único elemento seleccionado.
  */
-export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa, precioVinculado, onGuardar, onVolver, onCambiarLogoEmpresa }: EditorDocumentoProps) {
+export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa, precioVinculado, esPlantilla, onGuardar, onVolver, onCambiarLogoEmpresa }: EditorDocumentoProps) {
   const documentoInicial = useMemo<DocumentoMC>(() => {
     const contenido = contenedor.contenidoDocumento as unknown as DocumentoMC;
     return contenido && contenido.paginas && contenido.paginas.length > 0 ? contenido : documentoVacio();
@@ -744,9 +753,17 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
     try {
       const ahora = new Date().toISOString();
       await api.guardarPlantilla({
-        id: generarId(), nombre, ambito: ambitoPlantillaNueva, documentoBase: documento, creadoEn: ahora, actualizadoEn: ahora,
+        // Editando una plantilla existente (`esPlantilla`): reutiliza su
+        // mismo id y su `creadoEn` real para ACTUALIZARLA — `guardarPlantilla`
+        // en el backend es un upsert por id (findOneAndUpdate), así que un
+        // id nuevo aquí siempre creaba una plantilla aparte en vez de tocar
+        // la que el usuario tenía abierta.
+        id: esPlantilla ? contenedor.id : generarId(),
+        nombre, ambito: ambitoPlantillaNueva, documentoBase: documento,
+        creadoEn: esPlantilla ? contenedor.creado : ahora,
+        actualizadoEn: ahora,
       });
-      setAvisoPlantilla('Plantilla guardada.');
+      setAvisoPlantilla(esPlantilla ? 'Plantilla actualizada.' : 'Plantilla guardada.');
       setNombrePlantillaNueva('');
       setTimeout(() => { setPanelPlantillaAbierto(false); setAvisoPlantilla(null); }, 1200);
     } catch (e) {
@@ -1336,7 +1353,12 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
         <button className={editorStyles.btnHerramienta} onClick={() => distribuirSeleccionActual('horizontal')} disabled={seleccion.length < 3}>Distribuir</button>
         <div className={editorStyles.separador} />
         <button className={editorStyles.btnHerramienta} onClick={() => setPanelTemaAbierto((v) => !v)}>🎨 Tema y estilos</button>
-        <button className={editorStyles.btnHerramienta} onClick={() => setPanelPlantillaAbierto(true)}>📄 Guardar como plantilla</button>
+        <button
+          className={editorStyles.btnHerramienta}
+          onClick={() => { if (esPlantilla) setNombrePlantillaNueva(titulo); setPanelPlantillaAbierto(true); }}
+        >
+          {esPlantilla ? '📄 Actualizar plantilla' : '📄 Guardar como plantilla'}
+        </button>
         <div className={editorStyles.separador} />
         <button className={editorStyles.btnHerramienta} onClick={abrirSelectorComponentes}>🧩 Insertar componente</button>
         <button className={editorStyles.btnHerramienta} onClick={() => setPanelGuardarComponenteAbierto(true)} disabled={seleccion.length === 0}>Guardar selección como componente</button>
@@ -1399,8 +1421,14 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
       {panelPlantillaAbierto && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setPanelPlantillaAbierto(false)}>
           <div style={{ background: 'var(--fondo-panel)', borderRadius: 10, padding: '1.25rem', minWidth: 300, display: 'flex', flexDirection: 'column', gap: '0.7rem' }} onClick={(e) => e.stopPropagation()}>
-            <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem' }}>Guardar como plantilla</p>
-            <p className={editorStyles.panelNota}>Se guarda el documento tal como está ahora (incluidas variables como <code>{'{{cliente.nombre}}'}</code> si las has escrito) como una plantilla reutilizable.</p>
+            <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem' }}>{esPlantilla ? 'Actualizar esta plantilla' : 'Guardar como plantilla'}</p>
+            <p className={editorStyles.panelNota}>
+              {esPlantilla
+                ? 'Se sobrescribe esta misma plantilla con el contenido actual (incluidas variables como '
+                : 'Se guarda el documento tal como está ahora (incluidas variables como '}
+              <code>{'{{cliente.nombre}}'}</code>
+              {esPlantilla ? ' si las has escrito).' : ' si las has escrito) como una plantilla reutilizable.'}
+            </p>
             <label className={editorStyles.panelCampo}>
               Nombre
               <input type="text" value={nombrePlantillaNueva} onChange={(e) => setNombrePlantillaNueva(e.target.value)} placeholder="Ej. Presupuesto cocina estándar" />
@@ -1415,7 +1443,9 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
             {avisoPlantilla && <p className={editorStyles.panelNota}>{avisoPlantilla}</p>}
             <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
               <button className={styles.btn} onClick={() => setPanelPlantillaAbierto(false)}>Cancelar</button>
-              <button className={styles.btn} onClick={guardarComoPlantilla} disabled={!nombrePlantillaNueva.trim() || guardandoPlantilla}>{guardandoPlantilla ? 'Guardando…' : 'Guardar'}</button>
+              <button className={styles.btn} onClick={guardarComoPlantilla} disabled={!nombrePlantillaNueva.trim() || guardandoPlantilla}>
+                {guardandoPlantilla ? 'Guardando…' : esPlantilla ? 'Actualizar' : 'Guardar'}
+              </button>
             </div>
           </div>
         </div>

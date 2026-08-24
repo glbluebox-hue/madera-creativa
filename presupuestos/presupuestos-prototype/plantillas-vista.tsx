@@ -131,6 +131,7 @@ export function PlantillasVista({ empresa, onActualizarEmpresa }: PlantillasVist
         }}
         clienteId="" clienteNombre=""
         empresa={empresa}
+        esPlantilla
         onGuardar={(c) => guardarContenidoEditor(editorAbierto, c)}
         onVolver={() => setEditorAbierto(null)}
         onCambiarLogoEmpresa={(logo) => onActualizarEmpresa({ logo })}
