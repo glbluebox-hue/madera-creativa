@@ -1224,6 +1224,38 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
             <option value="">— Sin estilo con nombre —</option>
             {documento.estilosGuardados.map((es) => <option key={es.id} value={es.id}>{es.nombre}</option>)}
           </select>
+          {/*
+            Renombrar/borrar el estilo aplicado, aquí mismo — corrección
+            24/08/2026 (reportado por el usuario: "no hay manera de
+            editarlo... una vez que se ha creado un estilo con nombre").
+            Ambas acciones ya existían, pero solo desde el modal aparte
+            "🎨 Tema y estilos" — nada en este panel indicaba que había que
+            ir a buscarlas allí. Mismos comandos (`renombrarEstiloNombrado`/
+            `eliminarEstiloNombrado`), solo expuestos también donde el
+            usuario ya está mirando al aplicar el estilo.
+          */}
+          {elemento.estiloNombradoId && (() => {
+            const estiloActual = documento.estilosGuardados.find((es) => es.id === elemento.estiloNombradoId);
+            if (!estiloActual) return null;
+            return (
+              <div className={editorStyles.panelFila} style={{ alignItems: 'center' }}>
+                <input
+                  type="text"
+                  value={estiloActual.nombre}
+                  onChange={(e) => ejecutar((doc) => renombrarEstiloNombrado(doc, estiloActual.id, e.target.value))}
+                  style={{ flex: 1 }}
+                  title="Renombrar este estilo — afecta a todos los elementos que lo usan"
+                />
+                <button
+                  className={editorStyles.miniBtn}
+                  onClick={() => ejecutar((doc) => eliminarEstiloNombrado(doc, estiloActual.id))}
+                  title="Eliminar este estilo — los elementos que lo usan vuelven a su estilo propio, no se rompen"
+                >
+                  ✕
+                </button>
+              </div>
+            );
+          })()}
           {elemento.estiloNombradoId && Object.keys(elemento.estilo).length > 0 && (
             <button className={editorStyles.btnPanel} onClick={() => ejecutar((doc) => sincronizarEstiloConNombrado(doc, elemento.id))}>
               Guardar estos ajustes en el estilo
