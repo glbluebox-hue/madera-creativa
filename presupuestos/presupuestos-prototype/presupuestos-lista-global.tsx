@@ -2,14 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import * as api from './api.js';
 import type { PresupuestoMC } from './presupuestos-modelo.js';
 import type { Empresa } from './use-empresa.js';
-import type { PlantillaMC, ElementoMC } from './documento-modelo.js';
+import type { PlantillaMC } from './documento-modelo.js';
 import { crearDocumentoVacio } from './documento-modelo.js';
 import type { Proyecto } from './types.js';
 import { AbrirDocumento } from './abrir-documento.js';
 import { generarId } from './mock.js';
 import { resolverVariables } from './documento-registro-variables.js';
 import './documento-variables-iniciales.js'; // registro de variables por efecto secundario (Incremento 4).
-import { crearElementoBase, anadirElemento } from './documento-comandos.js';
+import { autoRellenarDatosCliente, type DatosClienteAutoRelleno } from './presupuestos-datos-cliente.js';
 import { formatoEuro, formatoFecha } from './calculos.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
 import styles from './styles.module.css';
@@ -188,27 +188,6 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
   };
 
   /**
-   * Bloque de texto con los datos del cliente/obra/fecha, insertado
-   * automáticamente en todo presupuesto nuevo (24/08/2026, con o sin
-   * plantilla — petición del usuario: "yo selecciono al cliente y...
-   * debería auto rellenarse... con la posibilidad de que se pueda
-   * editar"). Es un elemento de texto normal, sin ningún vínculo especial
-   * con el cliente después de crearse — el valor se copia UNA VEZ al
-   * crear el presupuesto; cambiarlo aquí no afecta a la ficha del cliente
-   * ni viceversa, y el usuario puede moverlo/editarlo/borrarlo como
-   * cualquier otro elemento.
-   */
-  function crearBloqueDatosCliente(datos: { nombre: string; direccion?: string; telefono?: string; dni?: string }): ElementoMC {
-    const lineas = [datos.nombre];
-    if (datos.direccion) lineas.push(datos.direccion);
-    if (datos.telefono) lineas.push(`Tel: ${datos.telefono}`);
-    if (datos.dni) lineas.push(`DNI/NIE: ${datos.dni}`);
-    lineas.push(`Fecha: ${formatoFecha(new Date())}`);
-    const base = crearElementoBase('texto', { x: 40, y: 90 }, { ancho: 260, alto: 20 * lineas.length + 20 });
-    return { ...base, contenido: { texto: lineas.join('\n') }, estilo: { fontSize: 13, lineHeight: 1.4 } };
-  }
-
-  /**
    * Crea un presupuesto nuevo en `formato:'documento'` — en blanco o resuelto
    * a partir de una plantilla — y lo persiste de inmediato en el backend
    * antes de abrir el editor (mismo patrón que `plantillas-vista.tsx`).
@@ -255,15 +234,20 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
         },
         empresa: { nombre: empresa.nombre, telefono: empresa.telefono, email: empresa.email, iban: empresa.iban },
       };
-      const documentoBase = plantilla ? resolverVariables(plantilla.documentoBase, contexto) : crearDocumentoVacio(generarId);
-      const primeraPagina = documentoBase.paginas[0];
-      const bloque = crearBloqueDatosCliente({
+      const documentoResuelto = plantilla ? resolverVariables(plantilla.documentoBase, contexto) : crearDocumentoVacio(generarId);
+      const datosAutoRelleno: DatosClienteAutoRelleno = {
         nombre: clienteCompleto.nombre,
-        direccion: proyectoCompleto?.direccion,
+        direccion: proyectoCompleto?.direccion ?? '',
         telefono: clienteCompleto.telefono,
-        dni: clienteCompleto.dni,
-      });
-      const contenidoDocumento = (primeraPagina ? anadirElemento(documentoBase, primeraPagina.id, bloque) : documentoBase) as unknown as Record<string, unknown>;
+        dni: clienteCompleto.dni ?? '',
+        fecha: formatoFecha(new Date()),
+      };
+      // Primero intenta rellenar etiquetas "Nombre:/Dirección:/Teléfono:/DNI:"
+      // ya presentes en el documento; si no encuentra ninguna (típico de un
+      // presupuesto en blanco), añade el bloque de reserva — ver
+      // `presupuestos-datos-cliente.ts` para el porqué de la separación.
+      const documentoFinal = autoRellenarDatosCliente(documentoResuelto, datosAutoRelleno);
+      const contenidoDocumento = documentoFinal as unknown as Record<string, unknown>;
       const borrador: PresupuestoMC = {
         id: generarId(),
         clienteId,
