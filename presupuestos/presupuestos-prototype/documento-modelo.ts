@@ -124,6 +124,39 @@ export const TEMA_POR_DEFECTO: TemaMC = {
 /** Tamaño de página A4 a 96dpi — mismo valor que el editor legado. */
 export const PAGINA_A4 = { ancho: 794, alto: 1123 };
 
+/**
+ * Construye un `DocumentoMC` válido de una sola página en blanco — mismos
+ * valores que la función homónima ya usada internamente por
+ * `editor-documento.tsx` (que la sintetiza al abrir un `contenidoDocumento`
+ * vacío). Se expone aquí, además, para que quien vaya a CREAR un
+ * presupuesto (`presupuestos-lista-global.tsx`) pueda partir de un
+ * documento real y añadirle elementos (p. ej. el bloque de datos del
+ * cliente, 24/08/2026) antes de guardarlo, en vez de depender de que el
+ * editor lo complete después de abrirlo.
+ */
+export function crearDocumentoVacio(generarId: () => string): DocumentoMC {
+  return {
+    id: generarId(),
+    schemaVersion: 1,
+    documentoBaseId: null,
+    etiquetaVersion: null,
+    documentVersion: 1,
+    plantillaOrigen: null,
+    paginas: [{
+      id: generarId(), indice: 0, nombre: '', configuracion: null, fondo: null,
+      encabezado: null, pie: null, numeracion: { mostrar: false, formato: 'Página {n} de {total}', posicion: 'centro' }, elementos: [],
+    }],
+    configuracionPorDefecto: { ancho: PAGINA_A4.ancho, alto: PAGINA_A4.alto, orientacion: 'vertical', margenes: { arriba: 40, abajo: 40, izquierda: 40, derecha: 40 } },
+    fondoPorDefecto: { tipo: 'ninguno' },
+    encabezadoPorDefecto: null,
+    piePorDefecto: null,
+    variables: { claves: {} },
+    configuracionImpresion: { sangrado: 0, escala: 1 },
+    tema: null,
+    estilosGuardados: [],
+  };
+}
+
 /** Plantilla (Incremento 4) — ver documento-modelo.ts del backend. */
 export type PlantillaMC = {
   id: string;

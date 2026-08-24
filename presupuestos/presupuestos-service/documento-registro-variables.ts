@@ -23,7 +23,7 @@ export interface DefinicionVariable {
 
 /** Datos reales disponibles al resolver una plantilla — cada fuente registrada solo mira la parte del contexto que le corresponde. */
 export interface ContextoVariables {
-  cliente?: { nombre: string; email?: string; telefono?: string; direccion?: string };
+  cliente?: { nombre: string; email?: string; telefono?: string; direccion?: string; dni?: string };
   empresa?: { nombre: string; telefono?: string; email?: string; iban?: string };
   presupuesto?: { titulo: string; precioTotal: number };
   fecha?: Date;

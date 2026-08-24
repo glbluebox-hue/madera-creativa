@@ -331,6 +331,8 @@ export const esquemaCliente = z.object({
   nombre: z.string().trim().min(1).max(200),
   telefono: z.string().max(50).optional().default(''),
   email: z.string().max(254).optional().default(''),
+  /** DNI/NIE del cliente — dato de identidad (24/08/2026). */
+  dni: z.string().max(20).optional().default(''),
   creado: z.string().min(1).max(64),
 });
 
@@ -339,6 +341,7 @@ export const esquemaClienteEntrada = z.object({
   nombre: z.string().trim().min(1).max(200),
   telefono: z.string().max(50).optional().default(''),
   email: z.string().max(254).optional().default(''),
+  dni: z.string().max(20).optional().default(''),
 });
 
 /**

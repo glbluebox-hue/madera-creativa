@@ -33,6 +33,7 @@ export function FormularioCliente({ onGuardar, onCerrar }: FormularioClienteProp
   const [nombre, setNombre] = useState('');
   const [telefono, setTelefono] = useState('');
   const [email, setEmail] = useState('');
+  const [dni, setDni] = useState('');
   const [proyecto, setProyecto] = useState('');
   const [direccion, setDireccion] = useState('');
   const [presupuesto, setPresupuesto] = useState('');
@@ -49,7 +50,7 @@ export function FormularioCliente({ onGuardar, onCerrar }: FormularioClienteProp
     try {
       const clienteId = modo === 'existente'
         ? clienteExistenteId
-        : (await api.crearCliente({ nombre: nombre.trim(), telefono: telefono.trim(), email: email.trim() })).id;
+        : (await api.crearCliente({ nombre: nombre.trim(), telefono: telefono.trim(), email: email.trim(), dni: dni.trim() })).id;
       const nuevoProyecto = await api.crearProyecto({
         clienteId,
         proyecto: proyecto.trim(),
@@ -100,6 +101,10 @@ export function FormularioCliente({ onGuardar, onCerrar }: FormularioClienteProp
               <div className={styles.campo}>
                 <label className={styles.campoLabel}>Email</label>
                 <input className={styles.input} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="correo@email.com" />
+              </div>
+              <div className={styles.campo}>
+                <label className={styles.campoLabel}>DNI/NIE</label>
+                <input className={styles.input} value={dni} onChange={(e) => setDni(e.target.value)} placeholder="12345678A" />
               </div>
             </>
           )}

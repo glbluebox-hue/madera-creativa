@@ -252,6 +252,13 @@ export type Cliente = {
   telefono: string;
   /** Email de contacto. */
   email: string;
+  /**
+   * DNI/NIE del cliente (24/08/2026) — opcional: `.lean()` no aplica el
+   * default de Mongoose a clientes guardados antes de este campo, así que
+   * puede venir ausente del todo en vez de `''` (mismo aviso que `estado`
+   * en `PresupuestoMC`, ver presupuestos-modelo.ts).
+   */
+  dni?: string;
   /** Fecha de alta en formato ISO. */
   creado: string;
 };

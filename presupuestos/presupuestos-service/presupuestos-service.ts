@@ -320,23 +320,23 @@ export class PresupuestosService {
    * que quede claro que aquí siempre se genera un id nuevo, nunca se
    * reutiliza uno existente (evita duplicar clientes por error).
    */
-  async crearCliente(datos: { nombre: string; telefono?: string; email?: string }, usuarioId: string): Promise<ClienteDoc> {
+  async crearCliente(datos: { nombre: string; telefono?: string; email?: string; dni?: string }, usuarioId: string): Promise<ClienteDoc> {
     await conectar();
     const doc = await ClienteModel.create({
       id: randomUUID(), usuarioId,
-      nombre: datos.nombre, telefono: datos.telefono ?? '', email: datos.email ?? '',
+      nombre: datos.nombre, telefono: datos.telefono ?? '', email: datos.email ?? '', dni: datos.dni ?? '',
       creado: new Date().toISOString(),
     });
     busEventos.publicar({ nombre: 'cliente.creado', usuarioId, entidadId: doc.id, datos: { nombre: doc.nombre } });
     return this.limpiar(doc.toObject());
   }
 
-  /** Edita los datos de identidad de un cliente ya existente (nombre/teléfono/email). */
-  async guardarCliente(cliente: { id: string; nombre: string; telefono?: string; email?: string }, usuarioId: string): Promise<ClienteDoc> {
+  /** Edita los datos de identidad de un cliente ya existente (nombre/teléfono/email/DNI-NIE). */
+  async guardarCliente(cliente: { id: string; nombre: string; telefono?: string; email?: string; dni?: string }, usuarioId: string): Promise<ClienteDoc> {
     await conectar();
     const doc = await ClienteModel.findOneAndUpdate(
       { id: cliente.id, usuarioId },
-      { $set: { nombre: cliente.nombre, telefono: cliente.telefono ?? '', email: cliente.email ?? '' } },
+      { $set: { nombre: cliente.nombre, telefono: cliente.telefono ?? '', email: cliente.email ?? '', dni: cliente.dni ?? '' } },
       { new: true }
     ).lean().exec();
     if (!doc) throw new ErrorDeNegocio('Cliente no encontrado', 400);

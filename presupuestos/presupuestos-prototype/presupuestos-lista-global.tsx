@@ -2,12 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import * as api from './api.js';
 import type { PresupuestoMC } from './presupuestos-modelo.js';
 import type { Empresa } from './use-empresa.js';
-import type { PlantillaMC } from './documento-modelo.js';
+import type { PlantillaMC, ElementoMC } from './documento-modelo.js';
+import { crearDocumentoVacio } from './documento-modelo.js';
 import type { Proyecto } from './types.js';
 import { AbrirDocumento } from './abrir-documento.js';
 import { generarId } from './mock.js';
 import { resolverVariables } from './documento-registro-variables.js';
 import './documento-variables-iniciales.js'; // registro de variables por efecto secundario (Incremento 4).
+import { crearElementoBase, anadirElemento } from './documento-comandos.js';
 import { formatoEuro, formatoFecha } from './calculos.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
 import styles from './styles.module.css';
@@ -49,6 +51,16 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
   const [selectorAbierto, setSelectorAbierto] = useState(false);
   const [clienteElegidoId, setClienteElegidoId] = useState<string | null>(null);
   const [plantillas, setPlantillas] = useState<PlantillaMC[]>([]);
+  /**
+   * Selector de proyecto opcional (24/08/2026) — para que el bloque de
+   * datos del cliente pueda rellenar la dirección de la obra, que vive en
+   * el Proyecto, no en el Cliente (incremento "Cliente ≠ Proyecto"). Se
+   * recarga cada vez que cambia el cliente elegido; `null` = "ninguno
+   * elegido todavía" y también el valor por defecto si el cliente no
+   * tiene ningún proyecto.
+   */
+  const [proyectosCliente, setProyectosCliente] = useState<{ id: string; proyecto: string }[]>([]);
+  const [proyectoElegidoId, setProyectoElegidoId] = useState<string | null>(null);
   const [nuevoClienteAbierto, setNuevoClienteAbierto] = useState(false);
   const [nombreClienteNuevo, setNombreClienteNuevo] = useState('');
   /** Enlace del Portal del cliente ya generado por presupuesto, listo para copiar — vive solo en memoria, mismo patrón que `presupuestos-vista.tsx`. */
@@ -72,6 +84,12 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
   }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
+
+  useEffect(() => {
+    setProyectoElegidoId(null);
+    if (!clienteElegidoId) { setProyectosCliente([]); return; }
+    api.obtenerProyectosDeCliente(clienteElegidoId).then(setProyectosCliente).catch(() => setProyectosCliente([]));
+  }, [clienteElegidoId]);
 
   const nombreDe = (clienteId: string) => clientes.find((c) => c.id === clienteId)?.nombre ?? 'Cliente';
 
@@ -170,6 +188,27 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
   };
 
   /**
+   * Bloque de texto con los datos del cliente/obra/fecha, insertado
+   * automáticamente en todo presupuesto nuevo (24/08/2026, con o sin
+   * plantilla — petición del usuario: "yo selecciono al cliente y...
+   * debería auto rellenarse... con la posibilidad de que se pueda
+   * editar"). Es un elemento de texto normal, sin ningún vínculo especial
+   * con el cliente después de crearse — el valor se copia UNA VEZ al
+   * crear el presupuesto; cambiarlo aquí no afecta a la ficha del cliente
+   * ni viceversa, y el usuario puede moverlo/editarlo/borrarlo como
+   * cualquier otro elemento.
+   */
+  function crearBloqueDatosCliente(datos: { nombre: string; direccion?: string; telefono?: string; dni?: string }): ElementoMC {
+    const lineas = [datos.nombre];
+    if (datos.direccion) lineas.push(datos.direccion);
+    if (datos.telefono) lineas.push(`Tel: ${datos.telefono}`);
+    if (datos.dni) lineas.push(`DNI/NIE: ${datos.dni}`);
+    lineas.push(`Fecha: ${formatoFecha(new Date())}`);
+    const base = crearElementoBase('texto', { x: 40, y: 90 }, { ancho: 260, alto: 20 * lineas.length + 20 });
+    return { ...base, contenido: { texto: lineas.join('\n') }, estilo: { fontSize: 13, lineHeight: 1.4 } };
+  }
+
+  /**
    * Crea un presupuesto nuevo en `formato:'documento'` — en blanco o resuelto
    * a partir de una plantilla — y lo persiste de inmediato en el backend
    * antes de abrir el editor (mismo patrón que `plantillas-vista.tsx`).
@@ -188,35 +227,61 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
    * Guardarlo aquí, antes de abrir el editor, hace que siempre arranque
    * sobre un documento que ya existe de verdad — el autoguardado funciona
    * igual que al reabrir cualquier otro presupuesto.
+   *
+   * Datos del cliente (24/08/2026): antes solo se pasaba el `nombre` (de
+   * la lista ligera `clientes`, sin teléfono/DNI) a `resolverVariables`, y
+   * ninguna plantilla tenía forma de mostrar esos datos igualmente — se
+   * pide aquí el cliente completo (`api.obtenerCliente`) y, si se eligió
+   * un proyecto en el selector, también su dirección (`api.obtenerProyecto`,
+   * la dirección vive en el Proyecto, no en el Cliente, desde el
+   * incremento "Cliente ≠ Proyecto").
    */
   const crearBorrador = async (clienteId: string, plantilla?: PlantillaMC) => {
     const ahora = new Date().toISOString();
-    const contenidoDocumento: Record<string, unknown> = plantilla
-      ? resolverVariables(plantilla.documentoBase, {
-          cliente: { nombre: nombreDe(clienteId) },
-          empresa: { nombre: empresa.nombre, telefono: empresa.telefono, email: empresa.email, iban: empresa.iban },
-        })
-      : {};
-    const borrador: PresupuestoMC = {
-      id: generarId(),
-      clienteId,
-      titulo: plantilla ? plantilla.nombre : 'Nuevo documento',
-      formato: 'documento',
-      descripcion: '',
-      alcance: [],
-      items: [],
-      contenidoLienzo: {},
-      contenidoDocumento,
-      condicionesPago: empresa.condicionesPagoDefecto,
-      validezDias: empresa.validezDiasDefecto,
-      condicionesGenerales: '',
-      precioTotal: 0,
-      creado: ahora,
-      actualizado: ahora,
-    };
     setCreandoBorrador(true);
     setError(null);
     try {
+      const [clienteCompleto, proyectoCompleto] = await Promise.all([
+        api.obtenerCliente(clienteId),
+        proyectoElegidoId ? api.obtenerProyecto(proyectoElegidoId) : Promise.resolve(null),
+      ]);
+      const contexto = {
+        cliente: {
+          nombre: clienteCompleto.nombre,
+          telefono: clienteCompleto.telefono,
+          email: clienteCompleto.email,
+          direccion: proyectoCompleto?.direccion ?? '',
+          dni: clienteCompleto.dni ?? '',
+        },
+        empresa: { nombre: empresa.nombre, telefono: empresa.telefono, email: empresa.email, iban: empresa.iban },
+      };
+      const documentoBase = plantilla ? resolverVariables(plantilla.documentoBase, contexto) : crearDocumentoVacio(generarId);
+      const primeraPagina = documentoBase.paginas[0];
+      const bloque = crearBloqueDatosCliente({
+        nombre: clienteCompleto.nombre,
+        direccion: proyectoCompleto?.direccion,
+        telefono: clienteCompleto.telefono,
+        dni: clienteCompleto.dni,
+      });
+      const contenidoDocumento = (primeraPagina ? anadirElemento(documentoBase, primeraPagina.id, bloque) : documentoBase) as unknown as Record<string, unknown>;
+      const borrador: PresupuestoMC = {
+        id: generarId(),
+        clienteId,
+        proyectoId: proyectoElegidoId ?? undefined,
+        titulo: plantilla ? plantilla.nombre : 'Nuevo documento',
+        formato: 'documento',
+        descripcion: '',
+        alcance: [],
+        items: [],
+        contenidoLienzo: {},
+        contenidoDocumento,
+        condicionesPago: empresa.condicionesPagoDefecto,
+        validezDias: empresa.validezDiasDefecto,
+        condicionesGenerales: '',
+        precioTotal: 0,
+        creado: ahora,
+        actualizado: ahora,
+      };
       const guardado = await api.guardarPresupuesto(borrador);
       setPresupuestos((prev) => [guardado, ...prev]);
       setSelectorAbierto(false);
@@ -360,6 +425,23 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
             ) : (
               <>
                 <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem' }}>{nombreDe(clienteElegidoId)} — en blanco, desde plantilla o con IA</p>
+
+                {proyectosCliente.length > 0 && (
+                  <label style={{ fontSize: '0.78rem', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                    Proyecto (opcional — rellena la dirección de la obra)
+                    <select
+                      className={styles.input}
+                      value={proyectoElegidoId ?? ''}
+                      onChange={(e) => setProyectoElegidoId(e.target.value || null)}
+                      style={{ fontSize: '0.82rem' }}
+                    >
+                      <option value="">Ninguno</option>
+                      {proyectosCliente.map((pr) => (
+                        <option key={pr.id} value={pr.id}>{pr.proyecto || 'Proyecto sin nombre'}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
 
                 {campoIAAbierto ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>

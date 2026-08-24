@@ -6,7 +6,7 @@ import * as api from './api.js';
 import styles from './styles.module.css';
 
 /** Datos combinados de identidad (Cliente) + proyecto, tal como los edita este formulario en un único sitio. */
-type FormDatos = Pick<Cliente, 'nombre' | 'telefono' | 'email'> &
+type FormDatos = Pick<Cliente, 'nombre' | 'telefono' | 'email' | 'dni'> &
   Pick<Proyecto, 'proyecto' | 'direccion' | 'presupuesto' | 'tarifaHora' | 'whatsapp' | 'ubicacion' | 'codigoPuerta' | 'planta' | 'ascensor' | 'zonaCarga' | 'observacionesAcceso' | 'fechaMedicion' | 'fechaMontaje'>;
 
 /** Props del panel de datos del cliente/proyecto. */
@@ -30,7 +30,7 @@ export type TabDatosProps = {
 
 function formDesde(cliente: Cliente, proyecto: Proyecto): FormDatos {
   return {
-    nombre: cliente.nombre, telefono: cliente.telefono, email: cliente.email,
+    nombre: cliente.nombre, telefono: cliente.telefono, email: cliente.email, dni: cliente.dni ?? '',
     proyecto: proyecto.proyecto, direccion: proyecto.direccion, presupuesto: proyecto.presupuesto, tarifaHora: proyecto.tarifaHora,
     whatsapp: proyecto.whatsapp, ubicacion: proyecto.ubicacion, codigoPuerta: proyecto.codigoPuerta, planta: proyecto.planta,
     ascensor: proyecto.ascensor, zonaCarga: proyecto.zonaCarga, observacionesAcceso: proyecto.observacionesAcceso,
@@ -69,8 +69,8 @@ export function TabDatos({ cliente, proyecto, onActualizarCliente, onActualizarP
     if (form.presupuesto !== proyecto.presupuesto) {
       api.cambiarPresupuestoProyecto(proyecto.id, form.presupuesto || 0);
     }
-    if (form.nombre !== cliente.nombre || form.telefono !== cliente.telefono || form.email !== cliente.email) {
-      onActualizarCliente({ ...cliente, nombre: form.nombre, telefono: form.telefono, email: form.email });
+    if (form.nombre !== cliente.nombre || form.telefono !== cliente.telefono || form.email !== cliente.email || form.dni !== (cliente.dni ?? '')) {
+      onActualizarCliente({ ...cliente, nombre: form.nombre, telefono: form.telefono, email: form.email, dni: form.dni });
     }
     onActualizarProyecto({
       ...proyecto,
@@ -87,6 +87,7 @@ export function TabDatos({ cliente, proyecto, onActualizarCliente, onActualizarP
       { label: 'Teléfono', valor: cliente.telefono || '—' },
       { label: 'WhatsApp', valor: proyecto.whatsapp || '—' },
       { label: 'Email', valor: cliente.email || '—' },
+      { label: 'DNI/NIE', valor: cliente.dni || '—' },
       { label: 'Dirección', valor: proyecto.direccion || '—' },
       { label: 'Ubicación / Maps', valor: proyecto.ubicacion || '—' },
       { label: 'Código de puerta', valor: proyecto.codigoPuerta || '—' },
@@ -140,6 +141,7 @@ export function TabDatos({ cliente, proyecto, onActualizarCliente, onActualizarP
         <Campo label="Teléfono" valor={form.telefono} onChange={(v) => set('telefono', v)} />
         <Campo label="WhatsApp" valor={form.whatsapp ?? ''} onChange={(v) => set('whatsapp', v)} />
         <Campo label="Email" valor={form.email} onChange={(v) => set('email', v)} />
+        <Campo label="DNI/NIE" valor={form.dni ?? ''} onChange={(v) => set('dni', v)} />
         <Campo label="Dirección" valor={form.direccion} onChange={(v) => set('direccion', v)} full />
         <Campo label="Ubicación / enlace Maps" valor={form.ubicacion ?? ''} onChange={(v) => set('ubicacion', v)} full />
         <Campo label="Código de puerta" valor={form.codigoPuerta ?? ''} onChange={(v) => set('codigoPuerta', v)} />

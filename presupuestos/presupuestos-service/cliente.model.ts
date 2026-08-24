@@ -126,6 +126,8 @@ const ClienteSchema = new Schema({
   nombre: { type: String, required: true },
   telefono: { type: String, default: '' },
   email: { type: String, default: '' },
+  /** DNI/NIE del cliente — dato de identidad (24/08/2026), para que aparezca en presupuestos/contratos sin tener que volver a pedirlo en cada proyecto. */
+  dni: { type: String, default: '' },
   creado: { type: String, required: true },
 });
 

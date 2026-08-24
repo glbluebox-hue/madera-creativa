@@ -14,6 +14,7 @@ registrarVariable({ clave: 'cliente.nombre', fuente: 'cliente', etiqueta: 'Nombr
 registrarVariable({ clave: 'cliente.email', fuente: 'cliente', etiqueta: 'Email del cliente', tipoDato: 'texto', resolver: (c) => c.cliente?.email });
 registrarVariable({ clave: 'cliente.telefono', fuente: 'cliente', etiqueta: 'Teléfono del cliente', tipoDato: 'texto', resolver: (c) => c.cliente?.telefono });
 registrarVariable({ clave: 'cliente.direccion', fuente: 'cliente', etiqueta: 'Dirección del cliente', tipoDato: 'texto', resolver: (c) => c.cliente?.direccion });
+registrarVariable({ clave: 'cliente.dni', fuente: 'cliente', etiqueta: 'DNI/NIE del cliente', tipoDato: 'texto', resolver: (c) => c.cliente?.dni });
 
 registrarVariable({ clave: 'empresa.nombre', fuente: 'empresa', etiqueta: 'Nombre de la empresa', tipoDato: 'texto', resolver: (c) => c.empresa?.nombre });
 registrarVariable({ clave: 'empresa.telefono', fuente: 'empresa', etiqueta: 'Teléfono de la empresa', tipoDato: 'texto', resolver: (c) => c.empresa?.telefono });
