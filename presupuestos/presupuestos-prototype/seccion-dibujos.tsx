@@ -105,7 +105,7 @@ export function SeccionDibujos({ clientes = [], onEditorAbierto }: SeccionDibujo
             onChange={(e) => setBusqueda(e.target.value)}
           />
         </div>
-        <button className={styles.btnCirculoOscuro} onClick={abrirNuevo} title="Nuevo dibujo">
+        <button className={styles.btnCirculoOscuro} onClick={abrirNuevo} title="Nuevo dibujo" data-tutorial-id="dibujo-nuevo-btn">
           <IconoMas />
         </button>
       </div>

@@ -23,11 +23,15 @@ import type { DefinicionTutorial } from './tutorial-motor.js';
  * - 'nuevo-cliente-btn' → botón "+" de la lista de clientes (`lista-clientes.tsx`)
  * - 'form-cliente-nombre' → campo "Nombre del cliente" del formulario (`formulario-cliente.tsx`)
  * - 'nav-dibujos' → botón "Pizarra de medición" del menú lateral
+ * - 'dibujo-nuevo-btn' → botón "+" de la Pizarra de medición (`seccion-dibujos.tsx`)
  * - 'nav-presupuestos' → botón "Presupuestos" del menú lateral
  * - 'crear-presupuesto-btn' → botón "+" de la lista de presupuestos (`presupuestos-lista-global.tsx`)
  * - 'presupuesto-selector-cliente' → botón "+ Nuevo cliente" del selector de creación (`presupuestos-lista-global.tsx`)
  * - 'nav-facturas' → botón "Facturas" del menú lateral
+ * - 'crear-factura-btn' → botón "+" de la lista de facturas (`facturas.tsx`)
+ * - 'factura-escanear-btn' → botón "Escanear documento" del modal de nueva factura (`escaner-factura.tsx`)
  * - 'nav-proveedores' → botón "Proveedores" del menú lateral
+ * - 'nuevo-proveedor-btn' → botón "+" de la lista de proveedores (`seccion-proveedores.tsx`)
  * - 'nav-notas' → botón "Notas" del menú lateral
  * - 'nav-codigos-qr' → botón "Código QR" del menú lateral
  */
@@ -82,11 +86,20 @@ export const TUTORIAL_APP: DefinicionTutorial = {
     {
       id: 'app-06-dibujos',
       titulo: 'Pizarra de medición',
-      texto: 'Un lienzo para dibujar y tomar medidas a mano alzada durante una visita o mientras hablas con el cliente.',
+      texto: 'Un lienzo para dibujar y tomar medidas a mano alzada durante una visita o mientras hablas con el cliente. Un dibujo se puede dejar suelto o asignarlo después a un cliente concreto.',
       targetId: 'nav-dibujos',
       posicion: 'derecha',
       tipo: 'informativo',
       requiereMenuMovil: true,
+    },
+    {
+      id: 'app-06b-dibujo-nuevo',
+      titulo: 'Nuevo dibujo',
+      texto: 'Pulsa aquí para crear un dibujo nuevo. Es un botón real — tu clic hará exactamente lo mismo que si no estuvieras en el tutorial.',
+      targetId: 'dibujo-nuevo-btn',
+      posicion: 'izquierda',
+      tipo: 'interactivo',
+      seccionRequerida: 'dibujos',
     },
     {
       id: 'app-07-presupuestos',
@@ -117,11 +130,28 @@ export const TUTORIAL_APP: DefinicionTutorial = {
     {
       id: 'app-10-facturas',
       titulo: 'Facturas',
-      texto: 'Aquí llevas el control de tus ingresos y gastos reales, con escáner para leer facturas y tickets en papel y el resumen trimestral.',
+      texto: 'Aquí llevas el control de tus ingresos y gastos reales. El botón "Trimestres" agrupa todas las facturas del trimestre para Hacienda, listas para descargar.',
       targetId: 'nav-facturas',
       posicion: 'derecha',
       tipo: 'informativo',
       requiereMenuMovil: true,
+    },
+    {
+      id: 'app-10b-factura-crear',
+      titulo: 'Añadir una factura',
+      texto: 'Pulsa aquí para añadir una factura nueva. Es un botón real — tu clic hará exactamente lo mismo que si no estuvieras en el tutorial.',
+      targetId: 'crear-factura-btn',
+      posicion: 'izquierda',
+      tipo: 'interactivo',
+      seccionRequerida: 'facturas',
+    },
+    {
+      id: 'app-10c-factura-escanear',
+      titulo: 'Escanear o subir',
+      texto: 'Puedes escanear el documento con la cámara, hacerle una foto rápida o subir un PDF. Una vez tengas una imagen, la IA puede leerla y rellenar los datos por ti — solo revisas antes de guardar.',
+      targetId: 'factura-escanear-btn',
+      posicion: 'abajo',
+      tipo: 'informativo',
     },
     {
       id: 'app-11-proveedores',
@@ -131,6 +161,15 @@ export const TUTORIAL_APP: DefinicionTutorial = {
       posicion: 'derecha',
       tipo: 'informativo',
       requiereMenuMovil: true,
+    },
+    {
+      id: 'app-11b-proveedor-crear',
+      titulo: 'Añadir un proveedor',
+      texto: 'Pulsa aquí para añadir un proveedor nuevo. Es un botón real — tu clic hará exactamente lo mismo que si no estuvieras en el tutorial. Después podrás registrar los materiales que le compras, con su precio, en la pestaña "Catálogo".',
+      targetId: 'nuevo-proveedor-btn',
+      posicion: 'izquierda',
+      tipo: 'interactivo',
+      seccionRequerida: 'proveedores',
     },
     {
       id: 'app-12-notas',
