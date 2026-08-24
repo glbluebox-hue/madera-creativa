@@ -5,32 +5,56 @@ import type { DefinicionTutorial } from './tutorial-motor.js';
  * sin tocar el motor ni el overlay (el punto de extensión pedido:
  * "añadir un tutorial nuevo sin reconstruir el sistema").
  *
+ * `TUTORIAL_APP` es UN ÚNICO recorrido secuencial por toda la aplicación,
+ * en el orden real del menú lateral (Inicio → Clientes → Pizarra de
+ * medición → Presupuestos → Facturas → Proveedores → Notas → Código QR) —
+ * no un tutorial independiente por sección con un botón cada uno. Corrección
+ * 24/08/2026: la primera versión creó `TUTORIAL_CLIENTES`/`TUTORIAL_PRESUPUESTOS`
+ * como dos tutoriales separados con dos botones — el usuario aclaró que el
+ * concepto real es un solo botón que hace "un giro panorámico de toda la
+ * aplicación", sección por sección, en el orden del menú.
+ *
  * Los `targetId` deben coincidir EXACTAMENTE con un atributo
- * `data-tutorial-id` real en la aplicación — ver dónde se añadió cada uno:
- * - 'nav-clientes' → botón "Clientes" del menú lateral (`presupuestos-prototype.tsx`)
+ * `data-tutorial-id` real en la aplicación — ver dónde se añadió cada uno
+ * (todos en `presupuestos-prototype.tsx` salvo los indicados):
+ * - 'nav-inicio' → botón "Inicio" del menú lateral
+ * - 'nav-clientes' → botón "Clientes" del menú lateral
  * - 'clientes-busqueda' → campo de búsqueda de la lista (`lista-clientes.tsx`)
  * - 'nuevo-cliente-btn' → botón "+" de la lista de clientes (`lista-clientes.tsx`)
  * - 'form-cliente-nombre' → campo "Nombre del cliente" del formulario (`formulario-cliente.tsx`)
- * - 'nav-presupuestos' → botón "Presupuestos" del menú lateral (`presupuestos-prototype.tsx`)
+ * - 'nav-dibujos' → botón "Pizarra de medición" del menú lateral
+ * - 'nav-presupuestos' → botón "Presupuestos" del menú lateral
  * - 'crear-presupuesto-btn' → botón "+" de la lista de presupuestos (`presupuestos-lista-global.tsx`)
  * - 'presupuesto-selector-cliente' → botón "+ Nuevo cliente" del selector de creación (`presupuestos-lista-global.tsx`)
+ * - 'nav-facturas' → botón "Facturas" del menú lateral
+ * - 'nav-proveedores' → botón "Proveedores" del menú lateral
+ * - 'nav-notas' → botón "Notas" del menú lateral
+ * - 'nav-codigos-qr' → botón "Código QR" del menú lateral
  */
-export const TUTORIAL_CLIENTES: DefinicionTutorial = {
-  id: 'clientes',
-  titulo: 'Clientes',
+export const TUTORIAL_APP: DefinicionTutorial = {
+  id: 'app',
+  titulo: 'Tutorial de Madera Creativa',
   pasos: [
     {
-      id: 'clientes-1-nav',
+      id: 'app-01-inicio',
+      titulo: 'Inicio',
+      texto: 'Aquí tienes el resumen de tu actividad: ingresos, gastos, balance, presupuestos en curso y tus próximos montajes y mediciones.',
+      targetId: 'nav-inicio',
+      posicion: 'derecha',
+      tipo: 'informativo',
+      requiereMenuMovil: true,
+    },
+    {
+      id: 'app-02-clientes',
       titulo: 'Clientes',
       texto: 'Aquí gestionas tus clientes y proyectos: fichas, obras, presupuestos y facturas de cada uno.',
       targetId: 'nav-clientes',
       posicion: 'derecha',
       tipo: 'informativo',
-      // En móvil este botón vive dentro del cajón lateral, oculto por defecto — se abre solo antes de buscar el elemento.
       requiereMenuMovil: true,
     },
     {
-      id: 'clientes-2-busqueda',
+      id: 'app-03-busqueda',
       titulo: 'Buscar',
       texto: 'Escribe aquí para buscar por nombre de cliente o de proyecto. Los botones "Todos" / "Finalizados" filtran por estado.',
       targetId: 'clientes-busqueda',
@@ -39,7 +63,7 @@ export const TUTORIAL_CLIENTES: DefinicionTutorial = {
       seccionRequerida: 'clientes',
     },
     {
-      id: 'clientes-3-nuevo',
+      id: 'app-04-nuevo-cliente',
       titulo: 'Crear un cliente',
       texto: 'Pulsa aquí para crear un cliente y proyecto nuevo. Es un botón real — tu clic hará exactamente lo mismo que si no estuvieras en el tutorial.',
       targetId: 'nuevo-cliente-btn',
@@ -48,22 +72,24 @@ export const TUTORIAL_CLIENTES: DefinicionTutorial = {
       seccionRequerida: 'clientes',
     },
     {
-      id: 'clientes-4-nombre',
+      id: 'app-05-nombre-cliente',
       titulo: 'Nombre del cliente',
       texto: 'Escribe aquí el nombre y apellidos del cliente. El resto de campos (teléfono, dirección, presupuesto…) son opcionales — puedes rellenarlos ahora o más tarde desde la ficha.',
       targetId: 'form-cliente-nombre',
       posicion: 'abajo',
       tipo: 'informativo',
     },
-  ],
-};
-
-export const TUTORIAL_PRESUPUESTOS: DefinicionTutorial = {
-  id: 'presupuestos',
-  titulo: 'Presupuestos',
-  pasos: [
     {
-      id: 'presupuestos-1-nav',
+      id: 'app-06-dibujos',
+      titulo: 'Pizarra de medición',
+      texto: 'Un lienzo para dibujar y tomar medidas a mano alzada durante una visita o mientras hablas con el cliente.',
+      targetId: 'nav-dibujos',
+      posicion: 'derecha',
+      tipo: 'informativo',
+      requiereMenuMovil: true,
+    },
+    {
+      id: 'app-07-presupuestos',
       titulo: 'Presupuestos',
       texto: 'Aquí ves todos los presupuestos de todos tus clientes en un solo sitio, con su importe y su estado.',
       targetId: 'nav-presupuestos',
@@ -72,7 +98,7 @@ export const TUTORIAL_PRESUPUESTOS: DefinicionTutorial = {
       requiereMenuMovil: true,
     },
     {
-      id: 'presupuestos-2-crear',
+      id: 'app-08-crear-presupuesto',
       titulo: 'Crear un presupuesto',
       texto: 'Pulsa aquí para crear un presupuesto nuevo. Es un botón real — tu clic hará exactamente lo mismo que si no estuvieras en el tutorial.',
       targetId: 'crear-presupuesto-btn',
@@ -81,17 +107,52 @@ export const TUTORIAL_PRESUPUESTOS: DefinicionTutorial = {
       seccionRequerida: 'presupuestos',
     },
     {
-      id: 'presupuestos-3-opciones',
+      id: 'app-09-opciones-presupuesto',
       titulo: 'Elige el cliente',
       texto: 'Primero eliges el cliente (uno nuevo o uno ya existente) y después cómo crear el presupuesto: en blanco, desde una plantilla guardada, o dejando que la IA lo redacte a partir de una descripción del trabajo.',
       targetId: 'presupuesto-selector-cliente',
       posicion: 'derecha',
       tipo: 'informativo',
     },
+    {
+      id: 'app-10-facturas',
+      titulo: 'Facturas',
+      texto: 'Aquí llevas el control de tus ingresos y gastos reales, con escáner para leer facturas y tickets en papel y el resumen trimestral.',
+      targetId: 'nav-facturas',
+      posicion: 'derecha',
+      tipo: 'informativo',
+      requiereMenuMovil: true,
+    },
+    {
+      id: 'app-11-proveedores',
+      titulo: 'Proveedores',
+      texto: 'Tus proveedores y los materiales que utilizas, con sus precios — desde aquí los usas después al montar un presupuesto.',
+      targetId: 'nav-proveedores',
+      posicion: 'derecha',
+      tipo: 'informativo',
+      requiereMenuMovil: true,
+    },
+    {
+      id: 'app-12-notas',
+      titulo: 'Notas',
+      texto: 'Notas rápidas ligadas a un cliente o proyecto, con prioridad y estado — para no perder de vista lo pendiente.',
+      targetId: 'nav-notas',
+      posicion: 'derecha',
+      tipo: 'informativo',
+      requiereMenuMovil: true,
+    },
+    {
+      id: 'app-13-codigos-qr',
+      titulo: 'Código QR',
+      texto: 'Guarda aquí imágenes de códigos QR que ya tengas preparados (por ejemplo, para pedir una reseña) y ábrelas a pantalla completa para que un cliente las escanee desde el móvil.',
+      targetId: 'nav-codigos-qr',
+      posicion: 'derecha',
+      tipo: 'informativo',
+      requiereMenuMovil: true,
+    },
   ],
 };
 
 export const TUTORIALES: Record<string, DefinicionTutorial> = {
-  [TUTORIAL_CLIENTES.id]: TUTORIAL_CLIENTES,
-  [TUTORIAL_PRESUPUESTOS.id]: TUTORIAL_PRESUPUESTOS,
+  [TUTORIAL_APP.id]: TUTORIAL_APP,
 };

@@ -29,7 +29,7 @@ import { AjustesPerfil } from './ajustes-perfil.js';
 import { PanelNotificaciones } from './panel-notificaciones.js';
 import { TutorialOverlay } from './TutorialOverlay.js';
 import { useTutorial } from './use-tutorial.js';
-import { TUTORIAL_CLIENTES, TUTORIAL_PRESUPUESTOS } from './tutorial-definiciones.js';
+import { TUTORIAL_APP } from './tutorial-definiciones.js';
 import type { Cliente, Proyecto, Factura } from './types.js';
 import * as api from './api.js';
 import logoMadera from './assets/logo.png';
@@ -240,6 +240,7 @@ export function PresupuestosPrototype() {
             <button
               className={`${styles.sidebarNavItem} ${seccion === 'inicio' ? styles.sidebarNavItemActivo : ''}`}
               onClick={() => { cambiarSeccion('inicio'); volverALista(); }}
+              data-tutorial-id="nav-inicio"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" /></svg>
               Inicio
@@ -255,6 +256,7 @@ export function PresupuestosPrototype() {
             <button
               className={`${styles.sidebarNavItem} ${seccion === 'dibujos' ? styles.sidebarNavItemActivo : ''}`}
               onClick={() => { cambiarSeccion('dibujos'); volverALista(); }}
+              data-tutorial-id="nav-dibujos"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z" /></svg>
               Pizarra de medición
@@ -273,6 +275,7 @@ export function PresupuestosPrototype() {
             <button
               className={`${styles.sidebarNavItem} ${seccion === 'facturas' ? styles.sidebarNavItemActivo : ''}`}
               onClick={() => cambiarSeccion('facturas')}
+              data-tutorial-id="nav-facturas"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="1" y="4" width="22" height="16" rx="2" /><line x1="1" y1="10" x2="23" y2="10" /></svg>
               Facturas
@@ -283,6 +286,7 @@ export function PresupuestosPrototype() {
             <button
               className={`${styles.sidebarNavItem} ${seccion === 'proveedores' ? styles.sidebarNavItemActivo : ''}`}
               onClick={() => { cambiarSeccion('proveedores'); volverALista(); }}
+              data-tutorial-id="nav-proveedores"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /><line x1="12" y1="12" x2="12" y2="16" /><line x1="10" y1="14" x2="14" y2="14" /></svg>
               Proveedores
@@ -290,6 +294,7 @@ export function PresupuestosPrototype() {
             <button
               className={`${styles.sidebarNavItem} ${seccion === 'notas' ? styles.sidebarNavItemActivo : ''}`}
               onClick={() => { cambiarSeccion('notas'); volverALista(); }}
+              data-tutorial-id="nav-notas"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
               Notas
@@ -297,6 +302,7 @@ export function PresupuestosPrototype() {
             <button
               className={`${styles.sidebarNavItem} ${seccion === 'codigosQR' ? styles.sidebarNavItemActivo : ''}`}
               onClick={() => { cambiarSeccion('codigosQR'); volverALista(); }}
+              data-tutorial-id="nav-codigos-qr"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="1" y="1" width="7" height="7" /><rect x="16" y="1" width="7" height="7" /><rect x="1" y="16" width="7" height="7" /><line x1="16" y1="16" x2="16" y2="23" /><line x1="23" y1="16" x2="23" y2="23" /><line x1="16" y1="19.5" x2="23" y2="19.5" /></svg>
               Código QR
@@ -358,25 +364,20 @@ export function PresupuestosPrototype() {
                   : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>}
               </button>
               {/*
-                Disparadores TEMPORALES (24/08/2026) — no es el Centro de
-                ayuda definitivo (eso sigue pendiente). Único propósito:
-                poder abrir manualmente cada tutorial mientras no existe
-                una sección "Aprender Madera Creativa" en el menú. Se
-                retiran/sustituyen cuando llegue esa sección.
+                Disparador TEMPORAL (24/08/2026) — no es el Centro de ayuda
+                definitivo (eso sigue pendiente). Único propósito: poder
+                abrir manualmente el tutorial mientras no existe una sección
+                "Aprender Madera Creativa" en el menú. Se retira/sustituye
+                cuando llegue esa sección. Un solo botón, un solo tutorial
+                (`TUTORIAL_APP`): recorre toda la aplicación en el orden real
+                del menú, no un tutorial independiente por sección.
               */}
               <button
                 className={styles.sidebarAccionBtn}
-                onClick={() => { tutorial.abrir(TUTORIAL_CLIENTES); setMenuMovilAbierto(false); }}
-                title="Tutorial: Clientes"
+                onClick={() => { tutorial.abrir(TUTORIAL_APP); setMenuMovilAbierto(false); }}
+                title="Tutorial"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" /></svg>
-              </button>
-              <button
-                className={styles.sidebarAccionBtn}
-                onClick={() => { tutorial.abrir(TUTORIAL_PRESUPUESTOS); setMenuMovilAbierto(false); }}
-                title="Tutorial: Presupuestos"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
               </button>
               <button
                 className={`${styles.sidebarAccionBtn} ${asistente ? styles.sidebarAccionBtnActivo : ''}`}
