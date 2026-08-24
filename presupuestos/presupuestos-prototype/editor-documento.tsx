@@ -38,6 +38,9 @@ import { useAutoguardado } from './use-autoguardado.js';
 import { esDobleToque, fueArrastre, type PuntoToque } from './deteccion-doble-toque.js';
 import { PanelIaPresupuesto } from './panel-ia-presupuesto.js';
 import { extraerContextoDocumento } from './documento-contexto-ia.js';
+import { TutorialOverlay } from './TutorialOverlay.js';
+import { useTutorial } from './use-tutorial.js';
+import { TUTORIAL_EDITOR } from './tutorial-definiciones.js';
 import editorStyles from './editor-documento.module.css';
 import styles from './styles.module.css';
 
@@ -136,6 +139,13 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
     const contenido = contenedor.contenidoDocumento as unknown as DocumentoMC;
     return contenido && contenido.paginas && contenido.paginas.length > 0 ? contenido : documentoVacio();
   }, [contenedor.contenidoDocumento]);
+
+  // Prefijo genérico (no por usuario): tutorial corto y siempre repetible
+  // sobre la barra de herramientas, no un progreso personal que valga la
+  // pena aislar por cuenta — evita tener que enhebrar `storagePrefix` desde
+  // `use-auth.ts` a través de los tres sitios que montan `EditorDocumento`
+  // (`plantillas-vista.tsx`, `contratos-vista.tsx`, `abrir-documento.tsx`).
+  const tutorialEditor = useTutorial('mc_');
 
   const [documento, setDocumento] = useState<DocumentoMC>(documentoInicial);
   const [pasado, setPasado] = useState<DocumentoMC[]>([]);
@@ -1286,10 +1296,14 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
         <button className={editorStyles.btnPanelMovil} onClick={() => setHerramientasAbiertas((v) => !v)}>{herramientasAbiertas ? '🛠️ Ocultar herramientas' : '🛠️ Herramientas'}</button>
         {error && <span style={{ color: 'var(--rojo, #c0392b)', fontSize: '0.78rem' }}>{error}</span>}
         {!error && estadoGuardado === 'pendiente' && <span style={{ color: 'var(--topo-claro)', fontSize: '0.78rem' }}>Cambios sin guardar…</span>}
-        <button className={styles.btn} onClick={() => guardarAhora()} disabled={guardando}>{guardando ? 'Guardando…' : 'Guardar'}</button>
+        <button className={styles.btn} onClick={() => tutorialEditor.abrir(TUTORIAL_EDITOR)} title="Cómo funciona el editor">? Tutorial</button>
+        <button className={styles.btn} onClick={() => guardarAhora()} disabled={guardando} data-tutorial-id="editor-guardar-btn">{guardando ? 'Guardando…' : 'Guardar'}</button>
       </div>
 
-      <div className={`${editorStyles.barraHerramientas} ${!herramientasAbiertas ? editorStyles.barraHerramientasCerrada : ''}`}>
+      <div
+        className={`${editorStyles.barraHerramientas} ${!herramientasAbiertas ? editorStyles.barraHerramientasCerrada : ''}`}
+        data-tutorial-id="editor-barra-herramientas"
+      >
         {listarTiposRenderInsertables().map((t) => (
           <button key={t.tipo} className={editorStyles.btnHerramienta} onClick={() => insertarElemento(t.tipo)}>+ {t.etiqueta}</button>
         ))}
@@ -1334,6 +1348,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
           className={editorStyles.btnHerramienta}
           style={panelIaPresupuestoAbierto ? { background: 'var(--topo-tinte)', borderColor: 'var(--topo)' } : undefined}
           onClick={() => setPanelIaPresupuestoAbierto((v) => !v)}
+          data-tutorial-id="editor-ia-btn"
         >
           ✨ IA del presupuesto
         </button>
@@ -1679,6 +1694,19 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
           {...propsGuias}
         />
       )}
+
+      <TutorialOverlay
+        estado={tutorialEditor.estado}
+        onAvanzar={tutorialEditor.avanzar}
+        onRetroceder={tutorialEditor.retroceder}
+        onCerrar={tutorialEditor.cerrar}
+        onObjetivoLocalizado={tutorialEditor.objetivoLocalizado}
+        onAccionDetectada={tutorialEditor.accionDetectada}
+        seccionActual="editor"
+        onNavegar={() => {}}
+        menuMovilAbierto={false}
+        onAbrirMenuMovil={() => {}}
+      />
     </div>
   );
 }

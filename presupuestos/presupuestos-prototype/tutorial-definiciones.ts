@@ -192,6 +192,52 @@ export const TUTORIAL_APP: DefinicionTutorial = {
   ],
 };
 
+/**
+ * Tutorial aparte, corto y autocontenido — SOLO la barra de herramientas
+ * del editor de presupuestos (Motor Documental), sin tocar el lienzo ni
+ * pedir ninguna interacción con los elementos que el usuario pueda tener
+ * ya creados (la parte que la arquitectura original marcó como la más
+ * delicada). Se abre con su propio botón "? Tutorial" en la barra superior
+ * del editor — no forma parte de `TUTORIAL_APP`, ni el motor ni el overlay
+ * necesitan saber nada de esto (mismo punto de extensión de siempre).
+ *
+ * `targetId` → dónde se añadió (todos en `editor-documento.tsx`):
+ * - 'editor-barra-herramientas' → la barra de herramientas completa (añadir elementos, deshacer/rehacer…)
+ * - 'editor-guardar-btn' → botón "Guardar" de la barra superior
+ * - 'editor-ia-btn' → botón "✨ IA del presupuesto"
+ */
+export const TUTORIAL_EDITOR: DefinicionTutorial = {
+  id: 'editor',
+  titulo: 'Cómo funciona el editor',
+  pasos: [
+    {
+      id: 'editor-01-herramientas',
+      titulo: 'Barra de herramientas',
+      texto: 'Aquí añades elementos al presupuesto: texto, imágenes, tablas, formas… y tienes deshacer/rehacer, duplicar, alinear y agrupar.',
+      targetId: 'editor-barra-herramientas',
+      posicion: 'abajo',
+      tipo: 'informativo',
+    },
+    {
+      id: 'editor-02-guardar',
+      titulo: 'Guardar',
+      texto: 'El presupuesto se guarda solo mientras trabajas, pero puedes forzar un guardado en cualquier momento desde aquí.',
+      targetId: 'editor-guardar-btn',
+      posicion: 'abajo',
+      tipo: 'informativo',
+    },
+    {
+      id: 'editor-03-ia',
+      titulo: 'IA del presupuesto',
+      texto: 'Selecciona un elemento de texto y usa este botón para pedirle a la IA que te ayude a redactarlo o mejorarlo.',
+      targetId: 'editor-ia-btn',
+      posicion: 'abajo',
+      tipo: 'informativo',
+    },
+  ],
+};
+
 export const TUTORIALES: Record<string, DefinicionTutorial> = {
   [TUTORIAL_APP.id]: TUTORIAL_APP,
+  [TUTORIAL_EDITOR.id]: TUTORIAL_EDITOR,
 };
