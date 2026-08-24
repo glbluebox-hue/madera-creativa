@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useLayoutEffect } from 'react';
 import styles from './styles.module.css';
 
 /** Props del panel de captura de firma. */
@@ -22,18 +22,38 @@ export function FirmaCanvas({ onFirmar, onCancelar, enviando }: FirmaCanvasProps
   const dibujandoRef = useRef(false);
   const [haFirmado, setHaFirmado] = useState(false);
 
+  /**
+   * Ajusta la resolución REAL del canvas a los píxeles físicos de la
+   * pantalla — corrección 24/08/2026 (reportado: "firma pixelada"). Antes
+   * el canvas dibujaba siempre a 600×280 píxeles fijos y el navegador
+   * estiraba ese raster para rellenar el ancho real (`width:'100%'`, casi
+   * siempre bastante mayor a 600px) y la densidad real de la pantalla
+   * (2x/3x en la mayoría de móviles y portátiles modernos, donde además se
+   * firma más a menudo que en un monitor de escritorio) — el trazo salía
+   * borroso. `useLayoutEffect` (antes de pintar, sin parpadeo) mide el
+   * tamaño real en CSS y fija el buffer del canvas a `tamaño × devicePixelRatio`,
+   * con el contexto escalado para poder seguir dibujando en coordenadas
+   * CSS normales.
+   */
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    canvas.getContext('2d')?.scale(dpr, dpr);
+  }, []);
+
   const contexto = () => canvasRef.current?.getContext('2d') ?? null;
 
   const posicion = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
-    // El canvas se dibuja a resolución real (canvas.width/height, fijados en
-    // píxeles de dispositivo) pero se muestra escalado por CSS — sin este
-    // factor, el trazo no coincide con la posición real del dedo/ratón en
-    // pantallas de alta densidad o cuando el canvas se encoge por CSS.
-    const escalaX = canvas.width / rect.width;
-    const escalaY = canvas.height / rect.height;
-    return { x: (e.clientX - rect.left) * escalaX, y: (e.clientY - rect.top) * escalaY };
+    // El contexto ya está escalado a `devicePixelRatio` (ver el efecto de
+    // arriba) — las coordenadas de dibujo van en píxeles CSS normales, sin
+    // ningún factor de escala adicional aquí.
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   };
 
   const empezar = (e: React.PointerEvent<HTMLCanvasElement>) => {

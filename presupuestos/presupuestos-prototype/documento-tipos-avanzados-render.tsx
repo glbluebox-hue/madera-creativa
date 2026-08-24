@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useLayoutEffect } from 'react';
 import QRCode from 'qrcode';
 import { registrarTipoRender, type RenderElementoProps, type PanelPropiedadesProps } from './documento-registro-tipos-render.js';
 import editorStyles from './editor-documento.module.css';
@@ -160,6 +160,28 @@ function CapturaFirma({ onCapturar }: { onCapturar: (dataUrl: string) => void })
     const canvas = canvasRef.current;
     if (canvas) onCapturar(canvas.toDataURL('image/png'));
   };
+
+  /**
+   * Ajusta la resolución REAL del canvas a los píxeles físicos de la
+   * pantalla — corrección 24/08/2026 (reportado: "firma pixelada"), mismo
+   * motivo que `firma-canvas.tsx`: sin esto, el canvas dibuja siempre a
+   * 280×140 píxeles fijos y sale borroso en cualquier pantalla de alta
+   * densidad (2x/3x, la mayoría de móviles y portátiles modernos).
+   * `useLayoutEffect` para que corra ANTES que el efecto de estilo de
+   * abajo — cambiar `canvas.width/height` resetea el contexto (incluido
+   * cualquier `strokeStyle`/`lineWidth` ya aplicado), así que el orden
+   * importa; React garantiza que los `useLayoutEffect` se ejecutan antes
+   * que los `useEffect`, sin depender del orden en el código.
+   */
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    canvas.getContext('2d')?.scale(dpr, dpr);
+  }, []);
 
   useEffect(() => {
     const ctx = canvasRef.current?.getContext('2d');
