@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import type { ComponentType, CSSProperties } from 'react';
+import type { ComponentType, CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import * as ReactMoveable from 'react-moveable';
 import type { OnDrag, OnDragGroup, OnResize } from 'react-moveable';
 
@@ -35,6 +35,7 @@ import './documento-variables-iniciales.js'; // registro de variables inteligent
 import { leerArchivoComoBase64 } from './archivos.js';
 import * as api from './api.js';
 import { useAutoguardado } from './use-autoguardado.js';
+import { esDobleToque, fueArrastre, type PuntoToque } from './deteccion-doble-toque.js';
 import { PanelIaPresupuesto } from './panel-ia-presupuesto.js';
 import { extraerContextoDocumento } from './documento-contexto-ia.js';
 import editorStyles from './editor-documento.module.css';
@@ -158,6 +159,52 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
    * para no repetir el mismo problema con el otro panel.
    */
   const [panelMovilAbierto, setPanelMovilAbierto] = useState<'ninguno' | 'izquierdo' | 'derecho'>('ninguno');
+
+  /**
+   * Paneles laterales redimensionables (Fase B, Prioridad 3, 24/08/2026) —
+   * solo aplica en escritorio/tablet horizontal: en móvil los paneles son
+   * overlays a pantalla completa (`position: fixed` dentro del media query
+   * de abajo, línea ~327 de `editor-documento.module.css`) que ya ignoran
+   * cualquier ancho — el asa de arrastre ni siquiera se renderiza ahí. El
+   * ancho se aplica como variable CSS (`--ancho-panel-*`) en vez de como
+   * `style.width` directo precisamente para que la regla de ese media
+   * query (que fija un `width` literal, sin usar la variable) siga
+   * ganando por orden de cascada sin que un estilo inline la pise.
+   * No se persiste en `localStorage` a propósito — se deja para una fase
+   * posterior si hace falta, ver instrucción explícita del 24/08/2026 de no
+   * complicar esta fase con eso.
+   */
+  const ANCHO_PANEL_MIN_PX = 160;
+  const ANCHO_PANEL_MAX_PX = 420;
+  const [anchoPanelIzquierdo, setAnchoPanelIzquierdo] = useState(200);
+  const [anchoPanelDerecho, setAnchoPanelDerecho] = useState(260);
+  const redimensionandoPanelRef = useRef<{ lado: 'izquierdo' | 'derecho'; xInicio: number; anchoInicio: number } | null>(null);
+  const iniciarRedimensionPanel = useCallback((lado: 'izquierdo' | 'derecho', e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    redimensionandoPanelRef.current = { lado, xInicio: e.clientX, anchoInicio: lado === 'izquierdo' ? anchoPanelIzquierdo : anchoPanelDerecho };
+    const alMover = (ev: PointerEvent) => {
+      const activo = redimensionandoPanelRef.current;
+      if (!activo) return;
+      const deltaX = ev.clientX - activo.xInicio;
+      // El panel izquierdo crece hacia la derecha (arrastrar a la derecha = más ancho);
+      // el derecho crece hacia la izquierda (arrastrar a la izquierda = más ancho).
+      const anchoBruto = activo.lado === 'izquierdo' ? activo.anchoInicio + deltaX : activo.anchoInicio - deltaX;
+      // Nunca dejar que un panel se coma el lienzo entero: además del máximo fijo,
+      // se limita también a una fracción del ancho de ventana disponible.
+      const maximo = Math.min(ANCHO_PANEL_MAX_PX, window.innerWidth * 0.4);
+      const ancho = Math.max(ANCHO_PANEL_MIN_PX, Math.min(anchoBruto, maximo));
+      if (activo.lado === 'izquierdo') setAnchoPanelIzquierdo(ancho); else setAnchoPanelDerecho(ancho);
+    };
+    const alSoltar = () => {
+      redimensionandoPanelRef.current = null;
+      window.removeEventListener('pointermove', alMover);
+      window.removeEventListener('pointerup', alSoltar);
+    };
+    window.addEventListener('pointermove', alMover);
+    window.addEventListener('pointerup', alSoltar);
+  }, [anchoPanelIzquierdo, anchoPanelDerecho]);
+
   /**
    * Selección múltiple con el dedo (petición del usuario, 20/08/2026):
    * antes solo se podía añadir un elemento a la selección manteniendo
@@ -218,6 +265,17 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
 
   const refsElementos = useRef<Map<string, HTMLDivElement>>(new Map());
   const clipboardRef = useRef<ElementoMC[] | null>(null);
+
+  // Detección manual de doble toque/doble clic (Fase B, Prioridad 1,
+  // 24/08/2026) — en paralelo al `onDoubleClick` nativo, no en su lugar
+  // (ver `deteccion-doble-toque.ts`). `inicioGestoRef` guarda dónde empezó
+  // el puntero de ESTE gesto en curso (para distinguir un toque limpio de
+  // un arrastre); `ultimoToqueRef` guarda el último toque ya confirmado
+  // como "no fue arrastre", a la espera de un segundo que lo convierta en
+  // doble toque. Un único par de refs para todo el lienzo basta: solo hay
+  // un puntero interactuando a la vez.
+  const inicioGestoRef = useRef<{ x: number; y: number } | null>(null);
+  const ultimoToqueRef = useRef<PuntoToque | null>(null);
 
   /**
    * Moveable mide la posición del elemento seleccionado en pantalla una
@@ -868,6 +926,29 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
         style={{ left: posicion.x, top: posicion.y, width: tamano.ancho, height: tamano.alto, transform: `rotate(${rotacion}deg)`, opacity: elemento.opacidad, zIndex: elemento.capa }}
         onMouseDown={(e) => { e.stopPropagation(); if (!editando) seleccionarElemento(elemento.id, { extender: e.shiftKey || seleccionMultipleActiva, paginaId: pagina.id }); }}
         onDoubleClick={() => { if (definicion.editableEnLienzo && !elemento.bloqueado && !elemento.restricciones.soloLectura) setEditandoId(elemento.id); }}
+        onPointerDown={(e) => { inicioGestoRef.current = { x: e.clientX, y: e.clientY }; }}
+        onPointerUp={(e) => {
+          // Nunca interfiere con Moveable: solo lee/registra, no llama a
+          // `stopPropagation`/`preventDefault` — Moveable sigue recibiendo
+          // este mismo evento con normalidad.
+          const inicio = inicioGestoRef.current;
+          inicioGestoRef.current = null;
+          if (editando || !inicio) return;
+          const fin = { x: e.clientX, y: e.clientY };
+          if (fueArrastre(inicio, fin)) {
+            // Un arrastre real (mover/redimensionar el elemento) nunca debe
+            // contar como la mitad de un doble toque.
+            ultimoToqueRef.current = null;
+            return;
+          }
+          const actual: PuntoToque = { elementoId: elemento.id, tiempo: Date.now(), x: fin.x, y: fin.y };
+          if (esDobleToque(ultimoToqueRef.current, actual)) {
+            ultimoToqueRef.current = null;
+            if (definicion.editableEnLienzo && !elemento.bloqueado && !elemento.restricciones.soloLectura) setEditandoId(elemento.id);
+          } else {
+            ultimoToqueRef.current = actual;
+          }
+        }}
       >
         <definicion.Render
           elemento={elementoPresentacion}
@@ -949,11 +1030,28 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
    * desconectado (fallo real reportado por el usuario, 20/08/2026: "no la
    * puedo visualizar... quiero que se mueva todo junto con los puntos").
    */
+  /**
+   * Altura estimada de la barra flotante — desde que `.panelSeccion` pasó a
+   * `flex-wrap: nowrap` (fila única con scroll horizontal, Fase B,
+   * Prioridad 2, 24/08/2026) su altura es siempre ~1 fila, así que una
+   * estimación fija basta para recortarla contra el borde superior/inferior
+   * del viewport sin tener que medir el DOM real (que aún no existe en el
+   * primer render, antes de que React pinte la barra).
+   */
+  const ALTURA_ESTIMADA_BARRA_FLOTANTE_PX = 64;
   const actualizarRectBarraFlotante = useCallback((nodo: HTMLElement) => {
     const r = nodo.getBoundingClientRect();
     const abajo = r.top < 90; // sin sitio arriba (barra superior + herramientas) — se ancla debajo en su lugar.
     const left = Math.max(8, Math.min(r.left, window.innerWidth - 360 - 8));
-    setRectBarraFlotante({ left, top: abajo ? r.bottom + 8 : r.top - 8, abajo });
+    const topSinRecortar = abajo ? r.bottom + 8 : r.top - 8;
+    // `top` significa cosas distintas según el ancla: si va abajo, es el
+    // borde SUPERIOR de la barra (crece hacia abajo); si va arriba, es el
+    // borde INFERIOR (crece hacia arriba, con `translateY(-100%)`) — cada
+    // caso se recorta contra el borde del viewport que le corresponde.
+    const top = abajo
+      ? Math.min(topSinRecortar, window.innerHeight - ALTURA_ESTIMADA_BARRA_FLOTANTE_PX - 8)
+      : Math.max(topSinRecortar, ALTURA_ESTIMADA_BARRA_FLOTANTE_PX + 8);
+    setRectBarraFlotante({ left, top, abajo });
   }, []);
   useEffect(() => {
     if (!idElementoFlotante) { setRectBarraFlotante(null); return; }
@@ -1343,7 +1441,10 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
       )}
 
       <div className={editorStyles.cuerpo}>
-        <div className={`${editorStyles.panelIzquierdo} ${panelMovilAbierto === 'izquierdo' ? editorStyles.panelMovilAbierto : ''}`}>
+        <div
+          className={`${editorStyles.panelIzquierdo} ${panelMovilAbierto === 'izquierdo' ? editorStyles.panelMovilAbierto : ''}`}
+          style={{ ['--ancho-panel-izquierdo' as string]: `${anchoPanelIzquierdo}px` } as CSSProperties}
+        >
           <button className={editorStyles.btnCerrarPanelMovil} onClick={() => setPanelMovilAbierto('ninguno')}>✕ Cerrar</button>
           <p className={editorStyles.panelTituloSeccion}>Páginas</p>
           {documento.paginas.map((p, i) => (
@@ -1385,6 +1486,11 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
             </div>
           ))}
           {paginaActiva.elementos.length === 0 && <p className={editorStyles.panelNota}>Sin elementos en esta página.</p>}
+          <div
+            className={editorStyles.asaRedimensionarPanel}
+            onPointerDown={(e) => iniciarRedimensionPanel('izquierdo', e)}
+            title="Arrastrar para cambiar el ancho del panel"
+          />
         </div>
 
         <div ref={lienzoContenedorRef} className={editorStyles.lienzoContenedor} onMouseDown={() => { limpiarSeleccion(); setPanelMovilAbierto('ninguno'); }}>
@@ -1422,7 +1528,15 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
           })}
         </div>
 
-        <div className={`${editorStyles.panelDerecho} ${panelMovilAbierto === 'derecho' ? editorStyles.panelMovilAbierto : ''}`}>
+        <div
+          className={`${editorStyles.panelDerecho} ${panelMovilAbierto === 'derecho' ? editorStyles.panelMovilAbierto : ''}`}
+          style={{ ['--ancho-panel-derecho' as string]: `${anchoPanelDerecho}px` } as CSSProperties}
+        >
+          <div
+            className={`${editorStyles.asaRedimensionarPanel} ${editorStyles.asaRedimensionarPanelIzquierda}`}
+            onPointerDown={(e) => iniciarRedimensionPanel('derecho', e)}
+            title="Arrastrar para cambiar el ancho del panel"
+          />
           <button className={editorStyles.btnCerrarPanelMovil} onClick={() => setPanelMovilAbierto('ninguno')}>✕ Cerrar</button>
           {panelPropiedades()}
         </div>
