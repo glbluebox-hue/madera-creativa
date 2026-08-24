@@ -27,6 +27,9 @@ import { usePerfil } from './use-perfil.js';
 import { usePrivacidad } from './use-privacidad.js';
 import { AjustesPerfil } from './ajustes-perfil.js';
 import { PanelNotificaciones } from './panel-notificaciones.js';
+import { TutorialOverlay } from './TutorialOverlay.js';
+import { useTutorial } from './use-tutorial.js';
+import { TUTORIAL_DEMO } from './tutorial-definiciones.js';
 import type { Cliente, Proyecto, Factura } from './types.js';
 import * as api from './api.js';
 import logoMadera from './assets/logo.png';
@@ -40,7 +43,7 @@ type Seccion = 'inicio' | 'clientes' | 'presupuestos' | 'facturas' | 'notas' | '
  * Protegida por login — solo el propietario puede acceder.
  */
 export function PresupuestosPrototype() {
-  const { autenticado, verificando, sesion, login, loginDirecto, registrar, logout } = useAuth();
+  const { autenticado, verificando, sesion, storagePrefix, login, loginDirecto, registrar, logout } = useAuth();
   // No disparar ninguna petición protegida hasta confirmar que hay un access
   // token válido en memoria — recién autenticado (verificando ya es false
   // desde el principio) o recién confirmado tras recargar la página. Cierra
@@ -118,6 +121,10 @@ export function PresupuestosPrototype() {
   const { perfil, actualizar: actualizarPerfil } = usePerfil(listo);
   const [ajustesPerfil, setAjustesPerfil] = useState(false);
   const [panelNotificaciones, setPanelNotificaciones] = useState(false);
+  // Sistema de tutoriales interactivos (Fase 1, 24/08/2026) — motor +
+  // overlay ya reales; `storagePrefix` reutiliza el mismo namespacing por
+  // usuario que ya usa el resto de la app (`use-auth.ts`).
+  const tutorial = useTutorial(storagePrefix);
 
   useLicencia(sesion, logout);
   const { estado: estadoPush, error: errorPush, activar: activarPush } = usePush(sesion);
@@ -240,6 +247,7 @@ export function PresupuestosPrototype() {
             <button
               className={`${styles.sidebarNavItem} ${seccion === 'clientes' ? styles.sidebarNavItemActivo : ''}`}
               onClick={() => { cambiarSeccion('clientes'); volverALista(); }}
+              data-tutorial-id="nav-clientes"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
               Clientes
@@ -347,6 +355,19 @@ export function PresupuestosPrototype() {
                 {tema === 'oscuro'
                   ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>
                   : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>}
+              </button>
+              {/*
+                Disparador TEMPORAL de solo prueba (Fase 1, 24/08/2026) —
+                no es el Centro de ayuda definitivo (eso es Fase 2). Único
+                propósito: poder validar manualmente el motor de
+                tutoriales. Se retira/sustituye en la fase siguiente.
+              */}
+              <button
+                className={styles.sidebarAccionBtn}
+                onClick={() => { tutorial.abrir(TUTORIAL_DEMO); setMenuMovilAbierto(false); }}
+                title="Probar tutorial (Fase 1)"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" /></svg>
               </button>
               <button
                 className={`${styles.sidebarAccionBtn} ${asistente ? styles.sidebarAccionBtnActivo : ''}`}
@@ -532,6 +553,22 @@ export function PresupuestosPrototype() {
         <PanelNotificaciones estadoPush={estadoPush} errorPush={errorPush} onActivarPush={activarPush} onCerrar={() => setPanelNotificaciones(false)} />
       )}
 
+      {/* Sistema de tutoriales (Fase 1, 24/08/2026) — montado siempre,
+          igual que <AsistenteIA> justo debajo: no depende de qué sección
+          esté activa, y recibe la navegación real de la app (nunca crea
+          un sistema paralelo). */}
+      <TutorialOverlay
+        estado={tutorial.estado}
+        onAvanzar={tutorial.avanzar}
+        onRetroceder={tutorial.retroceder}
+        onCerrar={tutorial.cerrar}
+        onObjetivoLocalizado={tutorial.objetivoLocalizado}
+        onAccionDetectada={tutorial.accionDetectada}
+        seccionActual={seccion}
+        onNavegar={(s) => { cambiarSeccion(s as Seccion); volverALista(); }}
+        menuMovilAbierto={menuMovilAbierto}
+        onAbrirMenuMovil={() => setMenuMovilAbierto(true)}
+      />
 
       {/* Asistente IA — botón flotante siempre visible (además del icono del
           menú lateral, que en móvil queda oculto hasta abrir el menú) */}

@@ -71,7 +71,7 @@ export function ListaClientes({ clientes, onNuevo, onAbrir, hayMas, cargandoMas,
       <div className={styles.filtrosPill}>
         <button className={`${styles.filtroPill} ${filtro === 'todos' ? styles.filtroPillActivo : ''}`} onClick={() => setFiltro('todos')}>Todos</button>
         <button className={`${styles.filtroPill} ${filtro === 'fin' ? styles.filtroPillActivo : ''}`} onClick={() => setFiltro('fin')}>Finalizados</button>
-        <button className={styles.btnCirculoOscuro} onClick={onNuevo} title="Nuevo proyecto" style={{ marginLeft: 'auto' }}>
+        <button className={styles.btnCirculoOscuro} onClick={onNuevo} title="Nuevo proyecto" style={{ marginLeft: 'auto' }} data-tutorial-id="nuevo-cliente-btn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
         </button>
       </div>

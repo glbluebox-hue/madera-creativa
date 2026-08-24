@@ -1,0 +1,123 @@
+/**
+ * Estilos del sistema de tutoriales (Fase 1, 24/08/2026) — usa las mismas
+ * variables CSS que el resto de la app (`styles.module.css`), nunca
+ * colores propios: así se adapta solo al modo oscuro/claro existente
+ * (`[data-theme]` en la raíz), sin duplicar esa lógica aquí.
+ */
+
+.raiz {
+  position: fixed;
+  inset: 0;
+}
+
+/* Panel oscuro — cada uno de los 4 lados alrededor del hueco de foco, posicionados en línea (top/left/width/height calculados en JS a partir del rect real del elemento). */
+.velo {
+  position: fixed;
+  background: rgba(24, 20, 15, 0.55);
+  transition: var(--trans-fast);
+}
+
+.veloCompletado {
+  position: fixed;
+  inset: 0;
+  background: rgba(24, 20, 15, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Borde luminoso alrededor del elemento señalado — deja claro qué hay que mirar/pulsar, sin taparlo (el propio elemento queda sin ningún .velo encima). */
+.foco {
+  position: fixed;
+  border: 2px solid var(--ocre);
+  border-radius: var(--radio-md);
+  box-shadow: 0 0 0 4px rgba(138, 104, 53, 0.25), var(--sombra-lg);
+  pointer-events: none;
+  transition: var(--trans-fast);
+}
+
+.globo {
+  position: fixed;
+  background: var(--fondo-panel);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-grande);
+  box-shadow: var(--sombra-modal);
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 90vw;
+}
+
+.globoTitulo {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--negro);
+}
+
+.globoTexto {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--topo);
+}
+
+.globoPista {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ocre);
+}
+
+.globoBotones {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.globoBotonesDerecha {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.btnTexto {
+  border: none;
+  background: none;
+  color: var(--topo-claro);
+  font-size: 0.78rem;
+  cursor: pointer;
+  padding: 0.3rem 0;
+  text-decoration: underline;
+}
+.btnTexto:hover { color: var(--topo); }
+
+.btnSecundario {
+  border: 1px solid var(--borde);
+  background: var(--fondo-panel);
+  color: var(--topo);
+  border-radius: var(--radio);
+  padding: 0.4rem 0.75rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.btnSecundario:hover { background: var(--topo-tinte); }
+
+.btnPrimario {
+  border: none;
+  background: var(--negro);
+  color: var(--blanco);
+  border-radius: var(--radio);
+  padding: 0.4rem 0.9rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btnPrimario:hover { opacity: 0.88; }
+
+/* Pantallas estrechas — el globo ocupa casi todo el ancho, nunca se sale de la pantalla. */
+@media (max-width: 480px) {
+  .globo { max-width: calc(100vw - 24px); }
+}

@@ -92,7 +92,7 @@ export function FormularioCliente({ onGuardar, onCerrar }: FormularioClienteProp
             <>
               <div className={`${styles.campo} ${styles.full}`}>
                 <label className={styles.campoLabel}>Nombre del cliente *</label>
-                <input className={styles.input} value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre y apellidos" />
+                <input className={styles.input} value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre y apellidos" data-tutorial-id="form-cliente-nombre" />
               </div>
               <div className={styles.campo}>
                 <label className={styles.campoLabel}>Teléfono</label>
