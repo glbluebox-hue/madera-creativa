@@ -34,6 +34,7 @@ import './documento-tipos-avanzados-render.js'; // Tabla/Firma/Código QR/Dibujo
 import './documento-variables-iniciales.js'; // registro de variables inteligentes por efecto secundario (Incremento 4).
 import { leerArchivoComoBase64 } from './archivos.js';
 import * as api from './api.js';
+import { useAutoguardado } from './use-autoguardado.js';
 import { PanelIaPresupuesto } from './panel-ia-presupuesto.js';
 import { extraerContextoDocumento } from './documento-contexto-ia.js';
 import editorStyles from './editor-documento.module.css';
@@ -145,8 +146,6 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
   const [zoom, setZoom] = useState(1);
   const lienzoContenedorRef = useRef<HTMLDivElement>(null);
   const paginaActivaElRef = useRef<HTMLDivElement | null>(null);
-  const [guardando, setGuardando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [nombreEstiloNuevo, setNombreEstiloNuevo] = useState('');
   /**
    * En pantallas estrechas (móvil, tablet en vertical), los paneles
@@ -610,17 +609,31 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
   }, []);
 
   // ── Guardado ─────────────────────────────────────────────────────────────────
+  // Fase A del informe de incidencias (23/08/2026 — "el presupuesto no
+  // puede desaparecer"): antes solo existía este guardado manual, sin
+  // autoguardado ni protección al salir. `useAutoguardado` reutiliza
+  // exactamente esta misma llamada a `onGuardar` (mismo payload, mismo
+  // camino); la única diferencia es CUÁNDO se dispara. `datosParaGuardar`
+  // debe ser una referencia estable (por eso `useMemo`) para que el motor
+  // pueda comparar "¿cambió de verdad?" por igualdad de referencia, no por
+  // una recreación accidental del objeto en cada render.
+  const datosParaGuardar = useMemo(() => ({ documento, titulo }), [documento, titulo]);
+  const guardarContenedor = useCallback(async (datos: { documento: DocumentoMC; titulo: string }) => {
+    await onGuardar({ ...contenedor, titulo: datos.titulo.trim() || contenedor.titulo, contenidoDocumento: datos.documento as unknown as Record<string, unknown>, actualizado: new Date().toISOString() });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contenedor, onGuardar]);
+  const { estado: estadoGuardado, errorMensaje: error, guardarAhora } = useAutoguardado(datosParaGuardar, guardarContenedor);
+  const guardando = estadoGuardado === 'guardando';
 
-  const guardar = async () => {
-    setGuardando(true);
-    setError(null);
-    try {
-      await onGuardar({ ...contenedor, titulo: titulo.trim() || contenedor.titulo, contenidoDocumento: documento as unknown as Record<string, unknown>, actualizado: new Date().toISOString() });
-    } catch (e) {
-      setError(String(e).replace(/^Error:\s*/, ''));
-    } finally {
-      setGuardando(false);
-    }
+  // "← Volver" ya no navega a ciegas: si hay cambios sin guardar, guarda
+  // primero (reutilizando el mismo `guardarAhora` del autoguardado) y solo
+  // sale si el guardado termina bien — si falla, se queda en el editor con
+  // el aviso de error ya existente a la vista, en vez de perder el trabajo
+  // silenciosamente.
+  const alPulsarVolver = async () => {
+    if (estadoGuardado === 'guardado') { onVolver(); return; }
+    const ok = await guardarAhora();
+    if (ok) onVolver();
   };
 
   // ── Exportación (Incremento 8) ──────────────────────────────────────────────
@@ -1124,7 +1137,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
   return (
     <div className={`${editorStyles.raiz} ${modoImpresion ? editorStyles.modoImpresion : ''}`}>
       <div className={editorStyles.barraSuperior}>
-        <button className={styles.btn} onClick={onVolver}>← Volver</button>
+        <button className={styles.btn} onClick={alPulsarVolver}>← Volver</button>
         <input className={editorStyles.titulo} value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Título del documento" />
         <span style={{ fontSize: '0.75rem', color: 'var(--topo-claro)' }}>{clienteNombre}</span>
         <div style={{ flex: 1 }} />
@@ -1134,7 +1147,8 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
         <button className={editorStyles.btnPanelMovil} onClick={() => setPanelMovilAbierto((v) => (v === 'derecho' ? 'ninguno' : 'derecho'))}>⚙️ Propiedades</button>
         <button className={editorStyles.btnPanelMovil} onClick={() => setHerramientasAbiertas((v) => !v)}>{herramientasAbiertas ? '🛠️ Ocultar herramientas' : '🛠️ Herramientas'}</button>
         {error && <span style={{ color: 'var(--rojo, #c0392b)', fontSize: '0.78rem' }}>{error}</span>}
-        <button className={styles.btn} onClick={guardar} disabled={guardando}>{guardando ? 'Guardando…' : 'Guardar'}</button>
+        {!error && estadoGuardado === 'pendiente' && <span style={{ color: 'var(--topo-claro)', fontSize: '0.78rem' }}>Cambios sin guardar…</span>}
+        <button className={styles.btn} onClick={() => guardarAhora()} disabled={guardando}>{guardando ? 'Guardando…' : 'Guardar'}</button>
       </div>
 
       <div className={`${editorStyles.barraHerramientas} ${!herramientasAbiertas ? editorStyles.barraHerramientasCerrada : ''}`}>
