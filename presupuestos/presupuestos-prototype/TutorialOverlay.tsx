@@ -79,7 +79,23 @@ export function TutorialOverlay({
       if (!vivo) return;
       const el = document.querySelector<HTMLElement>(`[data-tutorial-id="${paso.targetId}"]`);
       setElemento((actual) => (actual === el ? actual : el));
-      setRect(el ? el.getBoundingClientRect() : null);
+      // Compara contra el rect anterior y reutiliza la misma referencia si
+      // no cambió nada — sin esto, `setRect` recibía un DOMRect NUEVO cada
+      // 150ms aunque los valores fueran idénticos, forzando un re-render
+      // (y por tanto un redibujado completo del velo/foco/globo) varias
+      // veces por segundo de forma constante. Con cualquier variación de
+      // subpíxel entre dos medidas del mismo elemento quieto, ese
+      // redibujado se veía como un parpadeo/línea blanca — reportado con
+      // captura real, 25/08/2026.
+      setRect((actual) => {
+        if (!el) return null;
+        const nuevo = el.getBoundingClientRect();
+        if (actual && actual.top === nuevo.top && actual.left === nuevo.left
+          && actual.width === nuevo.width && actual.height === nuevo.height) {
+          return actual;
+        }
+        return nuevo;
+      });
       if (el && estado.fase === 'localizando') onObjetivoLocalizado();
     };
     intentar();
