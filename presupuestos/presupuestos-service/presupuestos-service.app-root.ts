@@ -401,6 +401,16 @@ export function run() {
       directives: {
         ...helmet.contentSecurityPolicy.getDefaultDirectives(),
         'img-src': ["'self'", 'data:', ORIGEN_R2_LEGADO, ...(origenR2 && origenR2 !== ORIGEN_R2_LEGADO ? [origenR2] : [])],
+        // Sin esto, el Service Worker (`sw.js`, `fetch(event.request)` en su
+        // manejador `fetch`) no puede pedir imágenes de R2 él mismo — su
+        // `fetch()` cae bajo `connect-src`, no `img-src`, y sin declarar
+        // `connect-src` la CSP usa `default-src 'self'` como respaldo, que
+        // bloquea cualquier origen cruzado. Resultado real observado
+        // (24/08/2026): la imagen se ve bien al abrir su URL directamente,
+        // pero dentro de la app se queda rota con `net::ERR_FAILED`, porque
+        // el Service Worker intercepta la petición y su propio `fetch()`
+        // hacia `cdn.maderacreativa.com` es lo que la CSP bloquea.
+        'connect-src': ["'self'", ORIGEN_R2_LEGADO, ...(origenR2 && origenR2 !== ORIGEN_R2_LEGADO ? [origenR2] : [])],
       },
     },
   }));
