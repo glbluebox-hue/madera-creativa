@@ -1587,6 +1587,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
           key={`${elementoUnicoSeleccionado.id}-${elementoUnicoSeleccionado.posicion.x}-${elementoUnicoSeleccionado.posicion.y}-${elementoUnicoSeleccionado.tamano.ancho}-${elementoUnicoSeleccionado.tamano.alto}`}
           ref={moveableUnicoRef}
           target={targetsMoveable[0]}
+          className={editorStyles.moveableControlBox}
           useAccuratePosition
           draggable resizable
           onDrag={onDragUnico}
@@ -1609,6 +1610,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
           }).join('|')}
           ref={moveableGrupoRef}
           target={targetsMoveable}
+          className={editorStyles.moveableControlBox}
           useAccuratePosition
           draggable
           onDragGroup={onDragGroupUnico}

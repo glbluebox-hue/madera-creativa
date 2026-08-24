@@ -11,10 +11,31 @@
   background: var(--fondo);
   display: flex;
   flex-direction: column;
-  /* Color de las asas/líneas de selección de react-moveable (variable CSS
-     propia de la librería) — negro en vez del azul por defecto, a
-     petición del usuario. */
-  --moveable-color: var(--negro);
+}
+
+/**
+ * Color de las asas/líneas de selección de react-moveable — corrección
+ * 24/08/2026. Declarar `--moveable-color` en `.raiz` (como se hacía antes)
+ * NO funciona: react-moveable inyecta su PROPIA hoja de estilos (vía
+ * `react-css-styled`) directamente en `<head>`, y esa hoja fija
+ * `--moveable-color: #4af` DIRECTAMENTE sobre el elemento raíz del propio
+ * "controlBox" (la caja que contiene los puntos/líneas de selección) — no
+ * es una herencia desde un ancestro, es una declaración explícita en el
+ * mismo elemento que la consume, así que siempre gana sobre cualquier
+ * valor heredado desde `.raiz`, sin importar que `.raiz` sea su ancestro
+ * en el DOM. La librería expone un `className` para ese controlBox
+ * precisamente para estos casos ("You can specify the className of the
+ * moveable controlbox" — tipo oficial de la librería); se aplica en las
+ * dos instancias de `<Moveable>` de `editor-documento.tsx` (selección
+ * única y de grupo) — solo ahí, no afecta a ningún otro componente de la
+ * aplicación. El `!important` es necesario porque ambas reglas (la de la
+ * librería y esta) declaran la misma variable directamente sobre el mismo
+ * elemento con la misma especificidad (una sola clase cada una) — sin él,
+ * cuál gana dependería del orden de inserción de las dos hojas de estilo
+ * en `<head>`, que no está garantizado.
+ */
+.moveableControlBox {
+  --moveable-color: var(--negro) !important;
 }
 
 .barraSuperior {

@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { registrarTipoRender, obtenerTipoRender, type RenderElementoProps, type PanelPropiedadesProps } from './documento-registro-tipos-render.js';
 import editorStyles from './editor-documento.module.css';
 
@@ -255,6 +255,20 @@ registrarTipoRender({
 
 type EstiloRectangulo = { relleno?: string; trazoColor?: string; trazoAncho?: number; bordeRadio?: number };
 
+/**
+ * Interpreta el texto escrito en el campo de grosor: `null` cuando todavía
+ * no representa un número aplicable (vacío, mientras el usuario borra para
+ * escribir otro valor, o algo no numérico/negativo) — en ese caso no se
+ * debe tocar el documento, solo dejar que el borrador local del campo
+ * quede así hasta la siguiente pulsación o hasta perder el foco.
+ */
+export function parsearGrosorBorde(texto: string): number | null {
+  if (texto.trim() === '') return null;
+  const v = Number(texto);
+  if (!Number.isFinite(v) || v < 0) return null;
+  return v;
+}
+
 function RenderRectangulo({ elemento }: RenderElementoProps) {
   const estilo = elemento.estilo as EstiloRectangulo;
   return (
@@ -269,6 +283,38 @@ function RenderRectangulo({ elemento }: RenderElementoProps) {
 
 function PanelRectangulo({ elemento, onCambiarEstilo }: PanelPropiedadesProps) {
   const estilo = elemento.estilo as EstiloRectangulo;
+  const trazoActual = estilo.trazoAncho ?? 0;
+  /**
+   * Campo de grosor con borrador de texto local — corrección 24/08/2026.
+   * Causa raíz del bug real: el `<input>` estaba controlado DIRECTAMENTE
+   * por `estilo.trazoAncho` (el valor ya confirmado en el documento). Al
+   * borrar el "0" para escribir otro número, el campo pasaba a estar
+   * vacío en el DOM sin que React lo supiera (el `onChange` no llamaba a
+   * `onCambiarEstilo` mientras el texto estuviera vacío, así que el estado
+   * de React seguía en 0). En cuanto CUALQUIER otra parte del editor volvía
+   * a renderizar entre pulsación y pulsación (autoguardado, recálculo de
+   * la barra flotante al mover el ratón, cambio de zoom...), React
+   * reconciliaba el input contra su `value` de siempre (0) y lo devolvía a
+   * "0" a mitad de la edición, antes de que el usuario llegara a teclear
+   * el dígito nuevo — parecía que el campo "no dejaba" sustituir el 0.
+   * Con un borrador de texto propio, el campo deja de depender del resto
+   * del árbol de renders mientras se está editando.
+   */
+  const [borradorGrosor, setBorradorGrosor] = useState(String(trazoActual));
+  const editandoGrosorRef = useRef(false);
+  // Selección de otro elemento: reinicia el borrador (y cualquier edición
+  // en curso deja de ser válida, ya no aplica a este elemento).
+  useEffect(() => {
+    editandoGrosorRef.current = false;
+    setBorradorGrosor(String(trazoActual));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [elemento.id]);
+  // Cambios externos al valor (undo/redo, etc.) mientras NO se está
+  // editando el campo — si se está editando, no se toca para no pisar lo
+  // que el usuario está escribiendo.
+  useEffect(() => {
+    if (!editandoGrosorRef.current) setBorradorGrosor(String(trazoActual));
+  }, [trazoActual]);
   return (
     <div className={editorStyles.panelSeccion}>
       <label className={editorStyles.panelCampo}>
@@ -281,7 +327,22 @@ function PanelRectangulo({ elemento, onCambiarEstilo }: PanelPropiedadesProps) {
       </label>
       <label className={editorStyles.panelCampo}>
         Grosor de borde
-        <input type="number" min={0} max={20} value={estilo.trazoAncho ?? 0} onChange={(e) => { if (e.target.value.trim() === '') return; const v = Number(e.target.value); if (Number.isFinite(v) && v >= 0) onCambiarEstilo({ trazoAncho: v }); }} />
+        <input
+          type="number" min={0} max={20}
+          value={borradorGrosor}
+          onFocus={() => { editandoGrosorRef.current = true; }}
+          onChange={(e) => {
+            const texto = e.target.value;
+            setBorradorGrosor(texto);
+            const v = parsearGrosorBorde(texto);
+            if (v !== null) onCambiarEstilo({ trazoAncho: v }); // vacío/inválido: se deja el borrador tal cual, sin tocar el documento
+          }}
+          onBlur={() => {
+            editandoGrosorRef.current = false;
+            // Si se sale del campo vacío o con algo no válido, vuelve al último valor confirmado — nunca se queda "colgado".
+            if (parsearGrosorBorde(borradorGrosor) === null) setBorradorGrosor(String(trazoActual));
+          }}
+        />
       </label>
       <label className={editorStyles.panelCampo}>
         Borde redondeado
@@ -295,7 +356,14 @@ registrarTipoRender({
   tipo: 'rectangulo', etiqueta: 'Rectángulo', insertableDesdeBarra: true, editableEnLienzo: false,
   tamanoInicial: { ancho: 160, alto: 100 },
   crearContenidoInicial: () => ({}),
-  crearEstiloInicial: () => ({ relleno: '#f5ede0', trazoColor: 'transparent', trazoAncho: 0, bordeRadio: 0 }),
+  // Grosor inicial visible (1px) — antes era 0, y combinado con el bug del
+  // campo de arriba, en la práctica era imposible obtener un borde sin
+  // pelear con el input (corrección 24/08/2026). El color de borde sigue
+  // siendo 'transparent' por defecto (fuera de alcance de esta corrección,
+  // solo se toca el campo de grosor) — un rectángulo recién creado ya
+  // parte de un grosor válido y no en 0, listo para que el usuario elija
+  // color de borde si quiere verlo.
+  crearEstiloInicial: () => ({ relleno: '#f5ede0', trazoColor: 'transparent', trazoAncho: 1, bordeRadio: 0 }),
   crearPropiedadesIniciales: () => ({}),
   Render: RenderRectangulo, PanelPropiedades: PanelRectangulo,
 });
