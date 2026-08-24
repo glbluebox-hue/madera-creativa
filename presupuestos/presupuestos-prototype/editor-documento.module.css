@@ -471,5 +471,21 @@
     margin: 0 auto;
   }
   .elementoSeleccionado { outline: none; }
+  /*
+   * Corrección 24/08/2026 ("imagen de fondo de página" no salía en el
+   * PDF/impresión) — por defecto, la mayoría de navegadores NO imprimen
+   * imágenes ni colores de fondo salvo que el usuario marque a mano
+   * "Gráficos de fondo" en el diálogo de impresión (algo que casi nadie
+   * hace ni sabe que existe). `print-color-adjust: exact` fuerza a
+   * respetar los fondos reales sin depender de esa casilla. Se aplica
+   * dentro de `.pagina` (contenido real del documento impreso) para
+   * cubrir tanto el fondo de la página como cualquier relleno de color de
+   * un elemento (p. ej. un rectángulo) — mismo mecanismo del navegador
+   * para los dos casos, así que se corrigen juntos.
+   */
+  .pagina, .pagina * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 }
 

@@ -14,7 +14,7 @@ import type { OnDrag, OnDragGroup, OnResize } from 'react-moveable';
 // tipado explícitamente contra los tipos reales importados abajo.
 const Moveable = ReactMoveable.default as unknown as ComponentType<Record<string, unknown>>;
 import type { Empresa } from './use-empresa.js';
-import type { DocumentoMC, ElementoMC, PaginaMC, TemaMC, RecursoMC, ComponenteMC, ZonaMC } from './documento-modelo.js';
+import type { DocumentoMC, ElementoMC, PaginaMC, TemaMC, RecursoMC, ComponenteMC, ZonaMC, FondoMC } from './documento-modelo.js';
 import { PAGINA_A4, TEMA_POR_DEFECTO } from './documento-modelo.js';
 import { generarId } from './mock.js';
 import {
@@ -1512,6 +1512,26 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) subirFondoPaginaActiva(f); e.target.value = ''; }}
               />
             </label>
+            {paginaActiva.fondo?.tipo === 'imagen' && paginaActiva.fondo.imagenUrl && (
+              // Antes se subía siempre con `ajuste: 'cubrir'` fijo y no había
+              // forma de cambiarlo — el dato ya existía en el modelo
+              // (`FondoMC.ajuste`), solo faltaba este control (24/08/2026).
+              <label className={editorStyles.panelCampo}>
+                Ajuste de la imagen
+                <select
+                  value={paginaActiva.fondo.ajuste ?? 'cubrir'}
+                  onChange={(e) => {
+                    const fondoActual = paginaActiva.fondo;
+                    if (!fondoActual) return;
+                    ejecutar((doc) => establecerFondoPagina(doc, paginaActivaId, { ...fondoActual, ajuste: e.target.value as FondoMC['ajuste'] }));
+                  }}
+                >
+                  <option value="cubrir">Cubrir (recorta para llenar toda la página)</option>
+                  <option value="contener">Contener (se ve entera, puede dejar márgenes)</option>
+                  <option value="mosaico">Mosaico (se repite en su tamaño real)</option>
+                </select>
+              </label>
+            )}
             {paginaActiva.fondo?.tipo === 'imagen' && (
               <button className={editorStyles.btnPanel} onClick={quitarFondoPaginaActiva}>Quitar fondo</button>
             )}
