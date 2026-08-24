@@ -923,7 +923,15 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
         ref={(el) => { if (el) refsElementos.current.set(elemento.id, el); else refsElementos.current.delete(elemento.id); }}
         data-elemento-id={elemento.id}
         className={`${editorStyles.elemento} ${seleccionado ? editorStyles.elementoSeleccionado : ''} ${elemento.bloqueado ? editorStyles.elementoBloqueado : ''}`}
-        style={{ left: posicion.x, top: posicion.y, width: tamano.ancho, height: tamano.alto, transform: `rotate(${rotacion}deg)`, opacity: elemento.opacidad, zIndex: elemento.capa }}
+        // El rectángulo aplica su propia opacidad SOLO al relleno, no al
+        // borde (petición del usuario, 24/08/2026: "las líneas siempre se
+        // quedan de la misma... el interior sí tiene que seguir el comando
+        // opacidad") — `RenderRectangulo` gestiona esa separación
+        // internamente, así que aquí se le pasa opacidad 1 y se evita
+        // aplicar `opacity` dos veces (que también habría afectado al
+        // borde, ya que `opacity` de CSS siempre afecta a todo el
+        // subárbol del elemento que la lleva, sin excepción posible).
+        style={{ left: posicion.x, top: posicion.y, width: tamano.ancho, height: tamano.alto, transform: `rotate(${rotacion}deg)`, opacity: elemento.tipo === 'rectangulo' ? 1 : elemento.opacidad, zIndex: elemento.capa }}
         onMouseDown={(e) => { e.stopPropagation(); if (!editando) seleccionarElemento(elemento.id, { extender: e.shiftKey || seleccionMultipleActiva, paginaId: pagina.id }); }}
         onDoubleClick={() => { if (definicion.editableEnLienzo && !elemento.bloqueado && !elemento.restricciones.soloLectura) setEditandoId(elemento.id); }}
         onPointerDown={(e) => { inicioGestoRef.current = { x: e.clientX, y: e.clientY }; }}
@@ -978,7 +986,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
       <div
         key={elemento.id}
         className={editorStyles.elemento}
-        style={{ left: elemento.posicion.x, top: elemento.posicion.y, width: elemento.tamano.ancho, height: elemento.tamano.alto, transform: `rotate(${elemento.rotacion}deg)`, opacity: elemento.opacidad, zIndex: elemento.capa }}
+        style={{ left: elemento.posicion.x, top: elemento.posicion.y, width: elemento.tamano.ancho, height: elemento.tamano.alto, transform: `rotate(${elemento.rotacion}deg)`, opacity: elemento.tipo === 'rectangulo' ? 1 : elemento.opacidad, zIndex: elemento.capa }}
       >
         <definicion.Render
           elemento={elementoPresentacion}

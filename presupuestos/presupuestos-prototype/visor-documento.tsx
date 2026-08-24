@@ -35,7 +35,10 @@ function renderElementoVisor(documento: DocumentoMC, elemento: ElementoMC, conte
     <div
       key={elemento.id}
       className={editorStyles.elemento}
-      style={{ left: elemento.posicion.x, top: elemento.posicion.y, width: elemento.tamano.ancho, height: elemento.tamano.alto, transform: `rotate(${elemento.rotacion}deg)`, opacity: elemento.opacidad, zIndex: elemento.capa }}
+      // Rectángulo: la opacidad solo afecta al relleno, nunca al borde —
+      // ver la nota gemela en `editor-documento.tsx` (mismo criterio para
+      // que el Portal del cliente coincida con lo que se ve en el editor).
+      style={{ left: elemento.posicion.x, top: elemento.posicion.y, width: elemento.tamano.ancho, height: elemento.tamano.alto, transform: `rotate(${elemento.rotacion}deg)`, opacity: elemento.tipo === 'rectangulo' ? 1 : elemento.opacidad, zIndex: elemento.capa }}
     >
       <definicion.Render elemento={elementoPresentacion} editando={false} onCambiarContenido={() => {}} onSalirEdicion={() => {}} resolverComponente={resolverComponente} />
     </div>

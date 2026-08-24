@@ -271,22 +271,39 @@ export function parsearGrosorBorde(texto: string): number | null {
 
 function RenderRectangulo({ elemento }: RenderElementoProps) {
   const estilo = elemento.estilo as EstiloRectangulo;
+  const bordeRadio = estilo.bordeRadio ?? 0;
   return (
-    <div style={{
-      width: '100%', height: '100%',
-      // Sin esto, el navegador usa `content-box` por defecto: el borde se
-      // suma POR FUERA del 100%×100%, y como el contenedor padre
-      // (`.elemento`) tiene `overflow: hidden`, ese sobrante se recorta —
-      // el borde superior/izquierdo queda dentro del límite y se ve, pero
-      // el derecho/inferior sobresalen y desaparecen, dando un rectángulo
-      // que "no se cierra" (reportado con captura, 24/08/2026). Con
-      // `border-box` el borde queda incluido dentro del 100%×100%, así que
-      // encaja siempre en el hueco del padre, sea cual sea el grosor.
-      boxSizing: 'border-box',
-      background: estilo.relleno ?? 'transparent',
-      border: `${estilo.trazoAncho ?? 0}px solid ${estilo.trazoColor ?? 'transparent'}`,
-      borderRadius: estilo.bordeRadio ?? 0,
-    }} />
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      {/*
+        Dos capas separadas — petición del usuario, 24/08/2026: "las líneas
+        siempre se quedan de la misma... el interior sí tiene que seguir el
+        comando opacidad". La opacidad de CSS afecta siempre a TODO el
+        subárbol de quien la lleva, sin excepción — no hay forma de que un
+        único `<div>` con relleno+borde tenga cada uno una opacidad
+        distinta. Por eso el relleno vive en su propia capa (con la
+        opacidad del elemento) y el borde en otra por encima (siempre a
+        opacidad 1) — el wrapper `.elemento` de `editor-documento.tsx`/
+        `visor-documento.tsx` deja de aplicar su propia `opacity` a los
+        rectángulos precisamente para no volver a afectar al borde desde
+        fuera.
+      */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        boxSizing: 'border-box',
+        background: estilo.relleno ?? 'transparent',
+        borderRadius: bordeRadio,
+        opacity: elemento.opacidad,
+      }} />
+      <div style={{
+        position: 'absolute', inset: 0,
+        // Ver nota en el commit anterior: `border-box` es necesario para que
+        // el borde no se salga del hueco del padre (`.elemento`, con
+        // `overflow: hidden`) y se recorte en el lado derecho/inferior.
+        boxSizing: 'border-box',
+        border: `${estilo.trazoAncho ?? 0}px solid ${estilo.trazoColor ?? 'transparent'}`,
+        borderRadius: bordeRadio,
+      }} />
+    </div>
   );
 }
 
