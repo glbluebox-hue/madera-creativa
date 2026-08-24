@@ -36,13 +36,15 @@ export type PresupuestosListaGlobalProps = {
  * Selector en dos pasos: cliente → en blanco o una plantilla guardada
  * (Incremento 4) — al elegir una plantilla, sus variables `{{cliente.nombre}}`
  * etc. se resuelven en el momento con los datos reales antes de abrir el
- * editor. El borrador se abre sin guardar todavía: el primer "Guardar" del
- * editor hace el alta real vía `PUT /presupuestos/:id`.
+ * editor. El borrador se guarda de inmediato en el backend (`crearBorrador`)
+ * antes de abrir el editor — desde la Fase A (autoguardado, 23/08/2026) ya
+ * no basta con abrirlo solo en memoria, ver el comentario de `crearBorrador`.
  */
 export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa, onAbrirCliente, onCrearProyecto }: PresupuestosListaGlobalProps) {
   const [presupuestos, setPresupuestos] = useState<PresupuestoMC[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [creandoBorrador, setCreandoBorrador] = useState(false);
   const [editor, setEditor] = useState<{ presupuesto: PresupuestoMC; clienteId: string; clienteNombre: string } | null>(null);
   const [selectorAbierto, setSelectorAbierto] = useState(false);
   const [clienteElegidoId, setClienteElegidoId] = useState<string | null>(null);
@@ -167,8 +169,27 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
     setClienteElegidoId(cliente.id);
   };
 
-  /** Abre un borrador nuevo en `formato:'documento'` sin guardar todavía — en blanco o resuelto a partir de una plantilla. */
-  const crearBorrador = (clienteId: string, plantilla?: PlantillaMC) => {
+  /**
+   * Crea un presupuesto nuevo en `formato:'documento'` — en blanco o resuelto
+   * a partir de una plantilla — y lo persiste de inmediato en el backend
+   * antes de abrir el editor (mismo patrón que `plantillas-vista.tsx`).
+   *
+   * Antes de la Fase A (autoguardado, 23/08/2026) el borrador se abría solo
+   * en memoria y el primer "Guardar" manual del editor hacía el alta real —
+   * funcionaba porque el usuario tarde o temprano pulsaba Guardar. Con
+   * autoguardado, `useAutoguardado` asume que "lo que había al montar el
+   * editor ya está guardado" (una suposición correcta al REABRIR un
+   * documento existente, falsa para uno recién creado en memoria) — si las
+   * ediciones del usuario no llegaban a cambiar `documento` de referencia,
+   * el estado se quedaba en `'guardado'` desde el principio y "← Volver"
+   * salía sin haber guardado nada en absoluto: el presupuesto nunca había
+   * existido en Mongo (bug real reportado 24/08/2026, con plantilla
+   * elegida al crear presupuesto — el flujo más usado de la aplicación).
+   * Guardarlo aquí, antes de abrir el editor, hace que siempre arranque
+   * sobre un documento que ya existe de verdad — el autoguardado funciona
+   * igual que al reabrir cualquier otro presupuesto.
+   */
+  const crearBorrador = async (clienteId: string, plantilla?: PlantillaMC) => {
     const ahora = new Date().toISOString();
     const contenidoDocumento: Record<string, unknown> = plantilla
       ? resolverVariables(plantilla.documentoBase, {
@@ -193,9 +214,19 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
       creado: ahora,
       actualizado: ahora,
     };
-    setSelectorAbierto(false);
-    setClienteElegidoId(null);
-    setEditor({ presupuesto: borrador, clienteId, clienteNombre: nombreDe(clienteId) });
+    setCreandoBorrador(true);
+    setError(null);
+    try {
+      const guardado = await api.guardarPresupuesto(borrador);
+      setPresupuestos((prev) => [guardado, ...prev]);
+      setSelectorAbierto(false);
+      setClienteElegidoId(null);
+      setEditor({ presupuesto: guardado, clienteId, clienteNombre: nombreDe(clienteId) });
+    } catch (e) {
+      setError(String(e).replace(/^Error:\s*/, ''));
+    } finally {
+      setCreandoBorrador(false);
+    }
   };
 
   /**
@@ -380,11 +411,13 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
                   </button>
                 )}
 
-                <button className={styles.btn} style={{ textAlign: 'left', fontSize: '0.8rem' }} onClick={() => crearBorrador(clienteElegidoId)}>En blanco</button>
+                <button className={styles.btn} style={{ textAlign: 'left', fontSize: '0.8rem' }} onClick={() => crearBorrador(clienteElegidoId)} disabled={creandoBorrador}>
+                  {creandoBorrador ? 'Creando…' : 'En blanco'}
+                </button>
                 {plantillas.length > 0 && <p style={{ margin: '0.4rem 0 0', fontSize: '0.72rem', color: 'var(--topo-claro)' }}>Plantillas guardadas</p>}
                 {plantillas.map((pl) => (
-                  <button key={pl.id} className={styles.btn} style={{ textAlign: 'left', fontSize: '0.8rem' }} onClick={() => crearBorrador(clienteElegidoId, pl)}>
-                    {pl.nombre} {pl.ambito === 'corporativa' ? '· corporativa' : ''}
+                  <button key={pl.id} className={styles.btn} style={{ textAlign: 'left', fontSize: '0.8rem' }} onClick={() => crearBorrador(clienteElegidoId, pl)} disabled={creandoBorrador}>
+                    {creandoBorrador ? 'Creando…' : `${pl.nombre}${pl.ambito === 'corporativa' ? ' · corporativa' : ''}`}
                   </button>
                 ))}
                 <button className={styles.btn} style={{ fontSize: '0.78rem', alignSelf: 'flex-start' }} onClick={() => { setClienteElegidoId(null); setCampoIAAbierto(false); setErrorIA(null); }}>← Cambiar cliente</button>
