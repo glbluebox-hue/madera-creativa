@@ -1,4 +1,4 @@
-import { rateLimit } from 'express-rate-limit';
+import { rateLimit, ipKeyGenerator } from 'express-rate-limit';
 
 /**
  * Límite general para toda la API: protege contra abuso masivo sin afectar
@@ -108,7 +108,11 @@ export const limitadorPortalAceptar = rateLimit({
   limit: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => String(req.params.token || req.ip),
+  // `express-rate-limit` 8.x exige pasar la IP por su propio helper en vez
+  // de usarla en crudo — sin esto, arranca con `ERR_ERL_KEY_GEN_IPV6`
+  // (distintas representaciones de una misma IPv6 podrían saltarse el
+  // límite). Mismo comportamiento de siempre: token si existe, IP si no.
+  keyGenerator: (req) => req.params.token || ipKeyGenerator(req.ip ?? ''),
   message: { error: 'Demasiados intentos. Inténtalo de nuevo en unos minutos.' },
 });
 
