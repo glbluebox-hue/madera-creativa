@@ -129,7 +129,9 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
   /** Nombre/CIF propios (Ajustes de empresa) — referencia para distinguir a Madera Creativa del cliente/proveedor del documento (auditoría emisor/receptor, 23/08/2026). */
   const [empresa, setEmpresa] = useState<EmpresaIdentificacion | null>(null);
   useEffect(() => {
-    api.obtenerEmpresa().then((e) => setEmpresa({ nombre: e.nombre ?? '', nifCif: e.nifCif ?? '' })).catch(() => setEmpresa({ nombre: '', nifCif: '' }));
+    api.obtenerEmpresa()
+      .then((e) => setEmpresa({ nombre: e.nombre ?? '', titular: e.titular ?? '', nifCif: e.nifCif ?? '' }))
+      .catch(() => setEmpresa({ nombre: '', titular: '', nifCif: '' }));
   }, []);
 
   const extraerConIA = async () => {
@@ -158,7 +160,7 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
           receptorCifNif: datos.receptorCifNif ?? null,
           tipo: datos.tipo === 'ingreso' || datos.tipo === 'gasto' ? datos.tipo : null,
         },
-        empresa ?? { nombre: '', nifCif: '' }
+        empresa ?? { nombre: '', titular: '', nifCif: '' }
       );
       // La IA propone — solo rellena los campos, el usuario debe revisar y
       // pulsar "Guardar factura" para confirmar. Nunca sobrescribe con

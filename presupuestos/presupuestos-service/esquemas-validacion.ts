@@ -825,6 +825,8 @@ export const esquemaPaginacionFacturas = z.object({
 
 export const esquemaEmpresa = z.object({
   nombre: z.string().max(200).optional().default(''),
+  /** Nombre y apellidos del titular real (autónomo) — ver `EmpresaSchema.titular` en `cliente.model.ts`. */
+  titular: z.string().max(200).optional().default(''),
   eslogan: z.string().max(300).optional().default(''),
   logo: z.string().optional().default(''),
   nifCif: z.string().max(20).optional().default(''),

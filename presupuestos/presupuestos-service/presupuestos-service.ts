@@ -169,6 +169,8 @@ async function borrarArchivosLienzoHuerfanos(antes: unknown, despues: unknown): 
 /** Datos de empresa gestionados por el servicio. */
 export type EmpresaDoc = {
   nombre: string;
+  /** Nombre y apellidos del titular real (autónomo) — ver `EmpresaSchema.titular` en `cliente.model.ts`. */
+  titular: string;
   eslogan: string;
   logo: string;
   /** CIF/NIF de la propia empresa — para las facturas/presupuestos que ella emite. */
@@ -637,6 +639,7 @@ export class PresupuestosService {
     }
     return {
       nombre: (doc as any).nombre || '',
+      titular: (doc as any).titular || '',
       eslogan: (doc as any).eslogan || '',
       logo: (doc as any).logo || '',
       nifCif: (doc as any).nifCif || '',
@@ -668,6 +671,7 @@ export class PresupuestosService {
     ).lean().exec();
     return {
       nombre: (doc as any).nombre || '',
+      titular: (doc as any).titular || '',
       eslogan: (doc as any).eslogan || '',
       logo: (doc as any).logo || '',
       nifCif: (doc as any).nifCif || '',

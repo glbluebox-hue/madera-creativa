@@ -31,6 +31,8 @@ export type DatosExtraidosFactura = {
 /** Datos fiscales propios ya configurados en Ajustes de empresa. */
 export type EmpresaIdentificacion = {
   nombre: string;
+  /** Nombre y apellidos del titular real (autónomo) — una factura de ingreso real suele llevar este nombre, no el comercial. Vacío si no se ha configurado. */
+  titular: string;
   nifCif: string;
 };
 
@@ -100,9 +102,16 @@ export function resolverEmisorReceptor(datos: DatosExtraidosFactura, empresa: Em
   }
 
   // 2) Sin evidencia concluyente por NIF (ninguno coincide, o coinciden los
-  //    dos a la vez — documento raro/erróneo): probar por nombre, confianza media.
-  const emisorEsEmpresaPorNombre = empresa.nombre ? nombresCoinciden(datos.emisorNombre, empresa.nombre) : false;
-  const receptorEsEmpresaPorNombre = empresa.nombre ? nombresCoinciden(datos.receptorNombre, empresa.nombre) : false;
+  //    dos a la vez — documento raro/erróneo): probar por nombre, confianza
+  //    media — contra el nombre comercial O el nombre y apellidos del
+  //    titular (una factura de ingreso real suele llevar el nombre legal,
+  //    no la marca; hallazgo real, 25/08/2026).
+  const emisorEsEmpresaPorNombre =
+    (empresa.nombre && nombresCoinciden(datos.emisorNombre, empresa.nombre)) ||
+    (empresa.titular && nombresCoinciden(datos.emisorNombre, empresa.titular)) || false;
+  const receptorEsEmpresaPorNombre =
+    (empresa.nombre && nombresCoinciden(datos.receptorNombre, empresa.nombre)) ||
+    (empresa.titular && nombresCoinciden(datos.receptorNombre, empresa.titular)) || false;
 
   if (emisorEsEmpresaPorNombre && !receptorEsEmpresaPorNombre) {
     return {

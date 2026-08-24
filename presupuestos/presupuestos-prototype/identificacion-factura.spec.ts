@@ -1,6 +1,6 @@
 import { resolverEmisorReceptor, type DatosExtraidosFactura, type EmpresaIdentificacion } from './identificacion-factura.js';
 
-const EMPRESA: EmpresaIdentificacion = { nombre: 'Madera Creativa', nifCif: 'B12345678' };
+const EMPRESA: EmpresaIdentificacion = { nombre: 'Madera Creativa', titular: 'Juan García Pérez', nifCif: 'B12345678' };
 
 function datos(parciales: Partial<DatosExtraidosFactura>): DatosExtraidosFactura {
   return {
@@ -121,11 +121,26 @@ describe('resolverEmisorReceptor (auditoría emisor/receptor, 23/08/2026)', () =
       emisorNombre: 'Alguien', emisorCifNif: 'B12345678',
       receptorNombre: 'Otro', receptorCifNif: 'C11111111',
       tipo: 'gasto',
-    }), { nombre: '', nifCif: '' });
+    }), { nombre: '', titular: '', nifCif: '' });
     expect(r.revisar).toBe(true);
     expect(r.confianza).toBe('baja');
     expect(r.tipo).toBe('gasto'); // conserva la pista de la IA al no tener nada que la contradiga
     expect(r.proveedor).toBe('Alguien');
+  });
+
+  it('11. Factura de ingreso con el nombre y apellidos del titular (autónomo), no la marca → reconocido igualmente', () => {
+    // Caso real reportado 25/08/2026: como autónomo, una factura de ingreso
+    // suele llevar el nombre legal (titular), no el nombre comercial —
+    // antes de añadir `titular` a `EmpresaIdentificacion`, este caso caía
+    // siempre al fallback de confianza baja con revisión obligatoria.
+    const r = resolverEmisorReceptor(datos({
+      emisorNombre: 'Juan García Pérez', emisorCifNif: null,
+      receptorNombre: 'Cliente Real S.L.', receptorCifNif: 'C11111111',
+    }), EMPRESA);
+    expect(r.tipo).toBe('ingreso');
+    expect(r.proveedor).toBe('Cliente Real S.L.');
+    expect(r.confianza).toBe('media');
+    expect(r.revisar).toBe(false);
   });
 
   it('NIF coincide en los dos lados a la vez (documento raro) → no es evidencia fuerte, no decide por NIF', () => {

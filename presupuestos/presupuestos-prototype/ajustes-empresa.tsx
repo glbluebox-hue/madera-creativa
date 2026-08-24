@@ -40,6 +40,7 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
   const inputRef = useRef<HTMLInputElement>(null);
   const inputResenaRef = useRef<HTMLInputElement>(null);
   const [nombre, setNombre] = useState(empresa.nombre);
+  const [titular, setTitular] = useState(empresa.titular);
   const [eslogan, setEslogan] = useState(empresa.eslogan);
   const [logo, setLogo] = useState<string | null>(empresa.logo);
   const [enlaceResenaGoogle, setEnlaceResenaGoogle] = useState(empresa.enlaceResenaGoogle);
@@ -79,6 +80,7 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
     setGuardando(true);
     const ok = await onGuardar({
       nombre: nombre.trim() || 'Mi empresa',
+      titular: titular.trim(),
       eslogan: eslogan.trim(),
       logo,
       nifCif: nifCif.trim(),
@@ -185,6 +187,10 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
           <div className={styles.campo}>
             <label className={styles.campoLabel}>CIF/NIF de la empresa</label>
             <input className={styles.input} value={nifCif} onChange={(e) => setNifCif(e.target.value)} placeholder="B12345678" />
+          </div>
+          <div className={`${styles.campo} ${styles.full}`}>
+            <label className={styles.campoLabel}>Nombre y apellidos del titular</label>
+            <input className={styles.input} value={titular} onChange={(e) => setTitular(e.target.value)} placeholder="Como aparece en tus facturas de ingreso, si eres autónomo" />
           </div>
           <div className={styles.campo}>
             <label className={styles.campoLabel}>Teléfono</label>

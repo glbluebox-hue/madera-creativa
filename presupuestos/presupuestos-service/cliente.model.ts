@@ -190,6 +190,16 @@ const EmpresaSchema = new Schema({
   /** ID del usuario propietario (reemplaza la clave fija 'empresa'). */
   usuarioId: { type: String, required: true, unique: true, index: true, default: 'admin' },
   nombre: { type: String, default: '' },
+  /**
+   * Nombre y apellidos del titular real de la actividad (autónomo) —
+   * distinto de `nombre`, que es el nombre comercial/marca. Una factura de
+   * ingreso real suele llevar el nombre legal del emisor, no la marca —
+   * sin este campo, `resolverEmisorReceptor` (identificacion-factura.ts)
+   * no podía reconocer al propio usuario como emisor en esas facturas.
+   * Vacío hasta que el usuario lo rellena — nunca se infiere ni se copia
+   * de otro sitio (hallazgo real, 25/08/2026).
+   */
+  titular: { type: String, default: '' },
   eslogan: { type: String, default: '' },
   logo: { type: String, default: '' },
   /** CIF/NIF de la propia empresa — para que aparezca en las facturas/presupuestos que ella misma emite. No confundir con el `cifNif` de cada Factura de gasto, que es del proveedor, no de esta empresa. */

@@ -8,6 +8,13 @@ import type { TemaMC } from './documento-modelo.js';
 export type Empresa = {
   /** Nombre de la empresa mostrado en la cabecera. */
   nombre: string;
+  /**
+   * Nombre y apellidos del titular real de la actividad (autónomo) —
+   * distinto del nombre comercial (`nombre`). Necesario para que la IA de
+   * facturas reconozca al usuario como emisor en facturas de ingreso,
+   * donde el documento suele llevar el nombre legal, no la marca.
+   */
+  titular: string;
   /** Eslogan o descripción corta. */
   eslogan: string;
   /** Logo en formato data URL (base64), o null si no hay logo. */
@@ -41,6 +48,10 @@ export type Empresa = {
 /** Datos por defecto para el admin — marca Madera Creativa. */
 const EMPRESA_ADMIN: Empresa = {
   nombre: 'Madera Creativa',
+  // Vacío a propósito: el nombre y apellidos reales del titular no se
+  // inventan ni se copian de ningún sitio — se rellena a mano en Ajustes
+  // de empresa la primera vez que haga falta.
+  titular: '',
   eslogan: 'Presupuestos y seguimiento de proyectos',
   logo: logoMadera,
   nifCif: '',
@@ -63,6 +74,7 @@ const EMPRESA_ADMIN: Empresa = {
 /** Datos vacíos para usuarios normales — cada uno pone su propia marca. */
 const EMPRESA_USUARIO: Empresa = {
   nombre: '',
+  titular: '',
   eslogan: '',
   logo: null,
   nifCif: '',
@@ -131,6 +143,7 @@ export function useEmpresa(autenticado = false, esAdmin = false): {
         if (!activo) return;
         setEmpresa({
           nombre: datos.nombre || inicial.nombre,
+          titular: datos.titular || inicial.titular,
           eslogan: datos.eslogan || inicial.eslogan,
           logo: datos.logo || inicial.logo,
           nifCif: datos.nifCif || inicial.nifCif,
