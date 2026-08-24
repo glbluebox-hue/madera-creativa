@@ -29,7 +29,7 @@ import { AjustesPerfil } from './ajustes-perfil.js';
 import { PanelNotificaciones } from './panel-notificaciones.js';
 import { TutorialOverlay } from './TutorialOverlay.js';
 import { useTutorial } from './use-tutorial.js';
-import { TUTORIAL_DEMO } from './tutorial-definiciones.js';
+import { TUTORIAL_CLIENTES, TUTORIAL_PRESUPUESTOS } from './tutorial-definiciones.js';
 import type { Cliente, Proyecto, Factura } from './types.js';
 import * as api from './api.js';
 import logoMadera from './assets/logo.png';
@@ -262,6 +262,7 @@ export function PresupuestosPrototype() {
             <button
               className={`${styles.sidebarNavItem} ${seccion === 'presupuestos' ? styles.sidebarNavItemActivo : ''}`}
               onClick={() => { cambiarSeccion('presupuestos'); volverALista(); }}
+              data-tutorial-id="nav-presupuestos"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
               Presupuestos
@@ -357,17 +358,25 @@ export function PresupuestosPrototype() {
                   : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>}
               </button>
               {/*
-                Disparador TEMPORAL de solo prueba (Fase 1, 24/08/2026) —
-                no es el Centro de ayuda definitivo (eso es Fase 2). Único
-                propósito: poder validar manualmente el motor de
-                tutoriales. Se retira/sustituye en la fase siguiente.
+                Disparadores TEMPORALES (24/08/2026) — no es el Centro de
+                ayuda definitivo (eso sigue pendiente). Único propósito:
+                poder abrir manualmente cada tutorial mientras no existe
+                una sección "Aprender Madera Creativa" en el menú. Se
+                retiran/sustituyen cuando llegue esa sección.
               */}
               <button
                 className={styles.sidebarAccionBtn}
-                onClick={() => { tutorial.abrir(TUTORIAL_DEMO); setMenuMovilAbierto(false); }}
-                title="Probar tutorial (Fase 1)"
+                onClick={() => { tutorial.abrir(TUTORIAL_CLIENTES); setMenuMovilAbierto(false); }}
+                title="Tutorial: Clientes"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" /></svg>
+              </button>
+              <button
+                className={styles.sidebarAccionBtn}
+                onClick={() => { tutorial.abrir(TUTORIAL_PRESUPUESTOS); setMenuMovilAbierto(false); }}
+                title="Tutorial: Presupuestos"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
               </button>
               <button
                 className={`${styles.sidebarAccionBtn} ${asistente ? styles.sidebarAccionBtnActivo : ''}`}

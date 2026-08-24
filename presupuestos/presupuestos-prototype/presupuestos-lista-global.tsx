@@ -370,7 +370,7 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
         </p>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={cargar} style={{ fontSize: '0.78rem' }}>Actualizar</button>
-          <button className={styles.btnCirculoOscuro} onClick={abrirSelector} title="Crear presupuesto">
+          <button className={styles.btnCirculoOscuro} onClick={abrirSelector} title="Crear presupuesto" data-tutorial-id="crear-presupuesto-btn">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
           </button>
         </div>
@@ -397,7 +397,7 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
                     </div>
                   </div>
                 ) : (
-                  <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ textAlign: 'left', fontSize: '0.8rem' }} onClick={() => setNuevoClienteAbierto(true)}>
+                  <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ textAlign: 'left', fontSize: '0.8rem' }} onClick={() => setNuevoClienteAbierto(true)} data-tutorial-id="presupuesto-selector-cliente">
                     + Nuevo cliente
                   </button>
                 )}

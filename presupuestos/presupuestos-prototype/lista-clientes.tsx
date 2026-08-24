@@ -60,6 +60,7 @@ export function ListaClientes({ clientes, onNuevo, onAbrir, hayMas, cargandoMas,
             placeholder="Buscar cliente o proyecto…"
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
+            data-tutorial-id="clientes-busqueda"
           />
         </div>
       </div>
