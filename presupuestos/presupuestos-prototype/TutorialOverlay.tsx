@@ -25,6 +25,19 @@ const MARGEN_FOCO_PX = 6;
 const INTERVALO_SONDEO_MS = 150;
 const ANCHO_GLOBO_PX = 320;
 const MARGEN_GLOBO_PX = 12;
+/**
+ * Solape entre los 4 paneles del velo (arriba/abajo/izquierda/derecha) en
+ * sus bordes internos — bug real reportado con captura, 25/08/2026:
+ * `rect.top`/`rect.left`/etc. de `getBoundingClientRect()` traen decimales,
+ * y con escalado fraccional de Windows (125%/150%, muy común) cada panel
+ * redondea su borde al píxel físico de forma independiente; dos paneles con
+ * la MISMA coordenada CSS pueden acabar en dos píxeles físicos distintos,
+ * dejando una rendija de 1px por la que se ve el fondo blanco de la página
+ * — el "parpadeo"/línea blanca reportado. Solapar 2px es invisible (mismo
+ * color sobre sí mismo) y sigue dejando de sobra el margen real alrededor
+ * del elemento señalado (`MARGEN_FOCO_PX` = 6, nunca se toca esa zona).
+ */
+const SOLAPE_VELO_PX = 2;
 
 /**
  * Única pieza del sistema de tutoriales con permiso para tocar el DOM
@@ -154,10 +167,10 @@ export function TutorialOverlay({
 
   return (
     <div className={styles.raiz} style={{ zIndex: Z_TUTORIAL }} role="dialog" aria-label={`Tutorial: ${paso.titulo}`}>
-      <div className={styles.velo} style={{ top: 0, left: 0, right: 0, height: Math.max(0, rect.top - MARGEN_FOCO_PX) }} />
-      <div className={styles.velo} style={{ top: rect.bottom + MARGEN_FOCO_PX, left: 0, right: 0, bottom: 0 }} />
-      <div className={styles.velo} style={{ top: rect.top - MARGEN_FOCO_PX, left: 0, width: Math.max(0, rect.left - MARGEN_FOCO_PX), height: rect.height + MARGEN_FOCO_PX * 2 }} />
-      <div className={styles.velo} style={{ top: rect.top - MARGEN_FOCO_PX, left: rect.right + MARGEN_FOCO_PX, right: 0, height: rect.height + MARGEN_FOCO_PX * 2 }} />
+      <div className={styles.velo} style={{ top: 0, left: 0, right: 0, height: Math.max(0, rect.top - MARGEN_FOCO_PX + SOLAPE_VELO_PX) }} />
+      <div className={styles.velo} style={{ top: rect.bottom + MARGEN_FOCO_PX - SOLAPE_VELO_PX, left: 0, right: 0, bottom: 0 }} />
+      <div className={styles.velo} style={{ top: rect.top - MARGEN_FOCO_PX - SOLAPE_VELO_PX, left: 0, width: Math.max(0, rect.left - MARGEN_FOCO_PX + SOLAPE_VELO_PX), height: rect.height + MARGEN_FOCO_PX * 2 + SOLAPE_VELO_PX * 2 }} />
+      <div className={styles.velo} style={{ top: rect.top - MARGEN_FOCO_PX - SOLAPE_VELO_PX, left: rect.right + MARGEN_FOCO_PX - SOLAPE_VELO_PX, right: 0, height: rect.height + MARGEN_FOCO_PX * 2 + SOLAPE_VELO_PX * 2 }} />
       <div
         className={styles.foco}
         style={{ top: rect.top - MARGEN_FOCO_PX, left: rect.left - MARGEN_FOCO_PX, width: rect.width + MARGEN_FOCO_PX * 2, height: rect.height + MARGEN_FOCO_PX * 2 }}
