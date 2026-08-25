@@ -338,10 +338,10 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
                   ) : (
                     <>
                       <p style={{ margin: '0 0 0.5rem', fontWeight: 600, fontSize: '0.8rem' }}>Recuperar acceso</p>
-                      <div style={{ display: 'flex', gap: '0.4rem' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
                         <input
                           className={styles.input}
-                          style={{ flex: 1, fontSize: '0.85rem' }}
+                          style={{ flex: '1 1 160px', minWidth: 0, fontSize: '0.85rem' }}
                           type="email"
                           value={recuperarEmail}
                           onChange={(e) => setRecuperarEmail(e.target.value)}
@@ -351,7 +351,7 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
                         <button
                           type="button"
                           className={`${styles.btn} ${styles.btnPrimario}`}
-                          style={{ fontSize: '0.8rem' }}
+                          style={{ fontSize: '0.8rem', flexShrink: 0 }}
                           disabled={recuperarEnviando || !recuperarEmail.trim()}
                           onClick={pedirRecuperacion}
                         >
