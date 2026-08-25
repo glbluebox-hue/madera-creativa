@@ -19,6 +19,15 @@ export type TutorialOverlayProps = {
   menuMovilAbierto: boolean;
   /** Abre el cajón lateral móvil — reutiliza el estado ya existente en `presupuestos-prototype.tsx`. */
   onAbrirMenuMovil: () => void;
+  /**
+   * Cierra el cajón lateral móvil — bug real reportado en vivo, 26/08/2026:
+   * el efecto de abajo abría el cajón para los pasos `nav-*` pero nunca lo
+   * volvía a cerrar al llegar a un paso que ya no lo necesita (p. ej. el
+   * campo de búsqueda o "Crear un cliente", que viven en la página, no en
+   * el cajón) — en móvil, el cajón se queda tapando el contenido real
+   * sobre el que se supone que hay que señalar, y el tutorial "no se ve".
+   */
+  onCerrarMenuMovil: () => void;
 };
 
 const MARGEN_FOCO_PX = 6;
@@ -39,7 +48,7 @@ const MARGEN_GLOBO_PX = 12;
  */
 export function TutorialOverlay({
   estado, onAvanzar, onRetroceder, onCerrar, onObjetivoLocalizado, onAccionDetectada,
-  seccionActual, onNavegar, menuMovilAbierto, onAbrirMenuMovil,
+  seccionActual, onNavegar, menuMovilAbierto, onAbrirMenuMovil, onCerrarMenuMovil,
 }: TutorialOverlayProps) {
   const paso: PasoTutorial | null = estado.fase === 'localizando' || estado.fase === 'mostrandoPaso' ? estado.definicion.pasos[estado.pasoIndice] : null;
 
@@ -59,7 +68,8 @@ export function TutorialOverlay({
     if (!paso) return;
     if (paso.seccionRequerida && paso.seccionRequerida !== seccionActual) { onNavegar(paso.seccionRequerida); return; }
     if (paso.requiereMenuMovil && !menuMovilAbierto) onAbrirMenuMovil();
-  }, [paso, seccionActual, menuMovilAbierto, onNavegar, onAbrirMenuMovil]);
+    else if (!paso.requiereMenuMovil && menuMovilAbierto) onCerrarMenuMovil();
+  }, [paso, seccionActual, menuMovilAbierto, onNavegar, onAbrirMenuMovil, onCerrarMenuMovil]);
 
   // Sondeo del elemento objetivo — "objetivo que todavía no existe" +
   // "reintento cuando aparece" se resuelven aquí, no en el motor: se

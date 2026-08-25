@@ -1800,6 +1800,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
         onNavegar={() => {}}
         menuMovilAbierto={false}
         onAbrirMenuMovil={() => {}}
+        onCerrarMenuMovil={() => {}}
       />
     </div>
   );

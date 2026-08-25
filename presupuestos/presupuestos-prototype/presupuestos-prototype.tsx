@@ -658,6 +658,7 @@ export function PresupuestosPrototype() {
         onNavegar={(s) => { cambiarSeccion(s as Seccion); volverALista(); }}
         menuMovilAbierto={menuMovilAbierto}
         onAbrirMenuMovil={() => setMenuMovilAbierto(true)}
+        onCerrarMenuMovil={() => setMenuMovilAbierto(false)}
       />
 
       {/* Asistente IA — botón flotante siempre visible (además del icono del
