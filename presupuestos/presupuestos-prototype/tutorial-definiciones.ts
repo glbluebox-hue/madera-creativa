@@ -237,7 +237,63 @@ export const TUTORIAL_EDITOR: DefinicionTutorial = {
   ],
 };
 
+/**
+ * Onboarding contextual (Fase D, 25/08/2026) — tutoriales cortos por
+ * sección, disparados por NAVEGACIÓN (la primera vez que el usuario entra
+ * a esa sección), no por el botón "Tutorial" ni durante el recorrido
+ * inicial (`TUTORIAL_APP`). Reaprovecha el texto ya escrito para esos
+ * mismos pasos dentro de `TUTORIAL_APP` — mismos `targetId`, mismo
+ * contenido, solo con su propio `id` de tutorial para que el progreso se
+ * guarde por separado (quien completó el tour entero ya vio esto una vez;
+ * ver el disparo en `presupuestos-prototype.tsx`, que comprueba
+ * precisamente eso antes de auto-abrir uno de estos).
+ *
+ * Solo Facturas y Proveedores tienen tutorial contextual: son las únicas
+ * secciones con un elemento propio dentro (no solo el botón del menú) al
+ * que señalar — Pizarra de medición, Notas y Código QR no tienen ningún
+ * `data-tutorial-id` dentro de la sección misma todavía.
+ */
+export const TUTORIAL_FACTURAS: DefinicionTutorial = {
+  id: 'facturas',
+  titulo: 'Facturas',
+  pasos: [
+    {
+      id: 'facturas-01-crear',
+      titulo: 'Añadir una factura',
+      texto: 'Pulsa aquí para añadir una factura nueva. Es un botón real — tu clic hará exactamente lo mismo que si no estuvieras en el tutorial.',
+      targetId: 'crear-factura-btn',
+      posicion: 'izquierda',
+      tipo: 'interactivo',
+    },
+    {
+      id: 'facturas-02-escanear',
+      titulo: 'Escanear o subir',
+      texto: 'Puedes escanear el documento con la cámara, hacerle una foto rápida o subir un PDF. Una vez tengas una imagen, la IA puede leerla y rellenar los datos por ti — solo revisas antes de guardar.',
+      targetId: 'factura-escanear-btn',
+      posicion: 'abajo',
+      tipo: 'informativo',
+    },
+  ],
+};
+
+export const TUTORIAL_PROVEEDORES: DefinicionTutorial = {
+  id: 'proveedores',
+  titulo: 'Proveedores',
+  pasos: [
+    {
+      id: 'proveedores-01-crear',
+      titulo: 'Añadir un proveedor',
+      texto: 'Pulsa aquí para añadir un proveedor nuevo. Es un botón real — tu clic hará exactamente lo mismo que si no estuvieras en el tutorial. Después podrás registrar los materiales que le compras, con su precio, en la pestaña "Catálogo".',
+      targetId: 'nuevo-proveedor-btn',
+      posicion: 'izquierda',
+      tipo: 'interactivo',
+    },
+  ],
+};
+
 export const TUTORIALES: Record<string, DefinicionTutorial> = {
   [TUTORIAL_APP.id]: TUTORIAL_APP,
   [TUTORIAL_EDITOR.id]: TUTORIAL_EDITOR,
+  [TUTORIAL_FACTURAS.id]: TUTORIAL_FACTURAS,
+  [TUTORIAL_PROVEEDORES.id]: TUTORIAL_PROVEEDORES,
 };

@@ -29,7 +29,7 @@ import { AjustesPerfil } from './ajustes-perfil.js';
 import { PanelNotificaciones } from './panel-notificaciones.js';
 import { TutorialOverlay } from './TutorialOverlay.js';
 import { useTutorial } from './use-tutorial.js';
-import { TUTORIAL_APP } from './tutorial-definiciones.js';
+import { TUTORIAL_APP, TUTORIAL_FACTURAS, TUTORIAL_PROVEEDORES } from './tutorial-definiciones.js';
 import { esNuncaVisto } from './tutorial-progreso-adapter.js';
 import type { Cliente, Proyecto, Factura } from './types.js';
 import * as api from './api.js';
@@ -141,6 +141,26 @@ export function PresupuestosPrototype() {
     if (esNuncaVisto(tutorial.progresoDe(TUTORIAL_APP.id))) tutorial.abrir(TUTORIAL_APP);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autenticado]);
+
+  /**
+   * Onboarding contextual (Fase D, 25/08/2026) — al entrar por primera vez
+   * a Facturas o Proveedores (nunca durante el recorrido inicial, ni
+   * disparado por el botón "Tutorial"), se abre un tutorial corto solo de
+   * esa sección. Dos guardas para no repetirse ni chocar con el tour
+   * principal: (1) si YA hay un tutorial activo (p. ej. el recorrido
+   * inicial en curso, que navega solo entre secciones) no se interrumpe
+   * abriendo otro encima; (2) si el recorrido inicial ya está
+   * `completado`, el usuario ya vio esta misma explicación ahí — no hace
+   * falta repetirla por sección.
+   */
+  useEffect(() => {
+    if (!autenticado) return;
+    if (tutorial.estado.fase !== 'inactivo') return;
+    if (tutorial.progresoDe(TUTORIAL_APP.id)?.estado === 'completado') return;
+    const contextual = seccion === 'facturas' ? TUTORIAL_FACTURAS : seccion === 'proveedores' ? TUTORIAL_PROVEEDORES : null;
+    if (contextual && esNuncaVisto(tutorial.progresoDe(contextual.id))) tutorial.abrir(contextual);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seccion]);
 
   useLicencia(sesion, logout);
   const { estado: estadoPush, error: errorPush, activar: activarPush } = usePush(sesion);
