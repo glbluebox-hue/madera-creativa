@@ -85,6 +85,16 @@ export type EditorDocumentoProps = {
   onGuardar: (c: DocumentoContenedorMC) => Promise<void>;
   onVolver: () => void;
   onCambiarLogoEmpresa?: (logo: string) => void;
+  /**
+   * Lista de clientes para poder reasignar este presupuesto a otro —
+   * junto con `onCambiarCliente`, ambos opcionales: solo los proporciona
+   * `AbrirDocumento` para presupuestos reales, nunca para Contratos ni
+   * Plantillas. Antes solo se podía elegir el cliente al CREAR el
+   * presupuesto — no había forma de cambiarlo después sin borrar y volver
+   * a empezar (pedido real, 25/08/2026).
+   */
+  clientesDisponibles?: { id: string; nombre: string }[];
+  onCambiarCliente?: (nuevoClienteId: string) => Promise<void>;
 };
 
 type PreviewMover = { ids: string[]; deltaX: number; deltaY: number };
@@ -143,7 +153,7 @@ function documentoVacio(): DocumentoMC {
  * incremento posterior — con la selección actual, redimensionar/rotar
  * solo actúa cuando hay un único elemento seleccionado.
  */
-export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa, precioVinculado, esPlantilla, onGuardar, onVolver, onCambiarLogoEmpresa }: EditorDocumentoProps) {
+export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa, precioVinculado, esPlantilla, onGuardar, onVolver, onCambiarLogoEmpresa, clientesDisponibles, onCambiarCliente }: EditorDocumentoProps) {
   const documentoInicial = useMemo<DocumentoMC>(() => {
     const contenido = contenedor.contenidoDocumento as unknown as DocumentoMC;
     return contenido && contenido.paginas && contenido.paginas.length > 0 ? contenido : documentoVacio();
@@ -246,6 +256,10 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
   const [herramientasAbiertas, setHerramientasAbiertas] = useState(() => typeof window === 'undefined' || window.innerWidth > 720);
   const [panelTemaAbierto, setPanelTemaAbierto] = useState(false);
   const [panelPlantillaAbierto, setPanelPlantillaAbierto] = useState(false);
+  const [panelClienteAbierto, setPanelClienteAbierto] = useState(false);
+  const [clienteElegidoIdNuevo, setClienteElegidoIdNuevo] = useState('');
+  const [cambiandoCliente, setCambiandoCliente] = useState(false);
+  const [errorCambiarCliente, setErrorCambiarCliente] = useState('');
   const [nombrePlantillaNueva, setNombrePlantillaNueva] = useState('');
   const [ambitoPlantillaNueva, setAmbitoPlantillaNueva] = useState<'usuario' | 'corporativa'>('usuario');
   const [guardandoPlantilla, setGuardandoPlantilla] = useState(false);
@@ -770,6 +784,21 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
       setAvisoPlantilla(String(e).replace(/^Error:\s*/, ''));
     } finally {
       setGuardandoPlantilla(false);
+    }
+  };
+
+  const cambiarCliente = async () => {
+    if (!onCambiarCliente || !clienteElegidoIdNuevo || clienteElegidoIdNuevo === clienteId) return;
+    setCambiandoCliente(true);
+    setErrorCambiarCliente('');
+    try {
+      await onCambiarCliente(clienteElegidoIdNuevo);
+      setPanelClienteAbierto(false);
+      setClienteElegidoIdNuevo('');
+    } catch (e) {
+      setErrorCambiarCliente(String(e).replace(/^Error:\s*/, ''));
+    } finally {
+      setCambiandoCliente(false);
     }
   };
 
@@ -1304,7 +1333,18 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
       <div className={editorStyles.barraSuperior}>
         <button className={styles.btn} onClick={alPulsarVolver}>← Volver</button>
         <input className={editorStyles.titulo} value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Título del documento" />
-        <span style={{ fontSize: '0.75rem', color: 'var(--topo-claro)' }}>{clienteNombre}</span>
+        {onCambiarCliente && clientesDisponibles ? (
+          <button
+            className={styles.btn}
+            style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
+            onClick={() => { setClienteElegidoIdNuevo(clienteId); setErrorCambiarCliente(''); setPanelClienteAbierto(true); }}
+            title="Cambiar a qué cliente pertenece este presupuesto"
+          >
+            👤 {clienteNombre} ✎
+          </button>
+        ) : (
+          <span style={{ fontSize: '0.75rem', color: 'var(--topo-claro)' }}>{clienteNombre}</span>
+        )}
         <div style={{ flex: 1 }} />
         {/* Solo visibles en pantallas estrechas (ver CSS) — en escritorio
             ambos paneles ya están siempre a la vista. */}
@@ -1445,6 +1485,30 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
               <button className={styles.btn} onClick={() => setPanelPlantillaAbierto(false)}>Cancelar</button>
               <button className={styles.btn} onClick={guardarComoPlantilla} disabled={!nombrePlantillaNueva.trim() || guardandoPlantilla}>
                 {guardandoPlantilla ? 'Guardando…' : esPlantilla ? 'Actualizar' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {panelClienteAbierto && clientesDisponibles && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setPanelClienteAbierto(false)}>
+          <div style={{ background: 'var(--fondo-panel)', borderRadius: 10, padding: '1.25rem', minWidth: 300, display: 'flex', flexDirection: 'column', gap: '0.7rem' }} onClick={(e) => e.stopPropagation()}>
+            <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem' }}>Cambiar cliente de este presupuesto</p>
+            <p className={editorStyles.panelNota}>Este presupuesto pasará a pertenecer al cliente que elijas — dejará de aparecer en la ficha de "{clienteNombre}".</p>
+            <label className={editorStyles.panelCampo}>
+              Cliente
+              <select value={clienteElegidoIdNuevo} onChange={(e) => setClienteElegidoIdNuevo(e.target.value)}>
+                {clientesDisponibles.map((c) => (
+                  <option key={c.id} value={c.id}>{c.nombre}</option>
+                ))}
+              </select>
+            </label>
+            {errorCambiarCliente && <p className={editorStyles.panelNota} style={{ color: 'var(--rojo, #c0392b)' }}>{errorCambiarCliente}</p>}
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              <button className={styles.btn} onClick={() => setPanelClienteAbierto(false)}>Cancelar</button>
+              <button className={styles.btn} onClick={cambiarCliente} disabled={!clienteElegidoIdNuevo || clienteElegidoIdNuevo === clienteId || cambiandoCliente}>
+                {cambiandoCliente ? 'Cambiando…' : 'Cambiar'}
               </button>
             </div>
           </div>

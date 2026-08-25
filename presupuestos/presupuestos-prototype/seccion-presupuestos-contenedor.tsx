@@ -47,7 +47,7 @@ export function SeccionPresupuestosContenedor({ onAbrirCliente, clientes, empres
           className={`${styles.fichaTab} ${pestana === 'documentos' ? styles.fichaTabActiva : ''}`}
           onClick={() => setPestana('documentos')}
         >
-          Documentos
+          Presupuestos
         </button>
         <button
           className={`${styles.fichaTab} ${pestana === 'plantillas' ? styles.fichaTabActiva : ''}`}

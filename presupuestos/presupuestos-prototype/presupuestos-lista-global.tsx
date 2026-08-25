@@ -102,6 +102,21 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
     setEditor({ presupuesto: guardado, clienteId: guardado.clienteId, clienteNombre: nombreDe(guardado.clienteId) });
   };
 
+  /**
+   * Reasigna el presupuesto abierto a otro cliente — antes solo se podía
+   * elegir el cliente al crear el presupuesto, sin forma de cambiarlo
+   * después (pedido real, 25/08/2026). Reutiliza el mismo `guardarPresupuesto`
+   * que ya usa el guardado normal, con `clienteId` distinto. También limpia
+   * `proyectoId`: un presupuesto vinculado a un proyecto concreto del
+   * cliente ANTERIOR no puede seguir apuntando a ese mismo proyecto tras
+   * cambiar de cliente (el nuevo cliente no lo tiene) — queda "sin
+   * proyecto concreto", igual que uno creado desde el asistente global.
+   */
+  const cambiarClienteDelPresupuesto = async (nuevoClienteId: string) => {
+    if (!editor) return;
+    await guardarDocumentoAbierto({ ...editor.presupuesto, clienteId: nuevoClienteId, proyectoId: '' });
+  };
+
   const borrar = async (id: string) => {
     try {
       await api.borrarPresupuesto(id);
@@ -354,6 +369,8 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
         onGuardar={guardarDocumentoAbierto}
         onVolver={() => setEditor(null)}
         onCambiarLogoEmpresa={(logo) => onActualizarEmpresa({ logo })}
+        clientesDisponibles={clientes}
+        onCambiarCliente={cambiarClienteDelPresupuesto}
       />
     );
   }

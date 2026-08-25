@@ -1082,6 +1082,7 @@ export async function obtenerEmpresa(): Promise<Empresa> {
   const data = await res.json();
   return {
     nombre: data.nombre,
+    titular: data.titular || '',
     eslogan: data.eslogan,
     logo: data.logo || null,
     nifCif: data.nifCif || '',
@@ -1114,6 +1115,7 @@ export async function guardarEmpresa(empresa: Partial<Empresa>): Promise<Empresa
   const data = await res.json();
   return {
     nombre: data.nombre,
+    titular: data.titular || '',
     eslogan: data.eslogan,
     logo: data.logo || null,
     nifCif: data.nifCif || '',

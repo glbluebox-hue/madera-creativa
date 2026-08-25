@@ -22,7 +22,6 @@ import { TabMediciones } from './tab-mediciones.js';
 import { TabTareas } from './tab-tareas.js';
 import { TabNotas } from './tab-notas.js';
 import { TabDibujos } from './tab-dibujos.js';
-import { TabPresupuestosIA } from './tab-presupuestos-ia.js';
 import { TabContratos } from './tab-contratos.js';
 import type { Empresa } from './use-empresa.js';
 import styles from './styles.module.css';
@@ -62,13 +61,12 @@ export type FichaClienteProps = {
   onCrearProveedor?: (p: Omit<Proveedor, 'id' | 'creado'>) => Proveedor;
 };
 
-type Pestana = 'resumen' | 'proyectos' | 'presupuestos' | 'presupuestosIA' | 'contratos' | 'facturas' | 'notas' | 'dibujos';
+type Pestana = 'resumen' | 'proyectos' | 'presupuestos' | 'contratos' | 'facturas' | 'notas' | 'dibujos';
 
 const PESTANAS: { id: Pestana; label: string }[] = [
   { id: 'resumen', label: 'Resumen' },
   { id: 'proyectos', label: 'Proyectos' },
   { id: 'presupuestos', label: 'Control de gasto' },
-  { id: 'presupuestosIA', label: 'Presupuestos IA' },
   { id: 'contratos', label: 'Contratos' },
   { id: 'facturas', label: 'Facturas' },
   { id: 'notas', label: 'Notas' },
@@ -418,13 +416,6 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
 
       {/* ── DIBUJOS: repositorio de documentación gráfica del proyecto (Fase 2.2) ── */}
       {pestana === 'dibujos' && <TabDibujos proyecto={proyecto} />}
-
-      {/* ── PRESUPUESTOS IA: presupuestos narrativos creados/modificados por el asistente (Fase 5) ── */}
-      {pestana === 'presupuestosIA' && (
-        <div className={styles.tabPanel}>
-          <TabPresupuestosIA cliente={cliente} proyecto={proyecto} empresa={empresa} onActualizarEmpresa={onActualizarEmpresa} onActualizarProyecto={onActualizarProyecto} />
-        </div>
-      )}
 
       {/* ── CONTRATOS: segundo tipo de documento del Motor Documental (Incremento 12) — mismo editor, mismo núcleo ── */}
       {pestana === 'contratos' && (

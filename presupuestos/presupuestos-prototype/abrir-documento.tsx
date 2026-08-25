@@ -22,9 +22,12 @@ export type AbrirDocumentoProps = {
   onGuardar: (p: PresupuestoMC) => Promise<void>;
   onVolver: () => void;
   onCambiarLogoEmpresa?: (logo: string) => void;
+  /** Reasignar el cliente de un presupuesto en `formato:'documento'` — ver `EditorDocumentoProps.onCambiarCliente`. El editor legado (`formato:'lienzo'`) no lo ofrece. */
+  clientesDisponibles?: { id: string; nombre: string }[];
+  onCambiarCliente?: (nuevoClienteId: string) => Promise<void>;
 };
 
-export function AbrirDocumento({ presupuesto, clienteId, clienteNombre, empresa, onGuardar, onVolver, onCambiarLogoEmpresa }: AbrirDocumentoProps) {
+export function AbrirDocumento({ presupuesto, clienteId, clienteNombre, empresa, onGuardar, onVolver, onCambiarLogoEmpresa, clientesDisponibles, onCambiarCliente }: AbrirDocumentoProps) {
   if (presupuesto.formato === 'lienzo') {
     return (
       <EditorPresupuestoLienzo
@@ -50,6 +53,8 @@ export function AbrirDocumento({ presupuesto, clienteId, clienteNombre, empresa,
         onGuardar={(c) => onGuardar({ ...presupuesto, ...c })}
         onVolver={onVolver}
         onCambiarLogoEmpresa={onCambiarLogoEmpresa}
+        clientesDisponibles={clientesDisponibles}
+        onCambiarCliente={onCambiarCliente}
       />
     );
   }
