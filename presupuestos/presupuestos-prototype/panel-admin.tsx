@@ -123,6 +123,21 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
     tipoAccesoConcedido: 'promotional' as TipoAcceso, planConcedido: 'LIFETIME_FREE' as PlanAcceso,
     duracionDias: '', usosMaximos: '', fechaExpiracion: '', notas: '',
   });
+  /** Id del código cuyo enlace se acaba de copiar — feedback "¡Copiado!" temporal, mismo patrón que `solicitud-resena.tsx`. */
+  const [enlaceCopiado, setEnlaceCopiado] = useState<string | null>(null);
+  /**
+   * Enlace de invitación para un código — `login-page.tsx` lee `?codigo=`
+   * de la URL al cargar y precarga el registro con ese código, sin que el
+   * invitado tenga que teclearlo a mano (petición real, 25/08/2026).
+   */
+  const copiarEnlaceInvitacion = async (codigo: string) => {
+    const url = `${window.location.origin}/?codigo=${encodeURIComponent(codigo)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setEnlaceCopiado(codigo);
+      setTimeout(() => setEnlaceCopiado((actual) => (actual === codigo ? null : actual)), 2000);
+    } catch { /* portapapeles no disponible — sin feedback, pero no rompe nada */ }
+  };
 
   // Gestión de costes de infraestructura.
   const [costes, setCostes] = useState<CosteInfraestructura[]>([]);
@@ -698,6 +713,14 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
                   {c.notas && <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--topo-claro)', fontStyle: 'italic' }}>{c.notas}</p>}
 
                   <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                    <button
+                      className={`${styles.btn} ${styles.btnSecundario}`}
+                      style={{ fontSize: '0.74rem' }}
+                      onClick={() => copiarEnlaceInvitacion(c.codigo)}
+                      title="Copia un enlace que precarga este código en el registro — quien lo abra no tiene que teclear nada"
+                    >
+                      {enlaceCopiado === c.codigo ? '¡Copiado!' : 'Copiar enlace de invitación'}
+                    </button>
                     <button
                       className={`${styles.btn} ${c.activo ? styles.btnPeligro : styles.btnVerde}`}
                       style={{ fontSize: '0.74rem' }}

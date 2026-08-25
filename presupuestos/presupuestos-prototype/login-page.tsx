@@ -34,9 +34,19 @@ const IconoHuella = ({ s = 18 }: { s?: number }) => (
   </svg>
 );
 
+/**
+ * Código de invitación en la URL (`?codigo=XXXX`, generado desde el Panel
+ * de administración — ver `copiarEnlaceInvitacion` en `panel-admin.tsx`).
+ * Un único de-uso al cargar, igual que `accion=clientes` en
+ * `presupuestos-prototype.tsx` — nunca algo persistente.
+ */
+function codigoInvitacionDeLaUrl(): string {
+  return new URLSearchParams(window.location.search).get('codigo') ?? '';
+}
+
 /** Pantalla de inicio de sesión y registro de Madera Creativa. */
 export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPageProps) {
-  const [pantalla, setPantalla] = useState<Pantalla>('login');
+  const [pantalla, setPantalla] = useState<Pantalla>(() => (codigoInvitacionDeLaUrl() ? 'registro' : 'login'));
 
   // Login
   const [loginUsuario, setLoginUsuario] = useState('');
@@ -64,9 +74,10 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
   const [regCargando, setRegCargando] = useState(false);
 
   // "¿Tienes un código de acceso?" — colapsado por defecto, para no alargar
-  // el formulario a quien no tiene uno (la mayoría de altas normales).
-  const [mostrarCampoCodigo, setMostrarCampoCodigo] = useState(false);
-  const [regCodigo, setRegCodigo] = useState('');
+  // el formulario a quien no tiene uno (la mayoría de altas normales). Ya
+  // abierto y relleno si se llegó con un enlace de invitación (`?codigo=`).
+  const [mostrarCampoCodigo, setMostrarCampoCodigo] = useState(() => !!codigoInvitacionDeLaUrl());
+  const [regCodigo, setRegCodigo] = useState(codigoInvitacionDeLaUrl);
 
   const iniciarSesion = async (e: React.FormEvent) => {
     e.preventDefault();
