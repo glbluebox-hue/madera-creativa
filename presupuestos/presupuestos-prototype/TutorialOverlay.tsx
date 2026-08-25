@@ -159,7 +159,20 @@ export function TutorialOverlay({
         className={styles.foco}
         style={{ top: rect.top - MARGEN_FOCO_PX, left: rect.left - MARGEN_FOCO_PX, width: rect.width + MARGEN_FOCO_PX * 2, height: rect.height + MARGEN_FOCO_PX * 2 }}
       />
-      <div className={styles.globo} style={posicionGlobo(rect, paso.posicion)}>
+      {/*
+        `key={paso.id}` es a propósito (Fase C, 25/08/2026): fuerza a React
+        a desmontar y remontar este `<div>` en cada paso nuevo, para que la
+        animación CSS de aparición (`animation`, no `transition`) se vuelva
+        a disparar siempre — una `transition` normal solo se anima cuando
+        una propiedad cambia en un nodo YA montado, y aquí el contenido
+        cambia sin que el nodo se desmonte. Deliberadamente NO se anima
+        `.foco`/`.velo` (la posición/el recorte) — esa animación de
+        posición fue la causa real del parpadeo arreglado hoy mismo (ver
+        `tutorial-overlay.module.css`); esta solo hace un fundido del texto,
+        sin mover nada.
+      */}
+      <div key={paso.id} className={styles.globo} style={posicionGlobo(rect, paso.posicion)}>
+        <p className={styles.globoProgreso}>Paso {estado.pasoIndice + 1} de {estado.definicion.pasos.length}</p>
         <p className={styles.globoTitulo}>{paso.titulo}</p>
         <p className={styles.globoTexto}>{paso.texto}</p>
         {paso.tipo === 'interactivo' && <p className={styles.globoPista}>👉 Pulsa el elemento señalado para continuar.</p>}

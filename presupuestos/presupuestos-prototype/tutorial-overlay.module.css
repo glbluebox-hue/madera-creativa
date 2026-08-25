@@ -59,6 +59,18 @@
   pointer-events: none;
 }
 
+/*
+ * Fundido corto al aparecer un paso nuevo (Fase C, 25/08/2026) — solo
+ * opacidad, nunca posición: animar `top`/`left` aquí sería repetir el bug
+ * de parpadeo ya arreglado en `.velo`/`.foco` (ver sus comentarios). Con
+ * `prefers-reduced-motion` se desactiva sin más — el globo aparece
+ * directamente, como antes.
+ */
+@keyframes globoAparece {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 .globo {
   position: fixed;
   background: var(--fondo-panel);
@@ -78,6 +90,20 @@
      elemento señalado. Bug real, 24/08/2026. */
   box-sizing: border-box;
   pointer-events: auto;
+  animation: globoAparece 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .globo { animation: none; }
+}
+
+.globoProgreso {
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--topo-muy-claro);
 }
 
 .globoTitulo {
