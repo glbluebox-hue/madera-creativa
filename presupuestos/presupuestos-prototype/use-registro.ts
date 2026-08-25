@@ -59,6 +59,45 @@ export async function registrarEnServidor(nombre: string, password: string, codi
 }
 
 /**
+ * Pide el enlace de recuperación de contraseña por email (26/08/2026).
+ * Siempre responde `ok: true` si el servidor respondió — nunca revela si
+ * ese email existe o no (lo decide el propio servidor, ver
+ * `/auth/solicitar-recuperacion`).
+ */
+export async function solicitarRecuperacion(nombre: string): Promise<ResultadoAuth> {
+  try {
+    const res = await fetch(`${BASE}/auth/solicitar-recuperacion`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return { ok: false, error: data.error || 'No se pudo procesar la solicitud.', codigo: 'error-red' };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, error: 'Sin conexión con el servidor.', codigo: 'error-red' };
+  }
+}
+
+/** Consume el token del enlace de recuperación y fija la contraseña nueva. */
+export async function restablecerPassword(token: string, passwordNueva: string): Promise<ResultadoAuth> {
+  try {
+    const res = await fetch(`${BASE}/auth/restablecer-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, passwordNueva }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return { ok: false, error: data.error || 'No se pudo restablecer la contraseña.', codigo: 'credenciales' };
+    return { ok: true };
+  } catch {
+    return { ok: false, error: 'Sin conexión con el servidor.', codigo: 'error-red' };
+  }
+}
+
+/**
  * Inicia sesión verificando credenciales contra el servidor.
  * Devuelve error específico si la cuenta está pendiente o suspendida.
  */

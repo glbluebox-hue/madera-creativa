@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import logoImg from './assets/logo.png';
 import loginMadera from './assets/login-madera.jpg';
 import loginHojas from './assets/login-hojas.jpg';
-import { registrarEnServidor, loginEnServidor } from './use-registro.js';
+import { registrarEnServidor, loginEnServidor, solicitarRecuperacion, restablecerPassword } from './use-registro.js';
 import { soportaWebAuthn, iniciarSesionBiometrica } from './use-biometria.js';
 import styles from './styles.module.css';
 
@@ -44,6 +44,11 @@ function codigoInvitacionDeLaUrl(): string {
   return new URLSearchParams(window.location.search).get('codigo') ?? '';
 }
 
+/** Token del enlace de recuperación de contraseña (`?recuperar=…`, enviado por email desde `/auth/solicitar-recuperacion`) — mismo patrón de un solo uso al cargar. */
+function tokenRecuperacionDeLaUrl(): string {
+  return new URLSearchParams(window.location.search).get('recuperar') ?? '';
+}
+
 /** Pantalla de inicio de sesión y registro de Madera Creativa. */
 export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPageProps) {
   const [pantalla, setPantalla] = useState<Pantalla>(() => (codigoInvitacionDeLaUrl() ? 'registro' : 'login'));
@@ -64,6 +69,44 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
   const soportaBiometria = soportaWebAuthn();
   const [bioCargando, setBioCargando] = useState(false);
   const [bioError, setBioError] = useState('');
+
+  // "¿Olvidaste tu contraseña?" — pedir el enlace por email.
+  const [recuperarEmail, setRecuperarEmail] = useState('');
+  const [recuperarEnviando, setRecuperarEnviando] = useState(false);
+  const [recuperarEnviado, setRecuperarEnviado] = useState(false);
+  const [recuperarError, setRecuperarError] = useState('');
+
+  const pedirRecuperacion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!recuperarEmail.trim()) return;
+    setRecuperarError('');
+    setRecuperarEnviando(true);
+    const r = await solicitarRecuperacion(recuperarEmail.trim());
+    setRecuperarEnviando(false);
+    if (!r.ok) { setRecuperarError(r.error ?? 'No se pudo procesar la solicitud.'); return; }
+    setRecuperarEnviado(true);
+  };
+
+  // Pantalla de "restablecer contraseña" — reemplaza login/registro por
+  // completo cuando se llega con `?recuperar=<token>` desde el email.
+  const [tokenRecuperacion] = useState(tokenRecuperacionDeLaUrl);
+  const [nuevaPass1, setNuevaPass1] = useState('');
+  const [nuevaPass2, setNuevaPass2] = useState('');
+  const [restableciendo, setRestableciendo] = useState(false);
+  const [restablecerError, setRestablecerError] = useState('');
+  const [restablecido, setRestablecido] = useState(false);
+
+  const restablecer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRestablecerError('');
+    if (nuevaPass1.length < 8) { setRestablecerError('La contraseña debe tener al menos 8 caracteres.'); return; }
+    if (nuevaPass1 !== nuevaPass2) { setRestablecerError('Las dos contraseñas no coinciden.'); return; }
+    setRestableciendo(true);
+    const r = await restablecerPassword(tokenRecuperacion, nuevaPass1);
+    setRestableciendo(false);
+    if (!r.ok) { setRestablecerError(r.error ?? 'No se pudo restablecer la contraseña.'); return; }
+    setRestablecido(true);
+  };
 
   // Registro
   const [regNombre, setRegNombre] = useState('');
@@ -195,6 +238,8 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
           <hr className={styles.loginDivisor} />
           <p className={styles.loginSubtitulo}>Seguimiento de clientes<br />y proyectos</p>
 
+          {!tokenRecuperacion && (
+          <>
           {/* Tabs login / registro */}
           <div className={styles.loginTabsRow}>
             <button
@@ -281,19 +326,41 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
               </div>
               {bioError && <div className={styles.loginError} style={{ marginTop: '0.5rem' }}><span style={{ display: 'inline-flex' }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12" y2="17" /></svg></span> {bioError}</div>}
 
-              <button type="button" className={styles.loginRecuperar} onClick={() => setMostrarAyuda(v => !v)}>
+              <button type="button" className={styles.loginRecuperar} onClick={() => { setMostrarAyuda(v => !v); setRecuperarEnviado(false); setRecuperarError(''); }}>
                 ¿Olvidaste tu contraseña?
               </button>
               {mostrarAyuda && (
                 <div className={styles.loginAyuda}>
-                  <p style={{ margin: '0 0 0.25rem', fontWeight: 600, fontSize: '0.8rem' }}>Recuperar acceso</p>
-                  <p style={{ margin: 0 }}>
-                    Escribe a{' '}
-                    <a href="mailto:holamaderacreativa@gmail.com" style={{ color: 'var(--ocre)', fontWeight: 600 }}>
-                      holamaderacreativa@gmail.com
-                    </a>{' '}
-                    y te ayudaremos enseguida.
-                  </p>
+                  {recuperarEnviado ? (
+                    <p style={{ margin: 0 }}>
+                      Si ese email tiene una cuenta, te hemos mandado un enlace para poner una contraseña nueva — revisa tu correo (y la carpeta de spam, por si acaso).
+                    </p>
+                  ) : (
+                    <>
+                      <p style={{ margin: '0 0 0.5rem', fontWeight: 600, fontSize: '0.8rem' }}>Recuperar acceso</p>
+                      <div style={{ display: 'flex', gap: '0.4rem' }}>
+                        <input
+                          className={styles.input}
+                          style={{ flex: 1, fontSize: '0.85rem' }}
+                          type="email"
+                          value={recuperarEmail}
+                          onChange={(e) => setRecuperarEmail(e.target.value)}
+                          placeholder="Tu correo electrónico"
+                          autoComplete="email"
+                        />
+                        <button
+                          type="button"
+                          className={`${styles.btn} ${styles.btnPrimario}`}
+                          style={{ fontSize: '0.8rem' }}
+                          disabled={recuperarEnviando || !recuperarEmail.trim()}
+                          onClick={pedirRecuperacion}
+                        >
+                          {recuperarEnviando ? 'Enviando…' : 'Enviar'}
+                        </button>
+                      </div>
+                      {recuperarError && <p style={{ margin: '0.5rem 0 0', fontSize: '0.78rem', color: 'var(--rojo)' }}>{recuperarError}</p>}
+                    </>
+                  )}
                 </div>
               )}
             </form>
@@ -374,6 +441,63 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
                 {regCargando ? <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center' }}><span className={styles.loginSpinner} /> Creando cuenta…</span> : 'Crear cuenta y entrar'}
               </button>
             </form>
+          )}
+          </>
+          )}
+
+          {/* ── RESTABLECER CONTRASEÑA (llegado desde el enlace del email) ── */}
+          {tokenRecuperacion && (
+            restablecido ? (
+              <div className={styles.loginForm}>
+                <p style={{ margin: '0 0 1rem', fontSize: '0.88rem', color: 'var(--topo)' }}>
+                  Contraseña actualizada. Ya puedes entrar con ella.
+                </p>
+                <button
+                  type="button"
+                  className={`${styles.btn} ${styles.btnPrimario} ${styles.btnLoginSubmit}`}
+                  onClick={() => { window.location.href = window.location.pathname; }}
+                >
+                  Ir a entrar
+                </button>
+              </div>
+            ) : (
+              <form className={styles.loginForm} onSubmit={restablecer} noValidate>
+                <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: 'var(--topo)' }}>
+                  Escribe tu nueva contraseña.
+                </p>
+                <div className={styles.loginInputWrap}>
+                  <span className={styles.loginIconoBadge}><IconoCandado /></span>
+                  <input
+                    className={`${styles.input} ${styles.loginInputSimple}`}
+                    type="password"
+                    value={nuevaPass1}
+                    onChange={(e) => setNuevaPass1(e.target.value)}
+                    placeholder="Contraseña nueva"
+                    autoComplete="new-password"
+                    autoFocus
+                  />
+                </div>
+                <div className={styles.loginInputWrap}>
+                  <span className={styles.loginIconoBadge}><IconoCandado /></span>
+                  <input
+                    className={`${styles.input} ${styles.loginInputSimple}`}
+                    type="password"
+                    value={nuevaPass2}
+                    onChange={(e) => setNuevaPass2(e.target.value)}
+                    placeholder="Repite la contraseña"
+                    autoComplete="new-password"
+                  />
+                </div>
+                {restablecerError && <div className={styles.loginError}>{restablecerError}</div>}
+                <button
+                  type="submit"
+                  className={`${styles.btn} ${styles.btnPrimario} ${styles.btnLoginSubmit}`}
+                  disabled={restableciendo || !nuevaPass1 || !nuevaPass2}
+                >
+                  {restableciendo ? 'Guardando…' : 'Guardar contraseña nueva'}
+                </button>
+              </form>
+            )
           )}
 
           <div className={styles.loginDivisorPunto} />

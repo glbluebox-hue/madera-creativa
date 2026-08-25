@@ -173,6 +173,17 @@ const UsuarioSchema = new Schema({
    * 50 (ver `$slice` en la ruta de login) para no crecer sin límite.
    */
   historialAccesos: { type: [String], default: [] },
+  /**
+   * Recuperación de contraseña por email (26/08/2026) — mismo patrón que
+   * `refresh-token.model.ts`: nunca se guarda el token en claro, solo su
+   * hash SHA-256, así que una fuga de la base de datos no basta para
+   * suplantar a nadie. `null` cuando no hay ninguna recuperación pendiente
+   * (nunca se pidió, ya se usó, o expiró); un solo campo, no una colección
+   * aparte — solo puede haber una recuperación válida a la vez por cuenta,
+   * pedir una nueva invalida la anterior sin más.
+   */
+  resetTokenHash:   { type: String, default: null },
+  resetTokenExpira: { type: String, default: null },
   pushSubs:     { type: [PushSubscriptionSchema], default: [] },
   /**
    * Nombre para mostrar (barra lateral, saludo de Inicio) — independiente

@@ -40,6 +40,17 @@ export const esquemaRegistro = z.object({
   codigoPromocional: z.string().trim().max(40).optional(),
 });
 
+/** Recuperación de contraseña por email (26/08/2026) — pedir el enlace. */
+export const esquemaSolicitarRecuperacion = z.object({
+  nombre: z.string().trim().min(3).max(254),
+});
+
+/** Recuperación de contraseña por email — consumir el token y fijar la contraseña nueva. */
+export const esquemaRestablecerPassword = z.object({
+  token: z.string().min(10).max(128),
+  passwordNueva: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres.').max(256),
+});
+
 // ── Acceso biométrico (WebAuthn/passkeys) ───────────────────────────────────────
 // Verifica solo la forma del payload (tamaños razonables, campos presentes) —
 // la seguridad real de la ceremonia (firma, challenge, origin, RP ID) la

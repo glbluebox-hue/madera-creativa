@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes, createHash } from 'node:crypto';
 import dns from 'node:dns';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
@@ -30,6 +30,8 @@ import { validar } from './validacion.middleware.js';
 import { hashPassword, verificarPassword, verificarPasswordLegado } from './password.service.js';
 import { firmarAccessToken, verificarAccessToken } from './token.service.js';
 import { crearRefreshToken, rotarRefreshToken, revocarRefreshToken, revocarTodosDeUsuario } from './refresh-token.model.js';
+import { enviarEmail } from './resend.service.js';
+import { origenEsperado } from './webauthn-config.js';
 import {
   esquemaLogin,
   esquemaRegistro,
@@ -73,6 +75,8 @@ import {
   esquemaActualizarCobros,
   esquemaNotifPrefs,
   esquemaActualizarRecordatorios,
+  esquemaSolicitarRecuperacion,
+  esquemaRestablecerPassword,
 } from './esquemas-validacion.js';
 
 // Debe ejecutarse antes de leer cualquier process.env.* de este módulo —
@@ -713,6 +717,70 @@ export function run() {
       const tokenPlano = req.cookies?.mc_refresh as string | undefined;
       if (tokenPlano) await revocarRefreshToken(tokenPlano);
       res.clearCookie('mc_refresh', opcionesCookieRefresh());
+      res.json({ ok: true });
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /**
+   * Pide el enlace de recuperación de contraseña por email (26/08/2026).
+   * `limitadorAuth` evita que se use este endpoint para spamear una
+   * bandeja de entrada. Responde `{ ok: true }` tanto si el email existe
+   * como si no — nunca revela si una cuenta concreta está registrada
+   * (mismo motivo por el que un formulario de login nunca dice "ese
+   * usuario no existe" en vez de "credenciales incorrectas").
+   */
+  app.post('/auth/solicitar-recuperacion', limitadorAuth, validar(esquemaSolicitarRecuperacion), async (req: AuthRequest, res) => {
+    try {
+      await conectarUsuarios();
+      const nombreNormalizado = req.body.nombre.toLowerCase();
+      const u = await UsuarioModel.findOne({ nombreNormalizado }).lean().exec() as any;
+      if (u) {
+        // Mismo patrón que `refresh-token.model.ts`: el token viaja en
+        // claro solo en el email, nunca se guarda así — solo su hash.
+        const tokenPlano = randomBytes(32).toString('hex');
+        const tokenHash = createHash('sha256').update(tokenPlano).digest('hex');
+        const expira = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hora
+        await UsuarioModel.updateOne({ id: u.id }, { resetTokenHash: tokenHash, resetTokenExpira: expira });
+
+        const origen = origenEsperado(req) || 'https://estudio.maderacreativa.com';
+        const enlace = `${origen}/?recuperar=${tokenPlano}`;
+        try {
+          await enviarEmail(
+            u.nombre,
+            'Recupera tu acceso a Madera Creativa',
+            `<p>Has pedido restablecer tu contraseña.</p><p><a href="${enlace}">Pulsa aquí para poner una nueva</a> (válido durante 1 hora).</p><p>Si no has sido tú, ignora este email — tu contraseña actual sigue funcionando.</p>`
+          );
+        } catch (err) {
+          // Un fallo al enviar el email es un problema real de configuración
+          // (Resend caído, clave sin poner…) — se registra, pero nunca se le
+          // dice al usuario "esa cuenta no existe" ni se le da una pista de
+          // que el envío falló: mismo motivo que arriba, no revelar nada.
+          logger.error({ err, requestId: req.requestId }, 'Error enviando email de recuperación');
+        }
+      }
+      res.json({ ok: true });
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /**
+   * Consume el token de recuperación y fija la contraseña nueva. Revoca
+   * TODAS las sesiones activas de la cuenta (`revocarTodosDeUsuario`) —
+   * si alguien pidió esto porque sospecha que otra persona tiene su
+   * contraseña, esa otra persona también pierde el acceso que ya tuviera.
+   */
+  app.post('/auth/restablecer-password', limitadorAuth, validar(esquemaRestablecerPassword), async (req, res) => {
+    try {
+      await conectarUsuarios();
+      const tokenHash = createHash('sha256').update(req.body.token).digest('hex');
+      const ahora = new Date().toISOString();
+      const u = await UsuarioModel.findOne({ resetTokenHash: tokenHash, resetTokenExpira: { $gt: ahora } }).lean().exec() as any;
+      if (!u) { res.status(400).json({ error: 'El enlace no es válido o ha caducado.' }); return; }
+      const passwordHash = await hashPassword(req.body.passwordNueva);
+      await UsuarioModel.updateOne(
+        { id: u.id },
+        { passwordHash, hashAlgo: 'bcrypt', resetTokenHash: null, resetTokenExpira: null }
+      );
+      await revocarTodosDeUsuario(u.id);
       res.json({ ok: true });
     } catch (err) { responderError(req, res, err); }
   });
