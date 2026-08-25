@@ -18,12 +18,26 @@
   pointer-events: none;
 }
 
-/* Panel oscuro de pantalla completa, recortado con `clip-path` (calculado en JS a partir del rect real del elemento) para dejar un hueco transparente alrededor del elemento señalado — un único elemento, nunca 4 paneles que deban encajar entre sí (ver `recorteVelo` en TutorialOverlay.tsx para el porqué). */
+/*
+ * Panel oscuro de pantalla completa, recortado con `clip-path` (calculado
+ * en JS a partir del rect real del elemento) para dejar un hueco
+ * transparente alrededor del elemento señalado — un único elemento, nunca
+ * 4 paneles que deban encajar entre sí (ver `recorteVelo` en
+ * TutorialOverlay.tsx para el porqué).
+ *
+ * SIN `transition`, a propósito — bug real reportado en vivo, 25/08/2026:
+ * al pasar de un paso a otro, este `clip-path` (compuesto en GPU) y el
+ * `top/left/width/height` de `.foco` (dispara layout) se animaban a la vez
+ * con la misma duración nominal, pero por caminos de render distintos —
+ * unos fotogramas de por medio quedaban desincronizados: el hueco del
+ * velo y el marco dorado no coincidían, y esa discrepancia se veía como
+ * parpadeo. Sin transición, el salto de un paso a otro es instantáneo —
+ * no hay fotogramas intermedios en los que puedan desincronizarse.
+ */
 .velo {
   position: fixed;
   inset: 0;
   background: rgba(24, 20, 15, 0.55);
-  transition: var(--trans-fast);
   pointer-events: auto;
 }
 
@@ -36,14 +50,13 @@
   justify-content: center;
 }
 
-/* Borde luminoso alrededor del elemento señalado — deja claro qué hay que mirar/pulsar, sin taparlo (el propio elemento queda sin ningún .velo encima). */
+/* Borde luminoso alrededor del elemento señalado — deja claro qué hay que mirar/pulsar, sin taparlo (el propio elemento queda sin ningún .velo encima). Sin `transition`, mismo motivo que `.velo` — ver su comentario. */
 .foco {
   position: fixed;
   border: 2px solid var(--ocre);
   border-radius: var(--radio-md);
   box-shadow: 0 0 0 4px rgba(138, 104, 53, 0.25), var(--sombra-lg);
   pointer-events: none;
-  transition: var(--trans-fast);
 }
 
 .globo {
