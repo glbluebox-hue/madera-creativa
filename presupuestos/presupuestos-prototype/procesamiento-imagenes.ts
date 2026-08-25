@@ -157,6 +157,37 @@ export async function codificarCanvas(canvas: HTMLCanvasElement, calidad: number
   return blob;
 }
 
+/**
+ * Rota 90° una imagen ya guardada como data URL — para corregir fotos que
+ * salieron apaisadas en vez de en vertical (o al revés) directamente sobre
+ * lo ya capturado, sin tener que repetir la foto (reporte real, 25/08/2026:
+ * "Foto rápida" de facturas a veces sale girada). `sentido: 1` = 90°
+ * horario, `-1` = antihorario. Decodifica con `<img>` en vez de
+ * `decodificarFuente()`/`createImageBitmap` a propósito: esa ruta está
+ * pensada para la foto ORIGINAL de cámara (varios MB, memoria delicada);
+ * aquí la fuente ya es una data URL comprimida por `comprimirImagen()`, así
+ * que no hace falta esa complejidad extra.
+ */
+export async function rotarImagenDataUrl(dataUrl: string, sentido: 1 | -1 = 1): Promise<string> {
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error('No se pudo cargar la imagen para rotarla'));
+    el.src = dataUrl;
+  });
+  const canvas = document.createElement('canvas');
+  // Rotar 90° intercambia ancho y alto del lienzo final.
+  canvas.width = img.naturalHeight;
+  canvas.height = img.naturalWidth;
+  const ctx = canvas.getContext('2d')!;
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate((sentido * 90 * Math.PI) / 180);
+  ctx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
+  const formatoOriginal = /^data:([^;]+);/.exec(dataUrl)?.[1];
+  const formato = formatoOriginal && (MIME_IMAGEN_PERMITIDOS as readonly string[]).includes(formatoOriginal) ? formatoOriginal : 'image/jpeg';
+  return canvas.toDataURL(formato, CALIDAD_COMPRESION);
+}
+
 /** Comprime una imagen (foto o adjunto de imagen) sin ningún filtro adicional. */
 export async function comprimirImagen(
   file: File | Blob,

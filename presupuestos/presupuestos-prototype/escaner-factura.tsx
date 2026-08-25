@@ -4,7 +4,7 @@ import { EscanerDocumento } from './escaner-documento.js';
 import type { ResultadoEscaneo } from './escaner-documento.js';
 import { ImporteInput } from './importe-input.js';
 import { leerArchivoComoBase64 } from './archivos.js';
-import { comprimirImagen } from './procesamiento-imagenes.js';
+import { comprimirImagen, rotarImagenDataUrl } from './procesamiento-imagenes.js';
 import { urlImagenFiable } from './imagen-fallback.js';
 import { Z_DESPLEGABLE } from './z-index.js';
 import { etiquetaEstado } from './estado-utils.js';
@@ -234,6 +234,21 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
     });
   };
 
+  const [rotando, setRotando] = useState(false);
+
+  /** Rota la imagen de una hoja 90° — fotos de "Foto rápida" que salen apaisadas en vez de en vertical (reporte real, 25/08/2026), sin tener que repetir la captura. */
+  const rotarPagina = async (id: string, sentido: 1 | -1) => {
+    const pagina = paginas.find(p => p.id === id);
+    if (!pagina || pagina.tipo !== 'imagen') return;
+    setRotando(true);
+    try {
+      const dataUrl = await rotarImagenDataUrl(pagina.dataUrl, sentido);
+      setPaginas(prev => prev.map(p => (p.id === id ? { ...p, dataUrl } : p)));
+    } finally {
+      setRotando(false);
+    }
+  };
+
   const moverPagina = (id: string, dir: -1 | 1) => {
     setPaginas(prev => {
       const idx = prev.findIndex(p => p.id === id);
@@ -402,6 +417,12 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
                       Hoja {paginaVista + 1} / {paginas.length}
                     </span>
                     <div style={{ display: 'flex', gap: '0.3rem' }}>
+                      {paginaActual.tipo === 'imagen' && (
+                        <button onClick={() => rotarPagina(paginaActual.id, 1)} disabled={rotando}
+                          className={styles.btnIcono} title="Rotar 90°" aria-label="Rotar hoja 90 grados" style={{ opacity: rotando ? 0.4 : 1 }}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-3.5-7.11" /><polyline points="21 3 21 9 15 9" /></svg>
+                        </button>
+                      )}
                       <button onClick={() => moverPagina(paginaActual.id, -1)} disabled={paginaVista === 0}
                         className={styles.btnIcono} title="Mover antes" aria-label="Mover hoja antes" style={{ opacity: paginaVista === 0 ? 0.3 : 1 }}>
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
