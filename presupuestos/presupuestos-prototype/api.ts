@@ -322,6 +322,16 @@ export async function descargarDocumentacionAsesor(anio: number, trimestre: numb
   descargarBlobDelNavegador(await res.blob(), nombreDesdeContentDisposition(res, `documentacion-T${trimestre}-${anio}.zip`));
 }
 
+/** Descarga un único PDF con las páginas de las facturas de un año/trimestre — solo las facturas, sin resumen ni ZIP. */
+export async function descargarPdfCombinadoFacturas(anio: number, trimestre?: number, tipo?: 'ingreso' | 'gasto'): Promise<void> {
+  const params = new URLSearchParams({ anio: String(anio) });
+  if (trimestre) params.set('trimestre', String(trimestre));
+  if (tipo) params.set('tipo', tipo);
+  const res = await fetchConAuth(`/facturas/pdf-trimestre?${params}`);
+  await comprobarRespuesta(res, 'No se pudo generar el PDF de facturas');
+  descargarBlobDelNavegador(await res.blob(), nombreDesdeContentDisposition(res, `facturas${trimestre ? `-T${trimestre}` : ''}-${anio}.pdf`));
+}
+
 /* ===== GASTOS PERIÓDICOS/ESTIMADOS (Fase Facturas Profesional) ===== */
 
 export async function obtenerGastosPeriodicos(): Promise<GastoPeriodico[]> {

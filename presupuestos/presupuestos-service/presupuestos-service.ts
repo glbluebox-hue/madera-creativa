@@ -1247,6 +1247,37 @@ export class PresupuestosService {
   }
 
   /**
+   * Un único PDF con las páginas de todas las facturas de un año/trimestre
+   * (y tipo opcional) — "solo y exclusivamente las facturas", sin resumen
+   * ni ZIP (petición real, 25/08/2026, para mandar de un vistazo al
+   * asesor). Mismo cálculo de filtro por fecha que `obtenerZipFacturas`,
+   * para que ambas descargas coincidan en qué facturas incluyen.
+   */
+  async obtenerPdfCombinadoFacturas(
+    usuarioId: string,
+    opciones: { anio: number; trimestre?: number; tipo?: 'ingreso' | 'gasto' }
+  ): Promise<Uint8Array> {
+    await conectar();
+    const filtro: Record<string, unknown> = { usuarioId };
+    if (opciones.tipo) filtro.tipo = opciones.tipo;
+    if (opciones.trimestre) {
+      const mesInicio = (opciones.trimestre - 1) * 3 + 1;
+      const mesFin = mesInicio + 2;
+      filtro.fecha = { $gte: `${opciones.anio}-${String(mesInicio).padStart(2, '0')}-01`, $lte: `${opciones.anio}-${String(mesFin).padStart(2, '0')}-31` };
+    } else {
+      filtro.fecha = { $gte: `${opciones.anio}-01-01`, $lte: `${opciones.anio}-12-31` };
+    }
+    const docs = await FacturaModel.find(filtro).lean().exec();
+    const facturas = (docs as any[]).map((d) => this.limpiar(d as Record<string, unknown>));
+    const { generarPdfCombinadoFacturas } = await import('./documentos-factura.service.js');
+    try {
+      return await generarPdfCombinadoFacturas(facturas);
+    } catch (err) {
+      throw new ErrorDeNegocio(err instanceof Error ? err.message : 'No se pudo generar el PDF de facturas.');
+    }
+  }
+
+  /**
    * Documentación completa para el asesor de un trimestre: RESUMEN.pdf
    * (empresa, período, totales, listados) + carpetas Ingresos/Gastos con el
    * PDF de cada factura, todo en un único ZIP.

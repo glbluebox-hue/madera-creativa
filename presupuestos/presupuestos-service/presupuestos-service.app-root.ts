@@ -1355,6 +1355,27 @@ export function run() {
     } catch (err) { responderError(req, res, err); }
   });
 
+  /**
+   * Único PDF con las páginas de las facturas de un año/trimestre (y tipo
+   * opcional) — "solo y exclusivamente las facturas", sin resumen ni ZIP.
+   * Debe registrarse antes de `/facturas/:id`.
+   */
+  app.get('/facturas/pdf-trimestre', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const anio = Number(req.query.anio);
+      const trimestre = req.query.trimestre ? Number(req.query.trimestre) : undefined;
+      const tipo = req.query.tipo === 'ingreso' || req.query.tipo === 'gasto' ? req.query.tipo : undefined;
+      if (!anio || (trimestre !== undefined && (trimestre < 1 || trimestre > 4))) {
+        res.status(400).json({ error: 'anio es obligatorio; trimestre (si se pasa) debe ser 1-4' }); return;
+      }
+      const pdf = await svc.obtenerPdfCombinadoFacturas(req.usuarioId!, { anio, trimestre, tipo });
+      const nombre = `facturas${trimestre ? `-T${trimestre}` : ''}-${anio}.pdf`;
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${nombre}"`);
+      res.send(Buffer.from(pdf));
+    } catch (err) { responderError(req, res, err); }
+  });
+
   app.get('/facturas/:id', requireAuth, async (req: AuthRequest, res) => {
     try {
       const f = await svc.obtenerFactura(req.params.id, req.usuarioId!);

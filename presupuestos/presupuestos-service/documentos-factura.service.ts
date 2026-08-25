@@ -117,6 +117,36 @@ function nombreUnicoEn(usados: Set<string>, nombre: string): string {
 }
 
 /**
+ * Un único PDF con las páginas de TODAS las facturas dadas, una detrás de
+ * otra en el mismo orden — sin resumen, sin ZIP, solo el contenido visual
+ * de las facturas tal cual se guardaron (petición real, 25/08/2026: "un
+ * PDF solo de imagen de facturas" para mandar de un vistazo al asesor, en
+ * vez del ZIP con un archivo por factura de `generarZipFacturas`). Una
+ * factura sin documento adjunto (creada a mano, sin foto/PDF) se omite sin
+ * romper el resto, igual que en `generarZipFacturas`.
+ */
+export async function generarPdfCombinadoFacturas(facturas: Record<string, unknown>[]): Promise<Uint8Array> {
+  const pdf = await PDFDocument.create();
+  for (const factura of facturas) {
+    const paginas = paginasDeFactura(factura);
+    for (const pagina of paginas) {
+      try {
+        const bytes = await obtenerBytesDesdeUrl(pagina.url);
+        if (pagina.tipo === 'pdf') await anadirPaginasPdf(pdf, bytes);
+        else await anadirPaginaImagen(pdf, bytes);
+      } catch {
+        continue; // Página ilegible/no encontrada — se omite, no rompe el resto del documento.
+      }
+    }
+  }
+  // Un PDF sin ninguna página no es un archivo válido (pdf-lib lo rechaza
+  // al guardar) — puede pasar si el filtro no tiene facturas, o si las que
+  // hay son todas manuales sin documento adjunto.
+  if (pdf.getPageCount() === 0) throw new Error('No hay ninguna página de factura para incluir en el PDF.');
+  return pdf.save();
+}
+
+/**
  * Empaqueta el PDF de cada factura en un único ZIP, organizado en carpetas
  * `Ingresos/`/`Gastos/` cuando `agruparPorTipo` está activo (documentación
  * para el asesor) o en plano cuando no (descarga múltiple normal).
