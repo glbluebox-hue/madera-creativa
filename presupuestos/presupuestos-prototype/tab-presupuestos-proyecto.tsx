@@ -1,0 +1,102 @@
+import { useState, useEffect, useCallback } from 'react';
+import type { Cliente, Proyecto } from './types.js';
+import type { PresupuestoMC } from './presupuestos-modelo.js';
+import type { Empresa } from './use-empresa.js';
+import { AbrirDocumento } from './abrir-documento.js';
+import { formatoEuroPrivado, formatoFecha } from './calculos.js';
+import * as api from './api.js';
+import styles from './styles.module.css';
+
+export type TabPresupuestosProyectoProps = {
+  cliente: Cliente;
+  proyecto: Proyecto;
+  empresa: Empresa;
+  onActualizarEmpresa: (cambios: Partial<Empresa>) => void;
+};
+
+/**
+ * Lista de solo lectura (+ abrir) de los presupuestos de este proyecto,
+ * dentro de la propia ficha del cliente — pedido real, 25/08/2026, tras
+ * quitar la pestaña "Presupuestos IA": sin esto no había ninguna forma de
+ * ver desde la ficha qué presupuestos tiene un cliente sin ir a la sección
+ * global "Presupuestos" y buscar su nombre a mano.
+ *
+ * A propósito NO reutiliza `PresupuestosVista` (la que usaba la pestaña
+ * retirada) — esa vista trae su propio "+ Crear presupuesto" y su propio
+ * asistente de IA integrados, exactamente lo que se pidió quitar de la
+ * ficha del cliente. Crear presupuestos sigue siendo solo desde la
+ * sección "Presupuestos"; aquí solo se listan y se abren los que ya existen.
+ */
+export function TabPresupuestosProyecto({ cliente, proyecto, empresa, onActualizarEmpresa }: TabPresupuestosProyectoProps) {
+  const [presupuestos, setPresupuestos] = useState<PresupuestoMC[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [editor, setEditor] = useState<PresupuestoMC | null>(null);
+
+  const cargar = useCallback(() => {
+    setCargando(true);
+    api.obtenerPresupuestosDeProyecto(proyecto.id)
+      .then(setPresupuestos)
+      .catch((e) => setError(String(e).replace(/^Error:\s*/, '')))
+      .finally(() => setCargando(false));
+  }, [proyecto.id]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const guardar = async (p: PresupuestoMC) => {
+    const guardado = await api.guardarPresupuesto(p);
+    setPresupuestos((prev) => prev.map((x) => (x.id === guardado.id ? guardado : x)));
+    setEditor(guardado);
+  };
+
+  if (editor) {
+    return (
+      <AbrirDocumento
+        presupuesto={editor}
+        clienteId={proyecto.id}
+        clienteNombre={proyecto.proyecto || cliente.nombre}
+        empresa={empresa}
+        onGuardar={guardar}
+        onVolver={() => { setEditor(null); cargar(); }}
+        onCambiarLogoEmpresa={(logo) => onActualizarEmpresa({ logo })}
+      />
+    );
+  }
+
+  if (cargando) return <p style={{ color: 'var(--topo-claro)', fontSize: '0.85rem' }}>Cargando presupuestos…</p>;
+
+  return (
+    <div>
+      {error && <p style={{ color: 'var(--rojo)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>{error}</p>}
+      {presupuestos.length === 0 ? (
+        <div className={styles.vacio}>
+          <div className={styles.vacioIcono} style={{ display: 'flex', justifyContent: 'center' }}>
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+          </div>
+          <p>Este proyecto todavía no tiene ningún presupuesto. Créalo desde la sección "Presupuestos".</p>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+          {presupuestos.map((p) => (
+            <button
+              key={p.id}
+              className={styles.filaLista}
+              onClick={() => setEditor(p)}
+              style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap',
+                padding: '1rem', width: '100%', textAlign: 'left', cursor: 'pointer',
+                border: 'none', background: 'var(--fondo-panel)', font: 'inherit', color: 'inherit',
+              }}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                <strong style={{ fontSize: '0.9rem' }}>{p.titulo}</strong>
+                <span style={{ fontSize: '0.72rem', color: 'var(--topo-muy-claro)' }}>{formatoFecha(p.creado)}</span>
+              </div>
+              <strong style={{ fontSize: '0.95rem' }}>{formatoEuroPrivado(p.precioTotal, false)}</strong>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
