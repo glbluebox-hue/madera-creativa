@@ -40,8 +40,8 @@ export const TUTORIAL_APP: DefinicionTutorial = {
   pasos: [
     {
       id: 'app-01-inicio',
-      titulo: 'Inicio',
-      texto: 'Aquí tienes el resumen de tu actividad: ingresos, gastos, balance, presupuestos en curso y tus próximos montajes y mediciones.',
+      titulo: 'Bienvenido a Madera Creativa',
+      texto: 'Aquí gestionas clientes, presupuestos, facturas y el trimestral para Hacienda, todo en un mismo sitio y conectado entre sí, sin depender de hojas de cálculo sueltas. Este resumen te muestra de un vistazo tus ingresos, gastos, balance y lo que tienes pendiente.',
       targetId: 'nav-inicio',
       posicion: 'derecha',
       tipo: 'informativo',
@@ -50,7 +50,7 @@ export const TUTORIAL_APP: DefinicionTutorial = {
     {
       id: 'app-02-clientes',
       titulo: 'Clientes',
-      texto: 'Aquí gestionas tus clientes y proyectos: fichas, obras, presupuestos y facturas de cada uno.',
+      texto: 'Todo empieza aquí: cada cliente tiene sus proyectos, y de cada proyecto salen sus presupuestos, sus facturas y sus notas — todo queda enlazado entre sí automáticamente.',
       targetId: 'nav-clientes',
       posicion: 'derecha',
       tipo: 'informativo',
@@ -104,7 +104,7 @@ export const TUTORIAL_APP: DefinicionTutorial = {
     {
       id: 'app-07-presupuestos',
       titulo: 'Presupuestos',
-      texto: 'Aquí ves todos los presupuestos de todos tus clientes en un solo sitio, con su importe y su estado.',
+      texto: 'Los presupuestos que creas aquí quedan vinculados al cliente y proyecto que elijas — y cuando cobras o gastas de verdad en ese proyecto, lo registras después en Facturas.',
       targetId: 'nav-presupuestos',
       posicion: 'derecha',
       tipo: 'informativo',
@@ -130,7 +130,7 @@ export const TUTORIAL_APP: DefinicionTutorial = {
     {
       id: 'app-10-facturas',
       titulo: 'Facturas',
-      texto: 'Aquí llevas el control de tus ingresos y gastos reales. El botón "Trimestres" agrupa todas las facturas del trimestre para Hacienda, listas para descargar.',
+      texto: 'Aquí cierras el círculo que empezó en Clientes y siguió en Presupuestos: registras lo que de verdad cobras y gastas de cada proyecto. El botón "Trimestres" agrupa todo eso por trimestre, listo para tu asesor.',
       targetId: 'nav-facturas',
       posicion: 'derecha',
       tipo: 'informativo',
