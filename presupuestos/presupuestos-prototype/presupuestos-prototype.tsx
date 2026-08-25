@@ -30,6 +30,7 @@ import { PanelNotificaciones } from './panel-notificaciones.js';
 import { TutorialOverlay } from './TutorialOverlay.js';
 import { useTutorial } from './use-tutorial.js';
 import { TUTORIAL_APP } from './tutorial-definiciones.js';
+import { esNuncaVisto } from './tutorial-progreso-adapter.js';
 import type { Cliente, Proyecto, Factura } from './types.js';
 import * as api from './api.js';
 import logoMadera from './assets/logo.png';
@@ -125,6 +126,21 @@ export function PresupuestosPrototype() {
   // overlay ya reales; `storagePrefix` reutiliza el mismo namespacing por
   // usuario que ya usa el resto de la app (`use-auth.ts`).
   const tutorial = useTutorial(storagePrefix);
+  /**
+   * Inicio automático (Fase A, 25/08/2026) — un usuario "nunca visto" es
+   * quien no tiene NINGÚN progreso guardado para `TUTORIAL_APP`
+   * (`progresoDe` devuelve `null`): ni en_progreso, ni completado, ni
+   * saltado. Se comprueba una vez por sesión autenticada, no en cada
+   * render — abrir ya marca `en_progreso` solo (mismo camino que el botón
+   * manual "Tutorial", ver `use-tutorial.ts`), así que no hace falta
+   * ninguna acción nueva para "Empezar": el primer paso que aparece YA
+   * cuenta como tutorial iniciado.
+   */
+  useEffect(() => {
+    if (!autenticado) return;
+    if (esNuncaVisto(tutorial.progresoDe(TUTORIAL_APP.id))) tutorial.abrir(TUTORIAL_APP);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autenticado]);
 
   useLicencia(sesion, logout);
   const { estado: estadoPush, error: errorPush, activar: activarPush } = usePush(sesion);
