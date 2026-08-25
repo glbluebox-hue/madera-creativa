@@ -233,6 +233,13 @@ const EmpresaSchema = new Schema({
   /** Ancho en píxeles del logo en la barra lateral — ajustable a mano por el usuario (antes fijo a 187px en CSS). */
   logoTamano: { type: Number, default: 187 },
   /**
+   * Minutos de inactividad antes de cerrar sesión sola y volver al login
+   * (petición real, 25/08/2026) — `null` = nunca cerrar por inactividad.
+   * Por defecto `null`: es una función de seguridad nueva, nadie debe
+   * empezar a que se le cierre la sesión sin haberlo configurado a propósito.
+   */
+  tiempoInactividadMin: { type: Number, default: null },
+  /**
    * Enlace de la ficha de Google My Business del negocio (sección
    * "Solicitud de reseñas", 20/08/2026) — destino final de los enlaces/QR
    * individuales por cliente (`enlace-resena.model.ts`). Por empresa, no

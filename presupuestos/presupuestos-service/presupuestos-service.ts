@@ -192,6 +192,8 @@ export type EmpresaDoc = {
   enlaceResenaGoogle: string;
   /** Cartel de agradecimiento en base64 para la página de solicitud de reseña — opcional. */
   imagenResena: string;
+  /** Minutos de inactividad antes de cerrar sesión sola — `null` = nunca. */
+  tiempoInactividadMin: number | null;
 };
 
 // ── Portal del cliente (enlace público de un presupuesto) ──────────────────────
@@ -654,6 +656,7 @@ export class PresupuestosService {
       logoTamano: (doc as any).logoTamano || 187,
       enlaceResenaGoogle: (doc as any).enlaceResenaGoogle || '',
       imagenResena: (doc as any).imagenResena || '',
+      tiempoInactividadMin: (doc as any).tiempoInactividadMin ?? null,
     };
   }
 
@@ -686,6 +689,7 @@ export class PresupuestosService {
       logoTamano: (doc as any).logoTamano || 187,
       enlaceResenaGoogle: (doc as any).enlaceResenaGoogle || '',
       imagenResena: (doc as any).imagenResena || '',
+      tiempoInactividadMin: (doc as any).tiempoInactividadMin ?? null,
     };
   }
 

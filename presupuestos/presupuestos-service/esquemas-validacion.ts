@@ -848,6 +848,8 @@ export const esquemaEmpresa = z.object({
   repepActivo: z.boolean().optional().default(false),
   /** Ancho en píxeles del logo en la barra lateral — ajustable a mano por el usuario, ver `sidebarLogoImg`. */
   logoTamano: z.number().min(40).max(400).optional().default(187),
+  /** Minutos de inactividad antes de cerrar sesión sola — `null` = nunca. Ver `EmpresaSchema.tiempoInactividadMin` en `cliente.model.ts`. */
+  tiempoInactividadMin: z.number().int().min(1).max(1440).nullable().optional().default(null),
   /**
    * Enlace de Google My Business — destino de "Pedir reseña" (ver
    * `enlace-resena.model.ts`). Se sirve dentro de un atributo `href` en

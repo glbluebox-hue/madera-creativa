@@ -1107,6 +1107,7 @@ export async function obtenerEmpresa(): Promise<Empresa> {
     logoTamano: data.logoTamano || 187,
     enlaceResenaGoogle: data.enlaceResenaGoogle || '',
     imagenResena: data.imagenResena || null,
+    tiempoInactividadMin: data.tiempoInactividadMin ?? null,
   };
 }
 
@@ -1140,6 +1141,7 @@ export async function guardarEmpresa(empresa: Partial<Empresa>): Promise<Empresa
     logoTamano: data.logoTamano || 187,
     enlaceResenaGoogle: data.enlaceResenaGoogle || '',
     imagenResena: data.imagenResena || null,
+    tiempoInactividadMin: data.tiempoInactividadMin ?? null,
   };
 }
 

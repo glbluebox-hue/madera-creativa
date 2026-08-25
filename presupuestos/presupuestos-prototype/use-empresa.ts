@@ -43,6 +43,8 @@ export type Empresa = {
   enlaceResenaGoogle: string;
   /** Cartel de agradecimiento (imagen) mostrado antes del botón de reseña — opcional, mismo formato que `logo`. */
   imagenResena: string | null;
+  /** Minutos de inactividad antes de cerrar sesión sola y volver al login — `null` = nunca (petición real, 25/08/2026). */
+  tiempoInactividadMin: number | null;
 };
 
 /** Datos por defecto para el admin — marca Madera Creativa. */
@@ -69,6 +71,7 @@ const EMPRESA_ADMIN: Empresa = {
   logoTamano: 187,
   enlaceResenaGoogle: 'https://g.page/r/CdtYE6HZ9ap5EBM/review',
   imagenResena: cartelResenaMadera,
+  tiempoInactividadMin: null,
 };
 
 /** Datos vacíos para usuarios normales — cada uno pone su propia marca. */
@@ -92,6 +95,7 @@ const EMPRESA_USUARIO: Empresa = {
   logoTamano: 187,
   enlaceResenaGoogle: '',
   imagenResena: null,
+  tiempoInactividadMin: null,
 };
 
 /**
@@ -158,6 +162,7 @@ export function useEmpresa(autenticado = false, esAdmin = false): {
           logoTamano: datos.logoTamano ?? inicial.logoTamano,
           enlaceResenaGoogle: datos.enlaceResenaGoogle || inicial.enlaceResenaGoogle,
           imagenResena: datos.imagenResena || inicial.imagenResena,
+          tiempoInactividadMin: datos.tiempoInactividadMin ?? inicial.tiempoInactividadMin,
         });
       })
       .catch(() => { /* sin conexión: mantener valores por defecto */ })

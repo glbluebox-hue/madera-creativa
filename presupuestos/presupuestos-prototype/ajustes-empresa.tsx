@@ -55,6 +55,7 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
   const [regionFiscal, setRegionFiscal] = useState(empresa.regionFiscal);
   const [repepActivo, setRepepActivo] = useState(empresa.repepActivo);
   const [logoTamano, setLogoTamano] = useState(empresa.logoTamano || 187);
+  const [tiempoInactividadMin, setTiempoInactividadMin] = useState<number | null>(empresa.tiempoInactividadMin);
   const [guardando, setGuardando] = useState(false);
   const [errorGuardar, setErrorGuardar] = useState('');
 
@@ -95,6 +96,7 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
       logoTamano,
       enlaceResenaGoogle: enlaceResenaGoogle.trim(),
       imagenResena,
+      tiempoInactividadMin,
     });
     setGuardando(false);
     if (!ok) { setErrorGuardar('No se pudo guardar. Comprueba tu conexión e inténtalo de nuevo.'); return; }
@@ -226,6 +228,27 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
                 Acogido al REPEP (exención de IGIC por facturación ≤50.000€/año)
               </label>
             )}
+          </div>
+          <div className={`${styles.campo} ${styles.full}`}>
+            <label className={styles.campoLabel}>Cerrar sesión sola por inactividad</label>
+            <select
+              className={styles.select}
+              value={tiempoInactividadMin === null ? '' : String(tiempoInactividadMin)}
+              onChange={(e) => setTiempoInactividadMin(e.target.value === '' ? null : Number(e.target.value))}
+            >
+              <option value="">Nunca</option>
+              <option value="5">5 minutos</option>
+              <option value="6">6 minutos</option>
+              <option value="7">7 minutos</option>
+              <option value="10">10 minutos</option>
+              <option value="15">15 minutos</option>
+              <option value="20">20 minutos</option>
+              <option value="30">30 minutos</option>
+              <option value="60">1 hora</option>
+              <option value="120">2 horas</option>
+              <option value="180">3 horas</option>
+            </select>
+            <p className={styles.logoAyuda}>Si no se toca la aplicación durante este tiempo, se cierra la sesión sola y vuelve a la pantalla de acceso.</p>
           </div>
           <div className={`${styles.campo} ${styles.full}`}>
             <label className={styles.campoLabel}>Enlace de reseñas de Google (Google My Business)</label>

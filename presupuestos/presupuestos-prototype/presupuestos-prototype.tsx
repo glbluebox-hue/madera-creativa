@@ -31,6 +31,7 @@ import { TutorialOverlay } from './TutorialOverlay.js';
 import { useTutorial } from './use-tutorial.js';
 import { TUTORIAL_APP, TUTORIAL_FACTURAS, TUTORIAL_PROVEEDORES } from './tutorial-definiciones.js';
 import { esNuncaVisto } from './tutorial-progreso-adapter.js';
+import { useInactividad } from './use-inactividad.js';
 import type { Cliente, Proyecto, Factura } from './types.js';
 import * as api from './api.js';
 import logoMadera from './assets/logo.png';
@@ -161,6 +162,9 @@ export function PresupuestosPrototype() {
     if (contextual && esNuncaVisto(tutorial.progresoDe(contextual.id))) tutorial.abrir(contextual);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seccion]);
+
+  // Cierre de sesión por inactividad (Ajustes de empresa) — desactivado por defecto (`tiempoInactividadMin: null`).
+  useInactividad(empresa.tiempoInactividadMin, autenticado, logout);
 
   useLicencia(sesion, logout);
   const { estado: estadoPush, error: errorPush, activar: activarPush } = usePush(sesion);

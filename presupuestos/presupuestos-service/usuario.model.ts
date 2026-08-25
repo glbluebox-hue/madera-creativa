@@ -166,6 +166,13 @@ const UsuarioSchema = new Schema({
   esAdmin:      { type: Boolean, default: false },
   creadoEn:     { type: String, required: true },
   ultimoAcceso: { type: String, default: '' },
+  /**
+   * Historial de logins con éxito (fecha ISO cada uno), más reciente al
+   * final — petición real, 25/08/2026: `ultimoAcceso` solo guarda el
+   * último, sin ningún rastro de accesos anteriores. Acotado a los últimos
+   * 50 (ver `$slice` en la ruta de login) para no crecer sin límite.
+   */
+  historialAccesos: { type: [String], default: [] },
   pushSubs:     { type: [PushSubscriptionSchema], default: [] },
   /**
    * Nombre para mostrar (barra lateral, saludo de Inicio) — independiente

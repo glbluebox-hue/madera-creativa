@@ -25,8 +25,17 @@ type UsuarioAdmin = {
   esAdmin: boolean;
   creadoEn: string;
   ultimoAcceso?: string;
+  /** Historial de logins con éxito (fecha ISO), más reciente al final — acotado a los últimos 50 (ver login en presupuestos-service.app-root.ts). */
+  historialAccesos?: string[];
   acceso: AccesoUsuario;
 };
+
+/** Fecha + hora en formato local corto, para distinguir accesos del mismo día en el historial. */
+function formatoFechaHora(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
 
 type CodigoPromocional = {
   id: string;
@@ -104,6 +113,8 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
 
   // Edición manual del tipo de acceso/plan de un usuario.
   const [editandoAcceso, setEditandoAcceso] = useState<string | null>(null);
+  /** Id del usuario cuyo historial de accesos está desplegado, o `null` si ninguno. */
+  const [verAccesosDe, setVerAccesosDe] = useState<string | null>(null);
   const [formTipo, setFormTipo] = useState<TipoAcceso>('free');
   const [formPlan, setFormPlan] = useState<PlanAcceso>('NONE');
   const [formExpira, setFormExpira] = useState('');
@@ -564,14 +575,34 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
                       {u.acceso?.codigoUsado && <span>Código: <strong style={{ color: 'var(--topo)' }}>{u.acceso.codigoUsado}</strong></span>}
                       {u.acceso?.activadoEn && <span>Activado: {formatoFecha(u.acceso.activadoEn)}</span>}
                       {u.acceso?.expiraEn && <span>Caduca: {formatoFecha(u.acceso.expiraEn)}</span>}
+                      {!!u.historialAccesos?.length && (
+                        <button
+                          className={styles.btnIcono}
+                          style={{ fontSize: '0.72rem', width: 'auto', padding: '2px 8px' }}
+                          onClick={() => setVerAccesosDe(verAccesosDe === u.id ? null : u.id)}
+                        >
+                          {verAccesosDe === u.id ? 'Ocultar accesos' : `Ver accesos (${u.historialAccesos.length})`}
+                        </button>
+                      )}
                       <button
                         className={styles.btnIcono}
-                        style={{ marginLeft: 'auto', fontSize: '0.72rem', width: 'auto', padding: '2px 8px' }}
+                        style={{ marginLeft: u.historialAccesos?.length ? 0 : 'auto', fontSize: '0.72rem', width: 'auto', padding: '2px 8px' }}
                         onClick={() => editandoAcceso === u.id ? setEditandoAcceso(null) : iniciarEdicionAcceso(u)}
                       >
                         {editandoAcceso === u.id ? 'Cancelar' : 'Cambiar acceso'}
                       </button>
                     </div>
+
+                    {verAccesosDe === u.id && (
+                      <div style={{ background: 'var(--fondo)', border: '1px solid var(--borde)', borderRadius: 8, padding: '0.6rem 0.75rem', maxHeight: 160, overflowY: 'auto' }}>
+                        <p style={{ margin: '0 0 0.35rem', fontSize: '0.7rem', fontWeight: 700, color: 'var(--topo-claro)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          Últimos accesos (más reciente primero)
+                        </p>
+                        {[...(u.historialAccesos ?? [])].reverse().map((fecha, i) => (
+                          <p key={i} style={{ margin: 0, fontSize: '0.78rem', color: 'var(--topo)', padding: '0.15rem 0' }}>{formatoFechaHora(fecha)}</p>
+                        ))}
+                      </div>
+                    )}
 
                     {editandoAcceso === u.id && (
                       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center', background: 'var(--papel-alt, var(--blanco))', border: '1px solid var(--borde)', borderRadius: 8, padding: '0.6rem' }}>

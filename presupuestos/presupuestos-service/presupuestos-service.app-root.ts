@@ -639,7 +639,14 @@ export function run() {
       if (u.estado === 'suspendido') {
         res.status(403).json({ error: 'suspendido', mensaje: 'Tu acceso ha sido suspendido. Contacta con Madera Creativa.' }); return;
       }
-      await UsuarioModel.updateOne({ id: u.id }, { ultimoAcceso: new Date().toISOString() });
+      const ahora = new Date().toISOString();
+      // `$slice: -50` en el mismo `$push` acota el historial a los últimos
+      // 50 accesos de forma atómica — nunca crece sin límite ni hace falta
+      // un segundo `updateOne` de "recorte" aparte.
+      await UsuarioModel.updateOne(
+        { id: u.id },
+        { $set: { ultimoAcceso: ahora }, $push: { historialAccesos: { $each: [ahora], $slice: -50 } } }
+      );
 
       const accessToken = firmarAccessToken({ sub: u.id, esAdmin: u.esAdmin });
       const refreshToken = await crearRefreshToken(u.id);
@@ -800,6 +807,7 @@ export function run() {
         id: u.id, nombre: u.nombre, email: u.nombre,
         estado: u.estado, esAdmin: u.esAdmin,
         creadoEn: u.creadoEn, ultimoAcceso: u.ultimoAcceso,
+        historialAccesos: u.historialAccesos ?? [],
         acceso: u.acceso ?? ACCESO_POR_DEFECTO,
       })));
     } catch (err) { responderError(req, res, err); }
