@@ -596,6 +596,14 @@ export const esquemaNotifPrefs = z.object({
   cobrosPendientes: esquemaPreferenciaNotifTipo,
   margenBajo: esquemaPreferenciaNotifTipo,
   briefingDiario: esquemaPreferenciaNotifTipo,
+  /**
+   * Aviso push al admin cuando alguien nuevo se registra (25/08/2026,
+   * reporte real: un usuario se registró y el admin no se enteró porque el
+   * push no estaba activo en su dispositivo en ese momento). Sin hora
+   * propia a propósito — es un aviso al momento del evento, no algo
+   * programado a una hora fija del día como el resto de tipos de arriba.
+   */
+  nuevoUsuario: z.boolean().optional().default(true),
 });
 
 const esquemaRecordatorioPersonalizado = z.object({

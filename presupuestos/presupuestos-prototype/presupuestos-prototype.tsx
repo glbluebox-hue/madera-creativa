@@ -596,7 +596,7 @@ export function PresupuestosPrototype() {
       {panelAdmin && sesion?.esAdmin && <PanelAdmin onCerrar={() => setPanelAdmin(false)} />}
 
       {panelNotificaciones && (
-        <PanelNotificaciones estadoPush={estadoPush} errorPush={errorPush} onActivarPush={activarPush} onCerrar={() => setPanelNotificaciones(false)} />
+        <PanelNotificaciones estadoPush={estadoPush} errorPush={errorPush} onActivarPush={activarPush} onCerrar={() => setPanelNotificaciones(false)} esAdmin={sesion?.esAdmin ?? false} />
       )}
 
       {/* Sistema de tutoriales (Fase 1, 24/08/2026) — montado siempre,

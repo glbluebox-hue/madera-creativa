@@ -1207,6 +1207,8 @@ export type NotifPrefs = {
   cobrosPendientes: PreferenciaNotifTipo;
   margenBajo: PreferenciaNotifTipo;
   briefingDiario: PreferenciaNotifTipo;
+  /** Aviso al admin cuando alguien nuevo se registra — sin hora propia, es al momento del evento. */
+  nuevoUsuario: boolean;
 };
 
 /** Recordatorio propio del usuario. */

@@ -13,9 +13,11 @@ export type PanelNotificacionesProps = {
   /** Pide permiso y registra la suscripción — mismo callback que el botón de campana. */
   onActivarPush: () => Promise<void>;
   onCerrar: () => void;
+  /** Solo el admin ve el interruptor de "Nuevo usuario registrado" — no tiene sentido para una cuenta normal. */
+  esAdmin: boolean;
 };
 
-const TIPOS: Array<{ clave: keyof NotifPrefs; titulo: string; descripcion: string }> = [
+const TIPOS: Array<{ clave: typeof TIPOS_CON_HORA[number]; titulo: string; descripcion: string }> = [
   { clave: 'horas', titulo: 'Recordatorio de horas', descripcion: 'Un aviso si tienes proyectos activos sin horas registradas hoy.' },
   { clave: 'cobrosPendientes', titulo: 'Cobros pendientes', descripcion: 'Resumen de los cobros de presupuestos aceptados que todavía no has marcado como recibidos.' },
   { clave: 'margenBajo', titulo: 'Margen bajo', descripcion: 'Aviso cuando el margen de un proyecto activo baja del 40%.' },
@@ -27,7 +29,11 @@ const PREFERENCIAS_POR_DEFECTO: NotifPrefs = {
   cobrosPendientes: { activo: true, hora: 8, minuto: 0 },
   margenBajo: { activo: true, hora: 8, minuto: 0 },
   briefingDiario: { activo: true, hora: 8, minuto: 0 },
+  nuevoUsuario: true,
 };
+
+/** Los únicos 4 tipos con hora propia — `nuevoUsuario` es un booleano suelto, sin hora, así que queda fuera de la conversión UTC↔local de abajo. */
+const TIPOS_CON_HORA = ['horas', 'cobrosPendientes', 'margenBajo', 'briefingDiario'] as const;
 
 /**
  * Los selectores de hora muestran y recogen la hora LOCAL del propio
@@ -74,7 +80,7 @@ function desdeHHMM(valor: string): { hora: number; minuto: number } {
  * horas en punto ("todo esto tiene que ser editable y con la posibilidad
  * de poner una hora y también minutos").
  */
-export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCerrar }: PanelNotificacionesProps) {
+export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCerrar, esAdmin }: PanelNotificacionesProps) {
   const [cargando, setCargando] = useState(true);
   const [preferencias, setPreferencias] = useState<NotifPrefs>(PREFERENCIAS_POR_DEFECTO);
   const [recordatorios, setRecordatorios] = useState<RecordatorioPersonalizado[]>([]);
@@ -104,8 +110,12 @@ export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCe
         // El servidor guarda todas las horas en UTC — se convierten a hora
         // local aquí, una sola vez, para que el resto del componente
         // trabaje siempre en hora local, tal como la ve y espera el usuario.
-        const local: NotifPrefs = { horas: preferencias.horas, cobrosPendientes: preferencias.cobrosPendientes, margenBajo: preferencias.margenBajo, briefingDiario: preferencias.briefingDiario };
-        for (const clave of Object.keys(local) as (keyof NotifPrefs)[]) {
+        const local: NotifPrefs = {
+          horas: preferencias.horas, cobrosPendientes: preferencias.cobrosPendientes,
+          margenBajo: preferencias.margenBajo, briefingDiario: preferencias.briefingDiario,
+          nuevoUsuario: preferencias.nuevoUsuario,
+        };
+        for (const clave of TIPOS_CON_HORA) {
           const p = preferencias[clave];
           const { hora, minuto } = utcALocal(p.hora, p.minuto);
           local[clave] = { activo: p.activo, hora, minuto };
@@ -120,7 +130,7 @@ export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCe
       .finally(() => setCargando(false));
   }, []);
 
-  const cambiarTipo = (clave: keyof NotifPrefs, cambios: Partial<PreferenciaNotifTipo>) => {
+  const cambiarTipo = (clave: typeof TIPOS_CON_HORA[number], cambios: Partial<PreferenciaNotifTipo>) => {
     setPreferencias((prev) => ({ ...prev, [clave]: { ...prev[clave], ...cambios } }));
   };
 
@@ -140,7 +150,7 @@ export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCe
       // servidor — el estado en memoria de este componente sigue en hora
       // local hasta el último momento.
       const prefsUtc: NotifPrefs = { ...preferencias };
-      for (const clave of Object.keys(prefsUtc) as (keyof NotifPrefs)[]) {
+      for (const clave of TIPOS_CON_HORA) {
         const p = preferencias[clave];
         const { hora, minuto } = localAUtc(p.hora, p.minuto);
         prefsUtc[clave] = { activo: p.activo, hora, minuto };
@@ -236,6 +246,20 @@ export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCe
                     </div>
                   );
                 })}
+                {esAdmin && (
+                  <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start' }}>
+                    <input
+                      type="checkbox"
+                      style={{ marginTop: '0.2rem' }}
+                      checked={preferencias.nuevoUsuario}
+                      onChange={(e) => setPreferencias((prev) => ({ ...prev, nuevoUsuario: e.target.checked }))}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--negro)' }}>Nuevo usuario registrado</span>
+                      <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>Aviso al momento cuando alguien se registra, para que puedas aprobarlo o rechazarlo.</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

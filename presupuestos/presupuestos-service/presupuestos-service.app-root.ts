@@ -284,16 +284,31 @@ export function requireAdmin(req: AuthRequest, res: express.Response, next: expr
   next();
 }
 
+/** Cuenta del administrador (asume un único admin, mismo criterio que `getPushSubsAdmin` ya usaba). */
+async function getAdmin(): Promise<any> {
+  await conectarUsuarios();
+  return UsuarioModel.findOne({ esAdmin: true }).lean().exec();
+}
+
 /** Suscripciones push del administrador. */
 async function getPushSubsAdmin(): Promise<PushSub[]> {
-  await conectarUsuarios();
-  const admin = await UsuarioModel.findOne({ esAdmin: true }).lean().exec() as any;
+  const admin = await getAdmin();
   return (admin?.pushSubs || []) as PushSub[];
 }
 
-/** Notifica al admin cuando un nuevo usuario se registra. */
+/**
+ * Notifica al admin cuando un nuevo usuario se registra — solo si no lo ha
+ * desactivado explícitamente en su panel de notificaciones (por defecto
+ * `true`, mismo criterio que `leerPreferenciaNotif`: quien nunca ha tocado
+ * esta preferencia sigue recibiendo el aviso). Bug real, 25/08/2026: antes
+ * este aviso se mandaba siempre sin más — el problema no era este código,
+ * sino que dependía por completo de que el push del admin estuviera
+ * activo en ese momento, sin ningún interruptor visible que lo confirmara.
+ */
 async function notificarAdminNuevoUsuario(nombre: string): Promise<void> {
-  const subs = await getPushSubsAdmin();
+  const admin = await getAdmin();
+  if (admin?.notifPrefs?.nuevoUsuario === false) return;
+  const subs = (admin?.pushSubs || []) as PushSub[];
   for (const sub of subs) {
     await enviarNotificacion(
       sub,
@@ -1176,6 +1191,7 @@ export function run() {
           cobrosPendientes: leerPreferenciaNotif(p, 'cobrosPendientes', 8),
           margenBajo: leerPreferenciaNotif(p, 'margenBajo', 8),
           briefingDiario: leerPreferenciaNotif(p, 'briefingDiario', 8),
+          nuevoUsuario: p?.nuevoUsuario ?? true,
         },
         recordatorios: u.recordatoriosPersonalizados ?? [],
       });
