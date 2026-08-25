@@ -1,51 +1,42 @@
 import { useCallback, useEffect, useState } from 'react';
 
 /**
- * Preferencia de tema explícita del usuario (claro/oscuro) — `null` si
- * nunca ha tocado el interruptor. Con `null`, `styles.module.css` sigue
- * el tema del propio dispositivo vía `prefers-color-scheme`, sin ninguna
- * intervención de JS: `dataTheme` se queda `undefined` y no se fija ningún
- * atributo, así que decide el sistema. En cuanto el usuario alterna una
- * vez, la elección se guarda y gana siempre sobre el sistema, en cualquier
- * dirección — igual que el resto de preferencias de la app (ver
- * `use-auth.ts`, mismo patrón de `localStorage`).
+ * Preferencia de tema explícita del usuario (claro/oscuro). Antes, sin
+ * nada guardado se seguía el tema del propio dispositivo vía
+ * `prefers-color-scheme` — pero un usuario nuevo con el sistema en modo
+ * oscuro entraba directamente en oscuro sin haberlo elegido nunca
+ * (petición real, 25/08/2026: la primera vez debe ser siempre claro). En
+ * cuanto el usuario alterna una vez, su elección se guarda y gana siempre,
+ * en cualquier dirección — igual que el resto de preferencias de la app
+ * (ver `use-auth.ts`, mismo patrón de `localStorage`).
  */
 
 export type Tema = 'claro' | 'oscuro';
 const KEY_TEMA = 'mc_tema';
 
-function cargarTema(): Tema | null {
+function cargarTema(): Tema {
   try {
     const guardado = localStorage.getItem(KEY_TEMA);
-    return guardado === 'claro' || guardado === 'oscuro' ? guardado : null;
+    return guardado === 'oscuro' ? 'oscuro' : 'claro';
   } catch {
-    return null;
-  }
-}
-
-function sistemaPrefiereOscuro(): boolean {
-  try {
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
-  } catch {
-    return false;
+    return 'claro';
   }
 }
 
 export function useTema() {
-  const [tema, setTema] = useState<Tema | null>(cargarTema);
+  const [tema, setTema] = useState<Tema>(cargarTema);
 
-  /** Alterna respecto a lo que se esté mostrando ahora mismo (preferencia guardada, o el sistema si aún no hay ninguna). */
+  /** Alterna respecto a la preferencia guardada. */
   const alternar = useCallback(() => {
     setTema((actual) => {
-      const oscuroActual = actual !== null ? actual === 'oscuro' : sistemaPrefiereOscuro();
-      const nuevo: Tema = oscuroActual ? 'claro' : 'oscuro';
+      const nuevo: Tema = actual === 'oscuro' ? 'claro' : 'oscuro';
       try { localStorage.setItem(KEY_TEMA, nuevo); } catch { /* noop */ }
       return nuevo;
     });
   }, []);
 
-  /** Valor para el atributo `data-theme` del `.app` raíz — `undefined` deja que decida `prefers-color-scheme`. */
-  const dataTheme = tema === 'oscuro' ? 'dark' : tema === 'claro' ? 'light' : undefined;
+  /** Valor para el atributo `data-theme` del `.app` raíz. */
+  const dataTheme = tema === 'oscuro' ? 'dark' : 'light';
 
   // Reflejo del mismo atributo en <html>: los tokens de color viven en
   // `.app` (así los usa el resto de la app), pero `html`/`body` no pueden

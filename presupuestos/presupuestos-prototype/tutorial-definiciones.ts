@@ -264,6 +264,13 @@ export const TUTORIAL_FACTURAS: DefinicionTutorial = {
       targetId: 'crear-factura-btn',
       posicion: 'izquierda',
       tipo: 'interactivo',
+      // Con `seccionRequerida`, este tutorial se puede abrir desde
+      // cualquier sitio (Centro de ayuda, Fase E, 25/08/2026) — el overlay
+      // navega solo a Facturas antes de buscar el objetivo, no hace falta
+      // que el usuario ya esté ahí. Sin `requiereMenuMovil`: el objetivo
+      // (`crear-factura-btn`) vive en la propia página de Facturas, no en
+      // el menú lateral — eso solo hace falta en los pasos `nav-*`.
+      seccionRequerida: 'facturas',
     },
     {
       id: 'facturas-02-escanear',
@@ -287,6 +294,9 @@ export const TUTORIAL_PROVEEDORES: DefinicionTutorial = {
       targetId: 'nuevo-proveedor-btn',
       posicion: 'izquierda',
       tipo: 'interactivo',
+      // Mismo motivo que en `TUTORIAL_FACTURAS`: permite abrir este
+      // tutorial desde cualquier sitio (Centro de ayuda, Fase E).
+      seccionRequerida: 'proveedores',
     },
   ],
 };

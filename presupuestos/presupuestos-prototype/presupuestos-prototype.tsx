@@ -32,6 +32,7 @@ import { useTutorial } from './use-tutorial.js';
 import { TUTORIAL_APP, TUTORIAL_FACTURAS, TUTORIAL_PROVEEDORES } from './tutorial-definiciones.js';
 import { esNuncaVisto } from './tutorial-progreso-adapter.js';
 import { useInactividad } from './use-inactividad.js';
+import { Z_DESPLEGABLE } from './z-index.js';
 import type { Cliente, Proyecto, Factura } from './types.js';
 import * as api from './api.js';
 import logoMadera from './assets/logo.png';
@@ -115,6 +116,8 @@ export function PresupuestosPrototype() {
   // muestra en pantallas estrechas (Dirección Creativa, ajuste móvil).
   const [menuMovilAbierto, setMenuMovilAbierto] = useState(false);
   const [asistente, setAsistente] = useState(false);
+  /** Centro de ayuda (Fase E, 25/08/2026) — menú del botón "Tutorial": repetir el tour completo o ir directo a la ayuda de una sección concreta. */
+  const [centroAyudaAbierto, setCentroAyudaAbierto] = useState(false);
   const { empresa, cargando: empresaCargando, actualizar } = useEmpresa(listo, sesion?.esAdmin ?? false);
   // Proveedores aislados por usuario — admin usa clave original, usuarios nuevos tienen espacio propio
   const { proveedores, productos, crearProveedor, actualizarProveedor, borrarProveedor, crearProducto, actualizarProducto, borrarProducto } = useProveedores(listo);
@@ -404,21 +407,58 @@ export function PresupuestosPrototype() {
                   : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>}
               </button>
               {/*
-                Disparador TEMPORAL (24/08/2026) — no es el Centro de ayuda
-                definitivo (eso sigue pendiente). Único propósito: poder
-                abrir manualmente el tutorial mientras no existe una sección
-                "Aprender Madera Creativa" en el menú. Se retira/sustituye
-                cuando llegue esa sección. Un solo botón, un solo tutorial
-                (`TUTORIAL_APP`): recorre toda la aplicación en el orden real
-                del menú, no un tutorial independiente por sección.
+                Centro de ayuda (Fase E, 25/08/2026) — sustituye al
+                disparador temporal de un solo tutorial (24/08/2026): ahora
+                el botón abre un menú con "Repetir el tour completo" y la
+                ayuda de cada sección con tutorial contextual propio
+                (Facturas, Proveedores — ver `tutorial-definiciones.ts`,
+                las únicas con un `data-tutorial-id` propio dentro, no solo
+                el botón del menú). El botón de cierre a pantalla completa
+                (`fondo` clicable) es el mismo patrón que ya usa el
+                desplegable de proveedores en `escaner-factura.tsx`.
               */}
-              <button
-                className={styles.sidebarAccionBtn}
-                onClick={() => { tutorial.abrir(TUTORIAL_APP, false); setMenuMovilAbierto(false); }}
-                title="Tutorial"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" /></svg>
-              </button>
+              <div style={{ position: 'relative' }}>
+                <button
+                  className={styles.sidebarAccionBtn}
+                  onClick={() => setCentroAyudaAbierto((v) => !v)}
+                  title="Centro de ayuda"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z" /><path d="M6 12v5c3 3 9 3 12 0v-5" /></svg>
+                </button>
+                {centroAyudaAbierto && (
+                  <>
+                    <div style={{ position: 'fixed', inset: 0, zIndex: Z_DESPLEGABLE - 1 }} onClick={() => setCentroAyudaAbierto(false)} />
+                    <div style={{
+                      position: 'absolute', top: 'calc(100% + 4px)', left: 0,
+                      background: 'var(--fondo-panel)', border: '1px solid var(--borde)', borderRadius: 8,
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: Z_DESPLEGABLE,
+                      minWidth: 220, display: 'flex', flexDirection: 'column', padding: '0.35rem', gap: '0.1rem',
+                    }}>
+                      <p style={{ margin: '0.25rem 0.6rem 0.15rem', fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--topo-muy-claro)' }}>Centro de ayuda</p>
+                      {[
+                        { texto: 'Repetir el tour completo', definicion: TUTORIAL_APP },
+                        { texto: 'Ayuda de Facturas', definicion: TUTORIAL_FACTURAS },
+                        { texto: 'Ayuda de Proveedores', definicion: TUTORIAL_PROVEEDORES },
+                      ].map((item) => (
+                        <button
+                          key={item.definicion.id}
+                          type="button"
+                          onClick={() => { tutorial.abrir(item.definicion, false); setCentroAyudaAbierto(false); setMenuMovilAbierto(false); }}
+                          style={{
+                            width: '100%', textAlign: 'left', background: 'none', border: 'none',
+                            padding: '0.5rem 0.6rem', cursor: 'pointer', fontSize: '0.85rem',
+                            color: 'var(--negro)', borderRadius: 6, fontFamily: 'inherit',
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--topo-tinte)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
+                        >
+                          {item.texto}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
               <button
                 className={`${styles.sidebarAccionBtn} ${asistente ? styles.sidebarAccionBtnActivo : ''}`}
                 onClick={() => { setAsistente((v) => !v); setMenuMovilAbierto(false); }}
