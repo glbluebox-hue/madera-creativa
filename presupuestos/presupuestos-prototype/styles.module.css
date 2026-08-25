@@ -1862,12 +1862,45 @@
 .app[data-theme="dark"] .tabPanel > h2,
 .app[data-theme="dark"] .tabPanel > div > h2 { color: #f0e2c9; }
 .app[data-theme="dark"] .dashboardSub { color: #c9b89a; }
+/*
+ * Mismo motivo que arriba, pero para elementos cuyo color normal es
+ * `--negro` (pensado para texto sobre tarjetas claras) que en modo oscuro
+ * pasan a pintarse sobre `--fondo` — oscuro ahí, no una tarjeta clara.
+ * Unos lo hacen solo al pasar el ratón (`:hover`, su fondo normal SÍ es
+ * claro); `.proyectoActualCard` lo hace siempre, su propio fondo ya es
+ * `--fondo` sin condición. Encontrado en vivo, 25/08/2026 (reporte del
+ * usuario con capturas): pestañas "Resumen financiero"/"Presupuestos"/
+ * "Plantillas" (`.fichaTab`), filtros tipo "Todos"/"Finalizados"
+ * (`.filtroPill`), botón "Volver", fila de cliente, botón secundario,
+ * zona de subir archivos e ítem del menú lateral, todos al pasar el
+ * ratón; y la tarjeta "Proyecto actual", siempre.
+ */
+.app[data-theme="dark"] .fichaTab:hover,
+.app[data-theme="dark"] .fichaTabActiva,
+.app[data-theme="dark"] .fichaTabActiva:hover,
+.app[data-theme="dark"] .filtroPill:hover,
+.app[data-theme="dark"] .volver:hover,
+.app[data-theme="dark"] .clienteFila:hover .clienteFilaNombre,
+.app[data-theme="dark"] .btnSecundario:hover:not(:disabled),
+.app[data-theme="dark"] .zonaSubida:hover,
+.app[data-theme="dark"] .sidebarNavItem:hover,
+.app[data-theme="dark"] .proyectoActualNombre { color: #f0e2c9; }
 @media (prefers-color-scheme: dark) {
   .app:not([data-theme="light"]) .dashboardTop h2,
   .app:not([data-theme="light"]) .barraSeccion h2,
   .app:not([data-theme="light"]) .tabPanel > h2,
   .app:not([data-theme="light"]) .tabPanel > div > h2 { color: #f0e2c9; }
   .app:not([data-theme="light"]) .dashboardSub { color: #c9b89a; }
+  .app:not([data-theme="light"]) .fichaTab:hover,
+  .app:not([data-theme="light"]) .fichaTabActiva,
+  .app:not([data-theme="light"]) .fichaTabActiva:hover,
+  .app:not([data-theme="light"]) .filtroPill:hover,
+  .app:not([data-theme="light"]) .volver:hover,
+  .app:not([data-theme="light"]) .clienteFila:hover .clienteFilaNombre,
+  .app:not([data-theme="light"]) .btnSecundario:hover:not(:disabled),
+  .app:not([data-theme="light"]) .zonaSubida:hover,
+  .app:not([data-theme="light"]) .sidebarNavItem:hover,
+  .app:not([data-theme="light"]) .proyectoActualNombre { color: #f0e2c9; }
 }
 .kpiGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.9rem; }
 @media (max-width: 700px) { .kpiGrid { grid-template-columns: repeat(2, 1fr); } }
