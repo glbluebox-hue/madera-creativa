@@ -2055,6 +2055,21 @@
   .kpiLabel { font-size: 0.6rem; }
   .kpiValor { font-size: 1.05rem; }
   .kpiSub { font-size: 0.64rem; }
+
+  /* "Actividad reciente" (Inicio) en móvil: en escritorio la fecha/importe
+     caben en la misma línea que el título, así que este comparte el resto
+     del ancho — en una pantalla estrecha eso dejaba tan poco sitio al
+     título/descripción que `text-overflow: ellipsis` los recortaba casi
+     enteros ("AGB-EMBEL PERD 3D 14 PL E011511454…"). Aquí la fecha/importe/
+     borrar pasan a su propia línea debajo, y el título ya no se trunca —
+     salta de línea con normalidad, así que se ve completo. Reportado real,
+     25/08/2026. */
+  .actividadItem { flex-wrap: wrap; }
+  .actividadTitulo, .actividadSub { white-space: normal; overflow: visible; text-overflow: clip; }
+  .actividadDerecha {
+    flex-basis: 100%; flex-direction: row !important; justify-content: space-between;
+    align-items: center; text-align: left; margin-top: 0.35rem; padding-left: calc(34px + 0.75rem);
+  }
 }
 
 /* ===== MÓDULO "DIBUJOS" (Fase 2.1) =====
