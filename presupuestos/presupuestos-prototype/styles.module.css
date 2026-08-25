@@ -2067,7 +2067,12 @@
   .actividadItem { flex-wrap: wrap; }
   .actividadTitulo, .actividadSub { white-space: normal; overflow: visible; text-overflow: clip; }
   .actividadDerecha {
-    flex-basis: 100%; flex-direction: row !important; justify-content: space-between;
+    /* Sin `box-sizing: border-box`, el `padding-left` de abajo se SUMA al
+       100% de ancho en vez de restarse de él — empujaba el botón de
+       borrar fuera de la tarjeta, por la derecha (bug real, con foto,
+       25/08/2026: mismo patrón que ya apareció en el globo del tutorial). */
+    box-sizing: border-box;
+    flex-basis: 100%; width: 100%; flex-direction: row !important; justify-content: space-between;
     align-items: center; text-align: left; margin-top: 0.35rem; padding-left: calc(34px + 0.75rem);
   }
 }
