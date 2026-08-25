@@ -18,9 +18,10 @@
   pointer-events: none;
 }
 
-/* Panel oscuro — cada uno de los 4 lados alrededor del hueco de foco, posicionados en línea (top/left/width/height calculados en JS a partir del rect real del elemento). */
+/* Panel oscuro de pantalla completa, recortado con `clip-path` (calculado en JS a partir del rect real del elemento) para dejar un hueco transparente alrededor del elemento señalado — un único elemento, nunca 4 paneles que deban encajar entre sí (ver `recorteVelo` en TutorialOverlay.tsx para el porqué). */
 .velo {
   position: fixed;
+  inset: 0;
   background: rgba(24, 20, 15, 0.55);
   transition: var(--trans-fast);
   pointer-events: auto;

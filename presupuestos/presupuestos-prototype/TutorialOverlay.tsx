@@ -25,19 +25,6 @@ const MARGEN_FOCO_PX = 6;
 const INTERVALO_SONDEO_MS = 150;
 const ANCHO_GLOBO_PX = 320;
 const MARGEN_GLOBO_PX = 12;
-/**
- * Solape entre los 4 paneles del velo (arriba/abajo/izquierda/derecha) en
- * sus bordes internos — bug real reportado con captura, 25/08/2026:
- * `rect.top`/`rect.left`/etc. de `getBoundingClientRect()` traen decimales,
- * y con escalado fraccional de Windows (125%/150%, muy común) cada panel
- * redondea su borde al píxel físico de forma independiente; dos paneles con
- * la MISMA coordenada CSS pueden acabar en dos píxeles físicos distintos,
- * dejando una rendija de 1px por la que se ve el fondo blanco de la página
- * — el "parpadeo"/línea blanca reportado. Solapar 2px es invisible (mismo
- * color sobre sí mismo) y sigue dejando de sobra el margen real alrededor
- * del elemento señalado (`MARGEN_FOCO_PX` = 6, nunca se toca esa zona).
- */
-const SOLAPE_VELO_PX = 2;
 
 /**
  * Única pieza del sistema de tutoriales con permiso para tocar el DOM
@@ -167,10 +154,7 @@ export function TutorialOverlay({
 
   return (
     <div className={styles.raiz} style={{ zIndex: Z_TUTORIAL }} role="dialog" aria-label={`Tutorial: ${paso.titulo}`}>
-      <div className={styles.velo} style={{ top: 0, left: 0, right: 0, height: Math.max(0, rect.top - MARGEN_FOCO_PX + SOLAPE_VELO_PX) }} />
-      <div className={styles.velo} style={{ top: rect.bottom + MARGEN_FOCO_PX - SOLAPE_VELO_PX, left: 0, right: 0, bottom: 0 }} />
-      <div className={styles.velo} style={{ top: rect.top - MARGEN_FOCO_PX - SOLAPE_VELO_PX, left: 0, width: Math.max(0, rect.left - MARGEN_FOCO_PX + SOLAPE_VELO_PX), height: rect.height + MARGEN_FOCO_PX * 2 + SOLAPE_VELO_PX * 2 }} />
-      <div className={styles.velo} style={{ top: rect.top - MARGEN_FOCO_PX - SOLAPE_VELO_PX, left: rect.right + MARGEN_FOCO_PX - SOLAPE_VELO_PX, right: 0, height: rect.height + MARGEN_FOCO_PX * 2 + SOLAPE_VELO_PX * 2 }} />
+      <div className={styles.velo} style={{ inset: 0, clipPath: recorteVelo(rect) }} />
       <div
         className={styles.foco}
         style={{ top: rect.top - MARGEN_FOCO_PX, left: rect.left - MARGEN_FOCO_PX, width: rect.width + MARGEN_FOCO_PX * 2, height: rect.height + MARGEN_FOCO_PX * 2 }}
@@ -191,6 +175,43 @@ export function TutorialOverlay({
       </div>
     </div>
   );
+}
+
+/**
+ * `clip-path` de "marco con un agujero" para el velo — UN solo elemento en
+ * vez de 4 paneles independientes (arriba/abajo/izquierda/derecha).
+ *
+ * Los 4 paneles se probaron primero y dieron dos bugs reales seguidos, con
+ * captura, el mismo día (25/08/2026): (1) con bordes exactamente a tope,
+ * `getBoundingClientRect()` trae decimales y el escalado fraccional de
+ * Windows (125%/150%) redondea cada panel al píxel físico por su cuenta —
+ * dos paneles con la MISMA coordenada CSS podían caer en dos píxeles
+ * físicos distintos, dejando una rendija de 1px con el fondo blanco de la
+ * página detrás; (2) al solaparlos 2px para tapar esa rendija, la zona de
+ * solape apila DOS paneles semitransparentes uno encima del otro y queda
+ * más oscura que el resto — la rendija blanca pasó a verse como una línea
+ * negra, mismo problema de fondo. Un único elemento recortado con
+ * `clip-path` no tiene piezas que encajar entre sí: es geométricamente
+ * imposible que tenga una costura, clara u oscura.
+ *
+ * El polígono traza el rectángulo exterior (pantalla completa) y luego el
+ * interior (el hueco alrededor del elemento señalado) como dos anillos
+ * separados dentro del mismo `polygon()`, con la regla de relleno
+ * `evenodd` explícita — con esa regla, cualquier punto cubierto por un
+ * número PAR de anillos queda fuera del recorte, así que el interior del
+ * segundo anillo (el hueco) queda transparente sin depender del sentido en
+ * que se hayan trazado los puntos. `pointer-events` también respeta la
+ * forma recortada: los clics dentro del hueco pasan de largo hasta el
+ * elemento real, sin que este velo los intercepte.
+ */
+function recorteVelo(rect: DOMRect): string {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const t = rect.top - MARGEN_FOCO_PX;
+  const b = rect.bottom + MARGEN_FOCO_PX;
+  const l = rect.left - MARGEN_FOCO_PX;
+  const r = rect.right + MARGEN_FOCO_PX;
+  return `polygon(evenodd, 0 0, 0 ${vh}px, ${vw}px ${vh}px, ${vw}px 0, 0 0, ${l}px ${t}px, ${r}px ${t}px, ${r}px ${b}px, ${l}px ${b}px, ${l}px ${t}px)`;
 }
 
 /** Altura estimada del globo — no se mide el DOM real (todavía no existe en el primer render), basta una estimación holgada para decidir si un lado tiene sitio de verdad. */
