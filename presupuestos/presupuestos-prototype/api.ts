@@ -139,13 +139,17 @@ async function comprobarRespuesta(res: Response, mensaje: string): Promise<Respo
  * un mensaje de negocio concreto (`ErrorDeNegocio` — p. ej. "ya existe una
  * carpeta con ese nombre" o "la carpeta contiene N dibujos"), lo usa en
  * lugar del mensaje genérico, porque aquí sí merece la pena mostrárselo
- * al usuario tal cual.
+ * al usuario tal cual. También cubre el 400 del middleware `validar()`
+ * (`{ error: 'Datos inválidos', detalles: [{ campo, mensaje }] }`) — sin
+ * esto, un guardado rechazado por validación (p. ej. el límite de fotos)
+ * solo mostraba "Datos inválidos" sin decir cuál era el problema real.
  */
 async function comprobarRespuestaConMotivo(res: Response, mensaje: string): Promise<Response> {
   if (res.ok) return res;
   if (res.status === 401 || res.status === 403) throw new Error(String(res.status));
   if (res.status === 400 || res.status === 409) {
-    const cuerpo = await res.json().catch(() => null) as { error?: string } | null;
+    const cuerpo = await res.json().catch(() => null) as { error?: string; detalles?: { campo: string; mensaje: string }[] } | null;
+    if (cuerpo?.detalles?.length) throw new Error(cuerpo.detalles.map((d) => d.mensaje).join(' '));
     if (cuerpo?.error) throw new Error(cuerpo.error);
   }
   throw new Error(mensaje);
@@ -604,7 +608,7 @@ export async function guardarProyecto(proyecto: Proyecto): Promise<Proyecto> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(proyecto),
   });
-  await comprobarRespuesta(res, 'No se pudo guardar el proyecto');
+  await comprobarRespuestaConMotivo(res, 'No se pudo guardar el proyecto');
   return res.json();
 }
 
