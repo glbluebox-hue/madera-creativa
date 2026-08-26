@@ -18,7 +18,18 @@ export type FotoProyecto = {
 /** Props de la galería de fotos. */
 export type GaleriaFotosProps = {
   fotos: FotoProyecto[];
-  onAnadir: (f: FotoProyecto) => void;
+  /**
+   * Añade una o varias fotos de una sola vez. Recibe SIEMPRE un array,
+   * incluso para una única foto — bug real, 26/08/2026: antes recibía una
+   * foto por llamada, y el padre (`ficha-cliente.tsx`) construye el
+   * proyecto actualizado a partir de un `proyecto` capturado por closure;
+   * al subir varias fotos a la vez (o varias hojas del escáner), cada
+   * llamada partía del mismo `proyecto.fotos` "congelado" de antes de
+   * empezar, así que cada guardado pisaba al anterior y solo sobrevivía la
+   * última foto. Con un único array, el padre hace un solo guardado con
+   * todas las fotos nuevas juntas — no hay nada que pisar.
+   */
+  onAnadir: (fotos: FotoProyecto[]) => void;
   onBorrar: (id: string) => void;
 };
 
@@ -34,20 +45,19 @@ export function GaleriaFotos({ fotos, onAnadir, onBorrar }: GaleriaFotosProps) {
   const [desc, setDesc] = useState('');
   const [escanerDoc, setEscanerDoc] = useState(false);
 
-  const subirFotos = (files: FileList | null) => {
+  const subirFotos = async (files: FileList | null) => {
     if (!files) return;
-    Array.from(files)
-      .filter((f) => f.type.startsWith('image/'))
-      .forEach(async (file) => {
-        const { blob } = await comprimirImagen(file);
-        const url = await leerArchivoComoBase64(blob);
-        onAnadir({
-          id: generarId(),
-          url,
-          descripcion: '',
-          fecha: new Date().toISOString().slice(0, 10),
-        });
-      });
+    const fecha = new Date().toISOString().slice(0, 10);
+    const nuevas = await Promise.all(
+      Array.from(files)
+        .filter((f) => f.type.startsWith('image/'))
+        .map(async (file) => {
+          const { blob } = await comprimirImagen(file);
+          const url = await leerArchivoComoBase64(blob);
+          return { id: generarId(), url, descripcion: '', fecha };
+        })
+    );
+    if (nuevas.length) onAnadir(nuevas);
   };
 
   const indiceActual = visor ? fotos.findIndex((f) => f.id === visor.id) : -1;
@@ -131,7 +141,7 @@ export function GaleriaFotos({ fotos, onAnadir, onBorrar }: GaleriaFotosProps) {
                       onChange={(e) => setDesc(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
-                          onAnadir({ ...foto, descripcion: desc });
+                          onAnadir([{ ...foto, descripcion: desc }]);
                           onBorrar(foto.id);
                           setEditandoDesc(null);
                         }
@@ -178,14 +188,12 @@ export function GaleriaFotos({ fotos, onAnadir, onBorrar }: GaleriaFotosProps) {
           onCerrar={() => setEscanerDoc(false)}
           onConfirmar={(r) => {
             const fecha = new Date().toISOString().slice(0, 10);
-            r.dataUrls.forEach((dataUrl, i) => {
-              onAnadir({
-                id: generarId(),
-                url: dataUrl,
-                descripcion: r.dataUrls.length > 1 ? `Documento (${r.modo}) — hoja ${i + 1}` : `Documento (${r.modo})`,
-                fecha,
-              });
-            });
+            onAnadir(r.dataUrls.map((dataUrl, i) => ({
+              id: generarId(),
+              url: dataUrl,
+              descripcion: r.dataUrls.length > 1 ? `Documento (${r.modo}) — hoja ${i + 1}` : `Documento (${r.modo})`,
+              fecha,
+            })));
             setEscanerDoc(false);
           }}
         />

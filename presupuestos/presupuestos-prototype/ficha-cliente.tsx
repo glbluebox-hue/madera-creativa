@@ -281,7 +281,7 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
         <div className={styles.tabPanel}>
           <GaleriaFotos
             fotos={proyecto.fotos || []}
-            onAnadir={(f: FotoProyecto) => onActualizarProyecto({ ...proyecto, fotos: [...(proyecto.fotos || []), f] })}
+            onAnadir={(fs: FotoProyecto[]) => onActualizarProyecto({ ...proyecto, fotos: [...(proyecto.fotos || []), ...fs] })}
             onBorrar={(id: string) => onActualizarProyecto({ ...proyecto, fotos: (proyecto.fotos || []).filter((f) => f.id !== id) })}
           />
           <PanelAdjuntos
