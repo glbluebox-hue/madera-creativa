@@ -148,8 +148,11 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
     [clientes, clienteFijo]
   );
 
+  // Las "hechas" (marcadas desde el banner "Cosas por hacer" del Inicio, ver
+  // `dashboard.tsx`) desaparecen de aquí también — es la misma lista de
+  // pendientes, no un archivo de completadas.
   const notasDelAmbito = useMemo(
-    () => (clienteFijo ? notas.filter((n) => n.clienteId === clienteFijo.id) : notas),
+    () => notas.filter((n) => n.estado === 'abierta' && (!clienteFijo || n.clienteId === clienteFijo.id)),
     [notas, clienteFijo]
   );
 

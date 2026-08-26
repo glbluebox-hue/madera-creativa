@@ -514,6 +514,7 @@ export function PresupuestosPrototype() {
             onAbrir={(id) => { cambiarSeccion('clientes'); abrirProyecto(id); }}
             onBorrarFactura={borrarFactura}
             onActualizarRecordatorio={actualizarRecordatorio}
+            onIrANotas={() => cambiarSeccion('notas')}
           />
         )}
 

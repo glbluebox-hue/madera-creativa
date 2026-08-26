@@ -6,8 +6,14 @@ import type { ProyectoResumen } from './api.js';
 import { calcularMetricas } from './dashboard-calculos.js';
 import { formatoEuroPrivado, VALOR_OCULTO, formatoFecha } from './calculos.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
-import { obtenerTodosLosPresupuestos } from './api.js';
+import { obtenerTodosLosPresupuestos, obtenerNotas, guardarNota } from './api.js';
+import { generarId } from './mock.js';
+import { PRIORIDADES, ordenarPorDefecto, type NotaMC, type PrioridadNota } from './notas-modelo.js';
 import styles from './styles.module.css';
+
+const COLOR_PRIORIDAD_TAREA: Record<PrioridadNota, string> = { alta: 'var(--rojo)', media: 'var(--ocre)', baja: 'var(--topo-claro)' };
+const COLOR_PRIORIDAD_TAREA_BG: Record<PrioridadNota, string> = { alta: 'var(--rojo-bg)', media: 'var(--ocre-bg)', baja: 'var(--topo-tinte)' };
+const ETIQUETA_PRIORIDAD_TAREA: Record<PrioridadNota, string> = { alta: 'Alta', media: 'Media', baja: 'Baja' };
 
 /** Props del panel principal (dashboard). */
 export type DashboardProps = {
@@ -29,6 +35,8 @@ export type DashboardProps = {
   onBorrarFactura: (id: string) => void;
   /** Cambia la fecha de montaje/medición de un proyecto (Próximos montajes y mediciones). */
   onActualizarRecordatorio: (proyectoId: string, cambios: { fechaMontaje?: string; fechaMedicion?: string }) => void;
+  /** Va a la sección Notas (enlace "ver más" del banner "Cosas por hacer"). */
+  onIrANotas: () => void;
 };
 
 const ICONOS: Record<string, ReactNode> = {
@@ -69,9 +77,61 @@ type ItemActividad =
   | { tipo: 'factura'; fecha: string; factura: Factura }
   | { tipo: 'presupuestoAceptado'; fecha: string; presupuesto: PresupuestoMC };
 
-export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlternarPrivacidad, onAbrir, onBorrarFactura, onActualizarRecordatorio }: DashboardProps) {
+export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlternarPrivacidad, onAbrir, onBorrarFactura, onActualizarRecordatorio, onIrANotas }: DashboardProps) {
   const m = calcularMetricas(proyectos);
   const primerNombre = (nombre || '').split(' ')[0];
+
+  /**
+   * "Cosas por hacer" (26/08/2026) — reutiliza el sistema de Notas ya
+   * existente (`NotaMC`, con `estado`/`prioridad` ya en el modelo pero sin
+   * ninguna interfaz que los usara) en vez de crear una entidad nueva:
+   * aquí se listan las notas `abierta` de todo el negocio (sin filtrar por
+   * cliente) y marcarlas como hechas las saca de esta lista y de la
+   * sección Notas (ver el filtro por `estado` añadido en `notas-vista.tsx`).
+   */
+  const [tareas, setTareas] = useState<NotaMC[]>([]);
+  const [cargandoTareas, setCargandoTareas] = useState(true);
+  useEffect(() => {
+    obtenerNotas()
+      .then((todas) => setTareas(ordenarPorDefecto(todas.filter((n) => n.estado === 'abierta'))))
+      .catch(() => setTareas([]))
+      .finally(() => setCargandoTareas(false));
+  }, []);
+
+  const [agregandoTarea, setAgregandoTarea] = useState(false);
+  const [nuevaTarea, setNuevaTarea] = useState('');
+  const [nuevaTareaPrioridad, setNuevaTareaPrioridad] = useState<PrioridadNota>('media');
+  const [guardandoTarea, setGuardandoTarea] = useState(false);
+
+  const crearTarea = async () => {
+    if (!nuevaTarea.trim()) return;
+    setGuardandoTarea(true);
+    const ahora = new Date().toISOString();
+    const nueva: NotaMC = {
+      id: generarId(), titulo: '', contenido: nuevaTarea.trim(), prioridad: nuevaTareaPrioridad, estado: 'abierta',
+      clienteId: '', proyectoId: '', etiquetas: [], origen: 'texto', creado: ahora, actualizado: ahora,
+    };
+    try {
+      const guardada = await guardarNota(nueva);
+      setTareas((prev) => ordenarPorDefecto([guardada, ...prev]));
+      setNuevaTarea('');
+      setNuevaTareaPrioridad('media');
+      setAgregandoTarea(false);
+    } catch {
+      // Sin toast de error aquí: la tarea sigue en el formulario, se puede reintentar.
+    } finally {
+      setGuardandoTarea(false);
+    }
+  };
+
+  const marcarTareaHecha = async (nota: NotaMC) => {
+    setTareas((prev) => prev.filter((n) => n.id !== nota.id));
+    try {
+      await guardarNota({ ...nota, estado: 'hecha', actualizado: new Date().toISOString() });
+    } catch {
+      // Si falla, reaparecerá en la próxima carga del panel.
+    }
+  };
 
   /**
    * "Registrar la actividad correspondiente" (Fase 1, detalle pendiente) —
@@ -138,6 +198,101 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
         <Kpi icono="gasto" color="rojo" etiqueta="Gastos" valor={formatoEuroPrivado(resumen.totalGastos, privado)} sub={`${resumen.numGastos} facturas`} />
         <Kpi icono="balance" color={resumen.balance >= 0 ? 'verde' : 'rojo'} etiqueta="Balance" valor={formatoEuroPrivado(resumen.balance, privado)} sub={`${resumen.numFacturas} facturas`} />
         <Kpi icono="presupuestos" color="topo" etiqueta="Presupuestos" valor={privado ? VALOR_OCULTO : String(m.presupuestosPendientes + m.enCurso)} sub={m.enCurso > 0 ? `${m.enCurso} en curso` : `${m.presupuestosPendientes} pendientes`} />
+      </div>
+
+      <div className={styles.panel} style={{ marginBottom: '0.9rem' }}>
+        <div className={styles.panelHeader}>
+          <h3 className={styles.panelTitulo}>Cosas por hacer</h3>
+          <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.72rem', padding: '0.35rem 0.65rem' }} onClick={() => setAgregandoTarea((v) => !v)}>
+            {agregandoTarea ? 'Cancelar' : '+ Añadir'}
+          </button>
+        </div>
+
+        {agregandoTarea && (
+          <div className={styles.formInline} style={{ marginTop: 0, marginBottom: '1rem' }}>
+            <div className={styles.campo} style={{ flex: 1 }}>
+              <label className={styles.campoLabel}>Tarea</label>
+              <input
+                className={styles.input}
+                value={nuevaTarea}
+                onChange={(e) => setNuevaTarea(e.target.value)}
+                placeholder="Ej: comprar pinceles, hacer presupuesto de…"
+                onKeyDown={(e) => { if (e.key === 'Enter') crearTarea(); }}
+                autoFocus
+              />
+            </div>
+            <div className={styles.campo}>
+              <label className={styles.campoLabel}>Prioridad</label>
+              <div style={{ display: 'flex', gap: '0.4rem' }}>
+                {PRIORIDADES.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setNuevaTareaPrioridad(p.id)}
+                    style={{
+                      padding: '0.35rem 0.7rem', borderRadius: 'var(--radio-full, 999px)', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer',
+                      border: `1.5px solid ${COLOR_PRIORIDAD_TAREA[p.id]}`,
+                      background: nuevaTareaPrioridad === p.id ? COLOR_PRIORIDAD_TAREA[p.id] : 'transparent',
+                      color: nuevaTareaPrioridad === p.id ? 'var(--blanco)' : COLOR_PRIORIDAD_TAREA[p.id],
+                    }}
+                  >
+                    {ETIQUETA_PRIORIDAD_TAREA[p.id]}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={crearTarea} disabled={!nuevaTarea.trim() || guardandoTarea}>
+              {guardandoTarea ? 'Guardando…' : 'Guardar'}
+            </button>
+          </div>
+        )}
+
+        {cargandoTareas ? (
+          <p className={styles.dashboardVacio}>Cargando…</p>
+        ) : tareas.length === 0 ? (
+          <p className={styles.dashboardVacio}>Todo al día — no tienes tareas pendientes.</p>
+        ) : (
+          <>
+            {tareas.slice(0, 5).map((t) => (
+              <div key={t.id} className={styles.actividadItem}>
+                <button
+                  type="button"
+                  onClick={() => marcarTareaHecha(t)}
+                  title="Marcar como hecha"
+                  aria-label="Marcar como hecha"
+                  style={{
+                    width: 22, height: 22, borderRadius: '50%', flexShrink: 0, cursor: 'pointer', padding: 0,
+                    border: `2px solid ${COLOR_PRIORIDAD_TAREA[t.prioridad]}`, background: 'none', color: COLOR_PRIORIDAD_TAREA[t.prioridad],
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = COLOR_PRIORIDAD_TAREA[t.prioridad]; e.currentTarget.style.color = 'var(--blanco)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = COLOR_PRIORIDAD_TAREA[t.prioridad]; }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                </button>
+                <div className={styles.actividadCuerpo} style={{ cursor: 'pointer' }} onClick={onIrANotas}>
+                  <span className={styles.actividadTitulo}>{t.titulo || t.contenido}</span>
+                  {t.titulo && <span className={styles.actividadSub}>{t.contenido}</span>}
+                </div>
+                <span style={{
+                  fontSize: '0.65rem', fontWeight: 700, borderRadius: 'var(--radio-full, 999px)', padding: '0.15rem 0.55rem', flexShrink: 0,
+                  color: COLOR_PRIORIDAD_TAREA[t.prioridad], background: COLOR_PRIORIDAD_TAREA_BG[t.prioridad],
+                }}>
+                  {ETIQUETA_PRIORIDAD_TAREA[t.prioridad]}
+                </span>
+              </div>
+            ))}
+            {tareas.length > 5 && (
+              <button
+                type="button"
+                onClick={onIrANotas}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--topo)', fontSize: '0.78rem', fontWeight: 600, padding: '0.6rem 0 0' }}
+              >
+                Ver {tareas.length - 5} más en Notas →
+              </button>
+            )}
+          </>
+        )}
       </div>
 
       <div className={styles.dashboardCols}>
