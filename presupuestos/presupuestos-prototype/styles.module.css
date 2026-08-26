@@ -1813,9 +1813,10 @@
 }
 .sidebarUserNombre { font-size: 0.82rem; font-weight: 700; color: var(--negro); }
 .sidebarUserRol { font-size: 0.7rem; color: var(--topo-muy-claro); }
-.sidebarAcciones { display: flex; gap: 0.4rem; }
+.sidebarAcciones { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .sidebarAccionBtn {
-  flex: 1;
+  flex: 0 0 34px;
+  width: 34px;
   background: none; border: 1px solid var(--borde); border-radius: var(--radio);
   cursor: pointer; color: var(--topo-claro);
   height: 34px; display: flex; align-items: center; justify-content: center;
