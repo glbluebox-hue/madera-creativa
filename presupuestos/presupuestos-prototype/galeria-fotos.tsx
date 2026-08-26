@@ -29,7 +29,7 @@ export type GaleriaFotosProps = {
    * última foto. Con un único array, el padre hace un solo guardado con
    * todas las fotos nuevas juntas — no hay nada que pisar.
    */
-  onAnadir: (fotos: FotoProyecto[]) => void;
+  onAnadir: (fotos: FotoProyecto[]) => void | Promise<void>;
   onBorrar: (id: string) => void;
 };
 
@@ -44,20 +44,33 @@ export function GaleriaFotos({ fotos, onAnadir, onBorrar }: GaleriaFotosProps) {
   const [editandoDesc, setEditandoDesc] = useState<string | null>(null);
   const [desc, setDesc] = useState('');
   const [escanerDoc, setEscanerDoc] = useState(false);
+  const [subiendo, setSubiendo] = useState(false);
+  const [errorSubida, setErrorSubida] = useState<string | null>(null);
 
   const subirFotos = async (files: FileList | null) => {
     if (!files) return;
-    const fecha = new Date().toISOString().slice(0, 10);
-    const nuevas = await Promise.all(
-      Array.from(files)
-        .filter((f) => f.type.startsWith('image/'))
-        .map(async (file) => {
-          const { blob } = await comprimirImagen(file);
-          const url = await leerArchivoComoBase64(blob);
-          return { id: generarId(), url, descripcion: '', fecha };
-        })
-    );
-    if (nuevas.length) onAnadir(nuevas);
+    setErrorSubida(null);
+    setSubiendo(true);
+    try {
+      const fecha = new Date().toISOString().slice(0, 10);
+      const nuevas = await Promise.all(
+        Array.from(files)
+          .filter((f) => f.type.startsWith('image/'))
+          .map(async (file) => {
+            const { blob } = await comprimirImagen(file);
+            const url = await leerArchivoComoBase64(blob);
+            return { id: generarId(), url, descripcion: '', fecha };
+          })
+      );
+      if (nuevas.length) await onAnadir(nuevas);
+    } catch (e) {
+      // Bug real, 26/08/2026: antes esto fallaba en silencio (p. ej. lote
+      // demasiado grande) — la foto se veía en pantalla pero nunca se
+      // había guardado, y solo se descubría al volver a abrir el proyecto.
+      setErrorSubida(String(e).replace(/^Error:\s*/, '') || 'No se pudieron guardar las fotos. Vuelve a intentarlo.');
+    } finally {
+      setSubiendo(false);
+    }
   };
 
   const indiceActual = visor ? fotos.findIndex((f) => f.id === visor.id) : -1;
@@ -76,21 +89,25 @@ export function GaleriaFotos({ fotos, onAnadir, onBorrar }: GaleriaFotosProps) {
         </h3>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <input ref={camaraRef} type="file" accept="image/*" capture="environment" multiple style={{ display: 'none' }} onChange={(e) => subirFotos(e.target.files)} />
-          <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={() => camaraRef.current?.click()}>
+          <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={() => camaraRef.current?.click()} disabled={subiendo}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
             Cámara
           </button>
-          <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={() => setEscanerDoc(true)} title="Escanear como documento">
+          <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={() => setEscanerDoc(true)} title="Escanear como documento" disabled={subiendo}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
             Documento
           </button>
           <input ref={inputRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={(e) => subirFotos(e.target.files)} />
-          <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={() => inputRef.current?.click()}>
+          <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={() => inputRef.current?.click()} disabled={subiendo}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
-            Subir
+            {subiendo ? 'Subiendo…' : 'Subir'}
           </button>
         </div>
       </div>
+
+      {errorSubida && (
+        <div className={styles.loginError} style={{ marginTop: '0.75rem' }}>{errorSubida}</div>
+      )}
 
       {/* Zona de arrastre si no hay fotos */}
       {fotos.length === 0 && (
@@ -186,15 +203,20 @@ export function GaleriaFotos({ fotos, onAnadir, onBorrar }: GaleriaFotosProps) {
       {escanerDoc && (
         <EscanerDocumento
           onCerrar={() => setEscanerDoc(false)}
-          onConfirmar={(r) => {
-            const fecha = new Date().toISOString().slice(0, 10);
-            onAnadir(r.dataUrls.map((dataUrl, i) => ({
-              id: generarId(),
-              url: dataUrl,
-              descripcion: r.dataUrls.length > 1 ? `Documento (${r.modo}) — hoja ${i + 1}` : `Documento (${r.modo})`,
-              fecha,
-            })));
+          onConfirmar={async (r) => {
             setEscanerDoc(false);
+            setErrorSubida(null);
+            const fecha = new Date().toISOString().slice(0, 10);
+            try {
+              await onAnadir(r.dataUrls.map((dataUrl, i) => ({
+                id: generarId(),
+                url: dataUrl,
+                descripcion: r.dataUrls.length > 1 ? `Documento (${r.modo}) — hoja ${i + 1}` : `Documento (${r.modo})`,
+                fecha,
+              })));
+            } catch (e) {
+              setErrorSubida(String(e).replace(/^Error:\s*/, '') || 'No se pudieron guardar las fotos. Vuelve a intentarlo.');
+            }
           }}
         />
       )}

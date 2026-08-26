@@ -8,7 +8,7 @@ export type UseProyectos = {
   proyectos: ProyectoResumen[];
   cargando: boolean;
   error: string | null;
-  /** Reemplaza en la lista local un proyecto ya guardado en el servidor. */
+  /** Reemplaza en la lista local un proyecto ya guardado en el servidor. Rechaza si el guardado falla — quien llama debe avisar al usuario, no asumir que se guardó. */
   actualizar: (proyecto: Proyecto) => Promise<void>;
   /** Cambia la fecha de montaje/medición de un proyecto (recordatorio del dashboard) — pide el proyecto completo, lo actualiza y refresca la lista. */
   actualizarRecordatorio: (proyectoId: string, cambios: { fechaMontaje?: string; fechaMedicion?: string }) => Promise<void>;
@@ -57,11 +57,16 @@ export function useProyectos(autenticado = true): UseProyectos {
     setProyectos((prev) => prev.map((p) => (p.id === proyecto.id ? { ...p, proyecto: proyecto.proyecto, estado: proyecto.estado, presupuesto: proyecto.presupuesto } : p)));
     try {
       await api.guardarProyecto(proyecto);
-    } catch {
+    } catch (e) {
       // El guardado falló: revertimos el cambio optimista recargando el
       // estado real del servidor, en vez de dejar en pantalla una edición
       // que el usuario cree guardada pero que nunca llegó a persistirse.
+      // Relanzamos el error — bug real, 26/08/2026: antes se tragaba aquí
+      // y quien llamaba (p. ej. subir fotos) nunca se enteraba del fallo,
+      // así que el usuario veía la foto en pantalla como si se hubiera
+      // guardado y solo descubría que no al volver a abrir el proyecto.
       cargar();
+      throw e;
     }
   }, [cargar]);
 

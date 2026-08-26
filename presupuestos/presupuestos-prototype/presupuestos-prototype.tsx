@@ -586,7 +586,7 @@ export function PresupuestosPrototype() {
                 onActualizarEmpresa={actualizar}
                 onVolver={volverALista}
                 onActualizarCliente={(c) => { setClienteActualIdentidad(c); api.guardarCliente(c); refrescarNombresClientes(); }}
-                onActualizarProyecto={(p) => { setProyectoActual(p); actualizarProyecto(p); }}
+                onActualizarProyecto={(p) => { setProyectoActual(p); return actualizarProyecto(p); }}
                 onBorrar={(id) => { borrarProyecto(id); volverALista(); }}
                 onGuardarFactura={(f: Factura) => guardarFactura(f)}
                 proveedores={proveedores}

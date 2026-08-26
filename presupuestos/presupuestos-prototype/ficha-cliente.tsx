@@ -52,8 +52,8 @@ export type FichaClienteProps = {
   onVolver: () => void;
   /** Actualiza los datos de identidad del cliente (nombre/teléfono/email). */
   onActualizarCliente: (cliente: Cliente) => void;
-  /** Actualiza los datos propios del proyecto. */
-  onActualizarProyecto: (proyecto: Proyecto) => void;
+  /** Actualiza los datos propios del proyecto. Puede devolver una promesa que rechaza si el guardado falla (ver `GaleriaFotos`, que la espera para avisar del fallo en vez de dejar la foto en pantalla sin haberse guardado). */
+  onActualizarProyecto: (proyecto: Proyecto) => void | Promise<void>;
   /** Borra por completo este proyecto (con confirmación) y vuelve a la lista — nunca borra al cliente ni sus otros proyectos. */
   onBorrar?: (id: string) => void;
   /** Guardar una factura de gasto vinculada a este proyecto. */

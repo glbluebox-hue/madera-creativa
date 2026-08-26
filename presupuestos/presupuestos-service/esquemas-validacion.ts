@@ -317,17 +317,23 @@ export const esquemaPresupuestoClienteEntrada = z.object({
 // ── Cliente ───────────────────────────────────────────────────────────────────
 
 /**
- * Límite defensivo del total de bytes en fotos + adjuntos de un
- * mismo cliente (Incremento 1.3). No es una regla de negocio: es una red de
- * seguridad frente al límite duro de 16 MB por documento de MongoDB, con
- * margen amplio incluso para el resto de campos del documento. La
- * compresión de imágenes en el cliente (`procesamiento-imagenes.ts`) reduce
- * el riesgo de llegar aquí en el uso normal; este límite cubre el caso
- * extremo que la compresión por sí sola no puede garantizar (ver auditoría
- * del Incremento 1.3: los adjuntos pueden ser PDF, no solo imágenes, y no
- * hay tope de cantidad de archivos por cliente).
+ * Límite defensivo del total de bytes en fotos + adjuntos de un mismo
+ * proyecto (Incremento 1.3), medido sobre el Base64 de ENTRADA (antes de
+ * `procesarFotos`/`procesarAdjuntos` subirlos a almacenamiento externo y
+ * sustituir `url` por un enlace corto) — así que en la práctica solo pesan
+ * aquí las fotos/adjuntos NUEVOS de este guardado; los ya subidos antes
+ * llegan como URL corta y apenas cuentan.
+ *
+ * Bug real, 26/08/2026: 8 MB bastaba para 1-2 fotos de móvil ya
+ * comprimidas, pero no para un lote real (varias fotos de una obra
+ * terminada subidas de una vez) — la petición fallaba la validación con
+ * 400 antes de llegar a `guardarProyecto`, y el fallo se perdía en
+ * silencio en el cliente (`use-proyectos.ts` solo revertía la lista, sin
+ * avisar), así que las fotos parecían subir pero desaparecían al volver a
+ * abrir el proyecto. Subido a 24 MB, con margen bajo el límite de 25 MB de
+ * `express.json` (`presupuestos-service.app-root.ts`).
  */
-export const LIMITE_BLOBS_CLIENTE_BYTES = 8 * 1024 * 1024;
+export const LIMITE_BLOBS_CLIENTE_BYTES = 24 * 1024 * 1024;
 
 /**
  * Tamaño en bytes de una cadena tal como se almacenará en MongoDB (BSON
