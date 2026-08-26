@@ -374,7 +374,6 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
                         className={styles.actividadCuerpo}
                         style={{ cursor: 'pointer', opacity: it.hecha ? 0.6 : 1 }}
                         onClick={() => iniciarEdicionTarea(it.id, it.texto)}
-                        title="Tocar para editar"
                       >
                         <span className={styles.actividadTitulo} style={it.hecha ? { textDecoration: 'line-through' } : undefined}>{it.texto}</span>
                       </div>
@@ -384,6 +383,18 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
                       }}>
                         {ETIQUETA_PRIORIDAD_TAREA[it.prioridad]}
                       </span>
+                      <button
+                        type="button"
+                        onClick={() => iniciarEdicionTarea(it.id, it.texto)}
+                        aria-label="Editar tarea"
+                        style={{
+                          width: 30, height: 30, borderRadius: '50%', flexShrink: 0, cursor: 'pointer', padding: 0,
+                          border: '1.5px solid var(--borde)', background: 'none', color: 'var(--topo-claro)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
+                      </button>
                       <ConfirmarBorrado titulo="Borrar tarea" onConfirmar={() => borrarTarea(it.id)} />
                     </div>
                   );
