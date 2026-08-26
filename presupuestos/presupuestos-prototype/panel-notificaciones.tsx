@@ -30,6 +30,7 @@ const PREFERENCIAS_POR_DEFECTO: NotifPrefs = {
   margenBajo: { activo: true, hora: 8, minuto: 0 },
   briefingDiario: { activo: true, hora: 8, minuto: 0 },
   nuevoUsuario: true,
+  mensajeSoporte: true,
 };
 
 /** Los únicos 4 tipos con hora propia — `nuevoUsuario` es un booleano suelto, sin hora, así que queda fuera de la conversión UTC↔local de abajo. */
@@ -113,7 +114,7 @@ export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCe
         const local: NotifPrefs = {
           horas: preferencias.horas, cobrosPendientes: preferencias.cobrosPendientes,
           margenBajo: preferencias.margenBajo, briefingDiario: preferencias.briefingDiario,
-          nuevoUsuario: preferencias.nuevoUsuario,
+          nuevoUsuario: preferencias.nuevoUsuario, mensajeSoporte: preferencias.mensajeSoporte,
         };
         for (const clave of TIPOS_CON_HORA) {
           const p = preferencias[clave];
@@ -257,6 +258,20 @@ export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCe
                     <div style={{ flex: 1 }}>
                       <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--negro)' }}>Nuevo usuario registrado</span>
                       <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>Aviso al momento cuando alguien se registra, para que puedas aprobarlo o rechazarlo.</span>
+                    </div>
+                  </div>
+                )}
+                {esAdmin && (
+                  <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start' }}>
+                    <input
+                      type="checkbox"
+                      style={{ marginTop: '0.2rem' }}
+                      checked={preferencias.mensajeSoporte}
+                      onChange={(e) => setPreferencias((prev) => ({ ...prev, mensajeSoporte: e.target.checked }))}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--negro)' }}>Comentarios y sugerencias</span>
+                      <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>Aviso al momento cuando un usuario abre o responde un hilo de "Comentarios y sugerencias".</span>
                     </div>
                   </div>
                 )}

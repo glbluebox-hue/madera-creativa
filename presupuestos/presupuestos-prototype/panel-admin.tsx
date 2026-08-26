@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { formatoFecha } from './calculos.js';
 import { fetchConAuth } from './api.js';
+import * as api from './api.js';
+import type { HiloSoporte, TipoHiloSoporte } from './api.js';
 import styles from './styles.module.css';
 
 type EstadoUsuario = 'pendiente' | 'activo' | 'suspendido';
@@ -74,6 +76,15 @@ const TIPOS_ACCESO: TipoAcceso[] = ['trial', 'promotional', 'free', 'paid'];
 const PLANES_ACCESO: PlanAcceso[] = ['NONE', 'LIFETIME_FREE', 'BASIC', 'PRO', 'PREMIUM'];
 const ETIQUETA_TIPO: Record<TipoAcceso, string> = { trial: 'Prueba', promotional: 'Promocional', free: 'Gratuito', paid: 'Pago' };
 const ETIQUETA_PLAN: Record<PlanAcceso, string> = { NONE: 'Sin plan', LIFETIME_FREE: 'Gratis de por vida', BASIC: 'Basic', PRO: 'Pro', PREMIUM: 'Premium' };
+const ETIQUETA_TIPO_SOPORTE: Record<TipoHiloSoporte, string> = { mejora: 'Mejora', incidencia: 'Incidencia', problema: 'Problema' };
+const COLOR_TIPO_SOPORTE: Record<TipoHiloSoporte, string> = { mejora: 'var(--verde)', incidencia: 'var(--ocre)', problema: 'var(--rojo)' };
+
+/** Fecha + hora en formato local corto — mismo criterio que `formatoFechaHora` de `soporte-panel.tsx`. */
+function formatoFechaHoraSoporte(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
 
 /** Props del panel de administración de usuarios. */
 export type PanelAdminProps = {
@@ -102,7 +113,7 @@ function iconoBadge(estado: EstadoUsuario, s = 12) {
  * Solo visible para el administrador — permite aprobar, suspender y eliminar usuarios.
  */
 export function PanelAdmin({ onCerrar }: PanelAdminProps) {
-  const [pestana, setPestana] = useState<'usuarios' | 'codigos' | 'costes'>('usuarios');
+  const [pestana, setPestana] = useState<'usuarios' | 'codigos' | 'costes' | 'soporte'>('usuarios');
 
   const [usuarios, setUsuarios] = useState<UsuarioAdmin[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -162,6 +173,51 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
   const [formEdicionCoste, setFormEdicionCoste] = useState({
     nombre: '', categoria: '', coste: '', moneda: 'EUR', periodicidad: 'mensual' as Periodicidad, url: '', notas: '',
   });
+
+  // Soporte — comentarios/sugerencias/incidencias de los usuarios (26/08/2026).
+  const [hilosSoporte, setHilosSoporte] = useState<HiloSoporte[]>([]);
+  const [cargandoSoporte, setCargandoSoporte] = useState(true);
+  const [errorSoporte, setErrorSoporte] = useState('');
+  const [hiloSoporteAbierto, setHiloSoporteAbierto] = useState<string | null>(null);
+  const [respuestaAdmin, setRespuestaAdmin] = useState('');
+  const [enviandoRespuestaAdmin, setEnviandoRespuestaAdmin] = useState(false);
+  const [filtroSoporte, setFiltroSoporte] = useState<'abierto' | 'resuelto' | 'todos'>('abierto');
+
+  const cargarSoporte = useCallback(() => {
+    setCargandoSoporte(true);
+    api.obtenerHilosSoporteAdmin()
+      .then(setHilosSoporte)
+      .catch(() => setErrorSoporte('No se pudieron cargar los mensajes.'))
+      .finally(() => setCargandoSoporte(false));
+  }, []);
+
+  useEffect(() => { cargarSoporte(); }, [cargarSoporte]);
+
+  const enviarRespuestaAdmin = async (id: string) => {
+    if (!respuestaAdmin.trim()) return;
+    setEnviandoRespuestaAdmin(true);
+    try {
+      const hilo = await api.responderHiloSoporteAdmin(id, respuestaAdmin.trim());
+      setHilosSoporte((prev) => prev.map((h) => (h.id === id ? hilo : h)));
+      setRespuestaAdmin('');
+    } catch {
+      setErrorSoporte('No se pudo enviar la respuesta.');
+    } finally {
+      setEnviandoRespuestaAdmin(false);
+    }
+  };
+
+  const marcarEstadoHilo = async (id: string, estado: 'abierto' | 'resuelto') => {
+    try {
+      const hilo = await api.cambiarEstadoHiloSoporte(id, estado);
+      setHilosSoporte((prev) => prev.map((h) => (h.id === id ? hilo : h)));
+    } catch {
+      setErrorSoporte('No se pudo actualizar el estado.');
+    }
+  };
+
+  const hilosSoporteFiltrados = filtroSoporte === 'todos' ? hilosSoporte : hilosSoporte.filter((h) => h.estado === filtroSoporte);
+  const hiloSoporteActual = hilosSoporte.find((h) => h.id === hiloSoporteAbierto) || null;
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -471,7 +527,10 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
 
         {/* Pestañas */}
         <div style={{ display: 'flex', gap: '0.3rem', padding: '0 1.25rem', borderBottom: '1px solid var(--borde)' }}>
-          {([['usuarios', 'Usuarios'], ['codigos', 'Códigos de acceso'], ['costes', 'Costes']] as const).map(([clave, etiqueta]) => (
+          {([
+            ['usuarios', 'Usuarios'], ['codigos', 'Códigos de acceso'], ['costes', 'Costes'],
+            ['soporte', `Comentarios${hilosSoporte.filter((h) => h.estado === 'abierto').length > 0 ? ` (${hilosSoporte.filter((h) => h.estado === 'abierto').length})` : ''}`],
+          ] as const).map(([clave, etiqueta]) => (
             <button
               key={clave}
               onClick={() => setPestana(clave)}
@@ -974,6 +1033,121 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
             Esta pestaña solo la ves tú como administrador — nunca aparece para los usuarios de la app.
             Desactivar una herramienta la excluye del gasto mensual sin borrar su histórico.
           </p>
+          </>}
+
+          {pestana === 'soporte' && <>
+
+          {hiloSoporteActual ? (
+            // ── Conversación de un hilo ──
+            <div>
+              <button
+                type="button"
+                onClick={() => { setHiloSoporteAbierto(null); setRespuestaAdmin(''); }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: '0.75rem', color: 'var(--topo)', display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.85rem' }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                Volver a la lista
+              </button>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                <div>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: COLOR_TIPO_SOPORTE[hiloSoporteActual.tipo] }}>{ETIQUETA_TIPO_SOPORTE[hiloSoporteActual.tipo]}</span>
+                  <p style={{ margin: '0.15rem 0 0', fontWeight: 700, fontSize: '0.9rem' }}>{hiloSoporteActual.usuarioNombre}</p>
+                </div>
+                <button
+                  type="button"
+                  className={`${styles.btn} ${hiloSoporteActual.estado === 'resuelto' ? styles.btnSecundario : styles.btnVerde}`}
+                  style={{ fontSize: '0.78rem' }}
+                  onClick={() => marcarEstadoHilo(hiloSoporteActual.id, hiloSoporteActual.estado === 'resuelto' ? 'abierto' : 'resuelto')}
+                >
+                  {hiloSoporteActual.estado === 'resuelto' ? 'Reabrir' : 'Marcar resuelto'}
+                </button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', maxHeight: '45vh', overflowY: 'auto', marginBottom: '0.75rem' }}>
+                {hiloSoporteActual.mensajes.map((m) => (
+                  <div key={m.id} style={{
+                    alignSelf: m.autor === 'admin' ? 'flex-end' : 'flex-start',
+                    maxWidth: '85%', background: m.autor === 'admin' ? 'var(--topo-tinte)' : 'var(--fondo)',
+                    border: '1px solid var(--borde)', borderRadius: 10, padding: '0.6rem 0.8rem',
+                  }}>
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--negro)', whiteSpace: 'pre-wrap' }}>{m.texto}</p>
+                    <p style={{ margin: '0.3rem 0 0', fontSize: '0.68rem', color: 'var(--topo-claro)' }}>
+                      {m.autor === 'admin' ? 'Tú' : hiloSoporteActual.usuarioNombre} · {formatoFechaHoraSoporte(m.fecha)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: '0.4rem' }}>
+                <input
+                  className={styles.input}
+                  style={{ flex: '1 1 160px', minWidth: 0 }}
+                  value={respuestaAdmin}
+                  onChange={(e) => setRespuestaAdmin(e.target.value)}
+                  placeholder="Escribe tu respuesta…"
+                  onKeyDown={(e) => { if (e.key === 'Enter') enviarRespuestaAdmin(hiloSoporteActual.id); }}
+                />
+                <button
+                  type="button"
+                  className={`${styles.btn} ${styles.btnPrimario}`}
+                  style={{ flexShrink: 0 }}
+                  disabled={enviandoRespuestaAdmin || !respuestaAdmin.trim()}
+                  onClick={() => enviarRespuestaAdmin(hiloSoporteActual.id)}
+                >
+                  {enviandoRespuestaAdmin ? 'Enviando…' : 'Enviar'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            // ── Lista de hilos ──
+            <>
+              <div style={{ display: 'flex', gap: '0.3rem', marginBottom: '1rem' }}>
+                {(['abierto', 'resuelto', 'todos'] as const).map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    className={`${styles.btn} ${filtroSoporte === f ? styles.btnPrimario : styles.btnSecundario}`}
+                    style={{ fontSize: '0.78rem' }}
+                    onClick={() => setFiltroSoporte(f)}
+                  >
+                    {f === 'abierto' ? 'Abiertos' : f === 'resuelto' ? 'Resueltos' : 'Todos'}
+                  </button>
+                ))}
+              </div>
+
+              {cargandoSoporte ? (
+                <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--topo-claro)' }}>Cargando…</div>
+              ) : hilosSoporteFiltrados.length === 0 ? (
+                <div className={styles.vacio}><p>No hay comentarios {filtroSoporte === 'todos' ? '' : filtroSoporte + 's'}.</p></div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {hilosSoporteFiltrados.map((h) => {
+                    const ultimo = h.mensajes[h.mensajes.length - 1];
+                    return (
+                      <button
+                        key={h.id}
+                        type="button"
+                        onClick={() => setHiloSoporteAbierto(h.id)}
+                        style={{
+                          textAlign: 'left', background: h.estado === 'abierto' ? 'var(--blanco)' : 'var(--topo-tinte)',
+                          border: '1px solid var(--borde)', borderRadius: 10, padding: '0.75rem 0.9rem', cursor: 'pointer',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontWeight: 700, fontSize: '0.88rem' }}>{h.usuarioNombre}</span>
+                          <span style={{ fontSize: '0.7rem', fontWeight: 700, color: COLOR_TIPO_SOPORTE[h.tipo] }}>{ETIQUETA_TIPO_SOPORTE[h.tipo]}</span>
+                        </div>
+                        <p style={{ margin: '0.3rem 0 0', fontSize: '0.8rem', color: 'var(--topo)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {ultimo?.autor === 'admin' ? 'Tú: ' : ''}{ultimo?.texto}
+                        </p>
+                        <p style={{ margin: '0.2rem 0 0', fontSize: '0.68rem', color: 'var(--topo-claro)' }}>{formatoFechaHoraSoporte(h.actualizadoEn)}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+
+          {errorSoporte && <div style={{ color: 'var(--rojo)', fontSize: '0.8rem', marginTop: '0.75rem' }}>{errorSoporte}</div>}
           </>}
 
         </div>

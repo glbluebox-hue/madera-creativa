@@ -40,6 +40,17 @@ export const esquemaRegistro = z.object({
   codigoPromocional: z.string().trim().max(40).optional(),
 });
 
+/** Abrir un hilo de soporte (comentarios/sugerencias/incidencias, 26/08/2026). */
+export const esquemaCrearHiloSoporte = z.object({
+  tipo: z.enum(['mejora', 'incidencia', 'problema']),
+  texto: z.string().trim().min(1, 'Escribe algo antes de enviar.').max(4000),
+});
+
+/** Añadir un mensaje a un hilo de soporte ya existente (usuario o admin). */
+export const esquemaMensajeSoporte = z.object({
+  texto: z.string().trim().min(1, 'Escribe algo antes de enviar.').max(4000),
+});
+
 /** Recuperación de contraseña por email (26/08/2026) — pedir el enlace. */
 export const esquemaSolicitarRecuperacion = z.object({
   nombre: z.string().trim().min(3).max(254),
@@ -615,6 +626,8 @@ export const esquemaNotifPrefs = z.object({
    * programado a una hora fija del día como el resto de tipos de arriba.
    */
   nuevoUsuario: z.boolean().optional().default(true),
+  /** Aviso push al admin cuando un usuario abre/responde un hilo de soporte (26/08/2026) — mismo criterio que `nuevoUsuario`. */
+  mensajeSoporte: z.boolean().optional().default(true),
 });
 
 const esquemaRecordatorioPersonalizado = z.object({

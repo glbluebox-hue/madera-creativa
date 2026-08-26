@@ -27,6 +27,7 @@ import { usePerfil } from './use-perfil.js';
 import { usePrivacidad } from './use-privacidad.js';
 import { AjustesPerfil } from './ajustes-perfil.js';
 import { PanelNotificaciones } from './panel-notificaciones.js';
+import { SoportePanel } from './soporte-panel.js';
 import { TutorialOverlay } from './TutorialOverlay.js';
 import { useTutorial } from './use-tutorial.js';
 import { TUTORIAL_APP, TUTORIAL_FACTURAS, TUTORIAL_PROVEEDORES } from './tutorial-definiciones.js';
@@ -126,6 +127,8 @@ export function PresupuestosPrototype() {
   const { perfil, actualizar: actualizarPerfil } = usePerfil(listo);
   const [ajustesPerfil, setAjustesPerfil] = useState(false);
   const [panelNotificaciones, setPanelNotificaciones] = useState(false);
+  /** "Comentarios y sugerencias" (26/08/2026) — hilo de soporte del usuario con el admin. */
+  const [soportePanel, setSoportePanel] = useState(false);
   // Sistema de tutoriales interactivos (Fase 1, 24/08/2026) — motor +
   // overlay ya reales; `storagePrefix` reutiliza el mismo namespacing por
   // usuario que ya usa el resto de la app (`use-auth.ts`).
@@ -466,6 +469,13 @@ export function PresupuestosPrototype() {
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /><circle cx="9" cy="10" r="1" fill="currentColor" /><circle cx="12" cy="10" r="1" fill="currentColor" /><circle cx="15" cy="10" r="1" fill="currentColor" /></svg>
               </button>
+              <button
+                className={styles.sidebarAccionBtn}
+                onClick={() => { setSoportePanel(true); setMenuMovilAbierto(false); }}
+                title="Comentarios y sugerencias"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /></svg>
+              </button>
               <button className={styles.sidebarAccionBtn} onClick={logout} title="Cerrar sesión">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
               </button>
@@ -642,6 +652,8 @@ export function PresupuestosPrototype() {
       {panelNotificaciones && (
         <PanelNotificaciones estadoPush={estadoPush} errorPush={errorPush} onActivarPush={activarPush} onCerrar={() => setPanelNotificaciones(false)} esAdmin={sesion?.esAdmin ?? false} />
       )}
+
+      {soportePanel && <SoportePanel onCerrar={() => setSoportePanel(false)} />}
 
       {/* Sistema de tutoriales (Fase 1, 24/08/2026) — montado siempre,
           igual que <AsistenteIA> justo debajo: no depende de qué sección

@@ -16,6 +16,7 @@ import { PresupuestosService, ErrorDeNegocio } from './presupuestos-service.js';
 import { UsuarioModel, conectarUsuarios, migrarNombresNormalizados, asegurarIndiceNombreNormalizado, ACCESO_POR_DEFECTO, leerPreferenciaNotif } from './usuario.model.js';
 import type { AccesoUsuario, EstadoUsuario } from './usuario.model.js';
 import { CodigoPromocionalModel, conectarCodigos, canjearCodigo, generarIdCodigo, normalizarCodigo } from './codigo-promocional.model.js';
+import { SoporteHiloModel, conectarSoporte, generarIdHiloSoporte } from './soporte-hilo.model.js';
 import { CosteInfraestructuraModel, conectarCostes, generarIdCoste } from './coste-infraestructura.model.js';
 import { configurarVapid, enviarNotificacion } from './push.service.js';
 import { iniciarRecordatorioHorasDiario } from './recordatorio-horas.service.js';
@@ -77,6 +78,8 @@ import {
   esquemaActualizarRecordatorios,
   esquemaSolicitarRecuperacion,
   esquemaRestablecerPassword,
+  esquemaCrearHiloSoporte,
+  esquemaMensajeSoporte,
 } from './esquemas-validacion.js';
 
 // Debe ejecutarse antes de leer cualquier process.env.* de este módulo —
@@ -320,6 +323,16 @@ async function notificarAdminNuevoUsuario(nombre: string): Promise<void> {
       nombre + ' quiere acceder a la app. Entra para aprobar o rechazar.',
       { tipo: 'nuevo-usuario', nombre }
     );
+  }
+}
+
+/** Notifica al admin cuando un usuario abre un hilo de soporte o añade un mensaje nuevo — mismo criterio de preferencia opt-out que `notificarAdminNuevoUsuario`. */
+async function notificarAdminMensajeSoporte(usuarioNombre: string, cuerpo: string): Promise<void> {
+  const admin = await getAdmin();
+  if (admin?.notifPrefs?.mensajeSoporte === false) return;
+  const subs = (admin?.pushSubs || []) as PushSub[];
+  for (const sub of subs) {
+    await enviarNotificacion(sub, 'Nuevo mensaje de ' + usuarioNombre, cuerpo, { tipo: 'mensaje-soporte' });
   }
 }
 
@@ -1268,6 +1281,7 @@ export function run() {
           margenBajo: leerPreferenciaNotif(p, 'margenBajo', 8),
           briefingDiario: leerPreferenciaNotif(p, 'briefingDiario', 8),
           nuevoUsuario: p?.nuevoUsuario ?? true,
+          mensajeSoporte: p?.mensajeSoporte ?? true,
         },
         recordatorios: u.recordatoriosPersonalizados ?? [],
       });
@@ -1287,6 +1301,96 @@ export function run() {
       await conectarUsuarios();
       await UsuarioModel.updateOne({ id: req.usuarioId }, { $set: { recordatoriosPersonalizados: req.body.recordatorios } });
       res.json({ ok: true });
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  // ── Soporte — comentarios/sugerencias/incidencias del usuario hacia el admin (26/08/2026) ──
+
+  /** Hilos de soporte del usuario autenticado (nunca los de otro usuario). */
+  app.get('/soporte/hilos', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      await conectarSoporte();
+      const hilos = await SoporteHiloModel.find({ usuarioId: req.usuarioId }).sort({ actualizadoEn: -1 }).lean().exec();
+      res.json(hilos);
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /** Abre un hilo nuevo — el propio texto es ya el primer mensaje del hilo. */
+  app.post('/soporte/hilos', requireAuth, validar(esquemaCrearHiloSoporte), async (req: AuthRequest, res) => {
+    try {
+      await conectarSoporte();
+      await conectarUsuarios();
+      const usuario = await UsuarioModel.findOne({ id: req.usuarioId }).select('nombre').lean().exec() as any;
+      const ahora = new Date().toISOString();
+      const hilo = await SoporteHiloModel.create({
+        id: generarIdHiloSoporte(),
+        usuarioId: req.usuarioId,
+        usuarioNombre: usuario?.nombre || 'Usuario',
+        tipo: req.body.tipo,
+        estado: 'abierto',
+        mensajes: [{ id: generarIdHiloSoporte(), autor: 'usuario', texto: req.body.texto, fecha: ahora }],
+        creadoEn: ahora,
+        actualizadoEn: ahora,
+      });
+      notificarAdminMensajeSoporte(usuario?.nombre || 'Usuario', req.body.texto).catch((err) => logger.error({ err, requestId: req.requestId }, 'Error notificando nuevo hilo de soporte'));
+      res.json(hilo);
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /** Añade un mensaje del propio usuario a uno de SUS hilos — 404 si el hilo no existe o es de otro usuario, nunca se distingue el motivo. */
+  app.post('/soporte/hilos/:id/mensajes', requireAuth, validar(esquemaMensajeSoporte), async (req: AuthRequest, res) => {
+    try {
+      await conectarSoporte();
+      const ahora = new Date().toISOString();
+      const mensaje = { id: generarIdHiloSoporte(), autor: 'usuario', texto: req.body.texto, fecha: ahora };
+      const hilo = await SoporteHiloModel.findOneAndUpdate(
+        { id: req.params.id, usuarioId: req.usuarioId },
+        { $push: { mensajes: mensaje }, $set: { actualizadoEn: ahora, estado: 'abierto' } },
+        { new: true }
+      ).lean().exec() as any;
+      if (!hilo) { res.status(404).json({ error: 'Hilo no encontrado' }); return; }
+      notificarAdminMensajeSoporte(hilo.usuarioNombre, req.body.texto).catch((err) => logger.error({ err, requestId: req.requestId }, 'Error notificando mensaje de soporte'));
+      res.json(hilo);
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /** Todos los hilos de soporte, de todos los usuarios (solo admin). */
+  app.get('/admin/soporte/hilos', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await conectarSoporte();
+      const hilos = await SoporteHiloModel.find().sort({ actualizadoEn: -1 }).lean().exec();
+      res.json(hilos);
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /** Respuesta del admin a un hilo — reabre el hilo si estaba marcado como resuelto (una respuesta nueva siempre implica que sigue en curso). */
+  app.post('/admin/soporte/hilos/:id/mensajes', requireAuth, requireAdmin, validar(esquemaMensajeSoporte), async (req, res) => {
+    try {
+      await conectarSoporte();
+      const ahora = new Date().toISOString();
+      const mensaje = { id: generarIdHiloSoporte(), autor: 'admin', texto: req.body.texto, fecha: ahora };
+      const hilo = await SoporteHiloModel.findOneAndUpdate(
+        { id: req.params.id },
+        { $push: { mensajes: mensaje }, $set: { actualizadoEn: ahora, estado: 'abierto' } },
+        { new: true }
+      ).lean().exec();
+      if (!hilo) { res.status(404).json({ error: 'Hilo no encontrado' }); return; }
+      res.json(hilo);
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /** Marca un hilo como resuelto/abierto (solo admin). */
+  app.put('/admin/soporte/hilos/:id/estado', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await conectarSoporte();
+      const estado = req.body?.estado === 'resuelto' ? 'resuelto' : 'abierto';
+      const hilo = await SoporteHiloModel.findOneAndUpdate(
+        { id: req.params.id },
+        { $set: { estado, actualizadoEn: new Date().toISOString() } },
+        { new: true }
+      ).lean().exec();
+      if (!hilo) { res.status(404).json({ error: 'Hilo no encontrado' }); return; }
+      res.json(hilo);
     } catch (err) { responderError(req, res, err); }
   });
 

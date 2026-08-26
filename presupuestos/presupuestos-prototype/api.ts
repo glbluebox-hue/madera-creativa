@@ -1211,6 +1211,8 @@ export type NotifPrefs = {
   briefingDiario: PreferenciaNotifTipo;
   /** Aviso al admin cuando alguien nuevo se registra — sin hora propia, es al momento del evento. */
   nuevoUsuario: boolean;
+  /** Aviso al admin cuando un usuario abre/responde un hilo de soporte — sin hora propia, es al momento del evento. */
+  mensajeSoporte: boolean;
 };
 
 /** Recordatorio propio del usuario. */
@@ -1237,6 +1239,87 @@ export async function guardarPreferenciasNotificaciones(preferencias: NotifPrefs
     body: JSON.stringify(preferencias),
   });
   await comprobarRespuesta(res, 'No se pudieron guardar las notificaciones');
+}
+
+/* ===== SOPORTE — comentarios/sugerencias/incidencias (26/08/2026) ===== */
+
+export type TipoHiloSoporte = 'mejora' | 'incidencia' | 'problema';
+export type EstadoHiloSoporte = 'abierto' | 'resuelto';
+
+export type MensajeSoporte = {
+  id: string;
+  autor: 'usuario' | 'admin';
+  texto: string;
+  fecha: string;
+};
+
+export type HiloSoporte = {
+  id: string;
+  usuarioId: string;
+  usuarioNombre: string;
+  tipo: TipoHiloSoporte;
+  estado: EstadoHiloSoporte;
+  mensajes: MensajeSoporte[];
+  creadoEn: string;
+  actualizadoEn: string;
+};
+
+/** Hilos de soporte del propio usuario. */
+export async function obtenerMisHilosSoporte(): Promise<HiloSoporte[]> {
+  const res = await fetchConAuth('/soporte/hilos');
+  await comprobarRespuesta(res, 'No se pudieron cargar tus comentarios');
+  return res.json();
+}
+
+/** Abre un hilo nuevo — el texto es ya el primer mensaje. */
+export async function crearHiloSoporte(tipo: TipoHiloSoporte, texto: string): Promise<HiloSoporte> {
+  const res = await fetchConAuth('/soporte/hilos', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tipo, texto }),
+  });
+  await comprobarRespuesta(res, 'No se pudo enviar el comentario');
+  return res.json();
+}
+
+/** Añade un mensaje propio a uno de tus hilos ya abiertos. */
+export async function responderHiloSoporte(id: string, texto: string): Promise<HiloSoporte> {
+  const res = await fetchConAuth(`/soporte/hilos/${id}/mensajes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ texto }),
+  });
+  await comprobarRespuesta(res, 'No se pudo enviar el mensaje');
+  return res.json();
+}
+
+/** Todos los hilos de soporte, de todos los usuarios (solo admin). */
+export async function obtenerHilosSoporteAdmin(): Promise<HiloSoporte[]> {
+  const res = await fetchConAuth('/admin/soporte/hilos');
+  await comprobarRespuesta(res, 'No se pudieron cargar los mensajes');
+  return res.json();
+}
+
+/** Respuesta del admin a un hilo — reabre el hilo si estaba resuelto. */
+export async function responderHiloSoporteAdmin(id: string, texto: string): Promise<HiloSoporte> {
+  const res = await fetchConAuth(`/admin/soporte/hilos/${id}/mensajes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ texto }),
+  });
+  await comprobarRespuesta(res, 'No se pudo enviar la respuesta');
+  return res.json();
+}
+
+/** Marca un hilo como resuelto/abierto (solo admin). */
+export async function cambiarEstadoHiloSoporte(id: string, estado: EstadoHiloSoporte): Promise<HiloSoporte> {
+  const res = await fetchConAuth(`/admin/soporte/hilos/${id}/estado`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ estado }),
+  });
+  await comprobarRespuesta(res, 'No se pudo actualizar el estado');
+  return res.json();
 }
 
 export async function guardarRecordatoriosPersonalizados(recordatorios: RecordatorioPersonalizado[]): Promise<void> {
