@@ -488,25 +488,30 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
 
           {agregando && (
             <div className={styles.formInline} style={{ marginTop: 0, marginBottom: '1rem', flexWrap: 'wrap' }}>
-              <div className={styles.campo}>
+              {/* Bug real, 26/08/2026: un <select> sin ancho propio crece al
+                  ancho de su opción elegida (nombres de proyecto largos) y
+                  desborda la ventana en móvil — el flex-wrap del contenedor
+                  no ayuda si un solo campo ya es más ancho que la pantalla.
+                  `minWidth:0` dentro de una base fija deja que se encoja. */}
+              <div className={styles.campo} style={{ flex: '1 1 200px', minWidth: 0 }}>
                 <label className={styles.campoLabel}>Proyecto</label>
-                <select className={styles.select} value={nuevoClienteId} onChange={(e) => setNuevoClienteId(e.target.value)}>
+                <select className={styles.select} style={{ width: '100%', boxSizing: 'border-box' }} value={nuevoClienteId} onChange={(e) => setNuevoClienteId(e.target.value)}>
                   <option value="">Selecciona…</option>
                   {proyectos.map((p) => <option key={p.id} value={p.id}>{p.nombre}{p.proyecto ? ` — ${p.proyecto}` : ''}</option>)}
                 </select>
               </div>
-              <div className={styles.campo}>
+              <div className={styles.campo} style={{ flex: '0 1 130px', minWidth: 0 }}>
                 <label className={styles.campoLabel}>Tipo</label>
-                <select className={styles.select} value={nuevoTipo} onChange={(e) => setNuevoTipo(e.target.value as 'montaje' | 'medicion')}>
+                <select className={styles.select} style={{ width: '100%', boxSizing: 'border-box' }} value={nuevoTipo} onChange={(e) => setNuevoTipo(e.target.value as 'montaje' | 'medicion')}>
                   <option value="montaje">Montaje</option>
                   <option value="medicion">Medición</option>
                 </select>
               </div>
-              <div className={styles.campo}>
+              <div className={styles.campo} style={{ flex: '0 1 150px', minWidth: 0 }}>
                 <label className={styles.campoLabel}>Fecha</label>
-                <input className={styles.input} type="date" value={nuevaFecha} onChange={(e) => setNuevaFecha(e.target.value)} />
+                <input className={styles.input} style={{ width: '100%', boxSizing: 'border-box' }} type="date" value={nuevaFecha} onChange={(e) => setNuevaFecha(e.target.value)} />
               </div>
-              <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={guardarRecordatorio} disabled={!nuevoClienteId || !nuevaFecha || guardandoRecordatorio}>
+              <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ flexShrink: 0 }} onClick={guardarRecordatorio} disabled={!nuevoClienteId || !nuevaFecha || guardandoRecordatorio}>
                 {guardandoRecordatorio ? 'Guardando…' : 'Guardar'}
               </button>
               {errorRecordatorio && (
