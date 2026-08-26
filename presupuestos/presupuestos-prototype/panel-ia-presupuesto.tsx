@@ -61,16 +61,6 @@ export function PanelIaPresupuesto({ abierto, onCerrar, clienteId, contextoDocum
 
   const textoSeleccionado = textoDeElementoSeleccionado(elementoSeleccionado);
   const puedeAplicar = puedeAplicarPropuestaA(elementoSeleccionado);
-  /**
-   * Corrección 24/08/2026 (bug real: aplicar una propuesta al elemento
-   * equivocado) — la propuesta solo se puede aceptar si el elemento
-   * seleccionado AHORA MISMO es el mismo para el que se pidió. Si el
-   * usuario cambió de elemento mientras la propuesta seguía abierta (para
-   * mirar otra parte del documento, por ejemplo) y luego selecciona otro
-   * texto distinto, "Aceptar" se deshabilita — evita aplicar el texto
-   * generado para un elemento sobre un elemento diferente, sin avisar.
-   */
-  const seleccionCambio = estado.fase === 'propuesta' && estado.elementoId !== (elementoSeleccionado?.id ?? null);
 
   // Ejecuta la llamada real a la IA cada vez que el reducer entra en
   // "enviando" (tanto por un envío nuevo como por "Regenerar") — única
@@ -115,11 +105,20 @@ export function PanelIaPresupuesto({ abierto, onCerrar, clienteId, contextoDocum
     setPeticionActual('');
   };
 
+  /**
+   * Petición explícita del usuario, 26/08/2026: "Aceptar" aplica el texto
+   * al elemento que esté seleccionado EN ESE MOMENTO, nunca al que estaba
+   * seleccionado cuando se pidió la propuesta — el usuario quiere generar
+   * el texto una vez y decidir dónde pegarlo señalando con el ratón justo
+   * antes de aceptar, no quedar atado al elemento original. Antes
+   * (corrección 24/08/2026) se bloqueaba "Aceptar" si la selección había
+   * cambiado, para evitar aplicar a un elemento equivocado por error — el
+   * usuario ahora pide justo el comportamiento contrario a propósito, así
+   * que la única condición que queda es que haya ALGÚN elemento de texto
+   * válido seleccionado (`puedeAplicar`).
+   */
   const aceptar = () => {
-    if (estado.fase !== 'propuesta') return;
-    // Guarda defensiva además del `disabled` del botón — nunca aplicar al
-    // elemento equivocado si la selección cambió mientras tanto.
-    if (estado.elementoId !== (elementoSeleccionado?.id ?? null)) return;
+    if (estado.fase !== 'propuesta' || !puedeAplicar) return;
     onAplicarPropuesta(estado.texto);
     dispatch({ tipo: 'aceptado' });
   };
@@ -177,7 +176,7 @@ export function PanelIaPresupuesto({ abierto, onCerrar, clienteId, contextoDocum
 
       <div style={{ padding: '0.5rem 1rem', fontSize: '0.72rem', color: 'var(--topo-claro)', borderBottom: '1px solid var(--borde-fino)' }}>
         {puedeAplicar
-          ? <>Trabajando sobre el texto seleccionado. Puedes pedir "mejora esto", "resume esto"… y seguir refinando la respuesta en la misma conversación.</>
+          ? <>Al pulsar "Aceptar" se aplica al texto que tengas seleccionado EN ESE MOMENTO — puedes cambiar de selección antes de aceptar para decidir dónde va. Puedes pedir "mejora esto", "resume esto"… y seguir refinando la respuesta en la misma conversación.</>
           : <>Selecciona un elemento de texto en el documento para poder aplicar una propuesta ahí — mientras tanto puedes redactar y copiar el resultado a mano.</>}
       </div>
 
@@ -231,9 +230,9 @@ export function PanelIaPresupuesto({ abierto, onCerrar, clienteId, contextoDocum
                 <p style={{ margin: 0, fontSize: '0.85rem', whiteSpace: 'pre-wrap' }}>{estado.texto}</p>
               )}
 
-              {seleccionCambio && (
+              {!puedeAplicar && (
                 <p style={{ margin: '0.5rem 0 0', fontSize: '0.72rem', color: 'var(--rojo)' }}>
-                  Has cambiado de elemento seleccionado — vuelve a seleccionar el elemento original para poder aplicar esta propuesta ahí.
+                  Selecciona un elemento de texto en el documento para poder aceptar y pegar ahí esta propuesta.
                 </p>
               )}
 
@@ -249,8 +248,8 @@ export function PanelIaPresupuesto({ abierto, onCerrar, clienteId, contextoDocum
                   className={`${styles.btn} ${styles.btnPrimario}`}
                   style={{ fontSize: '0.75rem', marginLeft: 'auto' }}
                   onClick={aceptar}
-                  disabled={!puedeAplicar || seleccionCambio}
-                  title={!puedeAplicar ? 'Selecciona un elemento de texto en el documento primero' : seleccionCambio ? 'Has cambiado de elemento seleccionado — vuelve a seleccionar el original' : undefined}
+                  disabled={!puedeAplicar}
+                  title={!puedeAplicar ? 'Selecciona un elemento de texto en el documento primero' : 'Se aplica al elemento seleccionado ahora mismo'}
                 >
                   Aceptar
                 </button>
