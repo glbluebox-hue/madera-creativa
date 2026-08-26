@@ -6,14 +6,10 @@ import type { ProyectoResumen } from './api.js';
 import { calcularMetricas } from './dashboard-calculos.js';
 import { formatoEuroPrivado, VALOR_OCULTO, formatoFecha } from './calculos.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
-import { obtenerTodosLosPresupuestos, obtenerNotas, guardarNota, borrarNota } from './api.js';
+import { obtenerTodosLosPresupuestos, obtenerNotas, guardarNota } from './api.js';
 import { generarId } from './mock.js';
-import { PRIORIDADES, ordenarPorDefecto, type NotaMC, type PrioridadNota } from './notas-modelo.js';
+import type { NotaMC } from './notas-modelo.js';
 import styles from './styles.module.css';
-
-const COLOR_PRIORIDAD_TAREA: Record<PrioridadNota, string> = { alta: 'var(--rojo)', media: 'var(--ocre)', baja: 'var(--topo-claro)' };
-const COLOR_PRIORIDAD_TAREA_BG: Record<PrioridadNota, string> = { alta: 'var(--rojo-bg)', media: 'var(--ocre-bg)', baja: 'var(--topo-tinte)' };
-const ETIQUETA_PRIORIDAD_TAREA: Record<PrioridadNota, string> = { alta: 'Alta', media: 'Media', baja: 'Baja' };
 
 /** Props del panel principal (dashboard). */
 export type DashboardProps = {
@@ -82,99 +78,82 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
   const primerNombre = (nombre || '').split(' ')[0];
 
   /**
-   * "Cosas por hacer" (26/08/2026) — reutiliza el sistema de Notas ya
-   * existente (`NotaMC`, con `estado`/`prioridad` ya en el modelo pero sin
-   * ninguna interfaz que los usara), pero solo las SIN cliente (`clienteId`
-   * vacío): las que se añaden aquí mismo, no las notas de la ficha de un
-   * cliente concreto — checklist de negocio, no un cajón de todo.
-   *
-   * Diseño corregido, 26/08/2026 (bug real reportado por el usuario): la
-   * primera versión quitaba una tarea de la vista al marcarla hecha (o la
-   * dejaba fuera del recorte de 5 al "despuntarla"), y el usuario la vivió
-   * como un borrado real — tocó el check sin querer y la tarea "desapareció"
-   * tanto de aquí como de Notas. Ahora es un checklist de verdad, igual que
-   * "Tareas del proyecto" (`tab-tareas.tsx`, mismo patrón que ya conocía el
-   * usuario): el orden es SIEMPRE por prioridad (`ordenarPorDefecto`, que no
-   * mira `estado`), así que marcar/desmarcar nunca reordena ni saca nada de
-   * la vista — solo tacha el texto y rellena la casilla. Solo se borra de
-   * verdad con el icono de papelera.
+   * "Cosas por hacer" (26/08/2026, rediseñado el mismo día a petición
+   * explícita del usuario) — antes cada tarea era su propia `NotaMC`
+   * (texto libre con prioridad); el usuario pidió en su lugar un checklist
+   * de verdad, con líneas sueltas que se tachan una a una ("comprar
+   * pincel", "comprar lijas"…), igual que "Tareas del proyecto"
+   * (`tab-tareas.tsx`). Ahora es UNA sola nota `tipo: 'lista'` sin
+   * `clienteId` (la misma que se puede crear/editar desde la sección
+   * Notas — ver `notas-vista.tsx`), y esta pantalla solo pinta y modifica
+   * sus `items`. Sin prioridad por ítem: el modelo de referencia
+   * (`Tarea`) tampoco la tiene.
    */
-  const [tareas, setTareas] = useState<NotaMC[]>([]);
+  const [listaCosas, setListaCosas] = useState<NotaMC | null>(null);
   const [cargandoTareas, setCargandoTareas] = useState(true);
   useEffect(() => {
     obtenerNotas()
-      .then((todas) => setTareas(ordenarPorDefecto(todas.filter((n) => !n.clienteId))))
-      .catch(() => setTareas([]))
+      .then((todas) => setListaCosas(todas.find((n) => n.tipo === 'lista' && !n.clienteId) ?? null))
+      .catch(() => setListaCosas(null))
       .finally(() => setCargandoTareas(false));
   }, []);
 
   const [agregandoTarea, setAgregandoTarea] = useState(false);
   const [nuevaTarea, setNuevaTarea] = useState('');
-  const [nuevaTareaPrioridad, setNuevaTareaPrioridad] = useState<PrioridadNota>('media');
   const [guardandoTarea, setGuardandoTarea] = useState(false);
+
+  /** Guarda la lista completa (crea la nota `'lista'` la primera vez que hace falta). */
+  const guardarLista = async (items: NotaMC['items']) => {
+    const ahora = new Date().toISOString();
+    const actualizada: NotaMC = listaCosas
+      ? { ...listaCosas, items, actualizado: ahora }
+      : {
+        id: generarId(), titulo: 'Cosas por hacer', contenido: '', tipo: 'lista', items,
+        prioridad: 'media', estado: 'abierta', clienteId: '', proyectoId: '', etiquetas: [],
+        origen: 'texto', creado: ahora, actualizado: ahora,
+      };
+    setListaCosas(actualizada);
+    try {
+      const guardada = await guardarNota(actualizada);
+      setListaCosas(guardada);
+    } catch {
+      setListaCosas(listaCosas);
+    }
+  };
 
   const crearTarea = async () => {
     if (!nuevaTarea.trim()) return;
     setGuardandoTarea(true);
-    const ahora = new Date().toISOString();
-    const nueva: NotaMC = {
-      id: generarId(), titulo: '', contenido: nuevaTarea.trim(), prioridad: nuevaTareaPrioridad, estado: 'abierta',
-      clienteId: '', proyectoId: '', etiquetas: [], origen: 'texto', creado: ahora, actualizado: ahora,
-    };
-    try {
-      const guardada = await guardarNota(nueva);
-      setTareas((prev) => ordenarPorDefecto([guardada, ...prev]));
-      setNuevaTarea('');
-      setNuevaTareaPrioridad('media');
-      setAgregandoTarea(false);
-    } catch {
-      // Sin toast de error aquí: la tarea sigue en el formulario, se puede reintentar.
-    } finally {
-      setGuardandoTarea(false);
-    }
+    await guardarLista([...(listaCosas?.items ?? []), { id: generarId(), texto: nuevaTarea.trim(), hecha: false }]);
+    setNuevaTarea('');
+    setAgregandoTarea(false);
+    setGuardandoTarea(false);
   };
 
-  /** Marca/desmarca una tarea — nunca la quita de la vista ni la reordena (`ordenarPorDefecto` no mira `estado`), solo tacha el texto y rellena la casilla. */
-  const alternarTarea = async (nota: NotaMC) => {
-    const actualizada: NotaMC = { ...nota, estado: nota.estado === 'abierta' ? 'hecha' : 'abierta', actualizado: new Date().toISOString() };
-    setTareas((prev) => prev.map((n) => (n.id === nota.id ? actualizada : n)));
-    try {
-      await guardarNota(actualizada);
-    } catch {
-      // El guardado falló: revertimos el cambio en pantalla.
-      setTareas((prev) => prev.map((n) => (n.id === nota.id ? nota : n)));
-    }
+  /** Marca/desmarca una tarea — nunca la quita de la vista, solo tacha el texto y rellena la casilla. */
+  const alternarTarea = (itemId: string) => {
+    if (!listaCosas) return;
+    guardarLista(listaCosas.items.map((it) => (it.id === itemId ? { ...it, hecha: !it.hecha } : it)));
   };
 
   /** Borra de verdad una tarea (papelera) — el único modo de que salga de la vista, ahora que marcar/desmarcar ya no la quita. */
-  const borrarTarea = async (nota: NotaMC) => {
-    setTareas((prev) => prev.filter((n) => n.id !== nota.id));
-    try {
-      await borrarNota(nota.id);
-    } catch {
-      setTareas((prev) => ordenarPorDefecto([...prev, nota]));
-    }
+  const borrarTarea = (itemId: string) => {
+    if (!listaCosas) return;
+    guardarLista(listaCosas.items.filter((it) => it.id !== itemId));
   };
 
   const [editandoTareaId, setEditandoTareaId] = useState<string | null>(null);
   const [textoEdicionTarea, setTextoEdicionTarea] = useState('');
 
-  const iniciarEdicionTarea = (nota: NotaMC) => {
-    setEditandoTareaId(nota.id);
-    setTextoEdicionTarea(nota.contenido);
+  const iniciarEdicionTarea = (itemId: string, textoActual: string) => {
+    setEditandoTareaId(itemId);
+    setTextoEdicionTarea(textoActual);
   };
 
-  const guardarEdicionTarea = async () => {
-    const nota = tareas.find((n) => n.id === editandoTareaId);
-    if (!nota || !textoEdicionTarea.trim()) return;
-    const actualizada: NotaMC = { ...nota, contenido: textoEdicionTarea.trim(), actualizado: new Date().toISOString() };
-    setTareas((prev) => prev.map((n) => (n.id === nota.id ? actualizada : n)));
+  const guardarEdicionTarea = () => {
+    if (!listaCosas || !textoEdicionTarea.trim()) return;
+    guardarLista(listaCosas.items.map((it) => (it.id === editandoTareaId ? { ...it, texto: textoEdicionTarea.trim() } : it)));
     setEditandoTareaId(null);
-    try {
-      await guardarNota(actualizada);
-    } catch {
-      setTareas((prev) => prev.map((n) => (n.id === nota.id ? nota : n)));
-    }
   };
 
   /**
@@ -265,26 +244,6 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
                 autoFocus
               />
             </div>
-            <div className={styles.campo}>
-              <label className={styles.campoLabel}>Prioridad</label>
-              <div style={{ display: 'flex', gap: '0.4rem' }}>
-                {PRIORIDADES.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => setNuevaTareaPrioridad(p.id)}
-                    style={{
-                      padding: '0.35rem 0.7rem', borderRadius: 'var(--radio-full, 999px)', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer',
-                      border: `1.5px solid ${COLOR_PRIORIDAD_TAREA[p.id]}`,
-                      background: nuevaTareaPrioridad === p.id ? COLOR_PRIORIDAD_TAREA[p.id] : 'transparent',
-                      color: nuevaTareaPrioridad === p.id ? 'var(--blanco)' : COLOR_PRIORIDAD_TAREA[p.id],
-                    }}
-                  >
-                    {ETIQUETA_PRIORIDAD_TAREA[p.id]}
-                  </button>
-                ))}
-              </div>
-            </div>
             <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={crearTarea} disabled={!nuevaTarea.trim() || guardandoTarea}>
               {guardandoTarea ? 'Guardando…' : 'Guardar'}
             </button>
@@ -293,15 +252,14 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
 
         {cargandoTareas ? (
           <p className={styles.dashboardVacio}>Cargando…</p>
-        ) : tareas.length === 0 ? (
+        ) : !listaCosas || listaCosas.items.length === 0 ? (
           <p className={styles.dashboardVacio}>Todo al día — no tienes tareas pendientes.</p>
         ) : (
           <>
-            {tareas.slice(0, 5).map((t) => {
-              const hecha = t.estado === 'hecha';
-              if (editandoTareaId === t.id) {
+            {listaCosas.items.slice(0, 5).map((it) => {
+              if (editandoTareaId === it.id) {
                 return (
-                  <div key={t.id} className={styles.actividadItem} style={{ gap: '0.5rem' }}>
+                  <div key={it.id} className={styles.actividadItem} style={{ gap: '0.5rem' }}>
                     <input
                       className={styles.input}
                       style={{ flex: 1, fontSize: '0.85rem' }}
@@ -320,56 +278,47 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
                 );
               }
               return (
-                <div key={t.id} className={styles.actividadItem}>
+                <div key={it.id} className={styles.actividadItem}>
                   <button
                     type="button"
-                    onClick={() => alternarTarea(t)}
-                    title={hecha ? 'Marcar como pendiente' : 'Marcar como hecha'}
-                    aria-label={hecha ? 'Marcar como pendiente' : 'Marcar como hecha'}
+                    onClick={() => alternarTarea(it.id)}
+                    title={it.hecha ? 'Marcar como pendiente' : 'Marcar como hecha'}
+                    aria-label={it.hecha ? 'Marcar como pendiente' : 'Marcar como hecha'}
                     style={{
                       width: 22, height: 22, borderRadius: '50%', flexShrink: 0, cursor: 'pointer', padding: 0,
-                      border: `2px solid ${COLOR_PRIORIDAD_TAREA[t.prioridad]}`,
-                      background: hecha ? COLOR_PRIORIDAD_TAREA[t.prioridad] : 'none',
-                      color: hecha ? 'var(--blanco)' : COLOR_PRIORIDAD_TAREA[t.prioridad],
+                      border: '2px solid var(--topo)',
+                      background: it.hecha ? 'var(--topo)' : 'none',
+                      color: it.hecha ? 'var(--blanco)' : 'var(--topo)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                     }}
-                    onMouseEnter={(e) => { if (!hecha) { e.currentTarget.style.background = COLOR_PRIORIDAD_TAREA[t.prioridad]; e.currentTarget.style.color = 'var(--blanco)'; } }}
-                    onMouseLeave={(e) => { if (!hecha) { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = COLOR_PRIORIDAD_TAREA[t.prioridad]; } }}
                   >
-                    {hecha && (
+                    {it.hecha && (
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                     )}
                   </button>
-                  <div className={styles.actividadCuerpo} style={{ cursor: 'pointer', opacity: hecha ? 0.6 : 1 }} onClick={() => alternarTarea(t)}>
-                    <span className={styles.actividadTitulo} style={hecha ? { textDecoration: 'line-through' } : undefined}>{t.titulo || t.contenido}</span>
-                    {t.titulo && <span className={styles.actividadSub} style={hecha ? { textDecoration: 'line-through' } : undefined}>{t.contenido}</span>}
+                  <div className={styles.actividadCuerpo} style={{ cursor: 'pointer', opacity: it.hecha ? 0.6 : 1 }} onClick={() => alternarTarea(it.id)}>
+                    <span className={styles.actividadTitulo} style={it.hecha ? { textDecoration: 'line-through' } : undefined}>{it.texto}</span>
                   </div>
-                  <span style={{
-                    fontSize: '0.65rem', fontWeight: 700, borderRadius: 'var(--radio-full, 999px)', padding: '0.15rem 0.55rem', flexShrink: 0,
-                    color: COLOR_PRIORIDAD_TAREA[t.prioridad], background: COLOR_PRIORIDAD_TAREA_BG[t.prioridad],
-                  }}>
-                    {ETIQUETA_PRIORIDAD_TAREA[t.prioridad]}
-                  </span>
                   <button
                     type="button"
-                    onClick={() => iniciarEdicionTarea(t)}
+                    onClick={() => iniciarEdicionTarea(it.id, it.texto)}
                     title="Editar"
                     aria-label="Editar"
                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--topo-claro)', padding: '2px 6px', flexShrink: 0 }}
                   >
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
                   </button>
-                  <ConfirmarBorrado titulo="Borrar tarea" onConfirmar={() => borrarTarea(t)} />
+                  <ConfirmarBorrado titulo="Borrar tarea" onConfirmar={() => borrarTarea(it.id)} />
                 </div>
               );
             })}
-            {tareas.length > 5 && (
+            {listaCosas.items.length > 5 && (
               <button
                 type="button"
                 onClick={onIrANotas}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--topo)', fontSize: '0.78rem', fontWeight: 600, padding: '0.6rem 0 0' }}
               >
-                Ver {tareas.length - 5} más en Notas →
+                Ver {listaCosas.items.length - 5} más en Notas →
               </button>
             )}
           </>

@@ -4,7 +4,7 @@ import { generarId } from './mock.js';
 import { formatoFecha } from './calculos.js';
 import { useDictado, BtnMicrofono } from './use-dictado.js';
 import * as api from './api.js';
-import { PRIORIDADES, ordenarPorDefecto, type NotaMC, type PrioridadNota } from './notas-modelo.js';
+import { PRIORIDADES, ordenarPorDefecto, type NotaMC, type PrioridadNota, type TipoNota, type ItemLista } from './notas-modelo.js';
 import styles from './styles.module.css';
 
 const COLOR_PRIORIDAD: Record<PrioridadNota, string> = { alta: 'var(--rojo)', media: 'var(--ocre)', baja: 'var(--topo-claro)' };
@@ -15,6 +15,29 @@ const CLAVE_MIGRACION_GLOBAL = 'mc_notas_globales';
 
 type Orden = 'defecto' | 'creado' | 'actualizado' | 'cliente';
 type FiltroCliente = 'todas' | 'sin-cliente' | string;
+
+/** Input "Nueva tarea…" + Añadir para una lista ya guardada — estado propio para no tener que llevar un mapa `notaId -> texto` en `NotasVista`. */
+function ItemListaNuevo({ onAnadir }: { onAnadir: (texto: string) => void }) {
+  const [texto, setTexto] = useState('');
+  const anadir = () => {
+    if (!texto.trim()) return;
+    onAnadir(texto.trim());
+    setTexto('');
+  };
+  return (
+    <div style={{ display: 'flex', gap: '0.4rem' }}>
+      <input
+        className={styles.input}
+        style={{ fontSize: '0.85rem' }}
+        placeholder="Nueva tarea…"
+        value={texto}
+        onChange={(e) => setTexto(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && anadir()}
+      />
+      <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ fontSize: '0.78rem' }} onClick={anadir} disabled={!texto.trim()}>Añadir</button>
+    </div>
+  );
+}
 
 export type NotasVistaProps = {
   /**
@@ -64,6 +87,16 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
   const [formAbierto, setFormAbierto] = useState(false);
   const [titulo, setTitulo] = useState('');
   const [contenido, setContenido] = useState('');
+  /**
+   * `'lista'` (26/08/2026, petición explícita del usuario) — una nota de
+   * texto libre no deja tachar cosas sueltas una a una ("comprar pincel",
+   * "comprar lijas"…). Mismo patrón que "Tareas del proyecto"
+   * (`tab-tareas.tsx`): `itemsNuevaLista` se arma en el formulario antes de
+   * guardar, sin `contenido` — el checklist en sí es el contenido.
+   */
+  const [tipoNueva, setTipoNueva] = useState<TipoNota>('nota');
+  const [itemsNuevaLista, setItemsNuevaLista] = useState<ItemLista[]>([]);
+  const [nuevoItemTexto, setNuevoItemTexto] = useState('');
   const [prioridad, setPrioridad] = useState<PrioridadNota>('media');
   const [clienteIdNueva, setClienteIdNueva] = useState(clienteFijo?.id ?? '');
   const [guardando, setGuardando] = useState(false);
@@ -104,7 +137,7 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
     (async () => {
       for (const n of notasLegacy) {
         const nueva: NotaMC = {
-          id: generarId(), titulo: '', contenido: n.texto, prioridad: 'media', estado: 'abierta',
+          id: generarId(), titulo: '', contenido: n.texto, tipo: 'nota', items: [], prioridad: 'media', estado: 'abierta',
           clienteId: clienteFijo.id, proyectoId: '', etiquetas: [], origen: 'texto',
           creado: n.fecha, actualizado: n.fecha,
         };
@@ -126,7 +159,7 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
       if (!previas.length) return;
       for (const n of previas) {
         const nueva: NotaMC = {
-          id: generarId(), titulo: '', contenido: n.texto, prioridad: 'media', estado: 'abierta',
+          id: generarId(), titulo: '', contenido: n.texto, tipo: 'nota', items: [], prioridad: 'media', estado: 'abierta',
           clienteId: '', proyectoId: '', etiquetas: [], origen: 'texto',
           creado: n.fecha, actualizado: n.fecha,
         };
@@ -186,12 +219,24 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
     return [...r].sort((a, b) => (nombreCliente(a.clienteId) ?? '').localeCompare(nombreCliente(b.clienteId) ?? ''));
   }, [notasDelAmbito, filtroEstado, filtroPrioridad, filtroCliente, busqueda, orden, clienteFijo, nombreCliente]);
 
+  const puedeCrear = tipoNueva === 'lista' ? itemsNuevaLista.length > 0 : !!contenido.trim();
+
+  const anadirItemNuevaLista = () => {
+    if (!nuevoItemTexto.trim()) return;
+    setItemsNuevaLista((prev) => [...prev, { id: generarId(), texto: nuevoItemTexto.trim(), hecha: false }]);
+    setNuevoItemTexto('');
+  };
+
   const crear = async () => {
-    if (!contenido.trim()) return;
+    if (!puedeCrear) return;
     setGuardando(true);
     const ahora = new Date().toISOString();
     const nueva: NotaMC = {
-      id: generarId(), titulo: titulo.trim(), contenido: contenido.trim(), prioridad, estado: 'abierta',
+      id: generarId(), titulo: titulo.trim(),
+      contenido: tipoNueva === 'lista' ? '' : contenido.trim(),
+      tipo: tipoNueva,
+      items: tipoNueva === 'lista' ? itemsNuevaLista : [],
+      prioridad, estado: 'abierta',
       clienteId: clienteFijo?.id ?? clienteIdNueva, proyectoId: '', etiquetas: [],
       origen: origenVozRef.current ? 'voz' : 'texto',
       creado: ahora, actualizado: ahora,
@@ -200,6 +245,7 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
       const guardada = await api.guardarNota(nueva);
       setNotas((prev) => [guardada, ...prev]);
       setTitulo(''); setContenido(''); setPrioridad('media'); setClienteIdNueva(clienteFijo?.id ?? '');
+      setTipoNueva('nota'); setItemsNuevaLista([]); setNuevoItemTexto('');
       origenVozRef.current = false;
       setFormAbierto(false);
     } catch (e) {
@@ -208,6 +254,21 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
       setGuardando(false);
     }
   };
+
+  /** Añade/marca/borra un item dentro de una nota `'lista'` ya guardada — mismo patrón que `tab-tareas.tsx` (`alternar`/`anadir`/`borrar`), pero embebido en la nota en vez de en un proyecto. */
+  const guardarItemsLista = async (nota: NotaMC, items: ItemLista[]) => {
+    const actualizada: NotaMC = { ...nota, items, actualizado: new Date().toISOString() };
+    setNotas((prev) => prev.map((n) => (n.id === nota.id ? actualizada : n)));
+    try { await api.guardarNota(actualizada); } catch { cargar(); }
+  };
+  const anadirItemLista = (nota: NotaMC, texto: string) => {
+    if (!texto.trim()) return;
+    guardarItemsLista(nota, [...nota.items, { id: generarId(), texto: texto.trim(), hecha: false }]);
+  };
+  const alternarItemLista = (nota: NotaMC, itemId: string) =>
+    guardarItemsLista(nota, nota.items.map((it) => (it.id === itemId ? { ...it, hecha: !it.hecha } : it)));
+  const borrarItemLista = (nota: NotaMC, itemId: string) =>
+    guardarItemsLista(nota, nota.items.filter((it) => it.id !== itemId));
 
   const cambiarPrioridad = async (nota: NotaMC, nueva: PrioridadNota) => {
     const actualizada = { ...nota, prioridad: nueva, actualizado: new Date().toISOString() };
@@ -237,6 +298,14 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
     const nota = notas.find((n) => n.id === editandoId);
     if (!nota || !contenidoEdicion.trim()) return;
     const actualizada = { ...nota, titulo: tituloEdicion.trim(), contenido: contenidoEdicion.trim(), actualizado: new Date().toISOString() };
+    setNotas((prev) => prev.map((n) => (n.id === nota.id ? actualizada : n)));
+    setEditandoId(null);
+    try { await api.guardarNota(actualizada); } catch { cargar(); }
+  };
+
+  /** Renombra una lista — a diferencia de una nota de texto, no tiene `contenido` que editar aquí (eso son sus `items`, ver `anadirItemLista`/`alternarItemLista`/`borrarItemLista`). */
+  const guardarTituloLista = async (nota: NotaMC) => {
+    const actualizada = { ...nota, titulo: tituloEdicion.trim(), actualizado: new Date().toISOString() };
     setNotas((prev) => prev.map((n) => (n.id === nota.id ? actualizada : n)));
     setEditandoId(null);
     try { await api.guardarNota(actualizada); } catch { cargar(); }
@@ -272,32 +341,92 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
       {/* Formulario de nueva nota */}
       {formAbierto && (
         <div style={{ background: 'var(--fondo)', border: '1px solid var(--borde)', borderRadius: 12, padding: '1rem', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+          <div style={{ display: 'flex', gap: '0.4rem' }}>
+            {([
+              { id: 'nota' as const, etiqueta: 'Nota' },
+              { id: 'lista' as const, etiqueta: 'Lista' },
+            ]).map((op) => (
+              <button
+                key={op.id}
+                type="button"
+                onClick={() => setTipoNueva(op.id)}
+                style={{
+                  flex: 1, padding: '0.4rem 0.8rem', borderRadius: 8, fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer',
+                  border: '1.5px solid var(--topo)',
+                  background: tipoNueva === op.id ? 'var(--topo)' : 'transparent',
+                  color: tipoNueva === op.id ? 'var(--blanco)' : 'var(--topo)',
+                }}
+              >
+                {op.etiqueta}
+              </button>
+            ))}
+          </div>
+          {tipoNueva === 'lista' && (
+            <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--topo-claro)' }}>
+              Un checklist con casillas — "comprar pincel", "comprar lijas"… cada línea se marca por separado.
+            </p>
+          )}
+
           <input
             className={styles.input}
-            placeholder="Título (opcional)"
+            placeholder={tipoNueva === 'lista' ? 'Título de la lista (ej: Compras)' : 'Título (opcional)'}
             value={titulo}
             onChange={(e) => setTitulo(e.target.value)}
           />
-          <div style={{ display: 'flex', gap: '0.4rem' }}>
-            <textarea
-              className={styles.input}
-              placeholder={dictadoNueva.estado === 'escuchando' ? 'Escuchando…' : 'Escribe o dicta la nota…'}
-              value={contenido + (dictadoNueva.interino ? ` ${dictadoNueva.interino}` : '')}
-              onChange={(e) => setContenido(e.target.value)}
-              rows={3}
-              style={{ flex: 1, resize: 'vertical' }}
-              autoFocus
-            />
-            <BtnMicrofono estado={dictadoNueva.estado} onClick={dictadoNueva.toggleDictado} />
-          </div>
-          {dictadoNueva.estado === 'escuchando' && (
-            <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--rojo)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--rojo)', display: 'inline-block', flexShrink: 0 }} />
-              Escuchando… pulsa el micro para parar.
-            </p>
-          )}
-          {dictadoNueva.completado && (
-            <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--verde)', fontWeight: 600 }}>✓ Transcripción completada</p>
+
+          {tipoNueva === 'lista' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              {itemsNuevaLista.map((it) => (
+                <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                  <span style={{ flex: 1 }}>{it.texto}</span>
+                  <button
+                    type="button"
+                    onClick={() => setItemsNuevaLista((prev) => prev.filter((x) => x.id !== it.id))}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--topo-claro)', padding: '2px 6px' }}
+                    aria-label="Quitar"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                  </button>
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: '0.4rem' }}>
+                <input
+                  className={styles.input}
+                  placeholder="Nueva tarea…"
+                  value={nuevoItemTexto}
+                  onChange={(e) => setNuevoItemTexto(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); anadirItemNuevaLista(); } }}
+                  autoFocus
+                />
+                <button type="button" className={`${styles.btn} ${styles.btnSecundario}`} onClick={anadirItemNuevaLista} disabled={!nuevoItemTexto.trim()}>
+                  Añadir
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', gap: '0.4rem' }}>
+                <textarea
+                  className={styles.input}
+                  placeholder={dictadoNueva.estado === 'escuchando' ? 'Escuchando…' : 'Escribe o dicta la nota…'}
+                  value={contenido + (dictadoNueva.interino ? ` ${dictadoNueva.interino}` : '')}
+                  onChange={(e) => setContenido(e.target.value)}
+                  rows={3}
+                  style={{ flex: 1, resize: 'vertical' }}
+                  autoFocus
+                />
+                <BtnMicrofono estado={dictadoNueva.estado} onClick={dictadoNueva.toggleDictado} />
+              </div>
+              {dictadoNueva.estado === 'escuchando' && (
+                <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--rojo)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--rojo)', display: 'inline-block', flexShrink: 0 }} />
+                  Escuchando… pulsa el micro para parar.
+                </p>
+              )}
+              {dictadoNueva.completado && (
+                <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--verde)', fontWeight: 600 }}>✓ Transcripción completada</p>
+              )}
+            </>
           )}
 
           <div>
@@ -336,7 +465,7 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
             </p>
           )}
 
-          <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={crear} disabled={!contenido.trim() || guardando} style={{ alignSelf: 'flex-start' }}>
+          <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={crear} disabled={!puedeCrear || guardando} style={{ alignSelf: 'flex-start' }}>
             {guardando ? 'Guardando…' : 'Guardar nota'}
           </button>
         </div>
@@ -411,7 +540,11 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           {notasFiltradas.map((n) => {
             const abierta = abiertaId === n.id;
-            const tituloMostrado = n.titulo || (n.contenido.length > 60 ? `${n.contenido.slice(0, 60)}…` : n.contenido) || '(nota vacía)';
+            const esLista = n.tipo === 'lista';
+            const hechosLista = esLista ? n.items.filter((it) => it.hecha).length : 0;
+            const tituloMostrado = esLista
+              ? (n.titulo || 'Lista sin título')
+              : n.titulo || (n.contenido.length > 60 ? `${n.contenido.slice(0, 60)}…` : n.contenido) || '(nota vacía)';
             return (
               <div key={n.id} className={styles.filaLista}>
                 <div
@@ -422,6 +555,9 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
                     style={{ flexShrink: 0, color: 'var(--topo-claro)', transition: 'transform 0.15s', transform: abierta ? 'rotate(90deg)' : 'none' }}>
                     <polyline points="9 18 15 12 9 6" />
                   </svg>
+                  {esLista && (
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: 'var(--topo-claro)' }}><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
+                  )}
                   <span style={{
                     flex: 1, minWidth: 0, fontWeight: 700, fontSize: '0.88rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                     color: n.titulo ? 'var(--negro)' : 'var(--topo-claro)', fontStyle: n.titulo ? 'normal' : 'italic',
@@ -429,6 +565,9 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
                   }}>
                     {tituloMostrado}
                   </span>
+                  {esLista && n.items.length > 0 && (
+                    <span style={{ fontSize: '0.68rem', color: 'var(--topo-claro)', fontWeight: 600, flexShrink: 0, whiteSpace: 'nowrap' }}>({hechosLista}/{n.items.length})</span>
+                  )}
                   {n.estado === 'hecha' && (
                     <span style={{ fontSize: '0.65rem', color: 'var(--verde)', fontWeight: 700, flexShrink: 0, whiteSpace: 'nowrap' }}>Hecha</span>
                   )}
@@ -469,14 +608,54 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
 
                     {editandoId === n.id ? (
                       <>
-                        <input className={styles.input} placeholder="Título" value={tituloEdicion} onChange={(e) => setTituloEdicion(e.target.value)} style={{ fontSize: '0.85rem' }} />
+                        <input className={styles.input} placeholder="Título" value={tituloEdicion} onChange={(e) => setTituloEdicion(e.target.value)} style={{ fontSize: '0.85rem' }} autoFocus={esLista} />
+                        {!esLista && (
+                          <div style={{ display: 'flex', gap: '0.4rem' }}>
+                            <textarea className={styles.input} value={contenidoEdicion + (dictadoEdicion.interino ? ` ${dictadoEdicion.interino}` : '')} onChange={(e) => setContenidoEdicion(e.target.value)} rows={4} style={{ flex: 1, resize: 'vertical' }} autoFocus />
+                            <BtnMicrofono estado={dictadoEdicion.estado} onClick={dictadoEdicion.toggleDictado} />
+                          </div>
+                        )}
                         <div style={{ display: 'flex', gap: '0.4rem' }}>
-                          <textarea className={styles.input} value={contenidoEdicion + (dictadoEdicion.interino ? ` ${dictadoEdicion.interino}` : '')} onChange={(e) => setContenidoEdicion(e.target.value)} rows={4} style={{ flex: 1, resize: 'vertical' }} autoFocus />
-                          <BtnMicrofono estado={dictadoEdicion.estado} onClick={dictadoEdicion.toggleDictado} />
-                        </div>
-                        <div style={{ display: 'flex', gap: '0.4rem' }}>
-                          <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ fontSize: '0.78rem' }} onClick={guardarEdicion}>Guardar</button>
+                          <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ fontSize: '0.78rem' }} onClick={() => (esLista ? guardarTituloLista(n) : guardarEdicion())}>Guardar</button>
                           <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.78rem' }} onClick={() => setEditandoId(null)}>Cancelar</button>
+                        </div>
+                      </>
+                    ) : esLista ? (
+                      <>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                          {n.items.map((it) => (
+                            <div
+                              key={it.id}
+                              className={`${styles.checklistItem} ${it.hecha ? styles.checklistHecha : ''}`}
+                              onClick={() => alternarItemLista(n, it.id)}
+                            >
+                              <span className={styles.checklistCheck}>{it.hecha ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg> : ''}</span>
+                              <span className={styles.checklistTexto} style={{ flex: 1 }}>{it.texto}</span>
+                              <button
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--topo-claro)' }}
+                                onClick={(e) => { e.stopPropagation(); borrarItemLista(n, it.id); }}
+                                aria-label="Quitar tarea"
+                              >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                        <ItemListaNuevo onAnadir={(texto) => anadirItemLista(n, texto)} />
+                        <div style={{ display: 'flex', gap: '0.3rem', justifyContent: 'flex-end', alignItems: 'center' }}>
+                          <button
+                            className={`${styles.btn} ${n.estado === 'hecha' ? styles.btnSecundario : styles.btnPrimario}`}
+                            style={{ fontSize: '0.72rem', padding: '0.3rem 0.65rem', marginRight: 'auto' }}
+                            onClick={() => alternarEstado(n)}
+                          >
+                            {n.estado === 'hecha' ? 'Reabrir lista' : 'Cerrar lista'}
+                          </button>
+                          <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--topo-claro)', padding: '2px 6px' }} onClick={() => iniciarEdicion(n)} title="Renombrar" aria-label="Renombrar">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
+                          </button>
+                          <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--topo-claro)', padding: '2px 6px' }} onClick={() => borrar(n.id)} title="Borrar lista" aria-label="Borrar lista">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                          </button>
                         </div>
                       </>
                     ) : (

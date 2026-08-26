@@ -298,11 +298,31 @@ const ProductoSchema = new Schema({
  * `proyectoId` se deja preparado aunque hoy no exista todavía una entidad
  * "Proyecto" propia en la aplicación (`Cliente.proyecto` es solo texto).
  */
+/** Un elemento de una nota de tipo "lista" — mismo shape que `Proyecto.tareas` (Tarea), pero embebido en la nota en vez de en un proyecto. */
+const ItemListaSchema = new Schema(
+  {
+    id: { type: String, required: true },
+    texto: { type: String, required: true },
+    hecha: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
+
 const NotaSchema = new Schema({
   id: { type: String, required: true, unique: true, index: true },
   usuarioId: { type: String, required: true, index: true, default: 'admin' },
   titulo: { type: String, default: '' },
-  contenido: { type: String, required: true },
+  contenido: { type: String, default: '' },
+  /**
+   * Petición real del usuario, 26/08/2026: una nota de texto libre no deja
+   * tachar cosas sueltas una a una ("comprar pincel", "comprar lijas"...) —
+   * `'lista'` convierte la nota en un checklist (`items`), igual que
+   * `Proyecto.tareas` (`tab-tareas.tsx`) pero sin depender de un proyecto:
+   * el banner "Cosas por hacer" del Inicio es la lista `'lista'` sin
+   * `clienteId` de este usuario.
+   */
+  tipo: { type: String, enum: ['nota', 'lista'], default: 'nota' },
+  items: { type: [ItemListaSchema], default: [] },
   prioridad: { type: String, enum: ['alta', 'media', 'baja'], default: 'media' },
   estado: { type: String, enum: ['abierta', 'hecha'], default: 'abierta' },
   clienteId: { type: String, default: '' },

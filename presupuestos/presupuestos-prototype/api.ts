@@ -707,7 +707,12 @@ export async function borrarProveedor(id: string): Promise<void> {
 export async function obtenerNotas(): Promise<NotaMC[]> {
   const res = await fetchConAuth('/notas');
   await comprobarRespuesta(res, 'No se pudieron cargar las notas');
-  return res.json();
+  const datos: NotaMC[] = await res.json();
+  // `tipo`/`items` son campos nuevos (26/08/2026) — las notas guardadas
+  // antes de este cambio no los tienen en absoluto en Mongo (`.lean()` no
+  // rellena defaults de campos ausentes), así que se normalizan aquí una
+  // sola vez para que el resto de la app nunca tenga que comprobar `?? `.
+  return datos.map((n) => ({ tipo: 'nota', items: [], ...n }));
 }
 
 /** Crea o actualiza una nota. */

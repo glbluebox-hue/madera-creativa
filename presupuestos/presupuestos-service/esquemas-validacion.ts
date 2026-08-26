@@ -500,15 +500,28 @@ export const esquemaProveedor = z.object({
   creado: z.string().min(1).max(64),
 });
 
+/** Un elemento de una nota de tipo "lista" — mismo shape que `Tarea` (`Proyecto.tareas`), embebido en la nota. */
+const esquemaItemLista = z.object({
+  id: z.string().min(1).max(64),
+  texto: z.string().trim().min(1).max(500),
+  hecha: z.boolean().optional().default(false),
+});
+
 /**
  * Nota (rediseño del módulo de Notas) — entidad propia, puede existir sola
  * o asociada a un cliente/proyecto. `titulo` es opcional (una nota rápida
- * puede ser solo contenido); `contenido` es lo único obligatorio.
+ * puede ser solo contenido).
+ *
+ * `tipo: 'lista'` (26/08/2026) la convierte en un checklist: `items` lleva
+ * el contenido real y `contenido` puede quedar vacío — al revés que una
+ * nota de texto normal, donde `contenido` es lo único obligatorio.
  */
 export const esquemaNotaMC = z.object({
   id: z.string().min(1).max(64),
   titulo: z.string().max(200).optional().default(''),
-  contenido: z.string().trim().min(1, 'La nota no puede estar vacía.').max(10000),
+  contenido: z.string().trim().max(10000).optional().default(''),
+  tipo: z.enum(['nota', 'lista']).optional().default('nota'),
+  items: z.array(esquemaItemLista).max(200).optional().default([]),
   prioridad: z.enum(['alta', 'media', 'baja']).optional().default('media'),
   estado: z.enum(['abierta', 'hecha']).optional().default('abierta'),
   clienteId: z.string().max(64).optional().default(''),
@@ -517,7 +530,10 @@ export const esquemaNotaMC = z.object({
   origen: z.enum(['texto', 'voz']).optional().default('texto'),
   creado: z.string().min(1).max(64),
   actualizado: z.string().min(1).max(64),
-});
+}).refine(
+  (n) => (n.tipo === 'lista' ? n.items.length > 0 : n.contenido.length > 0),
+  { message: 'La nota no puede estar vacía.' }
+);
 
 /** Código QR guardado (sección propia del menú, 19/08/2026) — imagen ya subida a la biblioteca de recursos, aquí solo el nombre y a qué url apunta. */
 export const esquemaCodigoQRMC = z.object({

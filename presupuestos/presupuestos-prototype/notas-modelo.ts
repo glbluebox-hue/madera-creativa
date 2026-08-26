@@ -11,11 +11,19 @@ export type PrioridadNota = 'alta' | 'media' | 'baja';
 export type EstadoNota = 'abierta' | 'hecha';
 /** Cómo se creó el contenido — deja sitio para distinguir en la interfaz una nota dictada de una escrita. */
 export type OrigenNota = 'texto' | 'voz';
+/** `'lista'` (26/08/2026): checklist con `items` en vez de un `contenido` de texto libre — no se puede tachar una línea suelta dentro de un párrafo, así que "comprar pincel, comprar lijas…" necesita items propios, cada uno con su `hecha`. */
+export type TipoNota = 'nota' | 'lista';
+
+/** Un elemento de una nota de tipo `'lista'` — mismo shape que `Tarea` (`Proyecto.tareas`, `tab-tareas.tsx`), embebido en la nota en vez de en un proyecto. */
+export type ItemLista = { id: string; texto: string; hecha: boolean };
 
 export type NotaMC = {
   id: string;
   titulo: string;
   contenido: string;
+  tipo: TipoNota;
+  /** Solo tiene sentido cuando `tipo === 'lista'`; vacío en una nota de texto normal. */
+  items: ItemLista[];
   prioridad: PrioridadNota;
   estado: EstadoNota;
   /** Vacío si la nota no está asociada a ningún cliente. */
