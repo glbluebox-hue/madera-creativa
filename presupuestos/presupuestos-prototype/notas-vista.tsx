@@ -66,6 +66,20 @@ export type NotasVistaProps = {
  */
 export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes = [] }: NotasVistaProps) {
   const [notas, setNotas] = useState<NotaMC[]>([]);
+  /**
+   * Bug real, 26/08/2026 (mismo patrón que `dashboard.tsx`): marcar/borrar
+   * un item de una lista partía de la `nota` capturada en el render de la
+   * fila, no del estado más reciente — dos toques rápidos sobre la misma
+   * lista podían pisarse entre sí y perder el primero. `notasRef` se
+   * actualiza de forma síncrona junto a `setNotas` (`setNotasSync`) para
+   * que `guardarItemsLista` siempre parta del último `items[]` conocido.
+   */
+  const notasRef = useRef<NotaMC[]>([]);
+  const setNotasSync = useCallback((actualizar: (prev: NotaMC[]) => NotaMC[]) => {
+    const siguiente = actualizar(notasRef.current);
+    notasRef.current = siguiente;
+    setNotas(siguiente);
+  }, []);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -121,7 +135,7 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
   const cargar = useCallback(() => {
     setCargando(true);
     api.obtenerNotas()
-      .then(setNotas)
+      .then((datos) => { notasRef.current = datos; setNotas(datos); })
       .catch((e) => setError(String(e).replace(/^Error:\s*/, '')))
       .finally(() => setCargando(false));
   }, []);
@@ -243,7 +257,7 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
     };
     try {
       const guardada = await api.guardarNota(nueva);
-      setNotas((prev) => [guardada, ...prev]);
+      setNotasSync((prev) => [guardada, ...prev]);
       setTitulo(''); setContenido(''); setPrioridad('media'); setClienteIdNueva(clienteFijo?.id ?? '');
       setTipoNueva('nota'); setItemsNuevaLista([]); setNuevoItemTexto('');
       origenVozRef.current = false;
@@ -255,36 +269,45 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
     }
   };
 
-  /** Añade/marca/borra un item dentro de una nota `'lista'` ya guardada — mismo patrón que `tab-tareas.tsx` (`alternar`/`anadir`/`borrar`), pero embebido en la nota en vez de en un proyecto. */
-  const guardarItemsLista = async (nota: NotaMC, items: ItemLista[]) => {
-    const actualizada: NotaMC = { ...nota, items, actualizado: new Date().toISOString() };
-    setNotas((prev) => prev.map((n) => (n.id === nota.id ? actualizada : n)));
+  /**
+   * Añade/marca/borra un item dentro de una nota `'lista'` ya guardada —
+   * mismo patrón que `tab-tareas.tsx` (`alternar`/`anadir`/`borrar`), pero
+   * embebido en la nota en vez de en un proyecto. Recibe `notaId` (no la
+   * `nota` entera) y relee siempre `notasRef.current`: si se llama dos
+   * veces seguidas sobre la misma lista antes de que la primera termine de
+   * guardarse, la segunda ve el cambio de la primera en vez de pisarlo.
+   */
+  const guardarItemsLista = async (notaId: string, transformar: (items: ItemLista[]) => ItemLista[]) => {
+    const actual = notasRef.current.find((n) => n.id === notaId);
+    if (!actual) return;
+    const actualizada: NotaMC = { ...actual, items: transformar(actual.items), actualizado: new Date().toISOString() };
+    setNotasSync((prev) => prev.map((n) => (n.id === notaId ? actualizada : n)));
     try { await api.guardarNota(actualizada); } catch { cargar(); }
   };
-  const anadirItemLista = (nota: NotaMC, texto: string) => {
+  const anadirItemLista = (notaId: string, texto: string) => {
     if (!texto.trim()) return;
-    guardarItemsLista(nota, [...nota.items, { id: generarId(), texto: texto.trim(), hecha: false }]);
+    guardarItemsLista(notaId, (items) => [...items, { id: generarId(), texto: texto.trim(), hecha: false }]);
   };
-  const alternarItemLista = (nota: NotaMC, itemId: string) =>
-    guardarItemsLista(nota, nota.items.map((it) => (it.id === itemId ? { ...it, hecha: !it.hecha } : it)));
-  const borrarItemLista = (nota: NotaMC, itemId: string) =>
-    guardarItemsLista(nota, nota.items.filter((it) => it.id !== itemId));
+  const alternarItemLista = (notaId: string, itemId: string) =>
+    guardarItemsLista(notaId, (items) => items.map((it) => (it.id === itemId ? { ...it, hecha: !it.hecha } : it)));
+  const borrarItemLista = (notaId: string, itemId: string) =>
+    guardarItemsLista(notaId, (items) => items.filter((it) => it.id !== itemId));
 
   const cambiarPrioridad = async (nota: NotaMC, nueva: PrioridadNota) => {
     const actualizada = { ...nota, prioridad: nueva, actualizado: new Date().toISOString() };
-    setNotas((prev) => prev.map((n) => (n.id === nota.id ? actualizada : n)));
+    setNotasSync((prev) => prev.map((n) => (n.id === nota.id ? actualizada : n)));
     try { await api.guardarNota(actualizada); } catch { cargar(); }
   };
 
   /** Marca hecha/pendiente — nunca borra la nota, solo cambia su `estado` (ver el filtro "Hechas" de arriba para recuperarlas). */
   const alternarEstado = async (nota: NotaMC) => {
     const actualizada: NotaMC = { ...nota, estado: nota.estado === 'abierta' ? 'hecha' : 'abierta', actualizado: new Date().toISOString() };
-    setNotas((prev) => prev.map((n) => (n.id === nota.id ? actualizada : n)));
+    setNotasSync((prev) => prev.map((n) => (n.id === nota.id ? actualizada : n)));
     try { await api.guardarNota(actualizada); } catch { cargar(); }
   };
 
   const borrar = async (id: string) => {
-    setNotas((prev) => prev.filter((n) => n.id !== id));
+    setNotasSync((prev) => prev.filter((n) => n.id !== id));
     try { await api.borrarNota(id); } catch { cargar(); }
   };
 
@@ -295,18 +318,19 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
   };
 
   const guardarEdicion = async () => {
-    const nota = notas.find((n) => n.id === editandoId);
+    const nota = notasRef.current.find((n) => n.id === editandoId);
     if (!nota || !contenidoEdicion.trim()) return;
     const actualizada = { ...nota, titulo: tituloEdicion.trim(), contenido: contenidoEdicion.trim(), actualizado: new Date().toISOString() };
-    setNotas((prev) => prev.map((n) => (n.id === nota.id ? actualizada : n)));
+    setNotasSync((prev) => prev.map((n) => (n.id === nota.id ? actualizada : n)));
     setEditandoId(null);
     try { await api.guardarNota(actualizada); } catch { cargar(); }
   };
 
   /** Renombra una lista — a diferencia de una nota de texto, no tiene `contenido` que editar aquí (eso son sus `items`, ver `anadirItemLista`/`alternarItemLista`/`borrarItemLista`). */
   const guardarTituloLista = async (nota: NotaMC) => {
-    const actualizada = { ...nota, titulo: tituloEdicion.trim(), actualizado: new Date().toISOString() };
-    setNotas((prev) => prev.map((n) => (n.id === nota.id ? actualizada : n)));
+    const actual = notasRef.current.find((n) => n.id === nota.id) ?? nota;
+    const actualizada = { ...actual, titulo: tituloEdicion.trim(), actualizado: new Date().toISOString() };
+    setNotasSync((prev) => prev.map((n) => (n.id === nota.id ? actualizada : n)));
     setEditandoId(null);
     try { await api.guardarNota(actualizada); } catch { cargar(); }
   };
@@ -627,13 +651,13 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
                             <div
                               key={it.id}
                               className={`${styles.checklistItem} ${it.hecha ? styles.checklistHecha : ''}`}
-                              onClick={() => alternarItemLista(n, it.id)}
+                              onClick={() => alternarItemLista(n.id, it.id)}
                             >
                               <span className={styles.checklistCheck}>{it.hecha ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg> : ''}</span>
                               <span className={styles.checklistTexto} style={{ flex: 1 }}>{it.texto}</span>
                               <button
                                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--topo-claro)' }}
-                                onClick={(e) => { e.stopPropagation(); borrarItemLista(n, it.id); }}
+                                onClick={(e) => { e.stopPropagation(); borrarItemLista(n.id, it.id); }}
                                 aria-label="Quitar tarea"
                               >
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
@@ -641,7 +665,7 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
                             </div>
                           ))}
                         </div>
-                        <ItemListaNuevo onAnadir={(texto) => anadirItemLista(n, texto)} />
+                        <ItemListaNuevo onAnadir={(texto) => anadirItemLista(n.id, texto)} />
                         <div style={{ display: 'flex', gap: '0.3rem', justifyContent: 'flex-end', alignItems: 'center' }}>
                           <button
                             className={`${styles.btn} ${n.estado === 'hecha' ? styles.btnSecundario : styles.btnPrimario}`}

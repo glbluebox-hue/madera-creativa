@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import type { Factura } from './types.js';
 import type { ResumenFacturas } from './use-facturas.js';
 import type { PresupuestoMC } from './presupuestos-modelo.js';
@@ -90,10 +90,29 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
    * (`Tarea`) tampoco la tiene.
    */
   const [listaCosas, setListaCosas] = useState<NotaMC | null>(null);
+  /**
+   * Bug real, 26/08/2026: cada acción (marcar, borrar, añadir, editar)
+   * partía de `listaCosas` capturado por closure para construir el nuevo
+   * `items[]` a guardar. Al hacer dos acciones seguidas rápido (marcar dos
+   * tareas casi a la vez, por ejemplo) la segunda llamada todavía veía el
+   * `listaCosas` de ANTES de que la primera terminara de guardarse, así
+   * que su guardado (que sobreescribe la nota entera) pisaba el cambio de
+   * la primera — la tarea "no se quedaba guardada". Mismo patrón exacto
+   * que el bug de subir varias fotos a la vez (`galeria-fotos.tsx`). Fix:
+   * un ref que se actualiza de forma SÍNCRONA en cuanto se decide el
+   * siguiente estado, para que la siguiente acción — aunque se dispare
+   * antes de que la anterior haya terminado de guardarse — siempre parta
+   * del último `items[]` conocido, no de uno ya desactualizado.
+   */
+  const listaRef = useRef<NotaMC | null>(null);
   const [cargandoTareas, setCargandoTareas] = useState(true);
   useEffect(() => {
     obtenerNotas()
-      .then((todas) => setListaCosas(todas.find((n) => n.tipo === 'lista' && !n.clienteId) ?? null))
+      .then((todas) => {
+        const encontrada = todas.find((n) => n.tipo === 'lista' && !n.clienteId) ?? null;
+        listaRef.current = encontrada;
+        setListaCosas(encontrada);
+      })
       .catch(() => setListaCosas(null))
       .finally(() => setCargandoTareas(false));
   }, []);
@@ -105,26 +124,30 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
   /** Guarda la lista completa (crea la nota `'lista'` la primera vez que hace falta). */
   const guardarLista = async (items: NotaMC['items']) => {
     const ahora = new Date().toISOString();
-    const actualizada: NotaMC = listaCosas
-      ? { ...listaCosas, items, actualizado: ahora }
+    const base = listaRef.current;
+    const actualizada: NotaMC = base
+      ? { ...base, items, actualizado: ahora }
       : {
         id: generarId(), titulo: 'Cosas por hacer', contenido: '', tipo: 'lista', items,
         prioridad: 'media', estado: 'abierta', clienteId: '', proyectoId: '', etiquetas: [],
         origen: 'texto', creado: ahora, actualizado: ahora,
       };
+    listaRef.current = actualizada;
     setListaCosas(actualizada);
     try {
       const guardada = await guardarNota(actualizada);
+      listaRef.current = guardada;
       setListaCosas(guardada);
     } catch {
-      setListaCosas(listaCosas);
+      listaRef.current = base;
+      setListaCosas(base);
     }
   };
 
   const crearTarea = async () => {
     if (!nuevaTarea.trim()) return;
     setGuardandoTarea(true);
-    await guardarLista([...(listaCosas?.items ?? []), { id: generarId(), texto: nuevaTarea.trim(), hecha: false }]);
+    await guardarLista([...(listaRef.current?.items ?? []), { id: generarId(), texto: nuevaTarea.trim(), hecha: false }]);
     setNuevaTarea('');
     setAgregandoTarea(false);
     setGuardandoTarea(false);
@@ -132,14 +155,14 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
 
   /** Marca/desmarca una tarea — nunca la quita de la vista, solo tacha el texto y rellena la casilla. */
   const alternarTarea = (itemId: string) => {
-    if (!listaCosas) return;
-    guardarLista(listaCosas.items.map((it) => (it.id === itemId ? { ...it, hecha: !it.hecha } : it)));
+    if (!listaRef.current) return;
+    guardarLista(listaRef.current.items.map((it) => (it.id === itemId ? { ...it, hecha: !it.hecha } : it)));
   };
 
   /** Borra de verdad una tarea (papelera) — el único modo de que salga de la vista, ahora que marcar/desmarcar ya no la quita. */
   const borrarTarea = (itemId: string) => {
-    if (!listaCosas) return;
-    guardarLista(listaCosas.items.filter((it) => it.id !== itemId));
+    if (!listaRef.current) return;
+    guardarLista(listaRef.current.items.filter((it) => it.id !== itemId));
   };
 
   const [editandoTareaId, setEditandoTareaId] = useState<string | null>(null);
@@ -151,8 +174,8 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
   };
 
   const guardarEdicionTarea = () => {
-    if (!listaCosas || !textoEdicionTarea.trim()) return;
-    guardarLista(listaCosas.items.map((it) => (it.id === editandoTareaId ? { ...it, texto: textoEdicionTarea.trim() } : it)));
+    if (!listaRef.current || !textoEdicionTarea.trim()) return;
+    guardarLista(listaRef.current.items.map((it) => (it.id === editandoTareaId ? { ...it, texto: textoEdicionTarea.trim() } : it)));
     setEditandoTareaId(null);
   };
 
@@ -296,18 +319,14 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                     )}
                   </button>
-                  <div className={styles.actividadCuerpo} style={{ cursor: 'pointer', opacity: it.hecha ? 0.6 : 1 }} onClick={() => alternarTarea(it.id)}>
+                  <div
+                    className={styles.actividadCuerpo}
+                    style={{ cursor: 'pointer', opacity: it.hecha ? 0.6 : 1 }}
+                    onClick={() => iniciarEdicionTarea(it.id, it.texto)}
+                    title="Tocar para editar"
+                  >
                     <span className={styles.actividadTitulo} style={it.hecha ? { textDecoration: 'line-through' } : undefined}>{it.texto}</span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => iniciarEdicionTarea(it.id, it.texto)}
-                    title="Editar"
-                    aria-label="Editar"
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--topo-claro)', padding: '2px 6px', flexShrink: 0 }}
-                  >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
-                  </button>
                   <ConfirmarBorrado titulo="Borrar tarea" onConfirmar={() => borrarTarea(it.id)} />
                 </div>
               );
