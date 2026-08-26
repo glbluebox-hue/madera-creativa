@@ -96,6 +96,25 @@ export async function buscarEnlacePorToken(tokenPlano: string): Promise<any | nu
 }
 
 /**
+ * `presupuestoId -> fecha de caducidad` de los enlaces activos (ni
+ * revocados ni caducados) de un usuario — para que la lista de
+ * presupuestos sepa, SIN el token en claro (nunca se guarda), si ya
+ * existe uno vigente y avisar antes de generar otro que lo revocaría.
+ * Bug real, 26/08/2026: sin esto, recargar la página perdía el estado
+ * local de "ya generé un enlace para este" y volvía a mostrar "Generar
+ * enlace" — un segundo clic revocaba en silencio el que ya se le había
+ * mandado a un cliente real, sin ningún aviso.
+ */
+export async function enlacesActivosDeUsuario(usuarioId: string): Promise<Record<string, string>> {
+  const activos = await EnlacePresupuestoModel.find({
+    usuarioId, revocadoEn: null, expiraEn: { $gt: new Date() },
+  }).select('presupuestoId expiraEn').lean().exec();
+  const mapa: Record<string, string> = {};
+  for (const e of activos as any[]) mapa[e.presupuestoId] = e.expiraEn.toISOString();
+  return mapa;
+}
+
+/**
  * Reclama el enlace como aceptado — atómico y con el propio filtro
  * (`aceptadoEn: null`) como guarda contra doble envío concurrente (mismo
  * patrón que `rotarRefreshToken`). Si no hay coincidencia, el enlace ya

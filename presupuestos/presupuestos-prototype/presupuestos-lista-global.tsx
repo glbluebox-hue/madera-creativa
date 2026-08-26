@@ -67,6 +67,16 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
   const [enlaces, setEnlaces] = useState<Record<string, string>>({});
   const [enlaceCopiadoId, setEnlaceCopiadoId] = useState<string | null>(null);
   const [generandoEnlaceId, setGenerandoEnlaceId] = useState<string | null>(null);
+  /**
+   * Bug real, 26/08/2026: `enlaces` (arriba) solo vive en memoria de React —
+   * recargar la página lo pierde, así que el botón volvía a mostrar
+   * "Generar enlace" aunque ya hubiera uno activo enviado a un cliente real.
+   * Un segundo clic revocaba ese enlace en silencio (`crearEnlacePresupuesto`
+   * revoca cualquier anterior). Ahora `p.enlaceActivoExpiraEn` (servidor,
+   * sobrevive a un refresco) avisa antes de generar uno nuevo — este estado
+   * es solo el "¿seguro?" de esa confirmación.
+   */
+  const [confirmandoRegenerarId, setConfirmandoRegenerarId] = useState<string | null>(null);
   /** "Generar con IA" dentro del selector — campo libre para describir el trabajo, ver `generarConIA`. */
   const [campoIAAbierto, setCampoIAAbierto] = useState(false);
   const [descripcionIA, setDescripcionIA] = useState('');
@@ -153,6 +163,46 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
     if (p.formato === 'lienzo') return null;
     const url = enlaces[p.id];
     if (!url) {
+      // Ya existe un enlace activo en el servidor (sobrevive a un refresco,
+      // a diferencia de `enlaces`/`url` de arriba) pero no tenemos el token
+      // en claro para mostrarlo — generar uno nuevo lo revocaría. Avisar
+      // antes en vez de dejar que un segundo clic lo rompa en silencio.
+      if (p.enlaceActivoExpiraEn && confirmandoRegenerarId !== p.id) {
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--topo-claro)' }}>
+              Ya hay un enlace activo (caduca el {formatoFecha(p.enlaceActivoExpiraEn)})
+            </span>
+            <button
+              className={`${styles.btn} ${styles.btnSecundario}`}
+              style={{ fontSize: '0.75rem' }}
+              onClick={() => setConfirmandoRegenerarId(p.id)}
+              title="El enlace ya generado no se puede volver a mostrar, pero sigue funcionando si lo tienes guardado"
+            >
+              Generar uno nuevo
+            </button>
+          </div>
+        );
+      }
+      if (confirmandoRegenerarId === p.id) {
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--rojo)', fontWeight: 600 }}>
+              Esto invalida el enlace anterior — si ya se lo enviaste a un cliente, dejará de funcionarle.
+            </span>
+            <button
+              className={`${styles.btn} ${styles.btnPeligro}`}
+              style={{ fontSize: '0.75rem' }}
+              onClick={() => { setConfirmandoRegenerarId(null); generarEnlace(p.id); }}
+            >
+              Generar de todas formas
+            </button>
+            <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.75rem' }} onClick={() => setConfirmandoRegenerarId(null)}>
+              Cancelar
+            </button>
+          </div>
+        );
+      }
       return (
         <button
           className={`${styles.btn} ${styles.btnSecundario}`}

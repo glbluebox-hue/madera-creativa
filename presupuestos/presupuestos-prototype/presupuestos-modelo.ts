@@ -53,6 +53,16 @@ export type PresupuestoMC = {
   firmaClienteFecha?: string;
   /** Hitos de cobro (roadmap "cobros pendientes", 18/08/2026) — generados al aceptar, editables a mano. Ausente en presupuestos creados antes de esta función. */
   cobros?: import('./api.js').Cobro[];
+  /**
+   * Fecha ISO de caducidad del enlace del Portal del cliente activo AHORA
+   * MISMO (ni revocado ni caducado), o `null` si no hay ninguno — nunca el
+   * token en claro, que el servidor no guarda. Solo lo calcula
+   * `listarPresupuestos`; sirve para avisar antes de generar un enlace
+   * nuevo que revocaría uno ya enviado a un cliente real (bug real,
+   * 26/08/2026: recargar la página perdía el aviso local y un segundo
+   * "Generar enlace" rompía en silencio el que ya funcionaba).
+   */
+  enlaceActivoExpiraEn?: string | null;
 };
 
 /** Vista pública de un presupuesto (Portal del cliente) — lista blanca, ver `obtenerPresupuestoPublico` en el backend. */

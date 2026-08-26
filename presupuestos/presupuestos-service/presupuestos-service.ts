@@ -2,7 +2,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import type { PipelineStage } from 'mongoose';
 import { ClienteModel, ProyectoModel, EmpresaModel, FacturaModel, ProveedorModel, ProductoModel, DibujoModel, CarpetaModel, NotaModel, PresupuestoModel, PlantillaModel, RecursoModel, ComponenteModel, CodigoQRModel, AutomatizacionModel, ContratoModel, GastoPeriodicoModel, conectar } from './cliente.model.js';
 import { UsuarioModel, conectarUsuarios } from './usuario.model.js';
-import { crearEnlacePresupuesto, buscarEnlacePorToken, reclamarEnlaceAceptado, guardarFirmaEnlace, formatoTokenValido } from './enlace-presupuesto.model.js';
+import { crearEnlacePresupuesto, buscarEnlacePorToken, reclamarEnlaceAceptado, guardarFirmaEnlace, formatoTokenValido, enlacesActivosDeUsuario } from './enlace-presupuesto.model.js';
 import { crearEnlaceResena, buscarEnlaceResenaPorToken, registrarUsoEnlaceResena, formatoTokenValidoResena } from './enlace-resena.model.js';
 import { almacenamiento } from './almacenamiento.service.js';
 import { busEventos } from './eventos.service.js';
@@ -1521,8 +1521,11 @@ export class PresupuestosService {
    */
   async listarPresupuestosDeCliente(usuarioId: string, clienteId: string): Promise<Record<string, unknown>[]> {
     await conectar();
-    const docs = await PresupuestoModel.find({ usuarioId, clienteId }).sort({ creado: -1 }).lean().exec();
-    return docs.map((d) => this.limpiar(d as Record<string, unknown>));
+    const [docs, enlacesActivos] = await Promise.all([
+      PresupuestoModel.find({ usuarioId, clienteId }).sort({ creado: -1 }).lean().exec(),
+      enlacesActivosDeUsuario(usuarioId),
+    ]);
+    return docs.map((d) => ({ ...this.limpiar(d as Record<string, unknown>), enlaceActivoExpiraEn: enlacesActivos[(d as any).id] ?? null }));
   }
 
   /**
@@ -1535,8 +1538,11 @@ export class PresupuestosService {
    */
   async listarPresupuestosDeProyecto(usuarioId: string, proyectoId: string): Promise<Record<string, unknown>[]> {
     await conectar();
-    const docs = await PresupuestoModel.find({ usuarioId, proyectoId }).sort({ creado: -1 }).lean().exec();
-    return docs.map((d) => this.limpiar(d as Record<string, unknown>));
+    const [docs, enlacesActivos] = await Promise.all([
+      PresupuestoModel.find({ usuarioId, proyectoId }).sort({ creado: -1 }).lean().exec(),
+      enlacesActivosDeUsuario(usuarioId),
+    ]);
+    return docs.map((d) => ({ ...this.limpiar(d as Record<string, unknown>), enlaceActivoExpiraEn: enlacesActivos[(d as any).id] ?? null }));
   }
 
   /**
@@ -1550,12 +1556,17 @@ export class PresupuestosService {
    */
   async listarPresupuestos(usuarioId: string): Promise<Record<string, unknown>[]> {
     await conectar();
-    const docs = await PresupuestoModel.find({ usuarioId })
-      .select('-contenidoLienzo')
-      .sort({ creado: -1 })
-      .lean()
-      .exec();
-    return docs.map((d) => this.limpiar(d as Record<string, unknown>));
+    const [docs, enlacesActivos] = await Promise.all([
+      PresupuestoModel.find({ usuarioId }).select('-contenidoLienzo').sort({ creado: -1 }).lean().exec(),
+      enlacesActivosDeUsuario(usuarioId),
+    ]);
+    // `enlaceActivoExpiraEn` (nunca el token, que no se guarda en claro) —
+    // la lista lo usa para avisar antes de generar un enlace nuevo que
+    // revocaría uno ya enviado a un cliente real (ver `enlacesActivosDeUsuario`).
+    return docs.map((d) => ({
+      ...this.limpiar(d as Record<string, unknown>),
+      enlaceActivoExpiraEn: enlacesActivos[(d as any).id] ?? null,
+    }));
   }
 
   /**

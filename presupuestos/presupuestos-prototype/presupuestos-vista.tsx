@@ -74,9 +74,19 @@ export function PresupuestosVista({ clienteId, proyectoId, clienteNombre, empres
   const [aceptandoId, setAceptandoId] = useState<string | null>(null);
 
   const [generandoEnlaceId, setGenerandoEnlaceId] = useState<string | null>(null);
-  /** Enlace ya generado por presupuesto, listo para copiar — vive solo en memoria, se pierde al recargar la página (no hace falta persistirlo: "Generar enlace" siempre se puede volver a pulsar). */
+  /**
+   * Enlace ya generado por presupuesto, listo para copiar — vive solo en
+   * memoria, se pierde al recargar la página. Bug real, 26/08/2026: el
+   * comentario de esta línea decía "no hace falta persistirlo, 'Generar
+   * enlace' siempre se puede volver a pulsar" — falso: cada enlace nuevo
+   * REVOCA el anterior (`crearEnlacePresupuesto`), así que recargar y
+   * volver a pulsar rompía en silencio un enlace ya enviado a un cliente
+   * real. `p.enlaceActivoExpiraEn` (servidor, sobrevive al refresco) es lo
+   * que ahora evita eso — ver `confirmandoRegenerarId` más abajo.
+   */
   const [enlaces, setEnlaces] = useState<Record<string, string>>({});
   const [enlaceCopiadoId, setEnlaceCopiadoId] = useState<string | null>(null);
+  const [confirmandoRegenerarId, setConfirmandoRegenerarId] = useState<string | null>(null);
 
   const cargar = useCallback(() => {
     setCargando(true);
@@ -294,6 +304,42 @@ export function PresupuestosVista({ clienteId, proyectoId, clienteNombre, empres
     if (p.formato === 'lienzo') return null;
     const url = enlaces[p.id];
     if (!url) {
+      if (p.enlaceActivoExpiraEn && confirmandoRegenerarId !== p.id) {
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--topo-claro)' }}>
+              Ya hay un enlace activo (caduca el {formatoFecha(p.enlaceActivoExpiraEn)})
+            </span>
+            <button
+              className={`${styles.btn} ${styles.btnSecundario}`}
+              style={{ fontSize: '0.75rem' }}
+              onClick={() => setConfirmandoRegenerarId(p.id)}
+              title="El enlace ya generado no se puede volver a mostrar, pero sigue funcionando si lo tienes guardado"
+            >
+              Generar uno nuevo
+            </button>
+          </div>
+        );
+      }
+      if (confirmandoRegenerarId === p.id) {
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--rojo)', fontWeight: 600 }}>
+              Esto invalida el enlace anterior — si ya se lo enviaste a un cliente, dejará de funcionarle.
+            </span>
+            <button
+              className={`${styles.btn} ${styles.btnPeligro}`}
+              style={{ fontSize: '0.75rem' }}
+              onClick={() => { setConfirmandoRegenerarId(null); generarEnlace(p.id); }}
+            >
+              Generar de todas formas
+            </button>
+            <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.75rem' }} onClick={() => setConfirmandoRegenerarId(null)}>
+              Cancelar
+            </button>
+          </div>
+        );
+      }
       return (
         <button
           className={`${styles.btn} ${styles.btnSecundario}`}
@@ -306,9 +352,15 @@ export function PresupuestosVista({ clienteId, proyectoId, clienteNombre, empres
       );
     }
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-        <input className={styles.input} value={url} readOnly onFocus={(e) => e.target.select()} style={{ fontSize: '0.78rem', width: '180px' }} />
-        <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={() => copiarEnlace(url, p.id)}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+        <input
+          className={styles.input}
+          value={url}
+          readOnly
+          onFocus={(e) => e.target.select()}
+          style={{ fontSize: '0.78rem', flex: '1 1 140px', minWidth: 0, boxSizing: 'border-box' }}
+        />
+        <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ flexShrink: 0 }} onClick={() => copiarEnlace(url, p.id)}>
           {enlaceCopiadoId === p.id ? '✓ Copiado' : 'Copiar'}
         </button>
       </div>
