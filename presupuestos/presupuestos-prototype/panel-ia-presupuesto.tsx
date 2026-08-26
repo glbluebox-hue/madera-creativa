@@ -5,7 +5,7 @@ import { textoDeElementoSeleccionado, puedeAplicarPropuestaA } from './documento
 import { reducirPanelIA, estadoInicialPanelIA, recortarConversacion } from './panel-ia-presupuesto-estado.js';
 import { validarImagenParaIA, comprimirImagen, MIME_IMAGEN_PERMITIDOS } from './procesamiento-imagenes.js';
 import { leerArchivoComoBase64 } from './archivos.js';
-import { Z_BARRA_FLOTANTE } from './z-index.js';
+import { Z_MODAL } from './z-index.js';
 import styles from './styles.module.css';
 
 /**
@@ -158,7 +158,13 @@ export function PanelIaPresupuesto({ abierto, onCerrar, clienteId, contextoDocum
       style={{
         position: 'fixed', top: 0, right: 0, bottom: 0, width: 360, maxWidth: '90vw',
         background: 'var(--blanco)', borderLeft: '1px solid var(--borde)', boxShadow: '-4px 0 16px rgba(0,0,0,0.08)',
-        zIndex: Z_BARRA_FLOTANTE, display: 'flex', flexDirection: 'column',
+        // Bug real, 26/08/2026: a la misma altura que el FAB del Asistente
+        // IA general (`asistente-ia.tsx`, siempre montado en la raíz de la
+        // app) — ambos usaban `Z_BARRA_FLOTANTE`, así que el FAB (montado
+        // después en el árbol) pintaba encima del botón "Enviar" de este
+        // panel y lo dejaba imposible de pulsar. Por encima de `Z_MODAL`
+        // para ganar siempre al FAB, sin tocar la constante compartida.
+        zIndex: Z_MODAL, display: 'flex', flexDirection: 'column',
       }}
       onMouseDown={(e) => e.stopPropagation()}
     >
