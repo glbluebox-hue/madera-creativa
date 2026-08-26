@@ -256,6 +256,25 @@ export async function obtenerFactura(id: string): Promise<Factura> {
 }
 
 /**
+ * Busca una factura ya guardada que probablemente sea la MISMA que se está
+ * a punto de guardar (fallo humano real: escanear dos veces sin querer el
+ * mismo papel) — nunca bloquea, solo avisa antes de guardar. `excluirId`
+ * evita que editar una factura la marque como duplicada de sí misma.
+ */
+export async function buscarFacturaDuplicada(params: {
+  numeroFactura: string; cifNif: string; proveedor: string; fecha: string; importe: number; excluirId?: string;
+}): Promise<Factura | null> {
+  const query = new URLSearchParams({
+    numeroFactura: params.numeroFactura, cifNif: params.cifNif, proveedor: params.proveedor,
+    fecha: params.fecha, importe: String(params.importe),
+    ...(params.excluirId ? { excluirId: params.excluirId } : {}),
+  });
+  const res = await fetchConAuth(`/facturas/duplicado?${query.toString()}`);
+  await comprobarRespuesta(res, 'No se pudo comprobar si la factura ya existe');
+  return res.json();
+}
+
+/**
  * Guarda o actualiza una factura.
  * @param f La factura a guardar.
  */

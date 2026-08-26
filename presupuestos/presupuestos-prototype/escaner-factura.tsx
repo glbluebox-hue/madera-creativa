@@ -128,6 +128,16 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
   const [avisoRevisarEmisor, setAvisoRevisarEmisor] = useState(false);
   /** Nombre/CIF propios (Ajustes de empresa) — referencia para distinguir a Madera Creativa del cliente/proveedor del documento (auditoría emisor/receptor, 23/08/2026). */
   const [empresa, setEmpresa] = useState<EmpresaIdentificacion | null>(null);
+
+  /**
+   * Aviso de posible factura repetida (petición explícita del usuario,
+   * 26/08/2026: fallo humano real, no un caso raro — escanear dos veces
+   * sin querer el mismo papel). Se comprueba al pulsar "Guardar factura",
+   * nunca bloquea: si hay coincidencia se muestra el aviso y el usuario
+   * decide si de verdad quiere guardarla otra vez.
+   */
+  const [duplicado, setDuplicado] = useState<Factura | null>(null);
+  const [comprobandoDuplicado, setComprobandoDuplicado] = useState(false);
   useEffect(() => {
     api.obtenerEmpresa()
       .then((e) => setEmpresa({ nombre: e.nombre ?? '', titular: e.titular ?? '', nifCif: e.nifCif ?? '' }))
@@ -262,7 +272,7 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
     });
   };
 
-  const guardar = () => {
+  const construirFactura = (): Factura => {
     const paginasImagen = paginas.filter(p => p.tipo === 'imagen');
     // Un único PDF subido directamente se conserva como el original de la
     // factura — nunca se mete en `imagen`/`imagenes` (que solo entienden
@@ -270,7 +280,7 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
     // pintarlo con <img>). `paginas` sí guarda el orden real, mezclando
     // tipos, para los lectores nuevos que ya saben distinguirlos.
     const esSoloPdf = paginas.length > 0 && paginas.every(p => p.tipo === 'pdf');
-    const f: Factura = {
+    return {
       // En edición conservar id y fecha de creación originales
       id: facturaEditar?.id ?? uid(),
       tipo,
@@ -296,6 +306,28 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
       importeImpuesto: importeImpuesto ? parseFloat(importeImpuesto.replace(',', '.')) : undefined,
       creado: facturaEditar?.creado ?? new Date().toISOString(),
     };
+  };
+
+  /** `forzar: true` = el usuario ya vio el aviso de duplicado y quiere guardar igual. */
+  const guardar = async (forzar = false) => {
+    const f = construirFactura();
+    if (!forzar) {
+      setComprobandoDuplicado(true);
+      try {
+        const encontrada = await api.buscarFacturaDuplicada({
+          numeroFactura: f.numeroFactura ?? '', cifNif: f.cifNif ?? '', proveedor: f.proveedor,
+          fecha: f.fecha, importe: f.importe, excluirId: facturaEditar?.id,
+        });
+        if (encontrada) {
+          setDuplicado(encontrada);
+          setComprobandoDuplicado(false);
+          return;
+        }
+      } catch {
+        // Si falla la comprobación (red, etc.) no bloqueamos el guardado por eso.
+      }
+      setComprobandoDuplicado(false);
+    }
     onGuardar(f);
   };
 
@@ -632,6 +664,23 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
             </div>
           )}
 
+          {duplicado && (
+            <div className={styles.loginError} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <span>
+                Ya hay una factura muy parecida guardada: <strong>{duplicado.concepto || duplicado.proveedor || 'sin concepto'}</strong> del {duplicado.fecha} por {duplicado.importe.toFixed(2)}€.
+                ¿Seguro que quieres guardar esta también?
+              </span>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.78rem' }} onClick={() => setDuplicado(null)}>
+                  Revisar, no guardar
+                </button>
+                <button className={`${styles.btn} ${styles.btnPeligro}`} style={{ fontSize: '0.78rem' }} onClick={() => guardar(true)}>
+                  Guardar de todas formas
+                </button>
+              </div>
+            </div>
+          )}
+
           <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
             <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={onCerrar} style={{ flex: 1, justifyContent: 'center' }}>
               Cancelar
@@ -639,10 +688,10 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
             <button
               className={`${styles.btn} ${styles.btnPrimario}`}
               style={{ flex: 2, justifyContent: 'center' }}
-              disabled={!importe || parseFloat(String(importe).replace(',', '.')) <= 0}
-              onClick={guardar}
+              disabled={!importe || parseFloat(String(importe).replace(',', '.')) <= 0 || comprobandoDuplicado}
+              onClick={() => guardar(false)}
             >
-              {esEdicion ? 'Guardar cambios' : 'Guardar factura'}
+              {comprobandoDuplicado ? 'Comprobando…' : esEdicion ? 'Guardar cambios' : 'Guardar factura'}
             </button>
           </div>
         </div>

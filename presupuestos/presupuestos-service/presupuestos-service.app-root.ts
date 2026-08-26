@@ -1520,6 +1520,26 @@ export function run() {
   });
 
   /**
+   * Aviso de posible factura repetida (fallo humano real: escanear dos
+   * veces sin querer el mismo papel) — se llama antes de guardar, nunca
+   * bloquea, solo informa. Debe registrarse antes de `/facturas/:id` para
+   * no colisionar con él (mismo motivo que `resumen`/`anios`).
+   */
+  app.get('/facturas/duplicado', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const encontrada = await svc.buscarFacturaDuplicada({
+        numeroFactura: String(req.query.numeroFactura ?? ''),
+        cifNif: String(req.query.cifNif ?? ''),
+        proveedor: String(req.query.proveedor ?? ''),
+        fecha: String(req.query.fecha ?? ''),
+        importe: Number(req.query.importe) || 0,
+        excluirId: req.query.excluirId ? String(req.query.excluirId) : undefined,
+      }, req.usuarioId!);
+      res.json(encontrada);
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /**
    * ZIP con el PDF de varias facturas — por `ids` concretos (descarga
    * múltiple con selección) o por filtro `anio`/`trimestre`/`tipo`
    * (descargar todas). Debe registrarse antes de `/facturas/:id` para no

@@ -936,6 +936,43 @@ export class PresupuestosService {
   }
 
   /**
+   * Busca una factura ya guardada que probablemente sea la MISMA que se
+   * está a punto de guardar — fallo humano real, no un caso raro: escanear
+   * dos veces sin querer el mismo papel. Nunca bloquea el guardado (lo
+   * decide el usuario), solo avisa antes.
+   *
+   * Tres niveles de evidencia, de más a menos fiable:
+   * 1. Mismo `numeroFactura` + mismo `cifNif` — dos facturas reales del
+   *    mismo emisor nunca comparten número, así que esto es casi seguro.
+   * 2. Sin número legible: mismo `cifNif` + misma fecha + mismo importe.
+   * 3. Sin ni siquiera NIF (documento antiguo/borroso): mismo `proveedor`
+   *    (texto) + misma fecha + mismo importe — más débil, pero seguir sin
+   *    comprobar nada aquí sería peor.
+   * `excluirId` para no comparar una factura consigo misma al editarla.
+   */
+  async buscarFacturaDuplicada(
+    params: { numeroFactura: string; cifNif: string; proveedor: string; fecha: string; importe: number; excluirId?: string },
+    usuarioId: string
+  ): Promise<Record<string, unknown> | null> {
+    await conectar();
+    const condiciones: Record<string, unknown>[] = [];
+    if (params.numeroFactura && params.cifNif) {
+      condiciones.push({ numeroFactura: params.numeroFactura, cifNif: params.cifNif });
+    }
+    if (params.cifNif && params.fecha && params.importe) {
+      condiciones.push({ cifNif: params.cifNif, fecha: params.fecha, importe: params.importe });
+    }
+    if (!params.cifNif && params.proveedor && params.fecha && params.importe) {
+      condiciones.push({ proveedor: params.proveedor, fecha: params.fecha, importe: params.importe });
+    }
+    if (!condiciones.length) return null;
+    const filtro: Record<string, unknown> = { usuarioId, $or: condiciones };
+    if (params.excluirId) filtro.id = { $ne: params.excluirId };
+    const doc = await FacturaModel.findOne(filtro).lean().exec();
+    return doc ? this.limpiar(doc as Record<string, unknown>) : null;
+  }
+
+  /**
    * Resuelve a qué proyecto pertenece de verdad una factura, para la
    * sincronización de abajo (incremento "Cliente ≠ Proyecto", 20/08/2026):
    * - Si la factura ya trae `proyectoId` explícito, se usa tal cual.
