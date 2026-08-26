@@ -15,6 +15,20 @@ const COLOR_PRIORIDAD_TAREA: Record<PrioridadNota, string> = { alta: 'var(--rojo
 const COLOR_PRIORIDAD_TAREA_BG: Record<PrioridadNota, string> = { alta: 'var(--rojo-bg)', media: 'var(--ocre-bg)', baja: 'var(--topo-tinte)' };
 const ETIQUETA_PRIORIDAD_TAREA: Record<PrioridadNota, string> = { alta: 'Alta', media: 'Media', baja: 'Baja' };
 
+/**
+ * Orden del banner "Cosas por hacer": abiertas primero (por prioridad, ver
+ * `ordenarPorDefecto`), hechas al final (más recientes primero) — no se
+ * quitan de la lista al marcarlas, para poder "despuntarlas" (petición
+ * explícita del usuario, 26/08/2026): solo desaparecen de verdad al volver
+ * a cargar el panel, momento en el que el servidor ya no las devuelve
+ * (`obtenerNotas` se sigue filtrando a `abierta` ahí).
+ */
+function ordenarTareasBanner(lista: NotaMC[]): NotaMC[] {
+  const abiertas = ordenarPorDefecto(lista.filter((n) => n.estado === 'abierta'));
+  const hechas = lista.filter((n) => n.estado === 'hecha').sort((a, b) => b.actualizado.localeCompare(a.actualizado));
+  return [...abiertas, ...hechas];
+}
+
 /** Props del panel principal (dashboard). */
 export type DashboardProps = {
   /** Nombre para el saludo. */
@@ -93,7 +107,7 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
   const [cargandoTareas, setCargandoTareas] = useState(true);
   useEffect(() => {
     obtenerNotas()
-      .then((todas) => setTareas(ordenarPorDefecto(todas.filter((n) => n.estado === 'abierta'))))
+      .then((todas) => setTareas(ordenarTareasBanner(todas.filter((n) => n.estado === 'abierta'))))
       .catch(() => setTareas([]))
       .finally(() => setCargandoTareas(false));
   }, []);
@@ -113,7 +127,7 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
     };
     try {
       const guardada = await guardarNota(nueva);
-      setTareas((prev) => ordenarPorDefecto([guardada, ...prev]));
+      setTareas((prev) => ordenarTareasBanner([guardada, ...prev]));
       setNuevaTarea('');
       setNuevaTareaPrioridad('media');
       setAgregandoTarea(false);
@@ -124,12 +138,15 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
     }
   };
 
-  const marcarTareaHecha = async (nota: NotaMC) => {
-    setTareas((prev) => prev.filter((n) => n.id !== nota.id));
+  /** Marca una tarea como hecha o la "despunta" de vuelta a pendiente (petición explícita del usuario, 26/08/2026) — no se quita de la lista, solo cambia de aspecto (ver `ordenarTareasBanner`). */
+  const alternarTarea = async (nota: NotaMC) => {
+    const actualizada: NotaMC = { ...nota, estado: nota.estado === 'abierta' ? 'hecha' : 'abierta', actualizado: new Date().toISOString() };
+    setTareas((prev) => ordenarTareasBanner(prev.map((n) => (n.id === nota.id ? actualizada : n))));
     try {
-      await guardarNota({ ...nota, estado: 'hecha', actualizado: new Date().toISOString() });
+      await guardarNota(actualizada);
     } catch {
-      // Si falla, reaparecerá en la próxima carga del panel.
+      // El guardado falló: revertimos el cambio en pantalla.
+      setTareas((prev) => ordenarTareasBanner(prev.map((n) => (n.id === nota.id ? nota : n))));
     }
   };
 
@@ -251,48 +268,65 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
           <p className={styles.dashboardVacio}>Cargando…</p>
         ) : tareas.length === 0 ? (
           <p className={styles.dashboardVacio}>Todo al día — no tienes tareas pendientes.</p>
-        ) : (
-          <>
-            {tareas.slice(0, 5).map((t) => (
-              <div key={t.id} className={styles.actividadItem}>
+        ) : (() => {
+          const abiertas = tareas.filter((t) => t.estado === 'abierta');
+          const hechas = tareas.filter((t) => t.estado === 'hecha');
+          // Las abiertas se recortan a 5 para que el banner siga siendo un
+          // vistazo rápido; las hechas de esta sesión se muestran SIEMPRE
+          // (nunca son muchas: solo lo que se ha despuntado sin recargar la
+          // página) para poder deshacer el check en el momento.
+          const visibles = [...abiertas.slice(0, 5), ...hechas];
+          const restantes = abiertas.length - 5;
+          return (
+            <>
+              {visibles.map((t) => {
+                const hecha = t.estado === 'hecha';
+                return (
+                  <div key={t.id} className={styles.actividadItem} style={hecha ? { opacity: 0.6 } : undefined}>
+                    <button
+                      type="button"
+                      onClick={() => alternarTarea(t)}
+                      title={hecha ? 'Marcar como pendiente' : 'Marcar como hecha'}
+                      aria-label={hecha ? 'Marcar como pendiente' : 'Marcar como hecha'}
+                      style={{
+                        width: 22, height: 22, borderRadius: '50%', flexShrink: 0, cursor: 'pointer', padding: 0,
+                        border: `2px solid ${COLOR_PRIORIDAD_TAREA[t.prioridad]}`,
+                        background: hecha ? COLOR_PRIORIDAD_TAREA[t.prioridad] : 'none',
+                        color: hecha ? 'var(--blanco)' : COLOR_PRIORIDAD_TAREA[t.prioridad],
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                      onMouseEnter={(e) => { if (!hecha) { e.currentTarget.style.background = COLOR_PRIORIDAD_TAREA[t.prioridad]; e.currentTarget.style.color = 'var(--blanco)'; } }}
+                      onMouseLeave={(e) => { if (!hecha) { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = COLOR_PRIORIDAD_TAREA[t.prioridad]; } }}
+                    >
+                      {hecha && (
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                      )}
+                    </button>
+                    <div className={styles.actividadCuerpo} style={{ cursor: 'pointer' }} onClick={onIrANotas}>
+                      <span className={styles.actividadTitulo} style={hecha ? { textDecoration: 'line-through' } : undefined}>{t.titulo || t.contenido}</span>
+                      {t.titulo && <span className={styles.actividadSub} style={hecha ? { textDecoration: 'line-through' } : undefined}>{t.contenido}</span>}
+                    </div>
+                    <span style={{
+                      fontSize: '0.65rem', fontWeight: 700, borderRadius: 'var(--radio-full, 999px)', padding: '0.15rem 0.55rem', flexShrink: 0,
+                      color: COLOR_PRIORIDAD_TAREA[t.prioridad], background: COLOR_PRIORIDAD_TAREA_BG[t.prioridad],
+                    }}>
+                      {ETIQUETA_PRIORIDAD_TAREA[t.prioridad]}
+                    </span>
+                  </div>
+                );
+              })}
+              {restantes > 0 && (
                 <button
                   type="button"
-                  onClick={() => marcarTareaHecha(t)}
-                  title="Marcar como hecha"
-                  aria-label="Marcar como hecha"
-                  style={{
-                    width: 22, height: 22, borderRadius: '50%', flexShrink: 0, cursor: 'pointer', padding: 0,
-                    border: `2px solid ${COLOR_PRIORIDAD_TAREA[t.prioridad]}`, background: 'none', color: COLOR_PRIORIDAD_TAREA[t.prioridad],
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = COLOR_PRIORIDAD_TAREA[t.prioridad]; e.currentTarget.style.color = 'var(--blanco)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = COLOR_PRIORIDAD_TAREA[t.prioridad]; }}
+                  onClick={onIrANotas}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--topo)', fontSize: '0.78rem', fontWeight: 600, padding: '0.6rem 0 0' }}
                 >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                  Ver {restantes} más en Notas →
                 </button>
-                <div className={styles.actividadCuerpo} style={{ cursor: 'pointer' }} onClick={onIrANotas}>
-                  <span className={styles.actividadTitulo}>{t.titulo || t.contenido}</span>
-                  {t.titulo && <span className={styles.actividadSub}>{t.contenido}</span>}
-                </div>
-                <span style={{
-                  fontSize: '0.65rem', fontWeight: 700, borderRadius: 'var(--radio-full, 999px)', padding: '0.15rem 0.55rem', flexShrink: 0,
-                  color: COLOR_PRIORIDAD_TAREA[t.prioridad], background: COLOR_PRIORIDAD_TAREA_BG[t.prioridad],
-                }}>
-                  {ETIQUETA_PRIORIDAD_TAREA[t.prioridad]}
-                </span>
-              </div>
-            ))}
-            {tareas.length > 5 && (
-              <button
-                type="button"
-                onClick={onIrANotas}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--topo)', fontSize: '0.78rem', fontWeight: 600, padding: '0.6rem 0 0' }}
-              >
-                Ver {tareas.length - 5} más en Notas →
-              </button>
-            )}
-          </>
-        )}
+              )}
+            </>
+          );
+        })()}
       </div>
 
       <div className={styles.dashboardCols}>
