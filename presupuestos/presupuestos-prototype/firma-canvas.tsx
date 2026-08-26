@@ -9,6 +9,10 @@ export type FirmaCanvasProps = {
   onCancelar: () => void;
   /** true mientras se envía la firma al servidor (deshabilita los botones). */
   enviando?: boolean;
+  /** Texto de ayuda encima del lienzo — por defecto, el de aceptar un presupuesto (Portal del cliente). */
+  textoIntro?: string;
+  /** Texto del botón de confirmar — por defecto, el de aceptar un presupuesto (Portal del cliente). */
+  textoConfirmar?: string;
 };
 
 /**
@@ -16,8 +20,17 @@ export type FirmaCanvasProps = {
  * (funciona igual con dedo, lápiz óptico o ratón, sin depender de ninguna
  * librería). Deliberadamente sin más funciones (deshacer trazo a trazo,
  * grosor variable): es una firma de aceptación, no un editor de dibujo.
+ *
+ * Reutilizado también para que el propio carpintero dibuje y guarde SU
+ * firma en Ajustes de empresa (26/08/2026, petición explícita del
+ * usuario: la firma de la empresa debe salir sola en cada presupuesto,
+ * igual que el logo) — de ahí `textoIntro`/`textoConfirmar` personalizables.
  */
-export function FirmaCanvas({ onFirmar, onCancelar, enviando }: FirmaCanvasProps) {
+export function FirmaCanvas({
+  onFirmar, onCancelar, enviando,
+  textoIntro = 'Firma con el dedo o el ratón para aceptar el presupuesto.',
+  textoConfirmar = 'Firmar y aceptar',
+}: FirmaCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const dibujandoRef = useRef(false);
   const [haFirmado, setHaFirmado] = useState(false);
@@ -101,7 +114,7 @@ export function FirmaCanvas({ onFirmar, onCancelar, enviando }: FirmaCanvasProps
   return (
     <div>
       <p style={{ margin: '0 0 0.6rem', fontSize: '0.85rem', color: 'var(--topo-claro)' }}>
-        Firma con el dedo o el ratón para aceptar el presupuesto.
+        {textoIntro}
       </p>
       <canvas
         ref={canvasRef}
@@ -129,7 +142,7 @@ export function FirmaCanvas({ onFirmar, onCancelar, enviando }: FirmaCanvasProps
           Cancelar
         </button>
         <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={confirmar} disabled={!haFirmado || enviando} style={{ flex: 2 }}>
-          {enviando ? 'Enviando…' : 'Firmar y aceptar'}
+          {enviando ? 'Enviando…' : textoConfirmar}
         </button>
       </div>
     </div>

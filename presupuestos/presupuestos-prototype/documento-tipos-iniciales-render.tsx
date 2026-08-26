@@ -189,6 +189,90 @@ registrarTipoRender({
   Render: RenderLogotipo, PanelPropiedades: PanelLogotipo,
 });
 
+// ── Firma de la empresa ──────────────────────────────────────────────────────────
+// Petición explícita del usuario, 26/08/2026: dibuja su firma UNA VEZ en
+// Ajustes de empresa y quiere que salga sola en cada presupuesto, igual
+// que el logo. Mismo patrón que "logotipo" (vinculado/fijo); a diferencia
+// de él, el modo 'vinculado' no ofrece cambiarla desde aquí (se dibuja
+// con `FirmaCanvas`, no se sube un archivo) — solo desde Ajustes de empresa.
+
+function RenderFirmaEmpresa({ elemento }: RenderElementoProps) {
+  const url = elemento.contenido.url as string;
+  return url
+    ? <img src={url} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />
+    : <div className={editorStyles.marcadorVacio}>Firma</div>;
+}
+
+function PanelFirmaEmpresa({ elemento, onCambiarContenido, onSustituirArchivo }: PanelPropiedadesProps) {
+  const { inputRef, abrir, onChange } = useSustituirArchivo(onSustituirArchivo);
+  const modo = (elemento.contenido.modo as string) ?? 'vinculado';
+  return (
+    <div className={editorStyles.panelSeccion}>
+      <input ref={inputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={onChange} />
+      <label className={editorStyles.panelCampo}>
+        Origen
+        <select value={modo} onChange={(e) => onCambiarContenido({ modo: e.target.value })}>
+          <option value="vinculado">Vinculada a la firma de la empresa</option>
+          <option value="fijo">Fija para este documento</option>
+        </select>
+      </label>
+      {modo === 'vinculado' && (
+        <p style={{ fontSize: '0.75rem', color: 'var(--topo-claro)', margin: 0 }}>
+          Se rellena sola con la firma guardada en Ajustes de empresa. Para cambiarla, ve a Ajustes de empresa.
+        </p>
+      )}
+      {modo === 'fijo' && <button type="button" className={editorStyles.btnPanel} onClick={abrir}>Sustituir imagen</button>}
+    </div>
+  );
+}
+
+registrarTipoRender({
+  tipo: 'firma_empresa', etiqueta: 'Firma de la empresa', insertableDesdeBarra: true, editableEnLienzo: false,
+  tamanoInicial: { ancho: 160, alto: 70 },
+  crearContenidoInicial: () => ({ modo: 'vinculado', url: '' }),
+  crearEstiloInicial: () => ({}),
+  crearPropiedadesIniciales: () => ({}),
+  Render: RenderFirmaEmpresa, PanelPropiedades: PanelFirmaEmpresa,
+});
+
+// ── Firma del cliente ────────────────────────────────────────────────────────────
+// Petición explícita del usuario, 26/08/2026: cuando el cliente acepta y
+// firma desde el Portal, su firma real (y la fecha exacta de aceptación —
+// puede ser días después de enviarse el presupuesto) debe aparecer EN EL
+// SITIO del documento donde el carpintero puso este elemento, no solo en
+// el aviso aparte de debajo. Siempre vinculado — no tiene "fijo".
+
+function RenderFirmaCliente({ elemento }: RenderElementoProps) {
+  const url = (elemento.contenido.url as string) || '';
+  const fecha = (elemento.contenido.fecha as string) || '';
+  if (!url) return <div className={editorStyles.marcadorVacio}>Firma del cliente</div>;
+  return (
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
+      <img src={url} alt="Firma del cliente" draggable={false} style={{ maxWidth: '100%', flex: 1, minHeight: 0, objectFit: 'contain', pointerEvents: 'none' }} />
+      {fecha && <span style={{ fontSize: '0.68rem', color: '#8a7f6f', fontWeight: 600, flexShrink: 0 }}>{fecha}</span>}
+    </div>
+  );
+}
+
+function PanelFirmaCliente() {
+  return (
+    <div className={editorStyles.panelSeccion}>
+      <p style={{ fontSize: '0.78rem', color: 'var(--topo-claro)', margin: 0 }}>
+        Se rellena sola con la firma real del cliente y la fecha en que acepte el presupuesto desde el Portal. Mientras tanto se ve vacío.
+      </p>
+    </div>
+  );
+}
+
+registrarTipoRender({
+  tipo: 'firma_cliente', etiqueta: 'Firma del cliente', insertableDesdeBarra: true, editableEnLienzo: false,
+  tamanoInicial: { ancho: 200, alto: 90 },
+  crearContenidoInicial: () => ({ url: '', fecha: '' }),
+  crearEstiloInicial: () => ({}),
+  crearPropiedadesIniciales: () => ({}),
+  Render: RenderFirmaCliente, PanelPropiedades: PanelFirmaCliente,
+});
+
 // ── Línea ────────────────────────────────────────────────────────────────────────
 
 type EstiloLinea = { color?: string; grosor?: number; patron?: string };

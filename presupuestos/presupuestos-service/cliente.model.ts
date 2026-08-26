@@ -258,6 +258,14 @@ const EmpresaSchema = new Schema({
    * muestra solo el botón.
    */
   imagenResena: { type: String, default: '' },
+  /**
+   * Firma de la empresa, en base64 (mismo patrón que `logo`) — dibujada una
+   * vez en Ajustes de empresa (petición explícita del usuario, 26/08/2026:
+   * "yo lo pongo ahí, firmo, y en automático se refleja" en cada
+   * presupuesto, igual que el logo). El elemento `firma_empresa` del Motor
+   * Documental en modo 'vinculado' la lee de aquí en cada render.
+   */
+  firmaEmpresa: { type: String, default: '' },
 });
 
 /**

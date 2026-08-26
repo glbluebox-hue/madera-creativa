@@ -924,6 +924,8 @@ export const esquemaEmpresa = z.object({
   ),
   /** Cartel de agradecimiento en base64, mismo patrón sin límite que `logo`. */
   imagenResena: z.string().optional().default(''),
+  /** Firma de la empresa en base64, mismo patrón que `logo` — ver `firmaEmpresa` en `cliente.model.ts`. */
+  firmaEmpresa: z.string().optional().default(''),
 });
 
 // ── Notificaciones push ───────────────────────────────────────────────────────

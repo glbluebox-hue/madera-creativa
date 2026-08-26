@@ -81,7 +81,7 @@ export type PresupuestoPublico = {
   precioTotal: number;
   estado: 'borrador' | 'enviado' | 'aceptado' | 'rechazado';
   clienteNombre: string;
-  empresa: { nombre: string; eslogan: string; logo: string; telefono: string; email: string };
+  empresa: { nombre: string; eslogan: string; logo: string; firma: string; telefono: string; email: string };
   expiraEn: string;
   firmaClienteUrl: string;
   firmaClienteFecha: string;

@@ -192,6 +192,8 @@ export type EmpresaDoc = {
   enlaceResenaGoogle: string;
   /** Cartel de agradecimiento en base64 para la página de solicitud de reseña — opcional. */
   imagenResena: string;
+  /** Firma dibujada del titular (PNG base64), reutilizada en el elemento "Firma de la empresa" de cada presupuesto — vacía hasta que se dibuja una vez en Ajustes de empresa. */
+  firmaEmpresa: string;
   /** Minutos de inactividad antes de cerrar sesión sola — `null` = nunca. */
   tiempoInactividadMin: number | null;
 };
@@ -656,6 +658,7 @@ export class PresupuestosService {
       logoTamano: (doc as any).logoTamano || 187,
       enlaceResenaGoogle: (doc as any).enlaceResenaGoogle || '',
       imagenResena: (doc as any).imagenResena || '',
+      firmaEmpresa: (doc as any).firmaEmpresa || '',
       tiempoInactividadMin: (doc as any).tiempoInactividadMin ?? null,
     };
   }
@@ -689,6 +692,7 @@ export class PresupuestosService {
       logoTamano: (doc as any).logoTamano || 187,
       enlaceResenaGoogle: (doc as any).enlaceResenaGoogle || '',
       imagenResena: (doc as any).imagenResena || '',
+      firmaEmpresa: (doc as any).firmaEmpresa || '',
       tiempoInactividadMin: (doc as any).tiempoInactividadMin ?? null,
     };
   }
@@ -1812,6 +1816,7 @@ export class PresupuestosService {
         nombre: empresa?.nombre || '',
         eslogan: empresa?.eslogan || '',
         logo: empresa?.logo || '',
+        firma: empresa?.firmaEmpresa || '',
         telefono: empresa?.telefono || '',
         email: empresa?.email || '',
       },

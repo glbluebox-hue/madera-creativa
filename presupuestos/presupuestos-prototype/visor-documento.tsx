@@ -4,7 +4,7 @@ import type { DocumentoMC, ElementoMC, ZonaMC, ComponenteMC } from './documento-
 import { obtenerTipoRender } from './documento-registro-tipos-render.js';
 import './documento-tipos-iniciales-render.js'; // registro de render por efecto secundario — mismo patrón que editor-documento.tsx.
 import './documento-tipos-avanzados-render.js';
-import { resolverZonaEfectiva, elementoVisibleEn, resolverElementoPresentacion } from './documento-render-compartido.js';
+import { resolverZonaEfectiva, elementoVisibleEn, resolverElementoPresentacion, type ContextoResolucionMC } from './documento-render-compartido.js';
 import editorStyles from './editor-documento.module.css';
 
 /**
@@ -23,11 +23,16 @@ export type VisorDocumentoProps = {
   logoEmpresa?: string;
   /** Precio del presupuesto para el tipo "precioDestacado" en modo 'vinculado' (`presupuesto.precioTotal`). */
   precioVinculado?: number;
+  /** Firma de la empresa para el tipo "firma_empresa" en modo 'vinculado' (`presupuesto.empresa.firma`). */
+  firmaEmpresa?: string;
+  /** Firma real del cliente (y fecha de aceptación) para el tipo "firma_cliente" — vacío hasta que acepta desde el Portal. */
+  firmaClienteUrl?: string;
+  firmaClienteFecha?: string;
   /** Componentes reutilizables referenciados por el documento (tipo "instanciaComponente"), ya resueltos por el servidor (`presupuesto.componentesResueltos`) — el Portal no tiene sesión con la que pedirlos por su cuenta. */
   componentes?: ComponenteMC[];
 };
 
-function renderElementoVisor(documento: DocumentoMC, elemento: ElementoMC, contexto: { logoEmpresa?: string; precioVinculado?: number }, resolverComponente: (id: string) => ComponenteMC | undefined) {
+function renderElementoVisor(documento: DocumentoMC, elemento: ElementoMC, contexto: ContextoResolucionMC, resolverComponente: (id: string) => ComponenteMC | undefined) {
   if (!elementoVisibleEn(elemento, true)) return null; // true = "salida" (portal), mismo criterio que exportar/imprimir en el editor.
   const definicion = obtenerTipoRender(elemento.tipo);
   const elementoPresentacion = resolverElementoPresentacion(documento, elemento, contexto);
@@ -45,7 +50,7 @@ function renderElementoVisor(documento: DocumentoMC, elemento: ElementoMC, conte
   );
 }
 
-function renderZonaVisor(documento: DocumentoMC, zona: ZonaMC | null, ancho: number, posicion: 'arriba' | 'abajo', contexto: { logoEmpresa?: string; precioVinculado?: number }, resolverComponente: (id: string) => ComponenteMC | undefined) {
+function renderZonaVisor(documento: DocumentoMC, zona: ZonaMC | null, ancho: number, posicion: 'arriba' | 'abajo', contexto: ContextoResolucionMC, resolverComponente: (id: string) => ComponenteMC | undefined) {
   if (!zona) return null;
   return (
     <div style={{ position: 'absolute', left: 0, [posicion === 'arriba' ? 'top' : 'bottom']: 0, width: ancho, height: zona.altura }}>
@@ -54,8 +59,8 @@ function renderZonaVisor(documento: DocumentoMC, zona: ZonaMC | null, ancho: num
   );
 }
 
-export function VisorDocumento({ documento, logoEmpresa, precioVinculado, componentes }: VisorDocumentoProps) {
-  const contexto = { logoEmpresa, precioVinculado };
+export function VisorDocumento({ documento, logoEmpresa, precioVinculado, firmaEmpresa, firmaClienteUrl, firmaClienteFecha, componentes }: VisorDocumentoProps) {
+  const contexto: ContextoResolucionMC = { logoEmpresa, precioVinculado, firmaEmpresa, firmaClienteUrl, firmaClienteFecha };
   // Ya resueltos por el servidor (`obtenerPresupuestoPublico`) — nunca se piden aparte desde aquí, el Portal no tiene sesión.
   const mapaComponentes = new Map((componentes ?? []).map((c) => [c.id, c]));
   const resolverComponente = (id: string) => mapaComponentes.get(id);

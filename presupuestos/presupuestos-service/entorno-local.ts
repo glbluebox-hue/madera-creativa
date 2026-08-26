@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { setServers as establecerServidoresDns } from 'node:dns';
 import { config as cargarDotenv } from 'dotenv';
 import { logger } from './logger.service.js';
 
@@ -80,5 +81,30 @@ export function cargarVariablesEntornoLocal(): void {
     }
   } catch (err) {
     logger.warn({ err }, '[entorno-local] Fallo al buscar/cargar el .env local — se continúa sin él.');
+  }
+
+  usarResolutoresDnsPublicos();
+}
+
+/**
+ * Fuerza a Node a resolver DNS contra Cloudflare/Google en vez del
+ * resolutor que traiga configurado el sistema — únicamente en desarrollo
+ * local (mismo criterio que el resto de este archivo).
+ *
+ * Bug real encontrado el 24/08/2026: el router de la red de desarrollo
+ * (192.168.1.1) responde con normalidad a consultas A/AAAA, pero rechaza
+ * (`ECONNREFUSED`) la consulta SRV que el driver de Mongo necesita para
+ * `mongodb+srv://...` — confirmado comparando `nslookup` (que sí resuelve,
+ * porque usa el servicio de resolución de Windows) contra el resolutor
+ * propio de Node (`dns.resolveSrv`, que consulta al servidor configurado en
+ * el adaptador de red directamente y con ese servidor sí falla). Cambiar el
+ * DNS del sistema operativo es un cambio compartido de máquina — esto en
+ * cambio solo afecta a este proceso de Node, y solo fuera de producción.
+ */
+function usarResolutoresDnsPublicos(): void {
+  try {
+    establecerServidoresDns(['1.1.1.1', '8.8.8.8']);
+  } catch (err) {
+    logger.warn({ err }, '[entorno-local] No se pudieron fijar resolutores DNS públicos — se continúa con los del sistema.');
   }
 }

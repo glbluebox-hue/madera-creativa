@@ -1,6 +1,6 @@
 import type { DocumentoMC, ElementoMC, ZonaMC } from './documento-modelo.js';
 import { resolverEstiloEfectivo } from './documento-comandos.js';
-import { formatoEuro } from './calculos.js';
+import { formatoEuro, formatoFecha } from './calculos.js';
 
 /**
  * Lógica de resolución de un `DocumentoMC` para PINTARLO (no para editarlo)
@@ -17,6 +17,17 @@ export type ContextoResolucionMC = {
   logoEmpresa?: string;
   /** Precio vinculado del contenedor (presupuesto) — para el tipo "precioDestacado" en modo 'vinculado'. */
   precioVinculado?: number;
+  /** Firma de la empresa (Ajustes de empresa) — para el tipo "firma_empresa" en modo 'vinculado'. `undefined`/vacío si no hay. */
+  firmaEmpresa?: string;
+  /**
+   * Firma real del cliente al aceptar desde el Portal — para el tipo
+   * "firma_cliente". `undefined`/vacío mientras no se ha aceptado (el
+   * elemento se ve vacío hasta entonces). `firmaClienteFecha` es la fecha
+   * ISO de la aceptación, nunca la de creación/envío del presupuesto —
+   * pueden ser días distintas (petición explícita del usuario, 26/08/2026).
+   */
+  firmaClienteUrl?: string;
+  firmaClienteFecha?: string;
 };
 
 /**
@@ -70,6 +81,17 @@ export function resolverElementoPresentacion(documento: DocumentoMC, elemento: E
       ? (contexto.precioVinculado !== undefined ? formatoEuro(contexto.precioVinculado) : '')
       : ((contenido.valor as string) ?? '');
     return { ...base, contenido: { ...contenido, valor } };
+  }
+  if (base.tipo === 'firma_empresa') {
+    const contenido = base.contenido as Record<string, unknown>;
+    const modo = (contenido.modo as string) ?? 'vinculado';
+    const url = modo === 'vinculado' ? (contexto.firmaEmpresa ?? '') : ((contenido.url as string) ?? '');
+    return { ...base, contenido: { ...contenido, url } };
+  }
+  if (base.tipo === 'firma_cliente') {
+    const url = contexto.firmaClienteUrl ?? '';
+    const fecha = url && contexto.firmaClienteFecha ? `Aceptado el ${formatoFecha(contexto.firmaClienteFecha)}` : '';
+    return { ...base, contenido: { url, fecha } };
   }
   return base;
 }

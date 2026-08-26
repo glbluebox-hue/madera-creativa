@@ -4,6 +4,7 @@ import { leerArchivoComoBase64 } from './archivos.js';
 import { comprimirImagen } from './procesamiento-imagenes.js';
 import { TEMA_POR_DEFECTO } from './documento-modelo.js';
 import type { TemaMC } from './documento-modelo.js';
+import { FirmaCanvas } from './firma-canvas.js';
 import styles from './styles.module.css';
 
 /**
@@ -45,6 +46,8 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
   const [logo, setLogo] = useState<string | null>(empresa.logo);
   const [enlaceResenaGoogle, setEnlaceResenaGoogle] = useState(empresa.enlaceResenaGoogle);
   const [imagenResena, setImagenResena] = useState<string | null>(empresa.imagenResena);
+  const [firmaEmpresa, setFirmaEmpresa] = useState<string | null>(empresa.firmaEmpresa);
+  const [dibujandoFirma, setDibujandoFirma] = useState(false);
   const [nifCif, setNifCif] = useState(empresa.nifCif);
   const [telefono, setTelefono] = useState(empresa.telefono);
   const [email, setEmail] = useState(empresa.email);
@@ -96,6 +99,7 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
       logoTamano,
       enlaceResenaGoogle: enlaceResenaGoogle.trim(),
       imagenResena,
+      firmaEmpresa,
       tiempoInactividadMin,
     });
     setGuardando(false);
@@ -293,6 +297,41 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
                 <p className={styles.logoAyuda}>Se muestra antes del botón de Google. Sin cartel, la página va directa al botón.</p>
               </div>
             </div>
+          </div>
+
+          <div className={`${styles.campo} ${styles.full}`}>
+            <label className={styles.campoLabel}>Firma de la empresa</label>
+            {dibujandoFirma ? (
+              <FirmaCanvas
+                textoIntro="Dibuja tu firma con el dedo o el ratón. Se usará en todos los presupuestos que incluyan el elemento 'Firma de la empresa'."
+                textoConfirmar="Guardar firma"
+                onFirmar={(dataUrl) => { setFirmaEmpresa(dataUrl); setDibujandoFirma(false); }}
+                onCancelar={() => setDibujandoFirma(false)}
+              />
+            ) : (
+              <div className={styles.logoZona} style={{ marginBottom: 0 }}>
+                <div className={styles.logoPreview}>
+                  {firmaEmpresa ? (
+                    <img src={firmaEmpresa} alt="Firma" className={styles.logoPreviewImg} />
+                  ) : (
+                    <span className={styles.logoPlaceholder} style={{ display: 'flex', color: 'var(--topo-muy-claro)' }}>
+                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M3 17c2-4 4-6 6-6s2 4 4 4 3-6 5-6 2 4 3 4" /></svg>
+                    </span>
+                  )}
+                </div>
+                <div className={styles.logoAcciones}>
+                  <button type="button" className={`${styles.btn} ${styles.btnPrimario}`} onClick={() => setDibujandoFirma(true)}>
+                    {firmaEmpresa ? 'Cambiar firma' : 'Dibujar firma'}
+                  </button>
+                  {firmaEmpresa && (
+                    <button type="button" className={`${styles.btn} ${styles.btnSecundario}`} onClick={() => setFirmaEmpresa(null)}>
+                      Quitar firma
+                    </button>
+                  )}
+                  <p className={styles.logoAyuda}>Se dibuja una vez aquí y aparece sola en el elemento "Firma de la empresa" de cada presupuesto.</p>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className={`${styles.campo} ${styles.full}`}>

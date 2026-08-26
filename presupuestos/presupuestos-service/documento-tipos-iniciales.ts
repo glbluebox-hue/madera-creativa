@@ -76,6 +76,44 @@ export const definicionesTiposIniciales: RegistroTipoElemento[] = [
     establecerRecurso: establecerRecursoUrl,
   },
   {
+    tipo: 'firma_empresa',
+    descripcion: 'Firma de la empresa — vinculada (se actualiza sola desde la firma guardada en Ajustes de empresa) o fija (congelada para este documento).',
+    contieneRecurso: true,
+    esquemaContenido: z.object({
+      modo: z.enum(['vinculado', 'fijo']).default('vinculado'),
+      url: z.string(),
+      claveAlmacenamiento: z.string().optional(),
+      recursoId: z.string().nullable().optional().default(null),
+    }),
+    esquemaPropiedadesEspecificas: z.object({}),
+    esquemaEstilo: z.object({}),
+    obtenerRecurso: obtenerRecursoUrl,
+    establecerRecurso: establecerRecursoUrl,
+  },
+  {
+    /**
+     * Petición explícita del usuario, 26/08/2026: cuando el cliente firma
+     * en el Portal, su firma real debe aparecer EN EL SITIO del documento
+     * donde el carpintero puso este elemento (p. ej. bajo "Firma
+     * cliente"), no solo en un aviso aparte debajo de todo el documento.
+     * Siempre vinculado — a diferencia de logotipo/firma_empresa, no tiene
+     * sentido un modo "fijo" para la firma de un cliente concreto. `fecha`
+     * viaja junto a la firma a propósito (petición explícita: el
+     * presupuesto puede enviarse un día y aceptarse días después, así que
+     * la fecha de aceptación tiene que verse pegada a la firma, no solo en
+     * un sitio aparte).
+     */
+    tipo: 'firma_cliente',
+    descripcion: 'Firma del cliente al aceptar desde el Portal — vacío hasta que acepta, se rellena solo con su firma real y la fecha de aceptación.',
+    contieneRecurso: false,
+    esquemaContenido: z.object({
+      url: z.string().optional().default(''),
+      fecha: z.string().optional().default(''),
+    }),
+    esquemaPropiedadesEspecificas: z.object({}),
+    esquemaEstilo: z.object({}),
+  },
+  {
     tipo: 'linea',
     descripcion: 'Línea o quiebro de varios puntos (ej. líneas de firma, separadores).',
     contieneRecurso: false,

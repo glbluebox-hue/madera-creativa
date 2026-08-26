@@ -1139,6 +1139,7 @@ export async function obtenerEmpresa(): Promise<Empresa> {
     logoTamano: data.logoTamano || 187,
     enlaceResenaGoogle: data.enlaceResenaGoogle || '',
     imagenResena: data.imagenResena || null,
+    firmaEmpresa: data.firmaEmpresa || null,
     tiempoInactividadMin: data.tiempoInactividadMin ?? null,
   };
 }
@@ -1152,7 +1153,7 @@ export async function guardarEmpresa(empresa: Partial<Empresa>): Promise<Empresa
   const res = await fetchConAuth('/empresa', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...empresa, logo: empresa.logo ?? '', imagenResena: empresa.imagenResena ?? '' }),
+    body: JSON.stringify({ ...empresa, logo: empresa.logo ?? '', imagenResena: empresa.imagenResena ?? '', firmaEmpresa: empresa.firmaEmpresa ?? '' }),
   });
   await comprobarRespuesta(res, 'No se pudo guardar la empresa');
   const data = await res.json();
@@ -1173,6 +1174,7 @@ export async function guardarEmpresa(empresa: Partial<Empresa>): Promise<Empresa
     logoTamano: data.logoTamano || 187,
     enlaceResenaGoogle: data.enlaceResenaGoogle || '',
     imagenResena: data.imagenResena || null,
+    firmaEmpresa: data.firmaEmpresa || null,
     tiempoInactividadMin: data.tiempoInactividadMin ?? null,
   };
 }

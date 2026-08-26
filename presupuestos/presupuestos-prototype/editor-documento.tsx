@@ -74,6 +74,14 @@ export type EditorDocumentoProps = {
    */
   precioVinculado?: number;
   /**
+   * Firma real del cliente (y fecha de aceptación) para el tipo "firma
+   * cliente" del elemento — solo tiene valor si se reabre un presupuesto
+   * YA aceptado (`abrir-documento.tsx`); mientras se edita antes de
+   * enviarlo, el elemento se ve vacío, como es de esperar.
+   */
+  firmaClienteUrl?: string;
+  firmaClienteFecha?: string;
+  /**
    * `contenedor` es en realidad una `PlantillaMC` que se está editando
    * directamente (abierta desde `PlantillasVista`), no un presupuesto. Sin
    * esto, "Guardar como plantilla" no tenía forma de saberlo y creaba
@@ -153,7 +161,7 @@ function documentoVacio(): DocumentoMC {
  * incremento posterior — con la selección actual, redimensionar/rotar
  * solo actúa cuando hay un único elemento seleccionado.
  */
-export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa, precioVinculado, esPlantilla, onGuardar, onVolver, onCambiarLogoEmpresa, clientesDisponibles, onCambiarCliente }: EditorDocumentoProps) {
+export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa, precioVinculado, firmaClienteUrl, firmaClienteFecha, esPlantilla, onGuardar, onVolver, onCambiarLogoEmpresa, clientesDisponibles, onCambiarCliente }: EditorDocumentoProps) {
   const documentoInicial = useMemo<DocumentoMC>(() => {
     const contenido = contenedor.contenidoDocumento as unknown as DocumentoMC;
     return contenido && contenido.paginas && contenido.paginas.length > 0 ? contenido : documentoVacio();
@@ -983,7 +991,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
     // la arquitectura) se resuelven en un ElementoMC "de presentación" — nunca
     // se persiste el valor resuelto, siempre se recalcula a partir de la
     // referencia (`estiloNombradoId` / `contenido.modo:'vinculado'`).
-    const elementoPresentacion = resolverElementoPresentacion(documento, elemento, { logoEmpresa: empresa.logo ?? undefined, precioVinculado });
+    const elementoPresentacion = resolverElementoPresentacion(documento, elemento, { logoEmpresa: empresa.logo ?? undefined, precioVinculado, firmaEmpresa: empresa.firmaEmpresa || undefined, firmaClienteUrl, firmaClienteFecha });
 
     return (
       <div
@@ -1049,7 +1057,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
   function renderElementoZona(elemento: ElementoMC) {
     if (!elementoVisibleEn(elemento, modoImpresion)) return null;
     const definicion = obtenerTipoRender(elemento.tipo);
-    const elementoPresentacion = resolverElementoPresentacion(documento, elemento, { logoEmpresa: empresa.logo ?? undefined, precioVinculado });
+    const elementoPresentacion = resolverElementoPresentacion(documento, elemento, { logoEmpresa: empresa.logo ?? undefined, precioVinculado, firmaEmpresa: empresa.firmaEmpresa || undefined, firmaClienteUrl, firmaClienteFecha });
     return (
       <div
         key={elemento.id}

@@ -89,20 +89,23 @@ export function PortalPresupuesto() {
                 documento={presupuesto.contenidoDocumento as unknown as DocumentoMC}
                 logoEmpresa={presupuesto.empresa.logo}
                 precioVinculado={presupuesto.precioTotal}
+                firmaEmpresa={presupuesto.empresa.firma}
+                firmaClienteUrl={presupuesto.firmaClienteUrl}
+                firmaClienteFecha={presupuesto.firmaClienteFecha}
                 componentes={presupuesto.componentesResueltos}
               />
             </div>
 
             <div className={styles.panel} style={{ marginTop: '1.5rem', textAlign: 'center', maxWidth: '560px', marginLeft: 'auto', marginRight: 'auto' }}>
               {presupuesto.estado === 'aceptado' ? (
-                <>
-                  <p style={{ color: 'var(--verde)', fontWeight: 700, marginBottom: presupuesto.firmaClienteUrl ? '0.75rem' : 0 }}>
-                    ✓ Aceptado {presupuesto.firmaClienteFecha ? `el ${formatoFecha(presupuesto.firmaClienteFecha)}` : ''}
-                  </p>
-                  {presupuesto.firmaClienteUrl && (
-                    <img src={presupuesto.firmaClienteUrl} alt="Firma" style={{ maxWidth: '260px', maxHeight: '120px', border: '1px solid var(--borde-fino)', borderRadius: '8px', background: 'var(--blanco)' }} />
-                  )}
-                </>
+                // La firma en sí ya se ve dentro del propio documento, en el
+                // sitio exacto donde el carpintero puso el elemento "Firma
+                // del cliente" (petición explícita del usuario, 26/08/2026)
+                // — aquí solo queda la confirmación en texto, sin duplicar
+                // la imagen.
+                <p style={{ color: 'var(--verde)', fontWeight: 700, margin: 0 }}>
+                  ✓ Aceptado {presupuesto.firmaClienteFecha ? `el ${formatoFecha(presupuesto.firmaClienteFecha)}` : ''}
+                </p>
               ) : firmando ? (
                 <FirmaCanvas onFirmar={firmar} onCancelar={() => setFirmando(false)} enviando={enviando} />
               ) : (
