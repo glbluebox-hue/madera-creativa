@@ -8,8 +8,12 @@ import { formatoEuroPrivado, VALOR_OCULTO, formatoFecha } from './calculos.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
 import { obtenerTodosLosPresupuestos, obtenerNotas, guardarNota } from './api.js';
 import { generarId } from './mock.js';
-import type { NotaMC } from './notas-modelo.js';
+import { PRIORIDADES, ordenarItemsLista, type NotaMC, type PrioridadNota } from './notas-modelo.js';
 import styles from './styles.module.css';
+
+const COLOR_PRIORIDAD_TAREA: Record<PrioridadNota, string> = { alta: 'var(--rojo)', media: 'var(--ocre)', baja: 'var(--topo-claro)' };
+const COLOR_PRIORIDAD_TAREA_BG: Record<PrioridadNota, string> = { alta: 'var(--rojo-bg)', media: 'var(--ocre-bg)', baja: 'var(--topo-tinte)' };
+const ETIQUETA_PRIORIDAD_TAREA: Record<PrioridadNota, string> = { alta: 'Alta', media: 'Media', baja: 'Baja' };
 
 /** Props del panel principal (dashboard). */
 export type DashboardProps = {
@@ -119,6 +123,7 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
 
   const [agregandoTarea, setAgregandoTarea] = useState(false);
   const [nuevaTarea, setNuevaTarea] = useState('');
+  const [nuevaTareaPrioridad, setNuevaTareaPrioridad] = useState<PrioridadNota>('media');
   const [guardandoTarea, setGuardandoTarea] = useState(false);
 
   /** Guarda la lista completa (crea la nota `'lista'` la primera vez que hace falta). */
@@ -147,8 +152,9 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
   const crearTarea = async () => {
     if (!nuevaTarea.trim()) return;
     setGuardandoTarea(true);
-    await guardarLista([...(listaRef.current?.items ?? []), { id: generarId(), texto: nuevaTarea.trim(), hecha: false }]);
+    await guardarLista([...(listaRef.current?.items ?? []), { id: generarId(), texto: nuevaTarea.trim(), hecha: false, prioridad: nuevaTareaPrioridad }]);
     setNuevaTarea('');
+    setNuevaTareaPrioridad('media');
     setAgregandoTarea(false);
     setGuardandoTarea(false);
   };
@@ -163,6 +169,11 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
   const borrarTarea = (itemId: string) => {
     if (!listaRef.current) return;
     guardarLista(listaRef.current.items.filter((it) => it.id !== itemId));
+  };
+
+  const cambiarPrioridadTarea = (itemId: string, prioridad: PrioridadNota) => {
+    if (!listaRef.current) return;
+    guardarLista(listaRef.current.items.map((it) => (it.id === itemId ? { ...it, prioridad } : it)));
   };
 
   const [editandoTareaId, setEditandoTareaId] = useState<string | null>(null);
@@ -267,6 +278,26 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
                 autoFocus
               />
             </div>
+            <div className={styles.campo}>
+              <label className={styles.campoLabel}>Prioridad</label>
+              <div style={{ display: 'flex', gap: '0.4rem' }}>
+                {PRIORIDADES.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setNuevaTareaPrioridad(p.id)}
+                    style={{
+                      padding: '0.35rem 0.7rem', borderRadius: 'var(--radio-full, 999px)', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer',
+                      border: `1.5px solid ${COLOR_PRIORIDAD_TAREA[p.id]}`,
+                      background: nuevaTareaPrioridad === p.id ? COLOR_PRIORIDAD_TAREA[p.id] : 'transparent',
+                      color: nuevaTareaPrioridad === p.id ? 'var(--blanco)' : COLOR_PRIORIDAD_TAREA[p.id],
+                    }}
+                  >
+                    {ETIQUETA_PRIORIDAD_TAREA[p.id]}
+                  </button>
+                ))}
+              </div>
+            </div>
             <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={crearTarea} disabled={!nuevaTarea.trim() || guardandoTarea}>
               {guardandoTarea ? 'Guardando…' : 'Guardar'}
             </button>
@@ -278,69 +309,97 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
         ) : !listaCosas || listaCosas.items.length === 0 ? (
           <p className={styles.dashboardVacio}>Todo al día — no tienes tareas pendientes.</p>
         ) : (
-          <>
-            {listaCosas.items.slice(0, 5).map((it) => {
-              if (editandoTareaId === it.id) {
-                return (
-                  <div key={it.id} className={styles.actividadItem} style={{ gap: '0.5rem' }}>
-                    <input
-                      className={styles.input}
-                      style={{ flex: 1, fontSize: '0.85rem' }}
-                      value={textoEdicionTarea}
-                      onChange={(e) => setTextoEdicionTarea(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') guardarEdicionTarea(); if (e.key === 'Escape') setEditandoTareaId(null); }}
-                      autoFocus
-                    />
-                    <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ fontSize: '0.72rem', padding: '0.35rem 0.65rem', flexShrink: 0 }} onClick={guardarEdicionTarea} disabled={!textoEdicionTarea.trim()}>
-                      Guardar
-                    </button>
-                    <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.72rem', padding: '0.35rem 0.65rem', flexShrink: 0 }} onClick={() => setEditandoTareaId(null)}>
-                      Cancelar
-                    </button>
-                  </div>
-                );
-              }
-              return (
-                <div key={it.id} className={styles.actividadItem}>
+          (() => {
+            const ordenados = ordenarItemsLista(listaCosas.items);
+            return (
+              <>
+                {ordenados.slice(0, 5).map((it) => {
+                  if (editandoTareaId === it.id) {
+                    return (
+                      <div key={it.id} className={styles.actividadItem} style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <input
+                          className={styles.input}
+                          style={{ flex: 1, fontSize: '0.85rem', minWidth: 140 }}
+                          value={textoEdicionTarea}
+                          onChange={(e) => setTextoEdicionTarea(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') guardarEdicionTarea(); if (e.key === 'Escape') setEditandoTareaId(null); }}
+                          autoFocus
+                        />
+                        <div style={{ display: 'flex', gap: '0.3rem' }}>
+                          {PRIORIDADES.map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => cambiarPrioridadTarea(it.id, p.id)}
+                              style={{
+                                padding: '0.3rem 0.6rem', borderRadius: 'var(--radio-full, 999px)', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer',
+                                border: `1.5px solid ${COLOR_PRIORIDAD_TAREA[p.id]}`,
+                                background: it.prioridad === p.id ? COLOR_PRIORIDAD_TAREA[p.id] : 'transparent',
+                                color: it.prioridad === p.id ? 'var(--blanco)' : COLOR_PRIORIDAD_TAREA[p.id],
+                              }}
+                            >
+                              {ETIQUETA_PRIORIDAD_TAREA[p.id]}
+                            </button>
+                          ))}
+                        </div>
+                        <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ fontSize: '0.72rem', padding: '0.35rem 0.65rem', flexShrink: 0 }} onClick={guardarEdicionTarea} disabled={!textoEdicionTarea.trim()}>
+                          Guardar
+                        </button>
+                        <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.72rem', padding: '0.35rem 0.65rem', flexShrink: 0 }} onClick={() => setEditandoTareaId(null)}>
+                          Cancelar
+                        </button>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div key={it.id} className={styles.actividadItem}>
+                      <button
+                        type="button"
+                        onClick={() => alternarTarea(it.id)}
+                        title={it.hecha ? 'Marcar como pendiente' : 'Marcar como hecha'}
+                        aria-label={it.hecha ? 'Marcar como pendiente' : 'Marcar como hecha'}
+                        style={{
+                          width: 22, height: 22, borderRadius: '50%', flexShrink: 0, cursor: 'pointer', padding: 0,
+                          border: `2px solid ${COLOR_PRIORIDAD_TAREA[it.prioridad]}`,
+                          background: it.hecha ? COLOR_PRIORIDAD_TAREA[it.prioridad] : 'none',
+                          color: it.hecha ? 'var(--blanco)' : COLOR_PRIORIDAD_TAREA[it.prioridad],
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}
+                      >
+                        {it.hecha && (
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                        )}
+                      </button>
+                      <div
+                        className={styles.actividadCuerpo}
+                        style={{ cursor: 'pointer', opacity: it.hecha ? 0.6 : 1 }}
+                        onClick={() => iniciarEdicionTarea(it.id, it.texto)}
+                        title="Tocar para editar"
+                      >
+                        <span className={styles.actividadTitulo} style={it.hecha ? { textDecoration: 'line-through' } : undefined}>{it.texto}</span>
+                      </div>
+                      <span style={{
+                        fontSize: '0.65rem', fontWeight: 700, borderRadius: 'var(--radio-full, 999px)', padding: '0.15rem 0.55rem', flexShrink: 0,
+                        color: COLOR_PRIORIDAD_TAREA[it.prioridad], background: COLOR_PRIORIDAD_TAREA_BG[it.prioridad],
+                      }}>
+                        {ETIQUETA_PRIORIDAD_TAREA[it.prioridad]}
+                      </span>
+                      <ConfirmarBorrado titulo="Borrar tarea" onConfirmar={() => borrarTarea(it.id)} />
+                    </div>
+                  );
+                })}
+                {ordenados.length > 5 && (
                   <button
                     type="button"
-                    onClick={() => alternarTarea(it.id)}
-                    title={it.hecha ? 'Marcar como pendiente' : 'Marcar como hecha'}
-                    aria-label={it.hecha ? 'Marcar como pendiente' : 'Marcar como hecha'}
-                    style={{
-                      width: 22, height: 22, borderRadius: '50%', flexShrink: 0, cursor: 'pointer', padding: 0,
-                      border: '2px solid var(--topo)',
-                      background: it.hecha ? 'var(--topo)' : 'none',
-                      color: it.hecha ? 'var(--blanco)' : 'var(--topo)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}
+                    onClick={onIrANotas}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--topo)', fontSize: '0.78rem', fontWeight: 600, padding: '0.6rem 0 0' }}
                   >
-                    {it.hecha && (
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                    )}
+                    Ver {ordenados.length - 5} más en Notas →
                   </button>
-                  <div
-                    className={styles.actividadCuerpo}
-                    style={{ cursor: 'pointer', opacity: it.hecha ? 0.6 : 1 }}
-                    onClick={() => iniciarEdicionTarea(it.id, it.texto)}
-                    title="Tocar para editar"
-                  >
-                    <span className={styles.actividadTitulo} style={it.hecha ? { textDecoration: 'line-through' } : undefined}>{it.texto}</span>
-                  </div>
-                  <ConfirmarBorrado titulo="Borrar tarea" onConfirmar={() => borrarTarea(it.id)} />
-                </div>
-              );
-            })}
-            {listaCosas.items.length > 5 && (
-              <button
-                type="button"
-                onClick={onIrANotas}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--topo)', fontSize: '0.78rem', fontWeight: 600, padding: '0.6rem 0 0' }}
-              >
-                Ver {listaCosas.items.length - 5} más en Notas →
-              </button>
-            )}
-          </>
+                )}
+              </>
+            );
+          })()
         )}
       </div>
 

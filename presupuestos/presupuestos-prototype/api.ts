@@ -708,11 +708,15 @@ export async function obtenerNotas(): Promise<NotaMC[]> {
   const res = await fetchConAuth('/notas');
   await comprobarRespuesta(res, 'No se pudieron cargar las notas');
   const datos: NotaMC[] = await res.json();
-  // `tipo`/`items` son campos nuevos (26/08/2026) — las notas guardadas
-  // antes de este cambio no los tienen en absoluto en Mongo (`.lean()` no
-  // rellena defaults de campos ausentes), así que se normalizan aquí una
-  // sola vez para que el resto de la app nunca tenga que comprobar `?? `.
-  return datos.map((n) => ({ tipo: 'nota', items: [], ...n }));
+  // `tipo`/`items` (y `prioridad` dentro de cada item) son campos nuevos
+  // (26/08/2026) — las notas/items guardados antes de este cambio no los
+  // tienen en absoluto en Mongo (`.lean()` no rellena defaults de campos
+  // ausentes), así que se normalizan aquí una sola vez para que el resto
+  // de la app nunca tenga que comprobar `?? `.
+  return datos.map((n) => ({
+    tipo: 'nota', ...n,
+    items: (n.items ?? []).map((it) => ({ prioridad: 'media', ...it })),
+  }));
 }
 
 /** Crea o actualiza una nota. */

@@ -500,11 +500,12 @@ export const esquemaProveedor = z.object({
   creado: z.string().min(1).max(64),
 });
 
-/** Un elemento de una nota de tipo "lista" — mismo shape que `Tarea` (`Proyecto.tareas`), embebido en la nota. */
+/** Un elemento de una nota de tipo "lista" — parecido a `Tarea` (`Proyecto.tareas`), embebido en la nota, pero con prioridad propia (petición explícita del usuario, 26/08/2026). */
 const esquemaItemLista = z.object({
   id: z.string().min(1).max(64),
   texto: z.string().trim().min(1).max(500),
   hecha: z.boolean().optional().default(false),
+  prioridad: z.enum(['alta', 'media', 'baja']).optional().default('media'),
 });
 
 /**

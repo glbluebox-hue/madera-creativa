@@ -4,7 +4,7 @@ import { generarId } from './mock.js';
 import { formatoFecha } from './calculos.js';
 import { useDictado, BtnMicrofono } from './use-dictado.js';
 import * as api from './api.js';
-import { PRIORIDADES, ordenarPorDefecto, type NotaMC, type PrioridadNota, type TipoNota, type ItemLista } from './notas-modelo.js';
+import { PRIORIDADES, ordenarPorDefecto, ordenarItemsLista, type NotaMC, type PrioridadNota, type TipoNota, type ItemLista } from './notas-modelo.js';
 import styles from './styles.module.css';
 
 const COLOR_PRIORIDAD: Record<PrioridadNota, string> = { alta: 'var(--rojo)', media: 'var(--ocre)', baja: 'var(--topo-claro)' };
@@ -16,24 +16,43 @@ const CLAVE_MIGRACION_GLOBAL = 'mc_notas_globales';
 type Orden = 'defecto' | 'creado' | 'actualizado' | 'cliente';
 type FiltroCliente = 'todas' | 'sin-cliente' | string;
 
-/** Input "Nueva tarea…" + Añadir para una lista ya guardada — estado propio para no tener que llevar un mapa `notaId -> texto` en `NotasVista`. */
-function ItemListaNuevo({ onAnadir }: { onAnadir: (texto: string) => void }) {
+/** Input "Nueva tarea…" + prioridad + Añadir para una lista ya guardada — estado propio para no tener que llevar un mapa `notaId -> texto` en `NotasVista`. */
+function ItemListaNuevo({ onAnadir }: { onAnadir: (texto: string, prioridad: PrioridadNota) => void }) {
   const [texto, setTexto] = useState('');
+  const [prioridad, setPrioridad] = useState<PrioridadNota>('media');
   const anadir = () => {
     if (!texto.trim()) return;
-    onAnadir(texto.trim());
+    onAnadir(texto.trim(), prioridad);
     setTexto('');
+    setPrioridad('media');
   };
   return (
-    <div style={{ display: 'flex', gap: '0.4rem' }}>
+    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
       <input
         className={styles.input}
-        style={{ fontSize: '0.85rem' }}
+        style={{ fontSize: '0.85rem', flex: '1 1 160px' }}
         placeholder="Nueva tarea…"
         value={texto}
         onChange={(e) => setTexto(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && anadir()}
       />
+      <div style={{ display: 'flex', gap: '0.3rem' }}>
+        {PRIORIDADES.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => setPrioridad(p.id)}
+            style={{
+              padding: '0.3rem 0.6rem', borderRadius: 'var(--radio-full, 999px)', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer',
+              border: `1.5px solid ${COLOR_PRIORIDAD[p.id]}`,
+              background: prioridad === p.id ? COLOR_PRIORIDAD[p.id] : 'transparent',
+              color: prioridad === p.id ? 'var(--blanco)' : COLOR_PRIORIDAD[p.id],
+            }}
+          >
+            {ETIQUETA_PRIORIDAD[p.id]}
+          </button>
+        ))}
+      </div>
       <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ fontSize: '0.78rem' }} onClick={anadir} disabled={!texto.trim()}>Añadir</button>
     </div>
   );
@@ -111,6 +130,7 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
   const [tipoNueva, setTipoNueva] = useState<TipoNota>('nota');
   const [itemsNuevaLista, setItemsNuevaLista] = useState<ItemLista[]>([]);
   const [nuevoItemTexto, setNuevoItemTexto] = useState('');
+  const [nuevoItemPrioridad, setNuevoItemPrioridad] = useState<PrioridadNota>('media');
   const [prioridad, setPrioridad] = useState<PrioridadNota>('media');
   const [clienteIdNueva, setClienteIdNueva] = useState(clienteFijo?.id ?? '');
   const [guardando, setGuardando] = useState(false);
@@ -237,8 +257,9 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
 
   const anadirItemNuevaLista = () => {
     if (!nuevoItemTexto.trim()) return;
-    setItemsNuevaLista((prev) => [...prev, { id: generarId(), texto: nuevoItemTexto.trim(), hecha: false }]);
+    setItemsNuevaLista((prev) => [...prev, { id: generarId(), texto: nuevoItemTexto.trim(), hecha: false, prioridad: nuevoItemPrioridad }]);
     setNuevoItemTexto('');
+    setNuevoItemPrioridad('media');
   };
 
   const crear = async () => {
@@ -284,14 +305,18 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
     setNotasSync((prev) => prev.map((n) => (n.id === notaId ? actualizada : n)));
     try { await api.guardarNota(actualizada); } catch { cargar(); }
   };
-  const anadirItemLista = (notaId: string, texto: string) => {
+  const anadirItemLista = (notaId: string, texto: string, prioridadItem: PrioridadNota) => {
     if (!texto.trim()) return;
-    guardarItemsLista(notaId, (items) => [...items, { id: generarId(), texto: texto.trim(), hecha: false }]);
+    guardarItemsLista(notaId, (items) => [...items, { id: generarId(), texto: texto.trim(), hecha: false, prioridad: prioridadItem }]);
   };
   const alternarItemLista = (notaId: string, itemId: string) =>
     guardarItemsLista(notaId, (items) => items.map((it) => (it.id === itemId ? { ...it, hecha: !it.hecha } : it)));
   const borrarItemLista = (notaId: string, itemId: string) =>
     guardarItemsLista(notaId, (items) => items.filter((it) => it.id !== itemId));
+  /** Clic sobre la píldora de prioridad de un item: rota alta→media→baja→alta, sin necesitar un modo de edición aparte. */
+  const CICLO_PRIORIDAD_ITEM: Record<PrioridadNota, PrioridadNota> = { alta: 'media', media: 'baja', baja: 'alta' };
+  const ciclarPrioridadItem = (notaId: string, itemId: string) =>
+    guardarItemsLista(notaId, (items) => items.map((it) => (it.id === itemId ? { ...it, prioridad: CICLO_PRIORIDAD_ITEM[it.prioridad] } : it)));
 
   const cambiarPrioridad = async (nota: NotaMC, nueva: PrioridadNota) => {
     const actualizada = { ...nota, prioridad: nueva, actualizado: new Date().toISOString() };
@@ -402,6 +427,12 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
               {itemsNuevaLista.map((it) => (
                 <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                  <span style={{
+                    fontSize: '0.62rem', fontWeight: 700, borderRadius: 'var(--radio-full, 999px)', padding: '0.1rem 0.5rem', flexShrink: 0,
+                    color: COLOR_PRIORIDAD[it.prioridad], background: COLOR_PRIORIDAD_BG[it.prioridad],
+                  }}>
+                    {ETIQUETA_PRIORIDAD[it.prioridad]}
+                  </span>
                   <span style={{ flex: 1 }}>{it.texto}</span>
                   <button
                     type="button"
@@ -413,15 +444,33 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
                   </button>
                 </div>
               ))}
-              <div style={{ display: 'flex', gap: '0.4rem' }}>
+              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
                 <input
                   className={styles.input}
+                  style={{ flex: '1 1 160px' }}
                   placeholder="Nueva tarea…"
                   value={nuevoItemTexto}
                   onChange={(e) => setNuevoItemTexto(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); anadirItemNuevaLista(); } }}
                   autoFocus
                 />
+                <div style={{ display: 'flex', gap: '0.3rem' }}>
+                  {PRIORIDADES.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setNuevoItemPrioridad(p.id)}
+                      style={{
+                        padding: '0.3rem 0.6rem', borderRadius: 'var(--radio-full, 999px)', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer',
+                        border: `1.5px solid ${COLOR_PRIORIDAD[p.id]}`,
+                        background: nuevoItemPrioridad === p.id ? COLOR_PRIORIDAD[p.id] : 'transparent',
+                        color: nuevoItemPrioridad === p.id ? 'var(--blanco)' : COLOR_PRIORIDAD[p.id],
+                      }}
+                    >
+                      {ETIQUETA_PRIORIDAD[p.id]}
+                    </button>
+                  ))}
+                </div>
                 <button type="button" className={`${styles.btn} ${styles.btnSecundario}`} onClick={anadirItemNuevaLista} disabled={!nuevoItemTexto.trim()}>
                   Añadir
                 </button>
@@ -647,7 +696,7 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
                     ) : esLista ? (
                       <>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                          {n.items.map((it) => (
+                          {ordenarItemsLista(n.items).map((it) => (
                             <div
                               key={it.id}
                               className={`${styles.checklistItem} ${it.hecha ? styles.checklistHecha : ''}`}
@@ -655,6 +704,16 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
                             >
                               <span className={styles.checklistCheck}>{it.hecha ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg> : ''}</span>
                               <span className={styles.checklistTexto} style={{ flex: 1 }}>{it.texto}</span>
+                              <span
+                                onClick={(e) => { e.stopPropagation(); ciclarPrioridadItem(n.id, it.id); }}
+                                title="Tocar para cambiar la prioridad"
+                                style={{
+                                  fontSize: '0.62rem', fontWeight: 700, borderRadius: 'var(--radio-full, 999px)', padding: '0.1rem 0.5rem', flexShrink: 0, cursor: 'pointer',
+                                  color: COLOR_PRIORIDAD[it.prioridad], background: COLOR_PRIORIDAD_BG[it.prioridad],
+                                }}
+                              >
+                                {ETIQUETA_PRIORIDAD[it.prioridad]}
+                              </span>
                               <button
                                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--topo-claro)' }}
                                 onClick={(e) => { e.stopPropagation(); borrarItemLista(n.id, it.id); }}
@@ -665,7 +724,7 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
                             </div>
                           ))}
                         </div>
-                        <ItemListaNuevo onAnadir={(texto) => anadirItemLista(n.id, texto)} />
+                        <ItemListaNuevo onAnadir={(texto, prioridadItem) => anadirItemLista(n.id, texto, prioridadItem)} />
                         <div style={{ display: 'flex', gap: '0.3rem', justifyContent: 'flex-end', alignItems: 'center' }}>
                           <button
                             className={`${styles.btn} ${n.estado === 'hecha' ? styles.btnSecundario : styles.btnPrimario}`}

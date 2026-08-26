@@ -14,8 +14,14 @@ export type OrigenNota = 'texto' | 'voz';
 /** `'lista'` (26/08/2026): checklist con `items` en vez de un `contenido` de texto libre — no se puede tachar una línea suelta dentro de un párrafo, así que "comprar pincel, comprar lijas…" necesita items propios, cada uno con su `hecha`. */
 export type TipoNota = 'nota' | 'lista';
 
-/** Un elemento de una nota de tipo `'lista'` — mismo shape que `Tarea` (`Proyecto.tareas`, `tab-tareas.tsx`), embebido en la nota en vez de en un proyecto. */
-export type ItemLista = { id: string; texto: string; hecha: boolean };
+/**
+ * Un elemento de una nota de tipo `'lista'` — parecido a `Tarea`
+ * (`Proyecto.tareas`, `tab-tareas.tsx`), embebido en la nota en vez de en
+ * un proyecto, pero CON prioridad (petición explícita del usuario,
+ * 26/08/2026, tras quitarla por error al simplificar el checklist): cada
+ * tarea suelta puede tener su propia urgencia, igual que una nota normal.
+ */
+export type ItemLista = { id: string; texto: string; hecha: boolean; prioridad: PrioridadNota };
 
 export type NotaMC = {
   id: string;
@@ -43,8 +49,22 @@ export const PRIORIDADES: { id: PrioridadNota; orden: number }[] = [
   { id: 'baja', orden: 2 },
 ];
 
+function rangoPrioridad(p: PrioridadNota): number {
+  return PRIORIDADES.find((x) => x.id === p)?.orden ?? 99;
+}
+
 /** Orden por defecto pedido explícitamente: alta prioridad primero, luego el resto por fecha de creación descendente. */
 export function ordenarPorDefecto(notas: readonly NotaMC[]): NotaMC[] {
-  const rango = (p: PrioridadNota) => PRIORIDADES.find((x) => x.id === p)?.orden ?? 99;
-  return [...notas].sort((a, b) => rango(a.prioridad) - rango(b.prioridad) || b.creado.localeCompare(a.creado));
+  return [...notas].sort((a, b) => rangoPrioridad(a.prioridad) - rangoPrioridad(b.prioridad) || b.creado.localeCompare(a.creado));
+}
+
+/**
+ * Orden de los items de una lista: solo por prioridad, con `Array.sort`
+ * (estable) — a propósito SIN segundo criterio de fecha, porque un item no
+ * tiene `creado` propio. Al no depender de `hecha`, marcar/desmarcar una
+ * tarea nunca cambia su posición (petición explícita del usuario: el
+ * checklist no debe "saltar" ni reordenarse solo al tocar una casilla).
+ */
+export function ordenarItemsLista(items: readonly ItemLista[]): ItemLista[] {
+  return [...items].sort((a, b) => rangoPrioridad(a.prioridad) - rangoPrioridad(b.prioridad));
 }

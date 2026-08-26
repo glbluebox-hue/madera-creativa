@@ -298,12 +298,13 @@ const ProductoSchema = new Schema({
  * `proyectoId` se deja preparado aunque hoy no exista todavía una entidad
  * "Proyecto" propia en la aplicación (`Cliente.proyecto` es solo texto).
  */
-/** Un elemento de una nota de tipo "lista" — mismo shape que `Proyecto.tareas` (Tarea), pero embebido en la nota en vez de en un proyecto. */
+/** Un elemento de una nota de tipo "lista" — parecido a `Proyecto.tareas` (Tarea), pero embebido en la nota y con prioridad propia (petición explícita del usuario, 26/08/2026). */
 const ItemListaSchema = new Schema(
   {
     id: { type: String, required: true },
     texto: { type: String, required: true },
     hecha: { type: Boolean, default: false },
+    prioridad: { type: String, enum: ['alta', 'media', 'baja'], default: 'media' },
   },
   { _id: false }
 );
