@@ -49,6 +49,16 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
   const [busqueda, setBusqueda] = useState('');
   const [filtroPrioridad, setFiltroPrioridad] = useState<'todas' | PrioridadNota>('todas');
   const [filtroCliente, setFiltroCliente] = useState<FiltroCliente>('todas');
+  /**
+   * Bug real, 26/08/2026: marcar una nota como hecha (desde el banner
+   * "Cosas por hacer" del Inicio) la sacaba de esta lista SIN NINGÚN
+   * SITIO donde volver a verla — el usuario se equivocó al tocar la
+   * casilla y creyó que la nota se había borrado de verdad, cuando solo
+   * cambió de `estado` en el servidor. Por defecto se sigue viendo solo
+   * "Pendientes" (mismo comportamiento de antes), pero ahora hay un sitio
+   * real para encontrar y restaurar las "Hechas".
+   */
+  const [filtroEstado, setFiltroEstado] = useState<'abiertas' | 'hechas' | 'todas'>('abiertas');
   const [orden, setOrden] = useState<Orden>('defecto');
 
   const [formAbierto, setFormAbierto] = useState(false);
@@ -148,16 +158,15 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
     [clientes, clienteFijo]
   );
 
-  // Las "hechas" (marcadas desde el banner "Cosas por hacer" del Inicio, ver
-  // `dashboard.tsx`) desaparecen de aquí también — es la misma lista de
-  // pendientes, no un archivo de completadas.
   const notasDelAmbito = useMemo(
-    () => notas.filter((n) => n.estado === 'abierta' && (!clienteFijo || n.clienteId === clienteFijo.id)),
+    () => notas.filter((n) => !clienteFijo || n.clienteId === clienteFijo.id),
     [notas, clienteFijo]
   );
 
   const notasFiltradas = useMemo(() => {
     let r = notasDelAmbito;
+    if (filtroEstado === 'abiertas') r = r.filter((n) => n.estado === 'abierta');
+    else if (filtroEstado === 'hechas') r = r.filter((n) => n.estado === 'hecha');
     if (filtroPrioridad !== 'todas') r = r.filter((n) => n.prioridad === filtroPrioridad);
     if (!clienteFijo) {
       if (filtroCliente === 'sin-cliente') r = r.filter((n) => !n.clienteId);
@@ -175,7 +184,7 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
     if (orden === 'creado') return [...r].sort((a, b) => b.creado.localeCompare(a.creado));
     if (orden === 'actualizado') return [...r].sort((a, b) => b.actualizado.localeCompare(a.actualizado));
     return [...r].sort((a, b) => (nombreCliente(a.clienteId) ?? '').localeCompare(nombreCliente(b.clienteId) ?? ''));
-  }, [notasDelAmbito, filtroPrioridad, filtroCliente, busqueda, orden, clienteFijo, nombreCliente]);
+  }, [notasDelAmbito, filtroEstado, filtroPrioridad, filtroCliente, busqueda, orden, clienteFijo, nombreCliente]);
 
   const crear = async () => {
     if (!contenido.trim()) return;
@@ -202,6 +211,13 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
 
   const cambiarPrioridad = async (nota: NotaMC, nueva: PrioridadNota) => {
     const actualizada = { ...nota, prioridad: nueva, actualizado: new Date().toISOString() };
+    setNotas((prev) => prev.map((n) => (n.id === nota.id ? actualizada : n)));
+    try { await api.guardarNota(actualizada); } catch { cargar(); }
+  };
+
+  /** Marca hecha/pendiente — nunca borra la nota, solo cambia su `estado` (ver el filtro "Hechas" de arriba para recuperarlas). */
+  const alternarEstado = async (nota: NotaMC) => {
+    const actualizada: NotaMC = { ...nota, estado: nota.estado === 'abierta' ? 'hecha' : 'abierta', actualizado: new Date().toISOString() };
     setNotas((prev) => prev.map((n) => (n.id === nota.id ? actualizada : n)));
     try { await api.guardarNota(actualizada); } catch { cargar(); }
   };
@@ -326,6 +342,31 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
         </div>
       )}
 
+      {/* Pendientes/Hechas/Todas — en los dos modos: sin esto una nota marcada hecha no tenía dónde volver a verse. */}
+      {notasDelAmbito.length > 0 && (
+        <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.75rem' }}>
+          {([
+            { id: 'abiertas', etiqueta: 'Pendientes' },
+            { id: 'hechas', etiqueta: 'Hechas' },
+            { id: 'todas', etiqueta: 'Todas' },
+          ] as const).map((op) => (
+            <button
+              key={op.id}
+              type="button"
+              onClick={() => setFiltroEstado(op.id)}
+              style={{
+                padding: '0.3rem 0.75rem', borderRadius: 'var(--radio-full, 999px)', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer',
+                border: '1.5px solid var(--topo)',
+                background: filtroEstado === op.id ? 'var(--topo)' : 'transparent',
+                color: filtroEstado === op.id ? 'var(--blanco)' : 'var(--topo)',
+              }}
+            >
+              {op.etiqueta}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Búsqueda y filtros — solo en modo global tiene sentido el juego completo */}
       {!clienteFijo && notasDelAmbito.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem', alignItems: 'center' }}>
@@ -384,9 +425,13 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
                   <span style={{
                     flex: 1, minWidth: 0, fontWeight: 700, fontSize: '0.88rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                     color: n.titulo ? 'var(--negro)' : 'var(--topo-claro)', fontStyle: n.titulo ? 'normal' : 'italic',
+                    textDecoration: n.estado === 'hecha' ? 'line-through' : 'none',
                   }}>
                     {tituloMostrado}
                   </span>
+                  {n.estado === 'hecha' && (
+                    <span style={{ fontSize: '0.65rem', color: 'var(--verde)', fontWeight: 700, flexShrink: 0, whiteSpace: 'nowrap' }}>Hecha</span>
+                  )}
                   {!clienteFijo && n.clienteId && nombreCliente(n.clienteId) && (
                     <span style={{ fontSize: '0.68rem', color: 'var(--ocre)', fontWeight: 600, flexShrink: 0, whiteSpace: 'nowrap' }}>{nombreCliente(n.clienteId)}</span>
                   )}
@@ -437,7 +482,14 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
                     ) : (
                       <>
                         <p style={{ margin: 0, fontSize: '0.86rem', lineHeight: 1.5, whiteSpace: 'pre-wrap', color: 'var(--negro)' }}>{n.contenido}</p>
-                        <div style={{ display: 'flex', gap: '0.3rem', justifyContent: 'flex-end' }}>
+                        <div style={{ display: 'flex', gap: '0.3rem', justifyContent: 'flex-end', alignItems: 'center' }}>
+                          <button
+                            className={`${styles.btn} ${n.estado === 'hecha' ? styles.btnSecundario : styles.btnPrimario}`}
+                            style={{ fontSize: '0.72rem', padding: '0.3rem 0.65rem', marginRight: 'auto' }}
+                            onClick={() => alternarEstado(n)}
+                          >
+                            {n.estado === 'hecha' ? 'Marcar como pendiente' : 'Marcar como hecha'}
+                          </button>
                           <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--topo-claro)', padding: '2px 6px' }} onClick={() => iniciarEdicion(n)} title="Editar" aria-label="Editar">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
                           </button>
