@@ -1,3 +1,21 @@
+/**
+ * Bug real, 26/08/2026: el Asistente IA general se monta siempre en la
+ * raíz de la app, así que su FAB y su panel seguían visibles ENCIMA del
+ * editor de documentos (Motor Documental) aunque ese editor tenga su
+ * propio z-index alto — subir el z-index del panel de IA del presupuesto
+ * (dentro del editor) no lo arregló, señal de que el problema no era de
+ * z-index sino de que el Asistente general sencillamente no debe
+ * competir por esa esquina mientras el editor (con su propia IA
+ * dedicada, `panel-ia-presupuesto.tsx`) está abierto. Se oculta del todo
+ * vía una clase en `<body>` que pone/quita `editor-documento.tsx` al
+ * montarse/desmontarse — no depende de dónde caiga cada uno en el árbol
+ * de stacking contexts, siempre gana.
+ */
+:global(body.editorDocumentoAbierto) .fab,
+:global(body.editorDocumentoAbierto) .panel {
+  display: none;
+}
+
 /* ===== BOTÓN FLOTANTE ===== */
 .fab {
   position: fixed;

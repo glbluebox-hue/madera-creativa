@@ -166,6 +166,18 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
   // (`plantillas-vista.tsx`, `contratos-vista.tsx`, `abrir-documento.tsx`).
   const tutorialEditor = useTutorial('mc_');
 
+  /**
+   * Bug real, 26/08/2026: el Asistente IA general (montado siempre en la
+   * raíz de la app, fuera del árbol de este editor) tapaba el botón
+   * "Enviar" del panel de IA del presupuesto — ver `asistente-ia.module.css`
+   * para el porqué de esta solución (una clase en `<body>`, no un ajuste
+   * de z-index, que ya se intentó y no bastó).
+   */
+  useEffect(() => {
+    document.body.classList.add('editorDocumentoAbierto');
+    return () => document.body.classList.remove('editorDocumentoAbierto');
+  }, []);
+
   const [documento, setDocumento] = useState<DocumentoMC>(documentoInicial);
   const [pasado, setPasado] = useState<DocumentoMC[]>([]);
   const [futuro, setFuturo] = useState<DocumentoMC[]>([]);
