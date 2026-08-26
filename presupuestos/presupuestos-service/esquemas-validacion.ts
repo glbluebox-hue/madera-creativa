@@ -380,30 +380,44 @@ export const esquemaClienteEntrada = z.object({
  * nunca copia gastos/ingresos/documentos/mediciones/fotos de otro proyecto
  * suyo (petición explícita del usuario).
  */
+/**
+ * Bug real, 26/08/2026: `.optional()`/`.default()` en zod solo cubren
+ * `undefined` — un proyecto real (guardado antes de que este campo
+ * existiera, o tocado por un script/migración) puede tener el campo
+ * literalmente a `null` en Mongo, y eso rechazaba TODO el guardado con
+ * "Invalid input: expected string, received null" mucho antes de llegar
+ * al `refine` de más abajo. `.nullish()` (nullable + optional) + un
+ * `transform` que sustituye `null`/`undefined` por el valor por defecto
+ * cubre los dos casos a la vez.
+ */
+const textoOpcional = (max: number) => z.string().max(max).nullish().transform((v) => v ?? '');
+const numeroOpcional = (porDefecto: number) => z.number().finite().nullish().transform((v) => v ?? porDefecto);
+const arrayOpcional = <T extends z.ZodTypeAny>(esquema: T) => z.array(esquema).nullish().transform((v) => v ?? []);
+
 export const esquemaProyecto = z.object({
   id: z.string().min(1).max(128),
   clienteId: z.string().min(1).max(128),
-  proyecto: z.string().max(300).optional().default(''),
-  direccion: z.string().max(500).optional().default(''),
-  presupuesto: z.number().finite().optional().default(0),
-  tarifaHora: z.number().finite().optional().default(0),
+  proyecto: textoOpcional(300),
+  direccion: textoOpcional(500),
+  presupuesto: numeroOpcional(0),
+  tarifaHora: numeroOpcional(0),
   creado: z.string().min(1).max(64),
-  estado: z.enum(['presupuestado', 'en_curso', 'finalizado', 'rechazado']).optional().default('presupuestado'),
-  whatsapp: z.string().max(50).optional(),
-  ubicacion: z.string().max(500).optional(),
-  codigoPuerta: z.string().max(50).optional(),
-  planta: z.string().max(50).optional(),
-  ascensor: z.boolean().optional(),
-  zonaCarga: z.string().max(300).optional(),
-  observacionesAcceso: z.string().max(1000).optional(),
-  fechaMedicion: z.string().max(32).optional(),
-  fechaMontaje: z.string().max(32).optional(),
-  estancias: z.array(esquemaEstancia).optional(),
-  tareas: z.array(esquemaTarea).optional(),
-  movimientos: z.array(esquemaMovimiento).optional().default([]),
-  horas: z.array(esquemaRegistroHoras).optional().default([]),
-  adjuntos: z.array(esquemaAdjunto).optional().default([]),
-  fotos: z.array(esquemaFotoProyecto).optional().default([]),
+  estado: z.enum(['presupuestado', 'en_curso', 'finalizado', 'rechazado']).nullish().transform((v) => v ?? 'presupuestado'),
+  whatsapp: textoOpcional(50),
+  ubicacion: textoOpcional(500),
+  codigoPuerta: textoOpcional(50),
+  planta: textoOpcional(50),
+  ascensor: z.boolean().nullish().transform((v) => v ?? false),
+  zonaCarga: textoOpcional(300),
+  observacionesAcceso: textoOpcional(1000),
+  fechaMedicion: textoOpcional(32),
+  fechaMontaje: textoOpcional(32),
+  estancias: arrayOpcional(esquemaEstancia),
+  tareas: arrayOpcional(esquemaTarea),
+  movimientos: arrayOpcional(esquemaMovimiento),
+  horas: arrayOpcional(esquemaRegistroHoras),
+  adjuntos: arrayOpcional(esquemaAdjunto),
+  fotos: arrayOpcional(esquemaFotoProyecto),
 }).refine(
   (proyecto) => {
     const total =
