@@ -165,9 +165,15 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
       );
     }
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-        <input className={styles.input} value={url} readOnly onFocus={(e) => e.target.select()} style={{ fontSize: '0.78rem', width: '160px' }} />
-        <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={() => copiarEnlace(url, p.id)}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+        <input
+          className={styles.input}
+          value={url}
+          readOnly
+          onFocus={(e) => e.target.select()}
+          style={{ fontSize: '0.78rem', flex: '1 1 140px', minWidth: 0, boxSizing: 'border-box' }}
+        />
+        <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ flexShrink: 0 }} onClick={() => copiarEnlace(url, p.id)}>
           {enlaceCopiadoId === p.id ? '✓ Copiado' : 'Copiar'}
         </button>
       </div>
@@ -526,17 +532,17 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
               className={`${styles.filaLista} ${styles.filaListaClic}`}
               style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem',
-                padding: '1rem',
+                padding: '1rem', flexWrap: 'wrap',
               }}
               onClick={() => abrir(p)}
             >
-              <div>
+              <div style={{ minWidth: 0, flex: '1 1 160px' }}>
                 <p style={{ margin: 0, fontWeight: 700, fontSize: '0.95rem' }}>{p.titulo}</p>
                 <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>
                   {nombreDe(p.clienteId)} · {p.formato === 'lienzo' ? 'Plantilla libre (legado)' : p.formato === 'documento' ? 'Documento' : 'Narrativo'} · {formatoFecha(p.creado)}
                 </p>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'flex-end', minWidth: 0 }}>
                 <span style={{ fontWeight: 800, fontSize: '1.05rem', whiteSpace: 'nowrap' }}>{formatoEuro(p.precioTotal)}</span>
                 <div onClick={(e) => e.stopPropagation()}>{accionEnlace(p)}</div>
                 <div onClick={(e) => e.stopPropagation()}>
