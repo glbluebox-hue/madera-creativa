@@ -33,8 +33,8 @@ export type DashboardProps = {
   onAbrir: (id: string) => void;
   /** Borra una factura (Actividad reciente). */
   onBorrarFactura: (id: string) => void;
-  /** Cambia la fecha de montaje/medición de un proyecto (Próximos montajes y mediciones). */
-  onActualizarRecordatorio: (proyectoId: string, cambios: { fechaMontaje?: string; fechaMedicion?: string }) => void;
+  /** Cambia la fecha de montaje/medición de un proyecto (Próximos montajes y mediciones). Rechaza si el guardado falla — `guardarRecordatorio` lo espera para no cerrar el formulario como si hubiera ido bien. */
+  onActualizarRecordatorio: (proyectoId: string, cambios: { fechaMontaje?: string; fechaMedicion?: string }) => Promise<void>;
   /** Va a la sección Notas (enlace "ver más" del banner "Cosas por hacer"). */
   onIrANotas: () => void;
 };
@@ -217,13 +217,30 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
   const [nuevoClienteId, setNuevoClienteId] = useState('');
   const [nuevoTipo, setNuevoTipo] = useState<'montaje' | 'medicion'>('montaje');
   const [nuevaFecha, setNuevaFecha] = useState('');
+  const [guardandoRecordatorio, setGuardandoRecordatorio] = useState(false);
+  const [errorRecordatorio, setErrorRecordatorio] = useState<string | null>(null);
 
-  const guardarRecordatorio = () => {
+  /**
+   * Bug real, 26/08/2026 (mismo patrón que fotos y tareas): esto no
+   * esperaba la respuesta ni comprobaba si fallaba — cerraba el formulario
+   * y limpiaba los campos igual, así que un guardado fallido se veía
+   * exactamente igual que uno correcto, y el montaje/medición nunca
+   * llegaba a aparecer en la lista.
+   */
+  const guardarRecordatorio = async () => {
     if (!nuevoClienteId || !nuevaFecha) return;
-    onActualizarRecordatorio(nuevoClienteId, nuevoTipo === 'montaje' ? { fechaMontaje: nuevaFecha } : { fechaMedicion: nuevaFecha });
-    setAgregando(false);
-    setNuevoClienteId('');
-    setNuevaFecha('');
+    setGuardandoRecordatorio(true);
+    setErrorRecordatorio(null);
+    try {
+      await onActualizarRecordatorio(nuevoClienteId, nuevoTipo === 'montaje' ? { fechaMontaje: nuevaFecha } : { fechaMedicion: nuevaFecha });
+      setAgregando(false);
+      setNuevoClienteId('');
+      setNuevaFecha('');
+    } catch (e) {
+      setErrorRecordatorio(String(e).replace(/^Error:\s*/, '') || 'No se pudo guardar. Vuelve a intentarlo.');
+    } finally {
+      setGuardandoRecordatorio(false);
+    }
   };
 
   const borrarRecordatorio = (proyecto: ProyectoResumen, tipo: 'montaje' | 'medicion') => {
@@ -470,7 +487,7 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
           </div>
 
           {agregando && (
-            <div className={styles.formInline} style={{ marginTop: 0, marginBottom: '1rem' }}>
+            <div className={styles.formInline} style={{ marginTop: 0, marginBottom: '1rem', flexWrap: 'wrap' }}>
               <div className={styles.campo}>
                 <label className={styles.campoLabel}>Proyecto</label>
                 <select className={styles.select} value={nuevoClienteId} onChange={(e) => setNuevoClienteId(e.target.value)}>
@@ -489,9 +506,12 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
                 <label className={styles.campoLabel}>Fecha</label>
                 <input className={styles.input} type="date" value={nuevaFecha} onChange={(e) => setNuevaFecha(e.target.value)} />
               </div>
-              <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={guardarRecordatorio} disabled={!nuevoClienteId || !nuevaFecha}>
-                Guardar
+              <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={guardarRecordatorio} disabled={!nuevoClienteId || !nuevaFecha || guardandoRecordatorio}>
+                {guardandoRecordatorio ? 'Guardando…' : 'Guardar'}
               </button>
+              {errorRecordatorio && (
+                <div className={styles.loginError} style={{ flexBasis: '100%' }}>{errorRecordatorio}</div>
+              )}
             </div>
           )}
 
