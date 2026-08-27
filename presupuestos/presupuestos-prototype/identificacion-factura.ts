@@ -78,12 +78,34 @@ function nifsCoinciden(a: string | null | undefined, b: string | null | undefine
   return na.length >= 5 && na === nb;
 }
 
-/** Coinciden dos nombres — igualdad o inclusión en cualquier dirección (nombres comerciales suelen llevar "S.L."/"Autónomo" de más). */
+/**
+ * Coinciden dos nombres — igualdad, inclusión en cualquier dirección
+ * (nombres comerciales suelen llevar "S.L."/"Autónomo" de más), o las
+ * mismas palabras en otro orden.
+ *
+ * Ese último caso es real, no teórico (bug reportado 27/08/2026): el
+ * titular guardado en Ajustes de empresa era "Luca Randazzo", pero el
+ * documento (formato "Apellido Nombre", habitual en facturas de
+ * proveedores extranjeros) traía "Randazzo Luca" — ninguna de las dos
+ * cadenas es substring literal de la otra, así que la comparación de antes
+ * nunca reconocía al titular como una de las partes, y la factura se
+ * clasificaba como ingreso con el propio titular puesto de proveedor.
+ */
 export function nombresCoinciden(a: string | null | undefined, b: string | null | undefined): boolean {
   const na = normalizarNombre(a);
   const nb = normalizarNombre(b);
   if (na.length < 3 || nb.length < 3) return false;
-  return na === nb || na.includes(nb) || nb.includes(na);
+  if (na === nb || na.includes(nb) || nb.includes(na)) return true;
+
+  const palabrasA = new Set(na.split(' ').filter((p) => p.length > 1));
+  const palabrasB = new Set(nb.split(' ').filter((p) => p.length > 1));
+  // Exige al menos 2 palabras significativas en cada nombre — con una sola
+  // (p. ej. "Juan" contra "Juan Carlos Maderas S.L.") el riesgo de falso
+  // positivo es demasiado alto para decidir algo tan sensible como quién
+  // es Madera Creativa en la factura.
+  if (palabrasA.size < 2 || palabrasB.size < 2) return false;
+  const [menor, mayor] = palabrasA.size <= palabrasB.size ? [palabrasA, palabrasB] : [palabrasB, palabrasA];
+  return [...menor].every((p) => mayor.has(p));
 }
 
 export function resolverEmisorReceptor(datos: DatosExtraidosFactura, empresa: EmpresaIdentificacion): ResultadoIdentificacion {

@@ -143,6 +143,24 @@ describe('resolverEmisorReceptor (auditoría emisor/receptor, 23/08/2026)', () =
     expect(r.revisar).toBe(false);
   });
 
+  it('12. Titular con nombre y apellido en orden invertido en el documento ("Apellido Nombre") → reconocido igualmente', () => {
+    // Caso real reportado 27/08/2026: el documento traía "Pérez Juan García"
+    // en vez de "Juan García Pérez" (orden habitual en facturas de
+    // proveedores extranjeros) — antes de admitir coincidencia por
+    // conjunto de palabras (sin importar el orden), esto no se reconocía
+    // como el titular y la factura se clasificaba como ingreso con el
+    // propio titular puesto de proveedor.
+    const r = resolverEmisorReceptor(datos({
+      emisorNombre: 'Ferretería El Tornillo S.L.', emisorCifNif: null,
+      receptorNombre: 'Pérez Juan García', receptorCifNif: null,
+      tipo: 'ingreso', // la IA se equivoca aquí a propósito
+    }), EMPRESA);
+    expect(r.tipo).toBe('gasto');
+    expect(r.proveedor).toBe('Ferretería El Tornillo S.L.');
+    expect(r.confianza).toBe('media');
+    expect(r.revisar).toBe(false);
+  });
+
   it('NIF coincide en los dos lados a la vez (documento raro) → no es evidencia fuerte, no decide por NIF', () => {
     const r = resolverEmisorReceptor(datos({
       emisorNombre: 'Madera Creativa', emisorCifNif: 'B12345678',
