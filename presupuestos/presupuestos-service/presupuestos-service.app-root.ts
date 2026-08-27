@@ -422,6 +422,16 @@ export function run() {
   } catch (err) {
     logger.error({ err, valor: process.env.R2_PUBLIC_URL_BASE }, 'R2_PUBLIC_URL_BASE no es una URL válida — CSP de imágenes sin ese origen');
   }
+  // Bucket privado de facturas (Incremento "Facturas privadas", 27/08/2026):
+  // sus URLs firmadas apuntan directamente al endpoint S3 de la cuenta de
+  // R2 (`https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com`), un origen
+  // DISTINTO del dominio público de arriba — mismo fallo que ya se
+  // documentó una vez con el dominio público (bloqueo silencioso,
+  // "(blocked:csp)" en el panel Network, sin ningún error de red visible)
+  // vuelto a encontrar en vivo el mismo día al probar el bucket privado.
+  const origenR2Facturas = process.env.R2_ACCOUNT_ID
+    ? `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`
+    : null;
   // Dominio antiguo (la "Public Development URL" gratuita de R2, sin coste
   // pero explícitamente no apta para producción — devolvía 503 con
   // cualquier tráfico real, confirmado en vivo 19/08/2026). Ya migrado a un
@@ -434,7 +444,7 @@ export function run() {
     contentSecurityPolicy: {
       directives: {
         ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-        'img-src': ["'self'", 'data:', ORIGEN_R2_LEGADO, ...(origenR2 && origenR2 !== ORIGEN_R2_LEGADO ? [origenR2] : [])],
+        'img-src': ["'self'", 'data:', ORIGEN_R2_LEGADO, ...(origenR2 && origenR2 !== ORIGEN_R2_LEGADO ? [origenR2] : []), ...(origenR2Facturas ? [origenR2Facturas] : [])],
         // Sin esto, el Service Worker (`sw.js`, `fetch(event.request)` en su
         // manejador `fetch`) no puede pedir imágenes de R2 él mismo — su
         // `fetch()` cae bajo `connect-src`, no `img-src`, y sin declarar
@@ -444,7 +454,14 @@ export function run() {
         // pero dentro de la app se queda rota con `net::ERR_FAILED`, porque
         // el Service Worker intercepta la petición y su propio `fetch()`
         // hacia `cdn.maderacreativa.com` es lo que la CSP bloquea.
-        'connect-src': ["'self'", ORIGEN_R2_LEGADO, ...(origenR2 && origenR2 !== ORIGEN_R2_LEGADO ? [origenR2] : [])],
+        'connect-src': ["'self'", ORIGEN_R2_LEGADO, ...(origenR2 && origenR2 !== ORIGEN_R2_LEGADO ? [origenR2] : []), ...(origenR2Facturas ? [origenR2Facturas] : [])],
+        // La vista previa de un PDF (`<iframe src=...>`, ver
+        // `escaner-factura.tsx`/`escaner-documento.tsx`) cae bajo
+        // `frame-src` — sin declararlo, la CSP usa `default-src 'self'`
+        // como respaldo (helmet no trae `frame-src` en sus valores por
+        // defecto) y bloquearía igual que `img-src`/`connect-src` un PDF
+        // servido desde R2.
+        'frame-src': ["'self'", ORIGEN_R2_LEGADO, ...(origenR2 && origenR2 !== ORIGEN_R2_LEGADO ? [origenR2] : []), ...(origenR2Facturas ? [origenR2Facturas] : [])],
       },
     },
   }));
