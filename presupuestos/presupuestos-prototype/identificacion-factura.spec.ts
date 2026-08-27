@@ -178,7 +178,36 @@ describe('resolverEmisorReceptor (auditoría emisor/receptor, 23/08/2026)', () =
     expect(r.tipo).toBe('gasto');
     expect(r.proveedor).toBe('MONTÓ');
     expect(r.confianza).toBe('media');
-    expect(r.revisar).toBe(false);
+    // Actualizado 27/08/2026 al añadir la red de seguridad del test 14: el
+    // CIF mal asociado ("Y3300948C", el propio NIF del titular) ya no se
+    // enseña como si fuera el de MONTÓ — antes se colaba tal cual y
+    // `revisar` quedaba en `false` sin que nadie lo notara. Ahora se
+    // calla ese dato (`cifNif` queda vacío) y se marca `revisar: true`
+    // para que el usuario lo rellene a mano si lo necesita — proveedor y
+    // tipo siguen tan bien identificados como antes (por eso `confianza`
+    // se queda en 'media', sin degradar).
+    expect(r.cifNif).toBe('');
+    expect(r.revisar).toBe(true);
+  });
+
+  it('14. Red de seguridad final: el CIF resultante nunca puede ser el propio del usuario, aunque ningún nombre coincida', () => {
+    // Caso real reportado 27/08/2026 (factura de MONTÓ): el CIF del
+    // proveedor estaba escrito en letra tan pequeña que la IA no lo leyó,
+    // y ninguno de los dos nombres coincide con nada conocido — sin
+    // evidencia fuerte de ningún tipo por nombre. Para llegar al bloque 3
+    // (fallback puro por el tipo que proponga la IA) con un CIF que
+    // coincide con el propio del usuario, hace falta un documento raro
+    // donde el mismo CIF aparece en los dos lados a la vez (ninguno de los
+    // dos bloques por NIF puede decidir, al no ser exclusivo de un lado) —
+    // caso extremo, pero es exactamente el que demuestra que la red de
+    // seguridad final no depende de acertar el porqué exacto del fallo.
+    const r = resolverEmisorReceptor(datos({
+      emisorNombre: 'MONTÓ', emisorCifNif: 'B12345678', // = EMPRESA.nifCif, mal atribuido
+      receptorNombre: null, receptorCifNif: 'B12345678', // documento raro: el mismo CIF también aquí
+      tipo: 'gasto',
+    }), EMPRESA);
+    expect(r.cifNif).toBe('');
+    expect(r.revisar).toBe(true);
   });
 
   it('NIF coincide en los dos lados a la vez (documento raro) → no es evidencia fuerte, no decide por NIF', () => {

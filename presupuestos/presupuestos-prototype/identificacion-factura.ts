@@ -123,7 +123,37 @@ export function nombresCoinciden(a: string | null | undefined, b: string | null 
   });
 }
 
+/**
+ * Punto de entrada público — aplica toda la lógica de `resolverInterno` y
+ * luego una última red de seguridad (ver su comentario) antes de devolver
+ * el resultado. Mantener la lógica real en una función aparte permite que
+ * esa red de seguridad cubra los CUATRO bloques de más abajo a la vez, sin
+ * tener que repetir la comprobación en cada `return`.
+ */
 export function resolverEmisorReceptor(datos: DatosExtraidosFactura, empresa: EmpresaIdentificacion): ResultadoIdentificacion {
+  const resultado = resolverInterno(datos, empresa);
+
+  // Red de seguridad final (petición explícita del usuario, 27/08/2026,
+  // caso real: el CIF de MONTÓ estaba escrito en letra tan pequeña que la
+  // IA no llegó ni a leerlo, y el documento no dio ninguna otra evidencia
+  // fuerte — el resultado acabó siendo el propio NIF del usuario puesto
+  // como si fuera el del proveedor). Decida lo que decida la lógica de
+  // arriba, el CIF/NIF de "la otra parte" NUNCA puede ser el nuestro
+  // propio — si ocurre, es preferible decir "no detectado, revisa a mano"
+  // que enseñar el NIF del propio usuario como si fuera el del
+  // proveedor/cliente. No se toca `confianza`: quién es la otra parte
+  // (`proveedor`/`tipo`) puede seguir estando bien identificado por
+  // nombre aunque su CIF concreto no se pueda mostrar — solo se obliga a
+  // `revisar: true`, porque un dato fiscal que antes se enseñaba (aunque
+  // fuera incorrecto) ahora se calla, y el usuario debe rellenarlo a mano
+  // si lo necesita.
+  if (empresa.nifCif && nifsCoinciden(resultado.cifNif, empresa.nifCif)) {
+    return { ...resultado, cifNif: '', revisar: true };
+  }
+  return resultado;
+}
+
+function resolverInterno(datos: DatosExtraidosFactura, empresa: EmpresaIdentificacion): ResultadoIdentificacion {
   const emisorEsEmpresaPorNif = empresa.nifCif ? nifsCoinciden(datos.emisorCifNif, empresa.nifCif) : false;
   const receptorEsEmpresaPorNif = empresa.nifCif ? nifsCoinciden(datos.receptorCifNif, empresa.nifCif) : false;
 
