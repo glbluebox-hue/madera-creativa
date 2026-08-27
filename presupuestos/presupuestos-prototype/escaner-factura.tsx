@@ -693,26 +693,26 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
           </button>
           {datosFiscalesAbierto && (
             <div style={{ background: 'var(--fondo)', border: '1px solid var(--borde)', borderRadius: 8, padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <label className={styles.label} style={{ flex: 1 }}>Nº factura
-                  <input className={styles.input} value={numeroFactura} onChange={(e) => setNumeroFactura(e.target.value)} />
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <label className={styles.label} style={{ flex: '1 1 120px', minWidth: 0 }}>Nº factura
+                  <input className={styles.input} style={{ width: '100%', boxSizing: 'border-box' }} value={numeroFactura} onChange={(e) => setNumeroFactura(e.target.value)} />
                 </label>
-                <label className={styles.label} style={{ flex: 1 }}>CIF/NIF
-                  <input className={styles.input} value={cifNif} onChange={(e) => setCifNif(e.target.value)} />
+                <label className={styles.label} style={{ flex: '1 1 120px', minWidth: 0 }}>CIF/NIF
+                  <input className={styles.input} style={{ width: '100%', boxSizing: 'border-box' }} value={cifNif} onChange={(e) => setCifNif(e.target.value)} />
                 </label>
               </div>
               <label className={styles.label}>Categoría
                 <input className={styles.input} value={categoria} onChange={(e) => setCategoria(e.target.value)} placeholder="materiales, herramientas, combustible…" />
               </label>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <label className={styles.label} style={{ flex: 1 }}>Base imponible (€)
-                  <input className={styles.input} type="number" value={baseImponible} onChange={(e) => setBaseImponible(e.target.value)} />
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <label className={styles.label} style={{ flex: '1 1 90px', minWidth: 0 }}>Base imponible (€)
+                  <input className={styles.input} style={{ width: '100%', boxSizing: 'border-box' }} type="number" value={baseImponible} onChange={(e) => setBaseImponible(e.target.value)} />
                 </label>
-                <label className={styles.label} style={{ flex: 1 }}>Impuesto (%)
-                  <input className={styles.input} type="number" value={porcentajeImpuesto} onChange={(e) => setPorcentajeImpuesto(e.target.value)} />
+                <label className={styles.label} style={{ flex: '1 1 90px', minWidth: 0 }}>Impuesto (%)
+                  <input className={styles.input} style={{ width: '100%', boxSizing: 'border-box' }} type="number" value={porcentajeImpuesto} onChange={(e) => setPorcentajeImpuesto(e.target.value)} />
                 </label>
-                <label className={styles.label} style={{ flex: 1 }}>Cuota impuesto (€)
-                  <input className={styles.input} type="number" value={importeImpuesto} onChange={(e) => setImporteImpuesto(e.target.value)} />
+                <label className={styles.label} style={{ flex: '1 1 90px', minWidth: 0 }}>Cuota impuesto (€)
+                  <input className={styles.input} style={{ width: '100%', boxSizing: 'border-box' }} type="number" value={importeImpuesto} onChange={(e) => setImporteImpuesto(e.target.value)} />
                 </label>
               </div>
             </div>

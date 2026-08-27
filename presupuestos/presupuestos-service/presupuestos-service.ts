@@ -980,11 +980,34 @@ export class PresupuestosService {
     if (params.fecha && params.importe) {
       condiciones.push({ fecha: params.fecha, importe: params.importe });
     }
-    if (!condiciones.length) return null;
-    const filtro: Record<string, unknown> = { usuarioId, $or: condiciones };
-    if (params.excluirId) filtro.id = { $ne: params.excluirId };
-    const doc = await FacturaModel.findOne(filtro).lean().exec();
-    return doc ? this.limpiar(doc as Record<string, unknown>) : null;
+    if (condiciones.length) {
+      const filtro: Record<string, unknown> = { usuarioId, $or: condiciones };
+      if (params.excluirId) filtro.id = { $ne: params.excluirId };
+      const doc = await FacturaModel.findOne(filtro).lean().exec();
+      if (doc) return this.limpiar(doc as Record<string, unknown>);
+    }
+
+    // Respaldo sin exigir la misma fecha — bug real (27/08/2026): la fecha
+    // que lee la IA de un ticket no siempre sale igual entre dos lecturas
+    // del mismo papel (conversión de formato DD-MM-AAAA a AAAA-MM-DD,
+    // fecha ilegible, o simplemente no se ha vuelto a pulsar "Extraer
+    // datos con IA" la segunda vez y ha quedado la fecha de hoy por
+    // defecto) — exigirla de más dejaba pasar duplicados reales con el
+    // mismo proveedor y el mismo importe, justo lo que más importa
+    // detectar. El importe es el dato más fiable de un ticket (el número
+    // grande y claro), así que basta con cruzarlo con el proveedor
+    // (comparado sin distinguir mayúsculas/minúsculas — la IA no siempre
+    // devuelve el nombre con el mismo formato exacto).
+    if (params.proveedor && params.importe) {
+      const filtroImporte: Record<string, unknown> = { usuarioId, importe: params.importe };
+      if (params.excluirId) filtroImporte.id = { $ne: params.excluirId };
+      const candidatas = await FacturaModel.find(filtroImporte).lean().exec();
+      const proveedorNormalizado = params.proveedor.trim().toLowerCase();
+      const encontrada = candidatas.find((f: any) => (f.proveedor || '').trim().toLowerCase() === proveedorNormalizado);
+      if (encontrada) return this.limpiar(encontrada as Record<string, unknown>);
+    }
+
+    return null;
   }
 
   /**
