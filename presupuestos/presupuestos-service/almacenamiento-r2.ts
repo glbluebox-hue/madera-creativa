@@ -45,15 +45,27 @@ export class AlmacenamientoR2 implements AlmacenamientoArchivos {
     accessKeyIdFacturas?: string; secretAccessKeyFacturas?: string;
   }) {
     const endpoint = `https://${opciones.accountId}.r2.cloudflarestorage.com`;
+    // `forcePathStyle: true` es imprescindible con R2, no cosmético: sin él,
+    // el SDK de AWS construye por defecto una URL "virtual-hosted-style"
+    // (el bucket como subdominio, `https://<bucket>.<cuenta>.r2...`) — un
+    // formato que R2 NO soporta en su endpoint de cuenta (solo entiende el
+    // bucket como primer segmento de la ruta). Para `subir()`/`borrar()` el
+    // fallo pasaba desapercibido (el SDK sabe internamente a qué apunta,
+    // pese al host "raro"), pero `generarUrlTemporal()` expone esa URL tal
+    // cual al navegador — ahí sí es visible: "no carga la imagen" (bug
+    // real, 27/08/2026, encontrado tras el primer despliegue del bucket
+    // privado de facturas).
     this.cliente = new S3Client({
       region: 'auto',
       endpoint,
+      forcePathStyle: true,
       credentials: { accessKeyId: opciones.accessKeyId, secretAccessKey: opciones.secretAccessKey },
     });
     this.clienteFacturas = opciones.accessKeyIdFacturas && opciones.secretAccessKeyFacturas
       ? new S3Client({
           region: 'auto',
           endpoint,
+          forcePathStyle: true,
           credentials: { accessKeyId: opciones.accessKeyIdFacturas, secretAccessKey: opciones.secretAccessKeyFacturas },
         })
       : this.cliente;
