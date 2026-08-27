@@ -161,6 +161,26 @@ describe('resolverEmisorReceptor (auditoría emisor/receptor, 23/08/2026)', () =
     expect(r.revisar).toBe(false);
   });
 
+  it('13. CIF/NIF mal asociado por la IA a un lado, pero el nombre del otro lado es inequívocamente el titular → gana el nombre, no el CIF', () => {
+    // Caso real reportado 27/08/2026: ticket de "MONTÓ" con formato
+    // confuso — la IA leyó el CIF/NIF del propio titular pero lo puso en
+    // el campo del EMISOR en vez del receptor (donde realmente constaba,
+    // junto a la dirección de envío). El nombre del receptor, en cambio,
+    // era literalmente "Randazz Luca" (apellido cortado) — coincide con el
+    // titular "Luca Randazzo". Confiar ciegamente en el CIF mal puesto
+    // clasificaba esto como ingreso con el propio titular de proveedor.
+    const EMPRESA_LUCA: EmpresaIdentificacion = { nombre: 'Madera Creativa', titular: 'Luca Randazzo', nifCif: 'Y3300948C' };
+    const r = resolverEmisorReceptor(datos({
+      emisorNombre: 'MONTÓ', emisorCifNif: 'Y3300948C', // la IA asoció mal este CIF al emisor
+      receptorNombre: 'Randazz Luca', receptorCifNif: null,
+      tipo: 'ingreso', // la IA se equivoca aquí a propósito
+    }), EMPRESA_LUCA);
+    expect(r.tipo).toBe('gasto');
+    expect(r.proveedor).toBe('MONTÓ');
+    expect(r.confianza).toBe('media');
+    expect(r.revisar).toBe(false);
+  });
+
   it('NIF coincide en los dos lados a la vez (documento raro) → no es evidencia fuerte, no decide por NIF', () => {
     const r = resolverEmisorReceptor(datos({
       emisorNombre: 'Madera Creativa', emisorCifNif: 'B12345678',

@@ -78,18 +78,29 @@ function nifsCoinciden(a: string | null | undefined, b: string | null | undefine
   return na.length >= 5 && na === nb;
 }
 
+/** Coinciden dos palabras — iguales, o una es prefijo de la otra con longitud suficiente. Tolera truncados reales de impresión/OCR (p. ej. "RANDAZZ" en vez de "RANDAZZO" — bug reportado 27/08/2026, ticket con el apellido cortado en la etiqueta de envío). */
+function palabrasCoinciden(a: string, b: string): boolean {
+  if (a === b) return true;
+  const [corta, larga] = a.length <= b.length ? [a, b] : [b, a];
+  return corta.length >= 4 && larga.startsWith(corta);
+}
+
 /**
  * Coinciden dos nombres — igualdad, inclusión en cualquier dirección
  * (nombres comerciales suelen llevar "S.L."/"Autónomo" de más), o las
- * mismas palabras en otro orden.
+ * mismas palabras (toleradas truncamientos cortos) en otro orden,
+ * EXIGIENDO el mismo número de palabras en los dos nombres.
  *
- * Ese último caso es real, no teórico (bug reportado 27/08/2026): el
+ * Esa última regla es real, no teórica (bug reportado 27/08/2026): el
  * titular guardado en Ajustes de empresa era "Luca Randazzo", pero el
  * documento (formato "Apellido Nombre", habitual en facturas de
- * proveedores extranjeros) traía "Randazzo Luca" — ninguna de las dos
- * cadenas es substring literal de la otra, así que la comparación de antes
- * nunca reconocía al titular como una de las partes, y la factura se
- * clasificaba como ingreso con el propio titular puesto de proveedor.
+ * proveedores extranjeros, y con el apellido cortado a "Randazz") traía
+ * "Randazz Luca" — ninguna cadena es substring literal de la otra, así que
+ * la comparación de antes nunca lo reconocía como el titular. Exigir el
+ * MISMO número de palabras (en vez de aceptar que unas pocas palabras
+ * compartidas basten) es igual de importante: sin eso, un cliente real
+ * llamado solo "Juan Pérez" habría coincidido por error con el titular
+ * "Juan García Pérez", que no es la misma persona.
  */
 export function nombresCoinciden(a: string | null | undefined, b: string | null | undefined): boolean {
   const na = normalizarNombre(a);
@@ -97,23 +108,48 @@ export function nombresCoinciden(a: string | null | undefined, b: string | null 
   if (na.length < 3 || nb.length < 3) return false;
   if (na === nb || na.includes(nb) || nb.includes(na)) return true;
 
-  const palabrasA = new Set(na.split(' ').filter((p) => p.length > 1));
-  const palabrasB = new Set(nb.split(' ').filter((p) => p.length > 1));
-  // Exige al menos 2 palabras significativas en cada nombre — con una sola
-  // (p. ej. "Juan" contra "Juan Carlos Maderas S.L.") el riesgo de falso
-  // positivo es demasiado alto para decidir algo tan sensible como quién
-  // es Madera Creativa en la factura.
-  if (palabrasA.size < 2 || palabrasB.size < 2) return false;
-  const [menor, mayor] = palabrasA.size <= palabrasB.size ? [palabrasA, palabrasB] : [palabrasB, palabrasA];
-  return [...menor].every((p) => mayor.has(p));
+  const palabrasA = na.split(' ').filter((p) => p.length > 1);
+  const palabrasB = nb.split(' ').filter((p) => p.length > 1);
+  // Al menos 2 palabras significativas, y las mismas en los dos nombres —
+  // ver comentario de arriba.
+  if (palabrasA.length < 2 || palabrasA.length !== palabrasB.length) return false;
+
+  const usadas = new Set<number>();
+  return palabrasA.every((pa) => {
+    const i = palabrasB.findIndex((pb, idx) => !usadas.has(idx) && palabrasCoinciden(pa, pb));
+    if (i === -1) return false;
+    usadas.add(i);
+    return true;
+  });
 }
 
 export function resolverEmisorReceptor(datos: DatosExtraidosFactura, empresa: EmpresaIdentificacion): ResultadoIdentificacion {
-  // 1) Evidencia fuerte por CIF/NIF — solo decide si coincide con exactamente uno de los dos lados.
   const emisorEsEmpresaPorNif = empresa.nifCif ? nifsCoinciden(datos.emisorCifNif, empresa.nifCif) : false;
   const receptorEsEmpresaPorNif = empresa.nifCif ? nifsCoinciden(datos.receptorCifNif, empresa.nifCif) : false;
 
-  if (emisorEsEmpresaPorNif && !receptorEsEmpresaPorNif) {
+  // Se calcula ya aquí (no solo como fallback más abajo) porque el CIF/NIF
+  // por sí solo NO basta si el nombre del lado contrario contradice
+  // directamente al CIF — ver el bloque 1.
+  const emisorEsEmpresaPorNombre =
+    (empresa.nombre && nombresCoinciden(datos.emisorNombre, empresa.nombre)) ||
+    (empresa.titular && nombresCoinciden(datos.emisorNombre, empresa.titular)) || false;
+  const receptorEsEmpresaPorNombre =
+    (empresa.nombre && nombresCoinciden(datos.receptorNombre, empresa.nombre)) ||
+    (empresa.titular && nombresCoinciden(datos.receptorNombre, empresa.titular)) || false;
+
+  // 1) Evidencia fuerte por CIF/NIF — solo decide si coincide con
+  //    exactamente uno de los dos lados Y el nombre del lado contrario no
+  //    lo contradice. Bug real (27/08/2026): en un ticket con formato
+  //    confuso, la IA asoció el CIF/NIF del usuario al campo "emisor" en
+  //    vez de al "receptor" (donde realmente aparecía, junto a la
+  //    dirección de envío) — pero el NOMBRE del receptor sí era
+  //    inequívocamente el titular. Confiar ciegamente en el CIF sin mirar
+  //    el nombre clasificó un gasto real como ingreso, con el propio
+  //    titular puesto de proveedor. Cuando CIF y nombre se contradicen así,
+  //    el documento es demasiado confuso para decidir con confianza alta
+  //    — se trata como si el CIF no hubiera coincidido, y se cae al
+  //    bloque 2 (por nombre) o al 3 (revisión obligatoria).
+  if (emisorEsEmpresaPorNif && !receptorEsEmpresaPorNif && !receptorEsEmpresaPorNombre) {
     return {
       tipo: 'ingreso',
       proveedor: datos.receptorNombre ?? '',
@@ -124,7 +160,7 @@ export function resolverEmisorReceptor(datos: DatosExtraidosFactura, empresa: Em
       revisar: !datos.receptorNombre,
     };
   }
-  if (receptorEsEmpresaPorNif && !emisorEsEmpresaPorNif) {
+  if (receptorEsEmpresaPorNif && !emisorEsEmpresaPorNif && !emisorEsEmpresaPorNombre) {
     return {
       tipo: 'gasto',
       proveedor: datos.emisorNombre ?? '',
@@ -136,18 +172,11 @@ export function resolverEmisorReceptor(datos: DatosExtraidosFactura, empresa: Em
     };
   }
 
-  // 2) Sin evidencia concluyente por NIF (ninguno coincide, o coinciden los
-  //    dos a la vez — documento raro/erróneo): probar por nombre, confianza
-  //    media — contra el nombre comercial O el nombre y apellidos del
-  //    titular (una factura de ingreso real suele llevar el nombre legal,
-  //    no la marca; hallazgo real, 25/08/2026).
-  const emisorEsEmpresaPorNombre =
-    (empresa.nombre && nombresCoinciden(datos.emisorNombre, empresa.nombre)) ||
-    (empresa.titular && nombresCoinciden(datos.emisorNombre, empresa.titular)) || false;
-  const receptorEsEmpresaPorNombre =
-    (empresa.nombre && nombresCoinciden(datos.receptorNombre, empresa.nombre)) ||
-    (empresa.titular && nombresCoinciden(datos.receptorNombre, empresa.titular)) || false;
-
+  // 2) Sin evidencia concluyente por NIF (ninguno coincide, coinciden los
+  //    dos a la vez, o contradice al nombre del lado contrario): probar
+  //    por nombre, confianza media — contra el nombre comercial O el
+  //    nombre y apellidos del titular (una factura de ingreso real suele
+  //    llevar el nombre legal, no la marca; hallazgo real, 25/08/2026).
   if (emisorEsEmpresaPorNombre && !receptorEsEmpresaPorNombre) {
     return {
       tipo: 'ingreso',
