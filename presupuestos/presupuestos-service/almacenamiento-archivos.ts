@@ -53,4 +53,13 @@ export interface AlmacenamientoArchivos {
    * contrato.
    */
   obtener(clave: string): Promise<{ datos: Buffer; contentType: string } | null>;
+
+  /**
+   * Genera una URL temporal (firmada) para leer un archivo privado, válida
+   * `ttlSegundos` (por defecto 900 = 15 min). Solo tiene sentido para
+   * archivos subidos a un almacenamiento privado (Incremento "Facturas
+   * privadas") — `AlmacenamientoMemoria` devuelve simplemente su URL
+   * relativa de siempre, ya que en desarrollo no hay nada real que firmar.
+   */
+  generarUrlTemporal(clave: string, ttlSegundos?: number): Promise<string>;
 }

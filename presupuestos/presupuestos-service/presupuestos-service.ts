@@ -5,6 +5,7 @@ import { UsuarioModel, conectarUsuarios } from './usuario.model.js';
 import { crearEnlacePresupuesto, buscarEnlacePorToken, reclamarEnlaceAceptado, guardarFirmaEnlace, formatoTokenValido, enlacesActivosDeUsuario } from './enlace-presupuesto.model.js';
 import { crearEnlaceResena, buscarEnlaceResenaPorToken, registrarUsoEnlaceResena, formatoTokenValidoResena } from './enlace-resena.model.js';
 import { almacenamiento } from './almacenamiento.service.js';
+import { intentarBorrarArchivo } from './borrado-pendiente.service.js';
 import { busEventos } from './eventos.service.js';
 import { enviarNotificacion } from './push.service.js';
 import type { PushSub } from './push.service.js';
@@ -95,6 +96,49 @@ async function subirSiEsBase64(valor: unknown, carpeta: string) {
   const [, tipoMime, base64] = coincide;
   const buffer = Buffer.from(base64, 'base64');
   return almacenamiento.subir(buffer, { contentType: tipoMime, carpeta });
+}
+
+/**
+ * Sustituye, en un documento de Factura ya leído de Mongo, cada URL
+ * respaldada por una clave del bucket privado de facturas
+ * (`imagenClave`/`pdfOriginalClave`/`imagenesClaves`/`paginas[].clave`) por
+ * una URL firmada temporal recién generada (Incremento "Facturas
+ * privadas", 27/08/2026) — y retira esas claves de la respuesta: son un
+ * detalle interno de almacenamiento, el frontend nunca las necesita.
+ *
+ * Facturas guardadas ANTES de este incremento no tienen ninguna clave —
+ * para ellas `imagen`/`pdfOriginalUrl`/`imagenes`/`paginas[].url` se
+ * devuelven tal cual (la URL pública permanente de siempre), sin ningún
+ * cambio de comportamiento.
+ *
+ * Se aplica a CUALQUIER lectura de una factura completa: la ficha
+ * individual (`obtenerFactura`), el resultado de guardar
+ * (`guardarFactura`), el aviso de posible duplicado
+ * (`buscarFacturaDuplicada`) y la generación de PDF/ZIP
+ * (`obtenerPdfCombinadoFacturas`, `obtenerDocumentacionAsesor`,
+ * `obtenerZipFacturas` vía `obtenerFactura`) — esta última es la razón por
+ * la que esto no es opcional: `documentos-factura.service.ts` descarga la
+ * imagen con `fetch(url)` para incrustarla en el PDF, y una URL de un
+ * bucket privado sin firmar devolvería 403.
+ */
+async function resolverUrlsFactura(doc: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const d = doc as any;
+  const { imagenClave, imagenesClaves, pdfOriginalClave, ...resto } = d;
+
+  const imagen = imagenClave ? await almacenamiento.generarUrlTemporal(imagenClave) : d.imagen;
+  const pdfOriginalUrl = pdfOriginalClave ? await almacenamiento.generarUrlTemporal(pdfOriginalClave) : d.pdfOriginalUrl;
+  const imagenes = Array.isArray(d.imagenes)
+    ? await Promise.all(d.imagenes.map((url: string, i: number) =>
+        imagenesClaves?.[i] ? almacenamiento.generarUrlTemporal(imagenesClaves[i]) : url))
+    : d.imagenes;
+  const paginas = Array.isArray(d.paginas)
+    ? await Promise.all(d.paginas.map(async (p: Record<string, unknown>) => {
+        const { clave, ...pRest } = p as any;
+        return clave ? { ...pRest, url: await almacenamiento.generarUrlTemporal(clave) } : pRest;
+      }))
+    : d.paginas;
+
+  return { ...resto, imagen, pdfOriginalUrl, imagenes, paginas };
 }
 
 /** Sube las fotos nuevas (Base64) de un cliente; deja las ya subidas tal cual. */
@@ -749,7 +793,11 @@ export class PresupuestosService {
           },
         },
       },
-      { $project: { imagen: 0, imagenes: 0 } },
+      // Las claves privadas (Incremento "Facturas privadas", 27/08/2026)
+      // tampoco deben salir en un listado — son un detalle interno de
+      // almacenamiento que el frontend nunca necesita, y este listado ya
+      // no lleva `imagen`/`imagenes` con los que podrían ir de la mano.
+      { $project: { imagen: 0, imagenes: 0, imagenClave: 0, imagenesClaves: 0, pdfOriginalClave: 0, 'paginas.clave': 0 } },
     ];
   }
 
@@ -936,7 +984,7 @@ export class PresupuestosService {
     await conectar();
     const doc = await FacturaModel.findOne({ id, usuarioId }).lean().exec();
     if (!doc) return null;
-    return this.limpiar(doc as Record<string, unknown>);
+    return resolverUrlsFactura(this.limpiar(doc as Record<string, unknown>));
   }
 
   /**
@@ -984,7 +1032,7 @@ export class PresupuestosService {
       const filtro: Record<string, unknown> = { usuarioId, $or: condiciones };
       if (params.excluirId) filtro.id = { $ne: params.excluirId };
       const doc = await FacturaModel.findOne(filtro).lean().exec();
-      if (doc) return this.limpiar(doc as Record<string, unknown>);
+      if (doc) return resolverUrlsFactura(this.limpiar(doc as Record<string, unknown>));
     }
 
     // Respaldo sin exigir la misma fecha — bug real (27/08/2026): la fecha
@@ -1019,7 +1067,7 @@ export class PresupuestosService {
             return otro.length >= 3 && (otro === proveedorNormalizado || otro.includes(proveedorNormalizado) || proveedorNormalizado.includes(otro));
           })
         : undefined;
-      if (encontrada) return this.limpiar(encontrada as Record<string, unknown>);
+      if (encontrada) return resolverUrlsFactura(this.limpiar(encontrada as Record<string, unknown>));
     }
 
     return null;
@@ -1144,21 +1192,28 @@ export class PresupuestosService {
 
     // Igual que en guardarCliente: sube a almacenamiento externo cualquier
     // imagen nueva (Base64); las que ya eran una URL no se tocan
-    // (Incremento 1.7). `imagen`/`imagenes` no tienen un sitio propio donde
-    // guardar la clave de almacenamiento (son solo cadenas, no
-    // subdocumentos) — para poder limpiar la imagen anterior si se
-    // reemplaza, se deriva la clave desde la propia URL con
-    // `claveDesdeUrl()`.
+    // (Incremento 1.7). Desde el Incremento "Facturas privadas"
+    // (27/08/2026) las facturas nuevas suben al bucket privado de facturas
+    // (si está configurado — ver `almacenamiento-r2.ts`), así que `subir()`
+    // ya no devuelve una URL pública real (`resultado.url === ''`) — se
+    // guarda también `resultado.clave`, la referencia real del archivo, en
+    // el campo `*Clave` correspondiente. Para facturas antiguas sin clave
+    // propia, se sigue pudiendo derivar de la URL con `claveDesdeUrl()`
+    // (compatibilidad, ver más abajo).
     const resultadoImagen = await subirSiEsBase64((factura as any).imagen, 'facturas');
     const imagen = resultadoImagen ? resultadoImagen.url : (factura as any).imagen;
+    const imagenClave = resultadoImagen ? resultadoImagen.clave : (factura as any).imagenClave || '';
 
     const imagenesOriginal = (factura as any).imagenes;
-    const imagenes = Array.isArray(imagenesOriginal)
-      ? await Promise.all(imagenesOriginal.map(async (img: string) => {
-          const r = await subirSiEsBase64(img, 'facturas');
-          return r ? r.url : img;
-        }))
+    const imagenesSubidas = Array.isArray(imagenesOriginal)
+      ? await Promise.all(imagenesOriginal.map((img: string) => subirSiEsBase64(img, 'facturas')))
+      : null;
+    const imagenes = imagenesSubidas
+      ? imagenesSubidas.map((r, i) => (r ? r.url : imagenesOriginal[i]))
       : imagenesOriginal;
+    const imagenesClaves = imagenesSubidas
+      ? imagenesSubidas.map((r, i) => (r ? r.clave : (factura as any).imagenesClaves?.[i] || ''))
+      : (factura as any).imagenesClaves;
 
     // Igual tratamiento para el PDF original (si la factura se subió
     // directamente como PDF) y para `paginas` (el documento completo en
@@ -1166,12 +1221,13 @@ export class PresupuestosService {
     // Facturas Profesional, mismo patrón que `imagen`/`imagenes`.
     const resultadoPdfOriginal = await subirSiEsBase64((factura as any).pdfOriginalUrl, 'facturas');
     const pdfOriginalUrl = resultadoPdfOriginal ? resultadoPdfOriginal.url : (factura as any).pdfOriginalUrl;
+    const pdfOriginalClave = resultadoPdfOriginal ? resultadoPdfOriginal.clave : (factura as any).pdfOriginalClave || '';
 
     const paginasOriginal = (factura as any).paginas;
     const paginas = Array.isArray(paginasOriginal)
-      ? await Promise.all(paginasOriginal.map(async (p: { tipo: string; url: string }) => {
+      ? await Promise.all(paginasOriginal.map(async (p: { tipo: string; url: string; clave?: string }) => {
           const r = await subirSiEsBase64(p.url, 'facturas');
-          return r ? { ...p, url: r.url } : p;
+          return r ? { ...p, url: r.url, clave: r.clave } : p;
         }))
       : paginasOriginal;
 
@@ -1192,32 +1248,48 @@ export class PresupuestosService {
 
     const doc = await FacturaModel.findOneAndUpdate(
       { id: factura.id, usuarioId },
-      { ...factura, imagen, imagenes, pdfOriginalUrl, paginas, cifNif, usuarioId },
+      { ...factura, imagen, imagenClave, imagenes, imagenesClaves, pdfOriginalUrl, pdfOriginalClave, paginas, cifNif, usuarioId },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     ).lean().exec();
 
     if (anterior) {
-      if (anterior.imagen && anterior.imagen !== imagen) {
-        const claveVieja = almacenamiento.claveDesdeUrl(anterior.imagen);
-        if (claveVieja) await almacenamiento.borrar(claveVieja).catch(() => {});
+      // Prefiere la clave propia del campo (facturas nuevas, bucket
+      // privado); si no la tiene (facturas de antes de este incremento),
+      // cae en derivarla de la URL pública de siempre — mismo mecanismo
+      // que ya existía, ahora solo como respaldo. Cada borrado pasa por
+      // `intentarBorrarArchivo`, que registra el fallo en vez de
+      // descartarlo en silencio (Incremento "Facturas privadas", 27/08/2026).
+      const claveDe = (url: string | undefined, clave: string | undefined): string | null =>
+        clave || (url ? almacenamiento.claveDesdeUrl(url) : null);
+
+      const claveAnteriorImagen = claveDe(anterior.imagen, anterior.imagenClave);
+      const claveNuevaImagen = claveDe(imagen, imagenClave);
+      if (claveAnteriorImagen && claveAnteriorImagen !== claveNuevaImagen) {
+        await intentarBorrarArchivo(claveAnteriorImagen);
       }
-      if (anterior.pdfOriginalUrl && anterior.pdfOriginalUrl !== pdfOriginalUrl) {
-        const claveVieja = almacenamiento.claveDesdeUrl(anterior.pdfOriginalUrl);
-        if (claveVieja) await almacenamiento.borrar(claveVieja).catch(() => {});
+
+      const claveAnteriorPdf = claveDe(anterior.pdfOriginalUrl, anterior.pdfOriginalClave);
+      const claveNuevaPdf = claveDe(pdfOriginalUrl, pdfOriginalClave);
+      if (claveAnteriorPdf && claveAnteriorPdf !== claveNuevaPdf) {
+        await intentarBorrarArchivo(claveAnteriorPdf);
       }
-      const imagenesNuevas = new Set(imagenes ?? []);
-      for (const img of anterior.imagenes ?? []) {
-        if (!imagenesNuevas.has(img)) {
-          const clave = almacenamiento.claveDesdeUrl(img);
-          if (clave) await almacenamiento.borrar(clave).catch(() => {});
-        }
+
+      const clavesImagenesNuevas = new Set(
+        (anterior.imagenes ?? []).length
+          ? (imagenes ?? []).map((url: string, i: number) => claveDe(url, imagenesClaves?.[i])).filter(Boolean)
+          : []
+      );
+      for (let i = 0; i < (anterior.imagenes ?? []).length; i++) {
+        const claveVieja = claveDe(anterior.imagenes[i], anterior.imagenesClaves?.[i]);
+        if (claveVieja && !clavesImagenesNuevas.has(claveVieja)) await intentarBorrarArchivo(claveVieja);
       }
-      const paginasNuevasUrls = new Set((paginas ?? []).map((p: { url: string }) => p.url));
+
+      const clavesPaginasNuevas = new Set(
+        (paginas ?? []).map((p: { url: string; clave?: string }) => claveDe(p.url, p.clave)).filter(Boolean)
+      );
       for (const p of anterior.paginas ?? []) {
-        if (!paginasNuevasUrls.has(p.url)) {
-          const clave = almacenamiento.claveDesdeUrl(p.url);
-          if (clave) await almacenamiento.borrar(clave).catch(() => {});
-        }
+        const claveVieja = claveDe(p.url, p.clave);
+        if (claveVieja && !clavesPaginasNuevas.has(claveVieja)) await intentarBorrarArchivo(claveVieja);
       }
     }
 
@@ -1257,7 +1329,7 @@ export class PresupuestosService {
       (doc as any).proyectoId = proyectoIdNuevo;
     }
 
-    return this.limpiar(doc as Record<string, unknown>);
+    return resolverUrlsFactura(this.limpiar(doc as Record<string, unknown>));
   }
 
   /**
@@ -1269,14 +1341,19 @@ export class PresupuestosService {
     await conectar();
     const doc = await FacturaModel.findOne({ id, usuarioId }).lean().exec() as any;
     if (doc) {
-      const urls = [
-        doc.imagen, doc.pdfOriginalUrl,
-        ...(doc.imagenes ?? []),
-        ...((doc.paginas ?? []) as { url: string }[]).map((p) => p.url),
-      ].filter(Boolean);
-      for (const url of urls) {
-        const clave = almacenamiento.claveDesdeUrl(url);
-        if (clave) await almacenamiento.borrar(clave).catch(() => {});
+      // Prefiere la clave propia de cada campo (facturas nuevas, bucket
+      // privado); si no la tiene, la deriva de la URL pública (facturas de
+      // antes del Incremento "Facturas privadas") — mismo respaldo que en
+      // `guardarFactura()`. Cada borrado pasa por `intentarBorrarArchivo`:
+      // un fallo queda registrado para reintento, nunca se pierde en silencio.
+      const claves = [
+        doc.imagenClave || (doc.imagen ? almacenamiento.claveDesdeUrl(doc.imagen) : null),
+        doc.pdfOriginalClave || (doc.pdfOriginalUrl ? almacenamiento.claveDesdeUrl(doc.pdfOriginalUrl) : null),
+        ...(doc.imagenes ?? []).map((url: string, i: number) => doc.imagenesClaves?.[i] || (url ? almacenamiento.claveDesdeUrl(url) : null)),
+        ...((doc.paginas ?? []) as { url: string; clave?: string }[]).map((p) => p.clave || (p.url ? almacenamiento.claveDesdeUrl(p.url) : null)),
+      ].filter((c): c is string => Boolean(c));
+      for (const clave of claves) {
+        await intentarBorrarArchivo(clave);
       }
       // Evita un movimiento huérfano que siguiera afectando al margen de
       // ganancia de un proyecto tras borrar la factura de origen.
@@ -1362,7 +1439,12 @@ export class PresupuestosService {
       filtro.fecha = { $gte: `${opciones.anio}-01-01`, $lte: `${opciones.anio}-12-31` };
     }
     const docs = await FacturaModel.find(filtro).lean().exec();
-    const facturas = (docs as any[]).map((d) => this.limpiar(d as Record<string, unknown>));
+    // `resolverUrlsFactura` es imprescindible aquí, no cosmético:
+    // `generarPdfCombinadoFacturas` descarga cada imagen con `fetch(url)`
+    // para incrustarla en el PDF — sin resolver, una factura del bucket
+    // privado nuevo llegaría con la URL en blanco (o una URL sin firmar,
+    // que R2 respondería con 403).
+    const facturas = await Promise.all(docs.map((d) => resolverUrlsFactura(this.limpiar(d as Record<string, unknown>))));
     const { generarPdfCombinadoFacturas } = await import('./documentos-factura.service.js');
     try {
       return await generarPdfCombinadoFacturas(facturas);
@@ -1382,7 +1464,9 @@ export class PresupuestosService {
     const mesFin = mesInicio + 2;
     const filtro = { usuarioId, fecha: { $gte: `${anio}-${String(mesInicio).padStart(2, '0')}-01`, $lte: `${anio}-${String(mesFin).padStart(2, '0')}-31` } };
     const docs = await FacturaModel.find(filtro).lean().exec();
-    const facturas = (docs as any[]).map((d) => this.limpiar(d as Record<string, unknown>));
+    // Mismo motivo que en `obtenerPdfCombinadoFacturas`: el PDF de cada
+    // factura se genera descargando su imagen por URL.
+    const facturas = await Promise.all(docs.map((d) => resolverUrlsFactura(this.limpiar(d as Record<string, unknown>))));
 
     const [empresa, gastosPeriodicos] = await Promise.all([
       EmpresaModel.findOne({ usuarioId }).lean().exec() as Promise<any>,

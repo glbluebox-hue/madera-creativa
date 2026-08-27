@@ -638,6 +638,15 @@ const FacturaSchema = new Schema({
   clienteId: { type: String, default: '' },
   imagen: { type: String, default: '' },
   /**
+   * Clave interna del bucket privado de facturas (Incremento "Facturas
+   * privadas", 27/08/2026) — cuando existe, `imagen` deja de ser una URL
+   * pública permanente y pasa a resolverse en cada lectura como una URL
+   * firmada temporal (`resolverUrlsFactura`, `presupuestos-service.ts`).
+   * Vacía en facturas guardadas antes de este incremento — esas siguen
+   * sirviéndose con la URL pública de siempre, sin romper nada.
+   */
+  imagenClave: { type: String, default: '' },
+  /**
    * Páginas adicionales del documento multihoja — el frontend ya las
    * construye y `esquemaFactura` (Zod) ya las validaba, pero al no estar
    * declaradas aquí, Mongoose (`strict` por defecto) las descartaba en
@@ -645,6 +654,8 @@ const FacturaSchema = new Schema({
    * Profesional, auditoría 11/08/2026).
    */
   imagenes: { type: [String], default: [] },
+  /** Claves privadas paralelas a `imagenes` (mismo índice) — mismo criterio que `imagenClave`. */
+  imagenesClaves: { type: [String], default: [] },
   creado: { type: String, required: true },
 
   // ── Ampliación documental/fiscal (Fase Facturas Profesional) — todo
@@ -668,9 +679,11 @@ const FacturaSchema = new Schema({
   pdfUrl: { type: String, default: '' },
   /** PDF original, si la factura se subió directamente como PDF. */
   pdfOriginalUrl: { type: String, default: '' },
+  /** Clave privada de `pdfOriginalUrl` — mismo criterio que `imagenClave`. */
+  pdfOriginalClave: { type: String, default: '' },
   /** Páginas del documento en orden, con su tipo — sustituye gradualmente a `imagenes` para poder mezclar imagen y PDF en un mismo documento. */
   paginas: {
-    type: [{ tipo: { type: String, enum: ['imagen', 'pdf'] }, url: String }],
+    type: [{ tipo: { type: String, enum: ['imagen', 'pdf'] }, url: String, clave: { type: String, default: '' } }],
     default: [],
   },
 });

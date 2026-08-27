@@ -46,6 +46,11 @@ export class AlmacenamientoMemoria implements AlmacenamientoArchivos {
     return archivo ? { datos: archivo.datos, contentType: archivo.contentType } : null;
   }
 
+  /** En desarrollo no hay nada real que firmar — la propia URL relativa ya solo la sirve este backend. */
+  async generarUrlTemporal(clave: string): Promise<string> {
+    return `/api/presupuestos-service/almacenamiento/${clave}`;
+  }
+
   /** Solo para pruebas: comprueba si una clave sigue almacenada. */
   existe(clave: string): boolean {
     return this.archivos.has(clave);

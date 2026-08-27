@@ -21,6 +21,7 @@ import { CosteInfraestructuraModel, conectarCostes, generarIdCoste } from './cos
 import { configurarVapid, enviarNotificacion } from './push.service.js';
 import { iniciarRecordatorioHorasDiario } from './recordatorio-horas.service.js';
 import { iniciarNotificacionesProgramadas } from './notificaciones-programadas.service.js';
+import { iniciarReintentoBorrados } from './borrado-pendiente.service.js';
 import type { PushSub } from './push.service.js';
 import { limitadorGeneral, limitadorAuth } from './rate-limit.middleware.js';
 import { crearRouterIA } from './ia-rutas.js';
@@ -394,6 +395,7 @@ export function run() {
   configurarVapid();
   iniciarRecordatorioHorasDiario();
   iniciarNotificacionesProgramadas();
+  iniciarReintentoBorrados();
   asegurarAdmin()
     .then(migrarNombresNormalizados)
     .then(asegurarIndiceNombreNormalizado)

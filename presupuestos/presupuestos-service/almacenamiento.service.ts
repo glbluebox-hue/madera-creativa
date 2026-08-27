@@ -10,14 +10,27 @@ import { logger } from './logger.service.js';
  * de negocio no dependa de un proveedor concreto.
  */
 function crearAlmacenamiento(): AlmacenamientoArchivos {
-  const { R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_PUBLIC_URL_BASE } = process.env;
+  const { R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_PUBLIC_URL_BASE, R2_BUCKET_NAME_FACTURAS } = process.env;
   if (R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET_NAME && R2_PUBLIC_URL_BASE) {
+    // El bucket privado de facturas es OBLIGATORIO en producción — petición
+    // explícita del usuario (27/08/2026): el sistema debe fallar alto y
+    // claro al arrancar si falta, nunca degradar en silencio a subir
+    // facturas nuevas al bucket público solo porque no se ha configurado
+    // todavía. Solo se tolera su ausencia fuera de producción (desarrollo
+    // local, mientras se prueba sin haber creado aún el bucket en Cloudflare).
+    if (process.env.NODE_ENV === 'production' && !R2_BUCKET_NAME_FACTURAS) {
+      throw new Error('Falta R2_BUCKET_NAME_FACTURAS (bucket privado dedicado a facturas). Es obligatorio en producción — las facturas nunca deben subir al almacenamiento público. Créalo en Cloudflare R2 y configura la variable de entorno antes de desplegar.');
+    }
     return new AlmacenamientoR2({
       accountId: R2_ACCOUNT_ID,
       accessKeyId: R2_ACCESS_KEY_ID,
       secretAccessKey: R2_SECRET_ACCESS_KEY,
       bucket: R2_BUCKET_NAME,
       urlPublicaBase: R2_PUBLIC_URL_BASE,
+      // Bucket privado dedicado a facturas (Incremento "Facturas
+      // privadas") — opcional a propósito: sin él, las facturas nuevas
+      // siguen subiendo al bucket público de siempre, sin romper nada.
+      bucketFacturas: R2_BUCKET_NAME_FACTURAS || undefined,
     });
   }
   if (process.env.NODE_ENV === 'production') {
@@ -55,4 +68,6 @@ export const almacenamiento: AlmacenamientoArchivos = {
   borrar: (clave: string): Promise<void> => obtenerInstancia().borrar(clave),
   claveDesdeUrl: (url: string): string | null => obtenerInstancia().claveDesdeUrl(url),
   obtener: (clave: string): Promise<{ datos: Buffer; contentType: string } | null> => obtenerInstancia().obtener(clave),
+  generarUrlTemporal: (clave: string, ttlSegundos?: number): Promise<string> =>
+    obtenerInstancia().generarUrlTemporal(clave, ttlSegundos),
 };
