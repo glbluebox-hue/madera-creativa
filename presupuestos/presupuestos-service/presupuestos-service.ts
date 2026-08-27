@@ -966,8 +966,19 @@ export class PresupuestosService {
     if (params.cifNif && params.fecha && params.importe) {
       condiciones.push({ cifNif: params.cifNif, fecha: params.fecha, importe: params.importe });
     }
-    if (!params.cifNif && params.proveedor && params.fecha && params.importe) {
+    if (params.proveedor && params.fecha && params.importe) {
       condiciones.push({ proveedor: params.proveedor, fecha: params.fecha, importe: params.importe });
+    }
+    // Indicio suficiente por sí solo para avisar (nunca bloquea — ver
+    // `guardar()` en escaner-factura.tsx): misma fecha e importe exactos,
+    // aunque no se haya rellenado proveedor ni CIF/NIF. Bug real
+    // (27/08/2026): al re-escanear el mismo papel sin volver a pulsar
+    // "Extraer datos con IA" la segunda vez, esos dos campos quedaban
+    // vacíos y ninguna de las condiciones de arriba llegaba a compararse
+    // — el aviso de duplicado no saltaba nunca en ese caso, aunque fuera
+    // literalmente la misma factura.
+    if (params.fecha && params.importe) {
+      condiciones.push({ fecha: params.fecha, importe: params.importe });
     }
     if (!condiciones.length) return null;
     const filtro: Record<string, unknown> = { usuarioId, $or: condiciones };

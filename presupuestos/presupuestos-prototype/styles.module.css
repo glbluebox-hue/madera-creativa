@@ -1845,6 +1845,17 @@
 /* ===== PANEL PRINCIPAL — DASHBOARD (Dirección Creativa) ===== */
 .dashboard { display: flex; flex-direction: column; gap: 1.5rem; }
 .dashboardTop { margin-bottom: 0.25rem; }
+/* En móvil el botón circular del menú (`.botonMenuMovil`, fijo en la
+   esquina superior derecha de toda la pantalla) cae exactamente encima del
+   ojo de privacidad de esta cabecera — lo tapa por completo y se queda con
+   el clic, así que no había forma de mostrar/ocultar las cifras desde el
+   móvil (bug real, 27/08/2026). Reservar aquí el mismo hueco que ocupa ese
+   botón (42px + su separación del borde) empuja el ojo a la izquierda, sin
+   tocar el propio `.botonMenuMovil` (es fijo y global a toda la app, no
+   solo a esta pantalla). */
+@media (max-width: 900px) {
+  .dashboardTop { padding-right: 3.4rem; }
+}
 .dashboardSub { margin: 0.35rem 0 0; font-size: 0.86rem; color: var(--topo-claro); }
 /* El saludo de Inicio se pinta directo sobre --fondo, sin tarjeta debajo —
    igual que el título de cada sección (`.barraSeccion`, p. ej. "Facturas",
