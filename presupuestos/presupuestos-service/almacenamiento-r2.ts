@@ -74,22 +74,42 @@ export class AlmacenamientoR2 implements AlmacenamientoArchivos {
     this.urlPublicaBase = opciones.urlPublicaBase.replace(/\/$/, '');
   }
 
-  /** Cliente + bucket real a usar para una `carpeta` lógica — ver comentario de la clase. */
-  private destinoParaCarpeta(carpeta: string): { cliente: S3Client; bucket: string } {
+  /**
+   * Prefijo de clave EXCLUSIVO del bucket privado — a propósito distinto de
+   * `'facturas'` (la carpeta lógica que ya usaban las facturas del bucket
+   * público desde antes de este incremento). Bug real, 27/08/2026: antes
+   * de este prefijo separado, `destinoParaClave()` decidía el bucket
+   * mirando solo el nombre de la carpeta ("facturas") — como las facturas
+   * ANTIGUAS (bucket público) usan esa misma carpeta, en cuanto
+   * `R2_BUCKET_NAME_FACTURAS` quedó configurado, CUALQUIER clave
+   * `facturas/<uuid>` (antigua o nueva) se buscaba en el bucket privado,
+   * rompiendo la visualización de todas las facturas ya existentes de
+   * golpe. Con un prefijo distinto para lo nuevo, la propia clave dice sin
+   * ambigüedad a qué bucket pertenece, sin depender de la configuración
+   * actual.
+   */
+  private static readonly PREFIJO_FACTURAS_PRIVADO = 'facturas-privado';
+
+  /** Cliente + bucket + prefijo de clave a usar al SUBIR algo nuevo a una `carpeta` lógica — ver comentario de la clase. */
+  private destinoParaCarpeta(carpeta: string): { cliente: S3Client; bucket: string; clavePrefijo: string } {
     if (carpeta === 'facturas' && this.bucketFacturas) {
+      return { cliente: this.clienteFacturas, bucket: this.bucketFacturas, clavePrefijo: AlmacenamientoR2.PREFIJO_FACTURAS_PRIVADO };
+    }
+    return { cliente: this.cliente, bucket: this.bucket, clavePrefijo: carpeta };
+  }
+
+  /** Cliente + bucket a partir de una clave YA EXISTENTE — para `borrar()`/`generarUrlTemporal()`/`obtener()`. Mira el prefijo real de la clave, nunca la configuración actual (ver comentario de `PREFIJO_FACTURAS_PRIVADO`). */
+  private destinoParaClave(clave: string): { cliente: S3Client; bucket: string } {
+    const prefijo = clave.split('/')[0] ?? '';
+    if (prefijo === AlmacenamientoR2.PREFIJO_FACTURAS_PRIVADO && this.bucketFacturas) {
       return { cliente: this.clienteFacturas, bucket: this.bucketFacturas };
     }
     return { cliente: this.cliente, bucket: this.bucket };
   }
 
-  /** Igual que `destinoParaCarpeta`, pero a partir de una clave ya existente (`<carpeta>/<uuid>`) — para `borrar()`/`generarUrlTemporal()`/`obtener()`, que no reciben la carpeta por separado. */
-  private destinoParaClave(clave: string): { cliente: S3Client; bucket: string } {
-    return this.destinoParaCarpeta(clave.split('/')[0] ?? '');
-  }
-
   async subir(datos: Buffer, opciones: { contentType: string; carpeta: string }): Promise<ResultadoSubida> {
-    const clave = `${opciones.carpeta}/${randomUUID()}`;
-    const { cliente, bucket } = this.destinoParaCarpeta(opciones.carpeta);
+    const { cliente, bucket, clavePrefijo } = this.destinoParaCarpeta(opciones.carpeta);
+    const clave = `${clavePrefijo}/${randomUUID()}`;
     await cliente.send(new PutObjectCommand({
       Bucket: bucket,
       Key: clave,
