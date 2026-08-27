@@ -995,15 +995,30 @@ export class PresupuestosService {
     // defecto) — exigirla de más dejaba pasar duplicados reales con el
     // mismo proveedor y el mismo importe, justo lo que más importa
     // detectar. El importe es el dato más fiable de un ticket (el número
-    // grande y claro), así que basta con cruzarlo con el proveedor
-    // (comparado sin distinguir mayúsculas/minúsculas — la IA no siempre
-    // devuelve el nombre con el mismo formato exacto).
+    // grande y claro), así que basta con cruzarlo con el proveedor.
     if (params.proveedor && params.importe) {
       const filtroImporte: Record<string, unknown> = { usuarioId, importe: params.importe };
       if (params.excluirId) filtroImporte.id = { $ne: params.excluirId };
       const candidatas = await FacturaModel.find(filtroImporte).lean().exec();
-      const proveedorNormalizado = params.proveedor.trim().toLowerCase();
-      const encontrada = candidatas.find((f: any) => (f.proveedor || '').trim().toLowerCase() === proveedorNormalizado);
+      // Comparación tolerante, no solo mayúsculas/minúsculas — la IA no
+      // siempre lee el nombre del proveedor igual de literal entre dos
+      // fotos del mismo ticket (con o sin acentos, con o sin el resto del
+      // rótulo — p. ej. "MONTÓ" una vez y "MONTÓ TIENDAS" la otra). Se
+      // acepta si una es sub-cadena de la otra, igual que ya se hace con
+      // los nombres en `identificacion-factura.ts` (frontend).
+      const normalizar = (s: string) => s
+        .toLowerCase()
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/[^a-z0-9 ]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const proveedorNormalizado = normalizar(params.proveedor);
+      const encontrada = proveedorNormalizado.length >= 3
+        ? candidatas.find((f: any) => {
+            const otro = normalizar(f.proveedor || '');
+            return otro.length >= 3 && (otro === proveedorNormalizado || otro.includes(proveedorNormalizado) || proveedorNormalizado.includes(otro));
+          })
+        : undefined;
       if (encontrada) return this.limpiar(encontrada as Record<string, unknown>);
     }
 
