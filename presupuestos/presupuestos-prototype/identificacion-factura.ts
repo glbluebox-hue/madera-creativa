@@ -22,8 +22,13 @@
 export type DatosExtraidosFactura = {
   emisorNombre: string | null;
   emisorCifNif: string | null;
+  /** Dirección del emisor tal como consta en el documento — para completar en automático la ficha del proveedor al guardar un gasto (27/08/2026). */
+  emisorDireccion: string | null;
+  emisorCodigoPostal: string | null;
   receptorNombre: string | null;
   receptorCifNif: string | null;
+  receptorDireccion: string | null;
+  receptorCodigoPostal: string | null;
   /** Estimación de la propia IA — una pista, no una verdad absoluta: si contradice un NIF verificado, gana el NIF. */
   tipo: 'ingreso' | 'gasto' | null;
 };
@@ -41,6 +46,10 @@ export type ResultadoIdentificacion = {
   proveedor: string;
   /** Va directo a `Factura.cifNif` — el CIF/NIF de esa misma parte, nunca el de Madera Creativa. */
   cifNif: string;
+  /** Dirección de esa misma parte (nunca la de Madera Creativa) — usada solo para completar en automático la ficha del proveedor al guardar un gasto, no se guarda en la propia Factura. */
+  direccion: string;
+  /** Código postal de esa misma parte, mismo criterio que `direccion`. */
+  codigoPostal: string;
   tipo: 'ingreso' | 'gasto' | null;
   confianza: 'alta' | 'media' | 'baja';
   /** true si no hay evidencia suficiente y el usuario debe revisar antes de guardar. */
@@ -87,6 +96,8 @@ export function resolverEmisorReceptor(datos: DatosExtraidosFactura, empresa: Em
       tipo: 'ingreso',
       proveedor: datos.receptorNombre ?? '',
       cifNif: datos.receptorCifNif ?? '',
+      direccion: datos.receptorDireccion ?? '',
+      codigoPostal: datos.receptorCodigoPostal ?? '',
       confianza: 'alta',
       revisar: !datos.receptorNombre,
     };
@@ -96,6 +107,8 @@ export function resolverEmisorReceptor(datos: DatosExtraidosFactura, empresa: Em
       tipo: 'gasto',
       proveedor: datos.emisorNombre ?? '',
       cifNif: datos.emisorCifNif ?? '',
+      direccion: datos.emisorDireccion ?? '',
+      codigoPostal: datos.emisorCodigoPostal ?? '',
       confianza: 'alta',
       revisar: !datos.emisorNombre,
     };
@@ -118,6 +131,8 @@ export function resolverEmisorReceptor(datos: DatosExtraidosFactura, empresa: Em
       tipo: 'ingreso',
       proveedor: datos.receptorNombre ?? '',
       cifNif: datos.receptorCifNif ?? '',
+      direccion: datos.receptorDireccion ?? '',
+      codigoPostal: datos.receptorCodigoPostal ?? '',
       confianza: 'media',
       revisar: !datos.receptorNombre,
     };
@@ -127,6 +142,8 @@ export function resolverEmisorReceptor(datos: DatosExtraidosFactura, empresa: Em
       tipo: 'gasto',
       proveedor: datos.emisorNombre ?? '',
       cifNif: datos.emisorCifNif ?? '',
+      direccion: datos.emisorDireccion ?? '',
+      codigoPostal: datos.emisorCodigoPostal ?? '',
       confianza: 'media',
       revisar: !datos.emisorNombre,
     };
@@ -138,7 +155,14 @@ export function resolverEmisorReceptor(datos: DatosExtraidosFactura, empresa: Em
   const tipo = datos.tipo;
   let proveedor = '';
   let cifNif = '';
-  if (tipo === 'ingreso') { proveedor = datos.receptorNombre ?? ''; cifNif = datos.receptorCifNif ?? ''; }
-  else if (tipo === 'gasto') { proveedor = datos.emisorNombre ?? ''; cifNif = datos.emisorCifNif ?? ''; }
-  return { tipo, proveedor, cifNif, confianza: 'baja', revisar: true };
+  let direccion = '';
+  let codigoPostal = '';
+  if (tipo === 'ingreso') {
+    proveedor = datos.receptorNombre ?? ''; cifNif = datos.receptorCifNif ?? '';
+    direccion = datos.receptorDireccion ?? ''; codigoPostal = datos.receptorCodigoPostal ?? '';
+  } else if (tipo === 'gasto') {
+    proveedor = datos.emisorNombre ?? ''; cifNif = datos.emisorCifNif ?? '';
+    direccion = datos.emisorDireccion ?? ''; codigoPostal = datos.emisorCodigoPostal ?? '';
+  }
+  return { tipo, proveedor, cifNif, direccion, codigoPostal, confianza: 'baja', revisar: true };
 }

@@ -10,7 +10,7 @@ import { TablaMovimientos } from './tabla-movimientos.js';
 import { TablaHoras } from './tabla-horas.js';
 import { TablaMargen } from './tabla-margen.js';
 import { PanelAdjuntos } from './panel-adjuntos.js';
-import { autoCrearProveedorDeFactura } from './proveedor-utils.js';
+import { autoCrearProveedorDeFactura, type DatosProveedorDetectados } from './proveedor-utils.js';
 import { colorAvatar, iniciales } from './avatar-utils.js';
 import { etiquetaEstado, grupoEstado } from './estado-utils.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
@@ -60,6 +60,8 @@ export type FichaClienteProps = {
   onGuardarFactura?: (f: Factura) => void;
   /** Crear un nuevo proveedor si no existe al guardar la factura. */
   onCrearProveedor?: (p: Omit<Proveedor, 'id' | 'creado'>) => Proveedor;
+  /** Completa la ficha de un proveedor ya existente con datos leídos en una factura (dirección/CP/CIF), si le faltaban. */
+  onActualizarProveedor?: (p: Proveedor) => void;
 };
 
 type Pestana = 'resumen' | 'proyectos' | 'presupuestos' | 'presupuestosProyecto' | 'contratos' | 'facturas' | 'notas' | 'dibujos';
@@ -82,7 +84,7 @@ const PESTANAS: { id: Pestana; label: string }[] = [
  * ESTE proyecto), Facturas y Notas. Ninguna función existente se ha
  * quitado — solo se ha reorganizado (incremento "Cliente ≠ Proyecto").
  */
-export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [], empresa, privado, onActualizarEmpresa, onVolver, onActualizarCliente, onActualizarProyecto, onBorrar, onGuardarFactura, onCrearProveedor }: FichaClienteProps) {
+export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [], empresa, privado, onActualizarEmpresa, onVolver, onActualizarCliente, onActualizarProyecto, onBorrar, onGuardarFactura, onCrearProveedor, onActualizarProveedor }: FichaClienteProps) {
   const [pestana, setPestana] = useState<Pestana>('resumen');
   /** Contador-disparador: cada incremento fuerza `TabDatos` a abrirse en modo edición (botón "Editar" de la cabecera, ver más abajo). */
   const [abrirEdicionDatos, setAbrirEdicionDatos] = useState(0);
@@ -116,8 +118,8 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
   const r = calcularResumen(proyecto);
 
   /** Guarda la factura, vincula proveedor automáticamente si el nombre coincide con uno existente, y recarga la lista. */
-  const guardarFacturaConProveedor = (f: Factura) => {
-    autoCrearProveedorDeFactura(f, proveedores, onCrearProveedor);
+  const guardarFacturaConProveedor = (f: Factura, datosProveedorDetectados?: DatosProveedorDetectados) => {
+    autoCrearProveedorDeFactura(f, proveedores, onCrearProveedor, onActualizarProveedor, datosProveedorDetectados);
     onGuardarFactura?.(f);
     cargarFacturasProyecto();
   };
@@ -438,7 +440,7 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
           clientes={clientes}
           proveedores={proveedores}
           proyectoFijo={{ id: proyecto.id, clienteId: cliente.id, nombre: proyecto.proyecto || cliente.nombre }}
-          onGuardar={(f) => { guardarFacturaConProveedor({ ...f, clienteId: cliente.id, proyectoId: proyecto.id, tipo: 'gasto' }); setEscanerAbierto(false); }}
+          onGuardar={(f, datosProveedorDetectados) => { guardarFacturaConProveedor({ ...f, clienteId: cliente.id, proyectoId: proyecto.id, tipo: 'gasto' }, datosProveedorDetectados); setEscanerAbierto(false); }}
           onCerrar={() => setEscanerAbierto(false)}
         />
       )}

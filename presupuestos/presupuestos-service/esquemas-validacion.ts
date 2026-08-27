@@ -511,6 +511,7 @@ export const esquemaProveedor = z.object({
   telefono: z.string().max(50).optional().default(''),
   email: z.string().max(254).optional().default(''),
   direccion: z.string().max(500).optional().default(''),
+  codigoPostal: z.string().max(12).optional().default(''),
   notas: z.string().max(2000).optional().default(''),
   creado: z.string().min(1).max(64),
 });

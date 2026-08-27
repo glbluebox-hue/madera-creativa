@@ -27,8 +27,16 @@ export type EscanerFacturaProps = {
    * más de un proyecto, también el proyecto — nunca se adivina.
    */
   proyectoFijo?: { id: string; clienteId: string; nombre: string };
-  /** Callback al guardar la factura procesada. */
-  onGuardar: (f: Factura) => void;
+  /**
+   * Callback al guardar la factura procesada. `datosProveedorDetectados`
+   * (27/08/2026) va aparte de la propia `Factura` porque esos campos no le
+   * pertenecen a ella, sino a la ficha del proveedor: dirección/código
+   * postal/CIF que la IA ha leído en el documento y que el proveedor
+   * todavía no tiene guardados — quien recibe este callback (`facturas.tsx`,
+   * `ficha-cliente.tsx`) decide si completar la ficha con ellos, vía
+   * `autoCrearProveedorDeFactura` (`proveedor-utils.ts`).
+   */
+  onGuardar: (f: Factura, datosProveedorDetectados?: DatosProveedorDetectados) => void;
   /** Callback al cerrar sin guardar. */
   onCerrar: () => void;
   /** Factura existente para editar (si se pasa, el modal abre en modo edición). */
@@ -37,6 +45,9 @@ export type EscanerFacturaProps = {
 
 /** Una página del documento escaneado — puede ser una imagen o un PDF subido directamente. */
 type Pagina = { id: string; dataUrl: string; nombre: string; tipo: 'imagen' | 'pdf' };
+
+/** Ver el comentario de `onGuardar` en `EscanerFacturaProps`. */
+export type DatosProveedorDetectados = { direccion?: string; codigoPostal?: string; cifNif?: string };
 
 /** Genera un id único. */
 function uid(): string {
@@ -138,6 +149,15 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
    */
   const [duplicado, setDuplicado] = useState<Factura | null>(null);
   const [comprobandoDuplicado, setComprobandoDuplicado] = useState(false);
+
+  /**
+   * Dirección/código postal del proveedor leídos en el documento
+   * (27/08/2026) — nunca se guardan en la propia Factura (no le
+   * pertenecen), solo viajan hasta `guardar()` para poder completar la
+   * ficha del proveedor en automático si todavía no los tiene.
+   */
+  const [direccionDetectada, setDireccionDetectada] = useState('');
+  const [codigoPostalDetectado, setCodigoPostalDetectado] = useState('');
   useEffect(() => {
     api.obtenerEmpresa()
       .then((e) => setEmpresa({ nombre: e.nombre ?? '', titular: e.titular ?? '', nifCif: e.nifCif ?? '' }))
@@ -166,8 +186,12 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
         {
           emisorNombre: datos.emisorNombre ?? null,
           emisorCifNif: datos.emisorCifNif ?? null,
+          emisorDireccion: datos.emisorDireccion ?? null,
+          emisorCodigoPostal: datos.emisorCodigoPostal ?? null,
           receptorNombre: datos.receptorNombre ?? null,
           receptorCifNif: datos.receptorCifNif ?? null,
+          receptorDireccion: datos.receptorDireccion ?? null,
+          receptorCodigoPostal: datos.receptorCodigoPostal ?? null,
           tipo: datos.tipo === 'ingreso' || datos.tipo === 'gasto' ? datos.tipo : null,
         },
         empresa ?? { nombre: '', titular: '', nifCif: '' }
@@ -177,6 +201,14 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
       // `null`/vacío lo que el usuario ya hubiera escrito a mano.
       if (resuelto.proveedor) {
         setProveedor(resuelto.proveedor);
+        // Vincula con un proveedor ya existente si el nombre coincide,
+        // tanto para poder rellenar el CIF guardado (ver abajo) como para
+        // que la factura quede vinculada de verdad (`proveedorId`) y no
+        // solo por texto — antes esto se calculaba SOLO cuando la IA no
+        // traía CIF, y en cualquier otro caso se perdía la vinculación
+        // aunque el nombre coincidiera exactamente con uno ya existente.
+        const conocido = proveedores.find((p) => nombresCoinciden(p.nombre, resuelto.proveedor));
+        setProveedorId(conocido?.id ?? '');
         // Si la IA no ha podido leer el CIF/NIF en la imagen (habitual en
         // cadenas grandes como Leroy Merlin o Bricomart, donde sale en
         // letra diminuta y no siempre se localiza), pero este proveedor ya
@@ -184,13 +216,14 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
         // usa ese en vez de dejarlo en blanco (27/08/2026) — nunca al
         // revés: un CIF que la IA sí ha leído en el documento manda
         // siempre sobre el guardado.
-        const conocido = !resuelto.cifNif
-          ? proveedores.find((p) => p.cifNif && nombresCoinciden(p.nombre, resuelto.proveedor))
-          : null;
-        setProveedorId(conocido?.id ?? '');
-        if (conocido?.cifNif) setCifNif(conocido.cifNif);
+        if (!resuelto.cifNif && conocido?.cifNif) setCifNif(conocido.cifNif);
       }
       if (resuelto.cifNif) setCifNif(resuelto.cifNif);
+      // Dirección/CP leídos en el documento — se guardan aparte (nunca en
+      // la propia Factura) para poder completar la ficha del proveedor al
+      // guardar, ver `guardar()` más abajo.
+      if (resuelto.direccion) setDireccionDetectada(resuelto.direccion);
+      if (resuelto.codigoPostal) setCodigoPostalDetectado(resuelto.codigoPostal);
       if (resuelto.tipo) setTipo(resuelto.tipo);
       if (datos.numeroFactura) setNumeroFactura(datos.numeroFactura);
       if (datos.fecha) setFecha(datos.fecha);
@@ -342,7 +375,14 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
       }
       setComprobandoDuplicado(false);
     }
-    onGuardar(f);
+    // Solo tiene sentido completar una ficha de PROVEEDOR (materiales, no
+    // clientes) en un gasto — en un ingreso "la otra parte" es un cliente,
+    // que no vive en absoluto en esta lista.
+    const datosProveedorDetectados: DatosProveedorDetectados | undefined =
+      tipo === 'gasto' && (direccionDetectada || codigoPostalDetectado || cifNif)
+        ? { direccion: direccionDetectada, codigoPostal: codigoPostalDetectado, cifNif: cifNif.trim() }
+        : undefined;
+    onGuardar(f, datosProveedorDetectados);
   };
 
   const paginaActual = paginas[paginaVista];

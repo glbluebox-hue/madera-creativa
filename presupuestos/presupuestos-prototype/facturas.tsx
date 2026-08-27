@@ -4,7 +4,7 @@ import type { FiltroFacturas, ResumenFacturas } from './use-facturas.js';
 import { formatoEuroPrivado, formatoFecha } from './calculos.js';
 import { EscanerFactura } from './escaner-factura.js';
 import { Trimestres } from './trimestres.js';
-import { autoCrearProveedorDeFactura } from './proveedor-utils.js';
+import { autoCrearProveedorDeFactura, type DatosProveedorDetectados } from './proveedor-utils.js';
 import { useAvisoGuardado, AvisoGuardado } from './aviso-guardado.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
 import { VisorFactura } from './visor-factura.js';
@@ -40,6 +40,7 @@ export type FacturasProps = {
   onGuardar: (f: Factura) => void;
   onBorrar: (id: string) => void;
   onCrearProveedor?: (p: Omit<Proveedor, 'id' | 'creado'>) => Proveedor;
+  onActualizarProveedor?: (p: Proveedor) => void;
 };
 
 /**
@@ -47,7 +48,7 @@ export type FacturasProps = {
  */
 export function Facturas({
   facturas, resumen, privado, filtro, onFiltroChange, hayMas, cargandoMas, onCargarMas,
-  clientes, proveedores = [], onGuardar, onBorrar, onCrearProveedor,
+  clientes, proveedores = [], onGuardar, onBorrar, onCrearProveedor, onActualizarProveedor,
 }: FacturasProps) {
   const [escaner, setEscaner] = useState(false);
   const [facturaEditar, setFacturaEditar] = useState<Factura | undefined>(undefined);
@@ -126,8 +127,8 @@ export function Facturas({
     }
     setEscaner(true);
   };
-  const guardarYCerrar = (f: Factura) => {
-    autoCrearProveedorDeFactura(f, proveedores, onCrearProveedor);
+  const guardarYCerrar = (f: Factura, datosProveedorDetectados?: DatosProveedorDetectados) => {
+    autoCrearProveedorDeFactura(f, proveedores, onCrearProveedor, onActualizarProveedor, datosProveedorDetectados);
     onGuardar(f);
     setEscaner(false);
     setFacturaEditar(undefined);

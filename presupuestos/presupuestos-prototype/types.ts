@@ -63,6 +63,8 @@ export type Proveedor = {
   email?: string;
   /** Dirección. */
   direccion?: string;
+  /** Código postal — campo aparte de `direccion` para poder rellenarlo en automático desde una factura escaneada sin tener que analizar texto libre. */
+  codigoPostal?: string;
   /** Notas libres. */
   notas?: string;
   /** Fecha de alta (ISO). */

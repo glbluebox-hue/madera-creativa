@@ -569,6 +569,7 @@ export function PresupuestosPrototype() {
             onGuardar={guardarFactura}
             onBorrar={borrarFactura}
             onCrearProveedor={crearProveedor}
+            onActualizarProveedor={actualizarProveedor}
           />
         )}
 
@@ -591,6 +592,7 @@ export function PresupuestosPrototype() {
                 onGuardarFactura={(f: Factura) => guardarFactura(f)}
                 proveedores={proveedores}
                 onCrearProveedor={crearProveedor}
+                onActualizarProveedor={actualizarProveedor}
               />
             ) : cargando && proyectos.length === 0 ? (
               <div className={styles.vacio}>

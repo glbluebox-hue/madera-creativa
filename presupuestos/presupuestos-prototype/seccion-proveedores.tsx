@@ -59,6 +59,7 @@ function FormProveedor({
   const [telefono, setTelefono] = useState(inicial?.telefono ?? '');
   const [email, setEmail] = useState(inicial?.email ?? '');
   const [direccion, setDireccion] = useState(inicial?.direccion ?? '');
+  const [codigoPostal, setCodigoPostal] = useState(inicial?.codigoPostal ?? '');
   const [notas, setNotas] = useState(inicial?.notas ?? '');
 
   return (
@@ -83,11 +84,14 @@ function FormProveedor({
             <label className={styles.label}>Teléfono<input className={styles.input} type="tel" value={telefono} onChange={e => setTelefono(e.target.value)} placeholder="612 345 678" /></label>
             <label className={styles.label}>Email<input className={styles.input} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="info@proveedor.com" /></label>
           </div>
-          <label className={styles.label}>Dirección<input className={styles.input} value={direccion} onChange={e => setDireccion(e.target.value)} placeholder="Calle, ciudad…" /></label>
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '0.6rem' }}>
+            <label className={styles.label}>Dirección<input className={styles.input} value={direccion} onChange={e => setDireccion(e.target.value)} placeholder="Calle, ciudad…" /></label>
+            <label className={styles.label}>Código postal<input className={styles.input} value={codigoPostal} onChange={e => setCodigoPostal(e.target.value)} placeholder="35001" /></label>
+          </div>
           <label className={styles.label}>Notas<textarea className={styles.input} value={notas} onChange={e => setNotas(e.target.value)} rows={2} placeholder="Condiciones, descuentos habituales…" /></label>
           <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
             <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={onCerrar}>Cancelar</button>
-            <button className={`${styles.btn} ${styles.btnPrimario}`} disabled={!nombre.trim()} onClick={() => onGuardar({ nombre, contacto, cifNif, telefono, email, direccion, notas })}>Guardar</button>
+            <button className={`${styles.btn} ${styles.btnPrimario}`} disabled={!nombre.trim()} onClick={() => onGuardar({ nombre, contacto, cifNif, telefono, email, direccion, codigoPostal, notas })}>Guardar</button>
           </div>
         </div>
       </div>
@@ -267,7 +271,7 @@ export function SeccionProveedores({
             {proveedorActivo.cifNif && <p style={{ margin: '0 0 0.1rem', fontSize: '0.82rem', color: 'var(--topo-claro)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}><IconoFactura s={13} /> CIF/NIF: {proveedorActivo.cifNif}</p>}
             {proveedorActivo.telefono && <p style={{ margin: '0 0 0.1rem', fontSize: '0.82rem', color: 'var(--topo-claro)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}><IconoTelefono /> <a href={`tel:${proveedorActivo.telefono}`}>{proveedorActivo.telefono}</a></p>}
             {proveedorActivo.email && <p style={{ margin: '0 0 0.1rem', fontSize: '0.82rem', color: 'var(--topo-claro)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}><IconoEmail /> <a href={`mailto:${proveedorActivo.email}`}>{proveedorActivo.email}</a></p>}
-            {proveedorActivo.direccion && <p style={{ margin: '0 0 0.1rem', fontSize: '0.82rem', color: 'var(--topo-claro)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}><IconoUbicacion /> {proveedorActivo.direccion}</p>}
+            {proveedorActivo.direccion && <p style={{ margin: '0 0 0.1rem', fontSize: '0.82rem', color: 'var(--topo-claro)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}><IconoUbicacion /> {proveedorActivo.direccion}{proveedorActivo.codigoPostal ? ` (${proveedorActivo.codigoPostal})` : ''}</p>}
             {proveedorActivo.notas && <p style={{ margin: '0.4rem 0 0', fontSize: '0.8rem', color: 'var(--topo)', fontStyle: 'italic' }}>"{proveedorActivo.notas}"</p>}
           </div>
           <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={() => { setEditandoProveedor(proveedorActivo); setModalProveedor(true); }}><IconoEditar /> Editar</button>

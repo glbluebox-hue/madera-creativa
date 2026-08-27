@@ -283,6 +283,7 @@ const ProveedorSchema = new Schema({
   telefono: { type: String, default: '' },
   email: { type: String, default: '' },
   direccion: { type: String, default: '' },
+  codigoPostal: { type: String, default: '' },
   notas: { type: String, default: '' },
   creado: { type: String, required: true },
 });

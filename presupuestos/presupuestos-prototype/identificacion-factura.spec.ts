@@ -4,8 +4,8 @@ const EMPRESA: EmpresaIdentificacion = { nombre: 'Madera Creativa', titular: 'Ju
 
 function datos(parciales: Partial<DatosExtraidosFactura>): DatosExtraidosFactura {
   return {
-    emisorNombre: null, emisorCifNif: null,
-    receptorNombre: null, receptorCifNif: null,
+    emisorNombre: null, emisorCifNif: null, emisorDireccion: null, emisorCodigoPostal: null,
+    receptorNombre: null, receptorCifNif: null, receptorDireccion: null, receptorCodigoPostal: null,
     tipo: null,
     ...parciales,
   };
@@ -104,7 +104,7 @@ describe('resolverEmisorReceptor (auditoría emisor/receptor, 23/08/2026)', () =
       receptorNombre: 'Juan Pérez', receptorCifNif: '12345678Z',
       tipo: 'ingreso',
     }), EMPRESA);
-    expect(r).toEqual({ tipo: 'ingreso', proveedor: 'Juan Pérez', cifNif: '12345678Z', confianza: 'alta', revisar: false });
+    expect(r).toEqual({ tipo: 'ingreso', proveedor: 'Juan Pérez', cifNif: '12345678Z', direccion: '', codigoPostal: '', confianza: 'alta', revisar: false });
   });
 
   it('10. Gasto correctamente identificado de principio a fin', () => {
@@ -113,7 +113,7 @@ describe('resolverEmisorReceptor (auditoría emisor/receptor, 23/08/2026)', () =
       receptorNombre: 'Madera Creativa', receptorCifNif: 'B12345678',
       tipo: 'gasto',
     }), EMPRESA);
-    expect(r).toEqual({ tipo: 'gasto', proveedor: 'Maderas del Norte S.L.', cifNif: 'B55555555', confianza: 'alta', revisar: false });
+    expect(r).toEqual({ tipo: 'gasto', proveedor: 'Maderas del Norte S.L.', cifNif: 'B55555555', direccion: '', codigoPostal: '', confianza: 'alta', revisar: false });
   });
 
   it('sin datos de empresa configurados (nifCif/nombre vacíos), no se puede verificar nada → revisión obligatoria', () => {
