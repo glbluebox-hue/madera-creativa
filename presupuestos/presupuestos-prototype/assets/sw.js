@@ -15,7 +15,18 @@
 // la versión fuerza a todos los dispositivos a limpiar la caché vieja de
 // una vez (ver 'activate' más abajo, que borra cualquier caché que no
 // coincida con este nombre).
-const CACHE = 'madera-shell-v5';
+// v6 (27/08/2026): el propio `fetch()` de este Service Worker queda sujeto
+// a la Content-Security-Policy con la que se registró la ÚLTIMA VEZ que
+// se actualizó — no la del servidor en cada momento. Un cambio de CSP en
+// el backend (p. ej. añadir el bucket privado de facturas como origen
+// permitido) no hace que el navegador reevalúe eso solo, porque los bytes
+// de ESTE archivo no cambian con un cambio del backend — así que el SW se
+// queda bloqueando para siempre un origen que el servidor ya permite,
+// hasta que alguien borra a mano los datos del sitio. En el móvil, sin
+// DevTools a mano, eso no tiene arreglo práctico para el usuario (bug
+// real, recurrente: 24/08 y 27/08/2026). Con este archivo cambiando de
+// bytes, esta vez SÍ se propaga solo a todos los dispositivos.
+const CACHE = 'madera-shell-v6';
 const RESERVA = ['/', '/manifest.webmanifest', '/assets/icon-192.png'];
 
 // `skipWaiting` + `clients.claim()` (18/08/2026): sin esto, un service
@@ -47,6 +58,16 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+
+  // Nunca interceptar peticiones a un origen externo (imágenes/PDFs de
+  // facturas en el bucket de R2, con URL firmada y de un solo uso; fuentes
+  // de Google; etc.) — ver el comentario "v6" de la cabecera de este
+  // archivo. Dejarlas pasar sin tocar significa que las gestiona el propio
+  // navegador bajo la CSP de la página actual (que sí se actualiza en cada
+  // carga), nunca bajo la de este Service Worker (que solo se actualiza
+  // cuando estos bytes cambian). Tampoco aporta nada cachearlas: cada URL
+  // firmada es de un solo uso, nunca se va a repetir.
+  if (new URL(event.request.url).origin !== self.location.origin) return;
 
   // Ahora que el service worker controla toda la app (antes su alcance
   // quedaba accidentalmente limitado a /assets/, ver registro en
