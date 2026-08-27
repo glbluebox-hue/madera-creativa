@@ -10,7 +10,10 @@ import { logger } from './logger.service.js';
  * de negocio no dependa de un proveedor concreto.
  */
 function crearAlmacenamiento(): AlmacenamientoArchivos {
-  const { R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_PUBLIC_URL_BASE, R2_BUCKET_NAME_FACTURAS } = process.env;
+  const {
+    R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_PUBLIC_URL_BASE,
+    R2_BUCKET_NAME_FACTURAS, R2_ACCESS_KEY_ID_FACTURAS, R2_SECRET_ACCESS_KEY_FACTURAS,
+  } = process.env;
   if (R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET_NAME && R2_PUBLIC_URL_BASE) {
     // El bucket privado de facturas es OBLIGATORIO en producción — petición
     // explícita del usuario (27/08/2026): el sistema debe fallar alto y
@@ -31,6 +34,12 @@ function crearAlmacenamiento(): AlmacenamientoArchivos {
       // privadas") — opcional a propósito: sin él, las facturas nuevas
       // siguen subiendo al bucket público de siempre, sin romper nada.
       bucketFacturas: R2_BUCKET_NAME_FACTURAS || undefined,
+      // Credenciales dedicadas del bucket privado (token de R2 limitado
+      // exclusivamente a él, principio de menor privilegio) — también
+      // opcionales: si no están, se reutilizan las credenciales generales
+      // (válido si ese token tiene permiso sobre los dos buckets).
+      accessKeyIdFacturas: R2_ACCESS_KEY_ID_FACTURAS || undefined,
+      secretAccessKeyFacturas: R2_SECRET_ACCESS_KEY_FACTURAS || undefined,
     });
   }
   if (process.env.NODE_ENV === 'production') {

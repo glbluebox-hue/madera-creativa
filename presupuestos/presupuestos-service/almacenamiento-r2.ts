@@ -21,41 +21,64 @@ import type { AlmacenamientoArchivos, ResultadoSubida } from './almacenamiento-a
  * configurado (variable de entorno ausente), las facturas siguen subiendo
  * al bucket histórico exactamente como antes — la función es puramente
  * aditiva, nunca rompe el comportamiento si no se ha creado el bucket nuevo.
+ *
+ * Credenciales separadas por bucket (petición explícita del usuario,
+ * 27/08/2026): el bucket privado de facturas usa su PROPIO token de R2,
+ * con permiso de lectura/escritura limitado ÚNICAMENTE a ese bucket
+ * (principio de menor privilegio) — una fuga de las credenciales generales
+ * (que sí tienen acceso al bucket público de fotos/adjuntos/logos) nunca
+ * debe poder tocar las facturas, y viceversa. Si no se indican credenciales
+ * dedicadas, se reutilizan las generales — compatible con quien prefiera un
+ * único token con permiso sobre los dos buckets.
  */
 export class AlmacenamientoR2 implements AlmacenamientoArchivos {
   private cliente: S3Client;
+  private clienteFacturas: S3Client;
   private bucket: string;
   private bucketFacturas: string | null;
   private urlPublicaBase: string;
 
   constructor(opciones: {
     accountId: string; accessKeyId: string; secretAccessKey: string;
-    bucket: string; urlPublicaBase: string; bucketFacturas?: string;
+    bucket: string; urlPublicaBase: string;
+    bucketFacturas?: string;
+    accessKeyIdFacturas?: string; secretAccessKeyFacturas?: string;
   }) {
+    const endpoint = `https://${opciones.accountId}.r2.cloudflarestorage.com`;
     this.cliente = new S3Client({
       region: 'auto',
-      endpoint: `https://${opciones.accountId}.r2.cloudflarestorage.com`,
+      endpoint,
       credentials: { accessKeyId: opciones.accessKeyId, secretAccessKey: opciones.secretAccessKey },
     });
+    this.clienteFacturas = opciones.accessKeyIdFacturas && opciones.secretAccessKeyFacturas
+      ? new S3Client({
+          region: 'auto',
+          endpoint,
+          credentials: { accessKeyId: opciones.accessKeyIdFacturas, secretAccessKey: opciones.secretAccessKeyFacturas },
+        })
+      : this.cliente;
     this.bucket = opciones.bucket;
     this.bucketFacturas = opciones.bucketFacturas || null;
     this.urlPublicaBase = opciones.urlPublicaBase.replace(/\/$/, '');
   }
 
-  /** A qué bucket real pertenece una `carpeta` lógica — ver comentario de la clase. */
-  private bucketParaCarpeta(carpeta: string): string {
-    return carpeta === 'facturas' && this.bucketFacturas ? this.bucketFacturas : this.bucket;
+  /** Cliente + bucket real a usar para una `carpeta` lógica — ver comentario de la clase. */
+  private destinoParaCarpeta(carpeta: string): { cliente: S3Client; bucket: string } {
+    if (carpeta === 'facturas' && this.bucketFacturas) {
+      return { cliente: this.clienteFacturas, bucket: this.bucketFacturas };
+    }
+    return { cliente: this.cliente, bucket: this.bucket };
   }
 
-  /** Deriva el bucket de una clave ya existente (`<carpeta>/<uuid>`) — para `borrar()`/`generarUrlTemporal()`, que no reciben la carpeta por separado. */
-  private bucketParaClave(clave: string): string {
-    return this.bucketParaCarpeta(clave.split('/')[0] ?? '');
+  /** Igual que `destinoParaCarpeta`, pero a partir de una clave ya existente (`<carpeta>/<uuid>`) — para `borrar()`/`generarUrlTemporal()`/`obtener()`, que no reciben la carpeta por separado. */
+  private destinoParaClave(clave: string): { cliente: S3Client; bucket: string } {
+    return this.destinoParaCarpeta(clave.split('/')[0] ?? '');
   }
 
   async subir(datos: Buffer, opciones: { contentType: string; carpeta: string }): Promise<ResultadoSubida> {
     const clave = `${opciones.carpeta}/${randomUUID()}`;
-    const bucket = this.bucketParaCarpeta(opciones.carpeta);
-    await this.cliente.send(new PutObjectCommand({
+    const { cliente, bucket } = this.destinoParaCarpeta(opciones.carpeta);
+    await cliente.send(new PutObjectCommand({
       Bucket: bucket,
       Key: clave,
       Body: datos,
@@ -74,7 +97,8 @@ export class AlmacenamientoR2 implements AlmacenamientoArchivos {
   }
 
   async borrar(clave: string): Promise<void> {
-    await this.cliente.send(new DeleteObjectCommand({ Bucket: this.bucketParaClave(clave), Key: clave }));
+    const { cliente, bucket } = this.destinoParaClave(clave);
+    await cliente.send(new DeleteObjectCommand({ Bucket: bucket, Key: clave }));
   }
 
   claveDesdeUrl(url: string): string | null {
@@ -84,19 +108,23 @@ export class AlmacenamientoR2 implements AlmacenamientoArchivos {
 
   /** TTL por defecto — 15 minutos: suficiente para abrir/revisar/descargar una factura, corto para acotar la exposición si la URL se filtrase (captura de pantalla, historial del navegador…). */
   async generarUrlTemporal(clave: string, ttlSegundos = 900): Promise<string> {
-    const comando = new GetObjectCommand({ Bucket: this.bucketParaClave(clave), Key: clave });
-    return getSignedUrl(this.cliente, comando, { expiresIn: ttlSegundos });
+    const { cliente, bucket } = this.destinoParaClave(clave);
+    const comando = new GetObjectCommand({ Bucket: bucket, Key: clave });
+    return getSignedUrl(cliente, comando, { expiresIn: ttlSegundos });
   }
 
   /**
-   * Nunca se ejercita en la práctica — `subir()` ya devuelve una URL pública
-   * de R2 directamente servible, así que el frontend nunca pasa por
-   * `GET /almacenamiento/...` para un archivo subido a R2. Implementado por
+   * Nunca se ejercita en la práctica para el bucket público — `subir()` ya
+   * devuelve una URL pública de R2 directamente servible para él, así que
+   * el frontend nunca pasa por `GET /almacenamiento/...` en ese caso. Sí
+   * podría usarse para el bucket privado de facturas si en el futuro hiciera
+   * falta un proxy autenticado en vez de una URL firmada — implementado por
    * completitud del contrato de `AlmacenamientoArchivos`.
    */
   async obtener(clave: string): Promise<{ datos: Buffer; contentType: string } | null> {
     try {
-      const respuesta = await this.cliente.send(new GetObjectCommand({ Bucket: this.bucket, Key: clave }));
+      const { cliente, bucket } = this.destinoParaClave(clave);
+      const respuesta = await cliente.send(new GetObjectCommand({ Bucket: bucket, Key: clave }));
       const trozos: Buffer[] = [];
       for await (const trozo of respuesta.Body as AsyncIterable<Buffer>) trozos.push(Buffer.from(trozo));
       return { datos: Buffer.concat(trozos), contentType: respuesta.ContentType ?? 'application/octet-stream' };
