@@ -55,6 +55,7 @@ function FormProveedor({
 }) {
   const [nombre, setNombre] = useState(inicial?.nombre ?? '');
   const [contacto, setContacto] = useState(inicial?.contacto ?? '');
+  const [cifNif, setCifNif] = useState(inicial?.cifNif ?? '');
   const [telefono, setTelefono] = useState(inicial?.telefono ?? '');
   const [email, setEmail] = useState(inicial?.email ?? '');
   const [direccion, setDireccion] = useState(inicial?.direccion ?? '');
@@ -73,6 +74,11 @@ function FormProveedor({
         <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           <label className={styles.label}>Nombre *<input className={styles.input} value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Nombre del proveedor" /></label>
           <label className={styles.label}>Contacto<input className={styles.input} value={contacto} onChange={e => setContacto(e.target.value)} placeholder="Nombre de la persona de contacto" /></label>
+          <label className={styles.label}>
+            CIF/NIF
+            <input className={styles.input} value={cifNif} onChange={e => setCifNif(e.target.value)} placeholder="B12345678" />
+            <p className={styles.logoAyuda}>Guárdalo una vez y el escáner de facturas lo rellenará solo cuando reconozca a este proveedor — útil en cadenas grandes (Leroy Merlin, Bricomart…) donde el CIF sale en letra diminuta y la IA no siempre lo encuentra.</p>
+          </label>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
             <label className={styles.label}>Teléfono<input className={styles.input} type="tel" value={telefono} onChange={e => setTelefono(e.target.value)} placeholder="612 345 678" /></label>
             <label className={styles.label}>Email<input className={styles.input} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="info@proveedor.com" /></label>
@@ -81,7 +87,7 @@ function FormProveedor({
           <label className={styles.label}>Notas<textarea className={styles.input} value={notas} onChange={e => setNotas(e.target.value)} rows={2} placeholder="Condiciones, descuentos habituales…" /></label>
           <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
             <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={onCerrar}>Cancelar</button>
-            <button className={`${styles.btn} ${styles.btnPrimario}`} disabled={!nombre.trim()} onClick={() => onGuardar({ nombre, contacto, telefono, email, direccion, notas })}>Guardar</button>
+            <button className={`${styles.btn} ${styles.btnPrimario}`} disabled={!nombre.trim()} onClick={() => onGuardar({ nombre, contacto, cifNif, telefono, email, direccion, notas })}>Guardar</button>
           </div>
         </div>
       </div>
@@ -258,6 +264,7 @@ export function SeccionProveedores({
           <div>
             <h2 className={styles.h2} style={{ margin: '0 0 0.2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><IconoProveedor /> {proveedorActivo.nombre}</h2>
             {proveedorActivo.contacto && <p style={{ margin: '0 0 0.1rem', fontSize: '0.82rem', color: 'var(--topo-claro)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}><IconoContacto /> {proveedorActivo.contacto}</p>}
+            {proveedorActivo.cifNif && <p style={{ margin: '0 0 0.1rem', fontSize: '0.82rem', color: 'var(--topo-claro)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}><IconoFactura s={13} /> CIF/NIF: {proveedorActivo.cifNif}</p>}
             {proveedorActivo.telefono && <p style={{ margin: '0 0 0.1rem', fontSize: '0.82rem', color: 'var(--topo-claro)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}><IconoTelefono /> <a href={`tel:${proveedorActivo.telefono}`}>{proveedorActivo.telefono}</a></p>}
             {proveedorActivo.email && <p style={{ margin: '0 0 0.1rem', fontSize: '0.82rem', color: 'var(--topo-claro)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}><IconoEmail /> <a href={`mailto:${proveedorActivo.email}`}>{proveedorActivo.email}</a></p>}
             {proveedorActivo.direccion && <p style={{ margin: '0 0 0.1rem', fontSize: '0.82rem', color: 'var(--topo-claro)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}><IconoUbicacion /> {proveedorActivo.direccion}</p>}

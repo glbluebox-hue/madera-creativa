@@ -53,7 +53,7 @@ function normalizarNif(nif: string | null | undefined): string {
 }
 
 /** Minúsculas, sin acentos ni puntuación, espacios colapsados — para comparar nombres de forma tolerante. */
-function normalizarNombre(nombre: string | null | undefined): string {
+export function normalizarNombre(nombre: string | null | undefined): string {
   return (nombre ?? '')
     .toLowerCase()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -70,7 +70,7 @@ function nifsCoinciden(a: string | null | undefined, b: string | null | undefine
 }
 
 /** Coinciden dos nombres — igualdad o inclusión en cualquier dirección (nombres comerciales suelen llevar "S.L."/"Autónomo" de más). */
-function nombresCoinciden(a: string | null | undefined, b: string | null | undefined): boolean {
+export function nombresCoinciden(a: string | null | undefined, b: string | null | undefined): boolean {
   const na = normalizarNombre(a);
   const nb = normalizarNombre(b);
   if (na.length < 3 || nb.length < 3) return false;

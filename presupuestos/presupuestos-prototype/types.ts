@@ -48,6 +48,15 @@ export type Proveedor = {
   nombre: string;
   /** Persona de contacto. */
   contacto?: string;
+  /**
+   * CIF/NIF del proveedor — se guarda una vez a mano (útil sobre todo en
+   * cadenas grandes como Leroy Merlin o Bricomart, donde el CIF sale en
+   * letra diminuta en el ticket y la IA de escaneo no siempre lo localiza)
+   * y a partir de ahí el escáner de facturas lo rellena solo cuando
+   * reconoce a este proveedor, sin depender de que la IA vuelva a leerlo
+   * cada vez (27/08/2026).
+   */
+  cifNif?: string;
   /** Teléfono. */
   telefono?: string;
   /** Email. */

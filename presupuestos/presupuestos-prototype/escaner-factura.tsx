@@ -8,7 +8,7 @@ import { comprimirImagen, rotarImagenDataUrl } from './procesamiento-imagenes.js
 import { urlImagenFiable } from './imagen-fallback.js';
 import { Z_DESPLEGABLE } from './z-index.js';
 import { etiquetaEstado } from './estado-utils.js';
-import { resolverEmisorReceptor, type EmpresaIdentificacion } from './identificacion-factura.js';
+import { resolverEmisorReceptor, nombresCoinciden, type EmpresaIdentificacion } from './identificacion-factura.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
 
@@ -175,7 +175,21 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
       // La IA propone — solo rellena los campos, el usuario debe revisar y
       // pulsar "Guardar factura" para confirmar. Nunca sobrescribe con
       // `null`/vacío lo que el usuario ya hubiera escrito a mano.
-      if (resuelto.proveedor) { setProveedor(resuelto.proveedor); setProveedorId(''); }
+      if (resuelto.proveedor) {
+        setProveedor(resuelto.proveedor);
+        // Si la IA no ha podido leer el CIF/NIF en la imagen (habitual en
+        // cadenas grandes como Leroy Merlin o Bricomart, donde sale en
+        // letra diminuta y no siempre se localiza), pero este proveedor ya
+        // está dado de alta con su CIF guardado a mano (Proveedores), se
+        // usa ese en vez de dejarlo en blanco (27/08/2026) — nunca al
+        // revés: un CIF que la IA sí ha leído en el documento manda
+        // siempre sobre el guardado.
+        const conocido = !resuelto.cifNif
+          ? proveedores.find((p) => p.cifNif && nombresCoinciden(p.nombre, resuelto.proveedor))
+          : null;
+        setProveedorId(conocido?.id ?? '');
+        if (conocido?.cifNif) setCifNif(conocido.cifNif);
+      }
       if (resuelto.cifNif) setCifNif(resuelto.cifNif);
       if (resuelto.tipo) setTipo(resuelto.tipo);
       if (datos.numeroFactura) setNumeroFactura(datos.numeroFactura);
@@ -558,7 +572,7 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
                       <button
                         key={p.id}
                         type="button"
-                        onMouseDown={() => { setProveedor(p.nombre); setProveedorId(p.id); setMostrarSugerencias(false); }}
+                        onMouseDown={() => { setProveedor(p.nombre); setProveedorId(p.id); if (p.cifNif) setCifNif(p.cifNif); setMostrarSugerencias(false); }}
                         style={{
                           width: '100%', textAlign: 'left', background: 'none', border: 'none',
                           padding: '0.55rem 0.85rem', cursor: 'pointer', fontSize: '0.85rem',

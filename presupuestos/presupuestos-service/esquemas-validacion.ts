@@ -507,6 +507,7 @@ export const esquemaProveedor = z.object({
   id: z.string().min(1).max(64),
   nombre: z.string().trim().min(1).max(200),
   contacto: z.string().max(200).optional().default(''),
+  cifNif: z.string().max(20).optional().default(''),
   telefono: z.string().max(50).optional().default(''),
   email: z.string().max(254).optional().default(''),
   direccion: z.string().max(500).optional().default(''),

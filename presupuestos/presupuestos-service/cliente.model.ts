@@ -278,6 +278,8 @@ const ProveedorSchema = new Schema({
   usuarioId: { type: String, required: true, index: true, default: 'admin' },
   nombre: { type: String, required: true },
   contacto: { type: String, default: '' },
+  /** CIF/NIF guardado una vez a mano — ver el campo equivalente en `types.ts` (frontend). */
+  cifNif: { type: String, default: '' },
   telefono: { type: String, default: '' },
   email: { type: String, default: '' },
   direccion: { type: String, default: '' },
