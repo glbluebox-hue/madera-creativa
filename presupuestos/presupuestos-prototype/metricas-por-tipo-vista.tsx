@@ -22,14 +22,28 @@ const NIVEL_INFO: Record<NivelConfianzaGrupo, { icono: string; texto: string }> 
 };
 
 export function MetricasPorTipoVista({ metricas }: { metricas: MetricasGrupo[] }) {
-  if (metricas.length === 0) return null; // nada que mostrar si ningún trabajo tiene tipoTrabajo guardado todavía
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
       <h3 style={{ margin: 0, fontSize: '0.95rem' }}>📊 Por tipo de trabajo</h3>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: '0.75rem' }}>
-        {metricas.map((m) => <TarjetaMetricaGrupo key={m.tipoTrabajo} metricas={m} />)}
-      </div>
+      {metricas.length === 0 ? (
+        // Estado vacío (corrección real, 28/08/2026: la sección desaparecía
+        // por completo con `return null` en vez de explicar por qué — un
+        // usuario sin ningún trabajo con `tipoTrabajo` guardado no veía
+        // absolutamente nada, ni siquiera el título). Nunca una cifra
+        // inventada — solo el mensaje, siempre visible.
+        <div style={{ border: '1px solid var(--borde)', borderRadius: 10, padding: '0.9rem 1rem', background: 'var(--fondo-panel)' }}>
+          <p style={{ margin: '0 0 0.3rem', fontSize: '0.85rem' }}>
+            Todavía no tienes suficientes trabajos con tipo de trabajo registrado para mostrar estadísticas aquí.
+          </p>
+          <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--topo-claro)' }}>
+            Cuando finalices tus próximos trabajos, podrás ver aquí tus márgenes y rangos de precios por tipo de trabajo.
+          </p>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: '0.75rem' }}>
+          {metricas.map((m) => <TarjetaMetricaGrupo key={m.tipoTrabajo} metricas={m} />)}
+        </div>
+      )}
     </div>
   );
 }
