@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import { registrarTipoRender, type RenderElementoProps, type PanelPropiedadesProps } from './documento-registro-tipos-render.js';
 import editorStyles from './editor-documento.module.css';
@@ -142,40 +143,38 @@ function RenderFirma({ elemento }: RenderElementoProps) {
  * arrastrar ni de encoger el trazo al borde del panel.
  */
 /**
- * Segundo intento fallido (28/08/2026): un modal centrado seguía sin caber
- * en una ventana de navegador con poca altura visible, aunque fuera
- * compacto — "así es inviable". Petición explícita del propio usuario para
- * la solución definitiva: "una pantalla entera para poner una firma...
- * horizontal... borrar (para volver a firmar), guardar". Pantalla completa
- * de verdad (`position:fixed;inset:0`, sin tarjeta ni recorte alrededor),
- * con el lienzo a `60vh` — un tamaño relativo al alto REAL de la ventana,
- * así que crece o se achica solo con ella y nunca necesita scroll, y en
- * cualquier portátil en horizontal queda mucho más ancho que alto.
+ * Tercer intento (28/08/2026). Los dos anteriores (modal centrado,
+ * pantalla completa a base) fallaban por la MISMA causa real, no por el
+ * tamaño: `.contenidoPrincipal` establece su propio contexto de
+ * apilamiento CSS más arriba en el árbol (mismo motivo documentado en
+ * `editor-dibujo.tsx`) — dentro de él, ni `position:fixed` ni ningún
+ * z-index compiten de verdad contra el resto de la app; por eso el
+ * usuario lo veía encajonado "en el fondo de la pantalla", no realmente
+ * flotando por encima de todo. La solución no es cambiar el tamaño otra
+ * vez, es sacarlo de ese árbol con un portal — mismo patrón ya probado y
+ * en uso real en `editor-dibujo.tsx`/`editor-presupuesto-lienzo.tsx`.
+ *
+ * Con el apilamiento ya arreglado, vuelve a ser un recuadro grande y
+ * centrado (no un blanco de pantalla completa, que el usuario ya rechazó
+ * explícitamente) — con fondo oscurecido detrás para que se vea claro que
+ * no hay ninguna otra ventana por encima ni por debajo.
  */
 function PantallaFirma({ onFirmar, onCerrar }: { onFirmar: (dataUrl: string) => void; onCerrar: () => void }) {
-  return (
-    <div
-      style={{
-        position: 'fixed', inset: 0, zIndex: 300,
-        background: 'var(--blanco)',
-        display: 'flex', flexDirection: 'column',
-        padding: '1rem 1.5rem',
-      }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-        <h2 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Firmar</h2>
-        <button type="button" className={`${styles.btn} ${styles.btnSecundario}`} onClick={onCerrar}>✕ Cerrar</button>
-      </div>
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+  const raizApp = document.querySelector(`.${styles.app}`) ?? document.body;
+  return createPortal(
+    <div className={styles.overlay} style={{ alignItems: 'center', zIndex: 400 }} onClick={onCerrar}>
+      <div className={styles.modal} style={{ maxWidth: 640, padding: '1.5rem' }} onClick={(e) => e.stopPropagation()}>
+        <h2 className={styles.modalTitulo} style={{ margin: '0 0 0.75rem' }}>Firmar</h2>
         <FirmaCanvas
           textoIntro="Dibuja la firma con el dedo o el ratón."
           textoConfirmar="Guardar firma"
-          alturaCanvas="60vh"
+          alturaCanvas="45vh"
           onFirmar={(dataUrl) => { onFirmar(dataUrl); onCerrar(); }}
           onCancelar={onCerrar}
         />
       </div>
-    </div>
+    </div>,
+    raizApp,
   );
 }
 
