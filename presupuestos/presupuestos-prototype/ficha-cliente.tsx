@@ -86,6 +86,8 @@ const PESTANAS: { id: Pestana; label: string }[] = [
  */
 export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [], empresa, privado, onActualizarEmpresa, onVolver, onActualizarCliente, onActualizarProyecto, onBorrar, onGuardarFactura, onCrearProveedor, onActualizarProveedor }: FichaClienteProps) {
   const [pestana, setPestana] = useState<Pestana>('resumen');
+  /** Fallo real, 28/08/2026: si `api.cambiarEstadoProyecto` fallaba (red, sesión...), el desplegable de estado no avisaba de nada — el usuario creía haberlo puesto "En curso" y el cambio nunca llegaba a guardarse, con consecuencias reales (la notificación del briefing diario cuenta proyectos por este mismo campo). */
+  const [errorEstado, setErrorEstado] = useState('');
   /** Contador-disparador: cada incremento fuerza `TabDatos` a abrirse en modo edición (botón "Editar" de la cabecera, ver más abajo). */
   const [abrirEdicionDatos, setAbrirEdicionDatos] = useState(0);
   const editarDatos = () => { setPestana('proyectos'); setAbrirEdicionDatos((n) => n + 1); };
@@ -166,8 +168,12 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
     onActualizarProyecto({ ...proyecto, adjuntos: nuevos });
   };
 
-  const cambiarEstado = (estado: Proyecto['estado']) =>
-    api.cambiarEstadoProyecto(proyecto.id, estado).then(onActualizarProyecto);
+  const cambiarEstado = (estado: Proyecto['estado']) => {
+    setErrorEstado('');
+    api.cambiarEstadoProyecto(proyecto.id, estado)
+      .then(onActualizarProyecto)
+      .catch(() => setErrorEstado('No se pudo guardar el cambio de estado — sigue siendo el anterior. Inténtalo de nuevo.'));
+  };
 
   return (
     <div>
@@ -215,6 +221,7 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
               <option value="finalizado">{etiquetaEstado.finalizado}</option>
               <option value="rechazado">{etiquetaEstado.rechazado}</option>
             </select>
+            {errorEstado && <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--rojo)', flexBasis: '100%' }}>{errorEstado}</p>}
             <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={editarDatos}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
               Editar
