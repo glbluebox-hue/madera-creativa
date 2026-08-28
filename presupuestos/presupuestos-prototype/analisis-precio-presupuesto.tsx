@@ -63,7 +63,7 @@ export function AnalisisPrecioPresupuesto({ analisis, esSnapshot }: AnalisisPrec
       <div style={{ display: 'flex', gap: '1.2rem', flexWrap: 'wrap', marginTop: '0.6rem', fontSize: '0.8rem' }}>
         <span><strong>{formatoEuro(analisis.precio)}</strong> precio</span>
         <span><strong>{formatoEuro(analisis.costeEstimado)}</strong> coste</span>
-        <span><strong>{analisis.margenPorcentaje.toFixed(1)}%</strong> margen</span>
+        <span><strong>{analisis.margenPorcentaje.toFixed(1)}%</strong> margen previsto</span>
         <span><strong>{analisis.margenObjetivoPorcentaje.toFixed(1)}%</strong> objetivo</span>
       </div>
 

@@ -14,7 +14,8 @@ import { procesarRecursosDocumento, borrarRecursosDocumentoHuerfanos } from './d
 import { esGastoPeriodicoDeducible } from './gasto-periodico-fiscal.js';
 import { subirORecuperarRecurso } from './documento-recursos-biblioteca.js';
 import type { DocumentoMC, TemaMC, RecursoMC } from './documento-modelo.js';
-import { analizarPrecioPresupuesto } from './inteligencia-precios.js';
+import { analizarPrecioPresupuesto, calcularMargenRealProyecto } from './inteligencia-precios.js';
+import type { AnalisisPrecio } from './inteligencia-precios.js';
 
 /**
  * Checklist base de carpintería (Fase 1 — "presupuesto aceptado") —
@@ -1775,6 +1776,99 @@ export class PresupuestosService {
     await Promise.all(escrituras);
 
     return aceptados.map((d) => this.limpiar(d as Record<string, unknown>));
+  }
+
+  /**
+   * Inteligencia de Precios — ampliación "margen real" (28/08/2026).
+   *
+   * Un "trabajo" es la unidad que ve el usuario: puede tener MARGEN
+   * PREVISTO (precio cotizado en un presupuesto aceptado vs. coste),
+   * MARGEN REAL (ingreso realmente cobrado en un proyecto `finalizado` vs.
+   * coste — ver `calcularMargenRealProyecto`), o ambos si el mismo
+   * proyecto tiene un presupuesto aceptado Y ya está finalizado con datos
+   * reales. Nunca se fusionan en un solo número: se calculan por separado
+   * y se decide cuál es el "principal" — el real, siempre que exista,
+   * porque representa lo que de verdad ocurrió; el previsto se conserva
+   * aparte para el detalle y la futura comparación previsto→real.
+   *
+   * Identidad del trabajo: el `proyectoId` cuando existe (un proyecto
+   * finalizado y su presupuesto aceptado son EL MISMO trabajo, nunca dos
+   * filas), o el propio id del presupuesto cuando no está vinculado a
+   * ningún proyecto.
+   *
+   * @param usuarioId Propietario.
+   */
+  async analizarTrabajos(usuarioId: string): Promise<Record<string, unknown>[]> {
+    await conectar();
+    const [empresa, presupuestos, proyectosFinalizados] = await Promise.all([
+      EmpresaModel.findOne({ usuarioId }).select('margenObjetivoPorcentaje').lean().exec() as Promise<any>,
+      this.analizarPresupuestosAceptados(usuarioId), // reutiliza la resolución/persistencia de "previsto" ya probada
+      ProyectoModel.find({ usuarioId, estado: 'finalizado' })
+        .select('id clienteId proyecto movimientos horas tarifaHora creado')
+        .lean()
+        .exec(),
+    ]);
+    const margenObjetivoPorcentaje = empresa?.margenObjetivoPorcentaje ?? null;
+
+    type Trabajo = {
+      id: string; titulo: string; clienteId: string; actualizado: string;
+      real: AnalisisPrecio | null; previsto: AnalisisPrecio | null;
+      principal: AnalisisPrecio; origenPrincipal: 'real' | 'previsto' | null;
+    };
+    const trabajos = new Map<string, Trabajo>();
+
+    // 1. Margen real de todo proyecto finalizado — con o sin presupuesto detrás.
+    for (const proyecto of proyectosFinalizados as any[]) {
+      const real = calcularMargenRealProyecto(proyecto, margenObjetivoPorcentaje);
+      trabajos.set(proyecto.id, {
+        id: proyecto.id,
+        titulo: proyecto.proyecto || 'Proyecto sin nombre',
+        clienteId: proyecto.clienteId,
+        actualizado: proyecto.creado, // Proyecto no lleva campo `actualizado` propio.
+        real: real.disponible ? real : null,
+        previsto: null,
+        principal: real,
+        origenPrincipal: real.disponible ? 'real' : null,
+      });
+    }
+
+    // 2. Margen previsto de cada presupuesto aceptado — se fusiona con el
+    //    trabajo real si comparten proyecto, o crea uno nuevo si no.
+    for (const p of presupuestos as any[]) {
+      const previsto: AnalisisPrecio | undefined = p.analisisPrecio ?? undefined;
+      // Motivo aproximado cuando no hay snapshot: `analizarPresupuestosAceptados`
+      // ya intentó calcularlo y decidió no persistirlo — sin más contexto
+      // aquí, se ofrece el motivo más probable en vez de uno genérico.
+      const previstoResultado: AnalisisPrecio = previsto ?? { disponible: false, motivo: p.proyectoId ? 'sin_costes' : 'sin_proyecto' };
+
+      const key = (p.proyectoId as string) || `presupuesto:${p.id}`;
+      const existente = trabajos.get(key);
+      if (existente) {
+        if (previsto) existente.previsto = previsto;
+        existente.titulo = (p.titulo as string) || existente.titulo;
+        if (!existente.real) {
+          existente.principal = previstoResultado;
+          existente.origenPrincipal = previsto ? 'previsto' : existente.origenPrincipal;
+        }
+      } else {
+        trabajos.set(key, {
+          // Identidad = el proyecto cuando existe (consistente con el paso
+          // 1: un proyecto finalizado y su presupuesto SIEMPRE comparten
+          // id de trabajo), aunque el proyecto no esté finalizado todavía
+          // — nunca el id del propio presupuesto salvo que no haya proyecto.
+          id: (p.proyectoId as string) || (p.id as string),
+          titulo: p.titulo as string,
+          clienteId: p.clienteId as string,
+          actualizado: (p.actualizado as string) || (p.creado as string),
+          real: null,
+          previsto: previsto ?? null,
+          principal: previstoResultado,
+          origenPrincipal: previsto ? 'previsto' : null,
+        });
+      }
+    }
+
+    return [...trabajos.values()];
   }
 
   /**

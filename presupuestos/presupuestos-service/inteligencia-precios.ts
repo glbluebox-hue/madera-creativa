@@ -32,7 +32,7 @@ export type ProyectoParaAnalisis = {
 export type EstadoAnalisisPrecio = 'por_encima' | 'cerca' | 'por_debajo';
 
 /** Motivo por el que no se puede completar el análisis — específico, para poder guiar al usuario en vez de un "Datos insuficientes" genérico. */
-export type MotivoSinAnalisis = 'sin_precio' | 'sin_proyecto' | 'sin_costes' | 'sin_objetivo';
+export type MotivoSinAnalisis = 'sin_precio' | 'sin_proyecto' | 'sin_costes' | 'sin_objetivo' | 'sin_ingresos';
 
 export type AnalisisPrecio =
   | {
@@ -106,6 +106,63 @@ export function analizarPrecioPresupuesto(
   return {
     disponible: true,
     precio: precioTotal,
+    costeEstimado,
+    margenPorcentaje,
+    margenObjetivoPorcentaje,
+    diferenciaPuntos,
+    estado: calcularEstadoMargen(diferenciaPuntos),
+  };
+}
+
+/**
+ * Analiza el MARGEN REAL de un proyecto — a diferencia de
+ * `analizarPrecioPresupuesto` (que compara el precio COTIZADO en un
+ * presupuesto con el coste), este usa el ingreso REAL cobrado
+ * (`Proyecto.movimientos` con `tipo:'ingreso'`) como precio. Es la misma
+ * fórmula, línea por línea, que `calcularResumen()`
+ * (`presupuestos-prototype/calculos.ts`) usa hoy para `TablaMargen` —
+ * duplicación deliberada por la misma razón que el resto de este módulo
+ * (paquetes distintos, sin frontera de import), nunca una fórmula nueva.
+ *
+ * Deliberadamente NO se persiste en ningún snapshot: a diferencia de un
+ * presupuesto (precio fijado una vez, inmutable), los movimientos de un
+ * proyecto pueden seguir editándose después de marcarlo "finalizado" — el
+ * margen real siempre se recalcula en el momento, sobre el estado actual
+ * del proyecto, nunca se congela.
+ *
+ * @param proyecto Proyecto con sus movimientos/horas ya cargados.
+ * @param margenObjetivoPorcentaje Margen objetivo configurado en Ajustes de empresa, o `null` si no se ha configurado.
+ */
+export function calcularMargenRealProyecto(
+  proyecto: ProyectoParaAnalisis | null | undefined,
+  margenObjetivoPorcentaje: number | null | undefined
+): AnalisisPrecio {
+  if (!proyecto) {
+    return { disponible: false, motivo: 'sin_ingresos' };
+  }
+  const movimientos = Array.isArray(proyecto.movimientos) ? proyecto.movimientos : [];
+  const horas = Array.isArray(proyecto.horas) ? proyecto.horas : [];
+
+  const totalIngresos = movimientos.filter((m) => m.tipo === 'ingreso').reduce((s, m) => s + (m.importe || 0), 0);
+  if (!(totalIngresos > 0)) {
+    // Sin ingresos reales registrados no hay nada que dividir — nunca se
+    // informa un margen del 0% como si fuera un dato real.
+    return { disponible: false, motivo: 'sin_ingresos' };
+  }
+
+  const totalGastos = movimientos.filter((m) => m.tipo === 'gasto').reduce((s, m) => s + (m.importe || 0), 0);
+  const costeManoObra = horas.reduce((s, h) => s + (h.horas || 0), 0) * (proyecto.tarifaHora || 0);
+  const costeEstimado = totalGastos + costeManoObra;
+  const margenPorcentaje = ((totalIngresos - costeEstimado) / totalIngresos) * 100;
+
+  if (margenObjetivoPorcentaje === null || margenObjetivoPorcentaje === undefined) {
+    return { disponible: false, motivo: 'sin_objetivo' };
+  }
+
+  const diferenciaPuntos = margenPorcentaje - margenObjetivoPorcentaje;
+  return {
+    disponible: true,
+    precio: totalIngresos,
     costeEstimado,
     margenPorcentaje,
     margenObjetivoPorcentaje,

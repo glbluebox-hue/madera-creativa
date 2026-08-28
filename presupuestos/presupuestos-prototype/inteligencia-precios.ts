@@ -22,7 +22,35 @@ import type { Proyecto } from './types.js';
 export type EstadoAnalisisPrecio = 'por_encima' | 'cerca' | 'por_debajo';
 
 /** Motivo por el que no se puede completar el análisis — específico, para poder guiar al usuario en vez de un "Datos insuficientes" genérico. */
-export type MotivoSinAnalisis = 'sin_precio' | 'sin_proyecto' | 'sin_costes' | 'sin_objetivo';
+export type MotivoSinAnalisis = 'sin_precio' | 'sin_proyecto' | 'sin_costes' | 'sin_objetivo' | 'sin_ingresos';
+
+/**
+ * Origen de un análisis (ampliación "margen real", 28/08/2026):
+ * - `'previsto'` — precio COTIZADO en un presupuesto aceptado vs. coste.
+ * - `'real'` — ingreso REAL cobrado en un proyecto finalizado vs. coste.
+ * Nunca se mezclan bajo el mismo número — ver `TrabajoAnalizado`.
+ */
+export type OrigenAnalisis = 'real' | 'previsto';
+
+/**
+ * Un "trabajo" tal como lo devuelve `GET /inteligencia-precios/analisis`
+ * (`svc.analizarTrabajos`, backend) — un único registro por proyecto (o
+ * por presupuesto suelto sin proyecto), nunca dos filas para el mismo
+ * trabajo aunque tenga presupuesto Y esté finalizado.
+ */
+export type TrabajoAnalizado = {
+  id: string;
+  titulo: string;
+  clienteId: string;
+  actualizado: string;
+  /** Presente solo si el proyecto está `finalizado` con ingresos reales suficientes. */
+  real: AnalisisPrecio | null;
+  /** Presente solo si hay un presupuesto aceptado con datos suficientes (snapshot congelado al aceptar). */
+  previsto: AnalisisPrecio | null;
+  /** El que se muestra como resultado principal — el real si existe, si no el previsto, si no un `disponible:false`. */
+  principal: AnalisisPrecio;
+  origenPrincipal: OrigenAnalisis | null;
+};
 
 export type AnalisisPrecio =
   | {
@@ -107,21 +135,27 @@ const TEXTO_MOTIVO: Record<MotivoSinAnalisis, string> = {
   sin_proyecto: 'Este presupuesto no está vinculado a ningún proyecto — sin proyecto no hay gastos ni horas con los que estimar el coste.',
   sin_costes: 'El proyecto vinculado todavía no tiene gastos ni horas registradas — sin eso no se puede estimar el coste.',
   sin_objetivo: 'Configura tu margen objetivo en Ajustes de empresa para ver aquí la comparación.',
+  sin_ingresos: 'Este proyecto está finalizado, pero todavía no tiene ningún ingreso registrado — sin eso no se puede calcular el margen real.',
 };
 
-export function interpretarAnalisis(analisis: AnalisisPrecio): string {
+/**
+ * @param analisis Resultado ya calculado.
+ * @param origen `'previsto'` (por defecto, compatibilidad con el bloque embebido en presupuestos) o `'real'` — cambia únicamente las palabras "margen previsto"/"margen real" del texto, nunca el cálculo.
+ */
+export function interpretarAnalisis(analisis: AnalisisPrecio, origen: OrigenAnalisis = 'previsto'): string {
   if (analisis.disponible === false) {
     const motivo: MotivoSinAnalisis = analisis.motivo;
     return TEXTO_MOTIVO[motivo];
   }
+  const etiqueta = origen === 'real' ? 'El margen real' : 'El margen previsto';
   const puntos = Math.abs(analisis.diferenciaPuntos).toFixed(1);
   if (analisis.estado === 'por_encima') {
     return analisis.diferenciaPuntos === 0
-      ? 'El margen previsto coincide exactamente con el objetivo configurado.'
-      : `El margen previsto está ${puntos} puntos por encima del objetivo configurado.`;
+      ? `${etiqueta} coincide exactamente con el objetivo configurado.`
+      : `${etiqueta} está ${puntos} puntos por encima del objetivo configurado.`;
   }
   if (analisis.estado === 'cerca') {
-    return `El margen previsto está ${puntos} puntos por debajo del objetivo, dentro de un margen razonable.`;
+    return `${etiqueta} está ${puntos} puntos por debajo del objetivo, dentro de un margen razonable.`;
   }
-  return `El margen previsto está ${puntos} puntos por debajo del objetivo configurado — conviene revisar el precio o el coste antes de aceptar.`;
+  return `${etiqueta} está ${puntos} puntos por debajo del objetivo configurado.`;
 }

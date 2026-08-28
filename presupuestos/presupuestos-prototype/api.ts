@@ -2,6 +2,7 @@ import type { Cliente, Proyecto, Factura, Proveedor, Producto, Dibujo, Carpeta, 
 import type { NotaMC } from './notas-modelo.js';
 import type { CodigoQRMC } from './codigos-qr-modelo.js';
 import type { PresupuestoMC, PresupuestoPublico } from './presupuestos-modelo.js';
+import type { TrabajoAnalizado } from './inteligencia-precios.js';
 import type { PlantillaMC, RecursoMC, ComponenteMC } from './documento-modelo.js';
 import type { ContratoMC } from './contratos-modelo.js';
 import type { Empresa } from './use-empresa.js';
@@ -915,15 +916,13 @@ export async function obtenerTodosLosPresupuestos(): Promise<PresupuestoMC[]> {
 }
 
 /**
- * Inteligencia de Precios (Fase 1, ajuste 28/08/2026) — todos los
- * presupuestos ACEPTADOS del usuario, con `analisisPrecio` ya calculado y
- * persistido para los que tienen datos suficientes (proyecto vinculado con
- * gastos y/o horas, margen objetivo configurado) — incluye tanto los que
- * ya tenían snapshot como los que se acaban de rellenar en esta misma
- * llamada. Ver `svc.analizarPresupuestosAceptados` para la causa raíz que
- * resuelve.
+ * Inteligencia de Precios — un "trabajo" por proyecto (o por presupuesto
+ * suelto sin proyecto), con margen PREVISTO (presupuesto aceptado),
+ * margen REAL (proyecto finalizado con ingresos reales) o ambos cuando
+ * coinciden — ver `svc.analizarTrabajos` (backend) para la lógica de
+ * fusión y prioridad.
  */
-export async function analizarInteligenciaPrecios(): Promise<PresupuestoMC[]> {
+export async function analizarInteligenciaPrecios(): Promise<TrabajoAnalizado[]> {
   const res = await fetchConAuth('/inteligencia-precios/analisis');
   await comprobarRespuesta(res, 'No se pudo analizar los presupuestos');
   return res.json();

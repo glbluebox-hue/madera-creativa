@@ -1758,13 +1758,12 @@ export function run() {
   });
 
   /**
-   * Inteligencia de Precios (Fase 1, ajuste 28/08/2026) — detección
-   * automática de presupuestos aceptados con margen calculable. Ver el
-   * comentario de `svc.analizarPresupuestosAceptados` para la causa raíz
-   * del problema que resuelve esta ruta.
+   * Inteligencia de Precios — margen previsto (presupuestos aceptados) Y
+   * margen real (proyectos finalizados), fusionados en un único "trabajo"
+   * por proyecto. Ver `svc.analizarTrabajos`.
    */
   app.get('/inteligencia-precios/analisis', requireAuth, async (req: AuthRequest, res) => {
-    try { res.json(await svc.analizarPresupuestosAceptados(req.usuarioId!)); }
+    try { res.json(await svc.analizarTrabajos(req.usuarioId!)); }
     catch (err) { responderError(req, res, err); }
   });
 

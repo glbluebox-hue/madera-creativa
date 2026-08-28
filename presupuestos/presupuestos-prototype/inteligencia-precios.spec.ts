@@ -90,5 +90,16 @@ describe('inteligencia-precios (Fase 1, frontend) — motor determinista', () =>
       const texto = interpretarAnalisis(r);
       expect(texto).toMatch(/por encima del objetivo/i);
     });
+
+    it('explica el motivo "sin_ingresos" (proyecto finalizado sin ingresos registrados)', () => {
+      expect(interpretarAnalisis({ disponible: false, motivo: 'sin_ingresos' })).toMatch(/finalizado.*ingreso/i);
+    });
+
+    it('distingue "margen real" de "margen previsto" según el parámetro origen', () => {
+      const r = analizarPrecioPresupuesto(1000, proyectoConCostes(500), 35);
+      expect(r.disponible).toBe(true);
+      expect(interpretarAnalisis(r, 'previsto')).toMatch(/margen previsto/i);
+      expect(interpretarAnalisis(r, 'real')).toMatch(/margen real/i);
+    });
   });
 });
