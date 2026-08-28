@@ -693,16 +693,29 @@ export class PresupuestosService {
    * real, 28/08/2026: "el cliente me pide otras cosas durante la obra,
    * ¿cómo sumo esto al presupuesto?"). Un solo `findOneAndUpdate` atómico:
    * `$push` la entrada (queda como registro de qué se acordó y por
-   * cuánto) y `$inc` el presupuesto acordado en la misma operación — nunca
-   * dos escrituras separadas, para que no puedan quedar desincronizados
-   * por una carrera entre dos peticiones simultáneas.
+   * cuánto), `$inc` el presupuesto acordado, Y `$push` un movimiento real
+   * de tipo 'ingreso' — todo en la misma operación, nunca escrituras
+   * separadas, para que no puedan quedar desincronizados por una carrera
+   * entre dos peticiones simultáneas.
+   *
+   * El movimiento es lo que conecta esto de verdad con Inteligencia de
+   * Precios (pedido real, 28/08/2026: "tiene que sumar en el cálculo
+   * REAL") — `calcularMargenRealProyecto` suma `movimientos` tipo
+   * 'ingreso', nunca `Proyecto.presupuesto` ni `trabajosExtra`; sin este
+   * movimiento, un trabajo extra subía el número "Presupuesto acordado"
+   * pero no participaba en ningún cálculo de margen, real ni previsto.
    */
   async anadirTrabajoExtraProyecto(proyectoId: string, usuarioId: string, descripcion: string, precio: number): Promise<ProyectoDoc> {
     await conectar();
-    const trabajoExtra = { id: randomUUID(), descripcion, precio, fecha: new Date().toISOString() };
+    const ahora = new Date().toISOString();
+    const trabajoExtra = { id: randomUUID(), descripcion, precio, fecha: ahora };
+    const movimiento = {
+      id: randomUUID(), fecha: ahora.slice(0, 10), concepto: descripcion,
+      categoria: 'Trabajo extra', tipo: 'ingreso' as const, importe: precio, facturaId: '',
+    };
     const doc = await ProyectoModel.findOneAndUpdate(
       { id: proyectoId, usuarioId },
-      { $push: { trabajosExtra: trabajoExtra }, $inc: { presupuesto: precio } },
+      { $push: { trabajosExtra: trabajoExtra, movimientos: movimiento }, $inc: { presupuesto: precio } },
       { new: true }
     ).lean().exec();
     if (!doc) throw new ErrorDeNegocio('Proyecto no encontrado', 400);

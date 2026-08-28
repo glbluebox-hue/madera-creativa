@@ -2,6 +2,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import mongoose from 'mongoose';
 import { PresupuestosService } from './presupuestos-service.js';
 import { ClienteModel, ProyectoModel } from './cliente.model.js';
+import { calcularMargenRealProyecto } from './inteligencia-precios.js';
 
 /**
  * "Trabajo extra" (28/08/2026): `Proyecto.trabajosExtra[]` y
@@ -54,6 +55,28 @@ describe('anadirTrabajoExtraProyecto', () => {
     expect((actualizado as any).trabajosExtra.length).toBe(1);
     expect((actualizado as any).trabajosExtra[0].descripcion).toBe('Balda extra en el armario');
     expect((actualizado as any).trabajosExtra[0].precio).toBe(400);
+  });
+
+  it('A2. también crea un movimiento real de tipo ingreso, por el mismo importe (pedido real, 28/08/2026: "tiene que sumar en el cálculo REAL")', async () => {
+    await ClienteModel.create(clienteBase('cA2', USUARIO_A));
+    await ProyectoModel.create(proyectoBase('pA2', 'cA2', USUARIO_A));
+    const actualizado = await svc.anadirTrabajoExtraProyecto('pA2', USUARIO_A, 'Cajón extra', 300);
+    const movimientos = (actualizado as any).movimientos;
+    expect(movimientos.length).toBe(1);
+    expect(movimientos[0].tipo).toBe('ingreso');
+    expect(movimientos[0].importe).toBe(300);
+    expect(movimientos[0].concepto).toBe('Cajón extra');
+    expect(movimientos[0].categoria).toBe('Trabajo extra');
+  });
+
+  it('A3. el movimiento generado cuenta de verdad en calcularMargenRealProyecto (no solo en "Presupuesto acordado")', async () => {
+    await ClienteModel.create(clienteBase('cA3', USUARIO_A));
+    await ProyectoModel.create(proyectoBase('pA3', 'cA3', USUARIO_A));
+    await svc.anadirTrabajoExtraProyecto('pA3', USUARIO_A, 'Estante extra', 500);
+    const doc = await ProyectoModel.findOne({ id: 'pA3' }).lean().exec() as any;
+    const margen = calcularMargenRealProyecto(doc, 45);
+    expect(margen.disponible).toBe(true);
+    if (margen.disponible) expect(margen.precio).toBe(500); // el ingreso real ya incluye el trabajo extra
   });
 
   it('B. el id y la fecha los asigna siempre el servidor', async () => {

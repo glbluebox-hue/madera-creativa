@@ -15,17 +15,21 @@ import type { Proyecto } from './types.js';
 
 /**
  * ¿Hace falta pedir el proyecto a la red antes de poder mostrar el
- * análisis? `false` en los dos casos que no necesitan red — snapshot ya
- * congelado (presupuesto aceptado), o presupuesto sin proyecto vinculado
- * (`analizarPrecioPresupuesto` ya sabe explicar "sin_proyecto" con
- * `proyecto: null`, sin ningún caso especial aquí) — y también en cuanto
- * ya se ha intentado cargar una vez en esta sesión del editor, para no
- * repetir la llamada cada vez que se reabre el modal.
+ * análisis? `false` solo en los dos casos que no necesitan red — snapshot
+ * ya congelado (presupuesto aceptado), o presupuesto sin proyecto
+ * vinculado (`analizarPrecioPresupuesto` ya sabe explicar "sin_proyecto"
+ * con `proyecto: null`, sin ningún caso especial aquí).
+ *
+ * Deliberadamente SIN caché entre aperturas (pedido real, 28/08/2026:
+ * "que siempre lea en vivo todo de un presupuesto") — cada vez que el
+ * usuario pulsa el botón se vuelve a pedir el proyecto, para que un gasto
+ * o un trabajo extra añadido mientras el presupuesto seguía abierto se
+ * refleje sin tener que cerrar y volver a abrir el editor.
  */
-export function haceFaltaPedirProyecto(analisisPrecio: AnalisisPrecio | undefined, proyectoId: string | undefined, yaSeIntento: boolean): boolean {
+export function haceFaltaPedirProyecto(analisisPrecio: AnalisisPrecio | undefined, proyectoId: string | undefined): boolean {
   if (analisisPrecio) return false;
   if (!proyectoId) return false;
-  return !yaSeIntento;
+  return true;
 }
 
 /**

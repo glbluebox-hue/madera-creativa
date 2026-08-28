@@ -227,23 +227,25 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
    * 28/08/2026) — reutiliza tal cual `analizarPrecioPresupuesto` (motor de
    * Fase 1) y `AnalisisPrecioCompleto`/`TrabajosComparables` (Fase 2C), sin
    * ningún cálculo nuevo. El proyecto vinculado se pide de forma
-   * PEREZOSA — nunca al abrir el editor, solo la primera vez que el
-   * usuario pulsa el botón — y se cachea en `proyectoParaAnalisis` para no
-   * repetir la llamada si vuelve a abrir el modal en la misma sesión.
+   * PEREZOSA — nunca al abrir el editor, solo al pulsar el botón — y
+   * SIEMPRE EN VIVO (pedido real, 28/08/2026: "que siempre lea en vivo
+   * todo de un presupuesto"): cada apertura vuelve a pedir el proyecto,
+   * nunca reutiliza el resultado de la vez anterior, para que un gasto o
+   * un trabajo extra añadido mientras el presupuesto seguía abierto se
+   * refleje sin tener que cerrar y volver a entrar.
    */
   const [inteligenciaAbierta, setInteligenciaAbierta] = useState(false);
   const [estadoAnalisisEditor, setEstadoAnalisisEditor] = useState<'inactivo' | 'cargando' | 'listo'>('inactivo');
   const [proyectoParaAnalisis, setProyectoParaAnalisis] = useState<Proyecto | null>(null);
   const abrirInteligenciaPrecios = useCallback(() => {
     setInteligenciaAbierta(true);
-    if (!haceFaltaPedirProyecto(analisisPrecio, proyectoId, estadoAnalisisEditor === 'listo')) { setEstadoAnalisisEditor('listo'); return; }
+    if (!haceFaltaPedirProyecto(analisisPrecio, proyectoId)) { setEstadoAnalisisEditor('listo'); return; }
     setEstadoAnalisisEditor('cargando');
     api.obtenerProyecto(proyectoId!)
       .then((p) => setProyectoParaAnalisis(p))
       .catch(() => setProyectoParaAnalisis(null)) // fallo de red: se comporta como "sin proyecto", nunca rompe el modal
       .finally(() => setEstadoAnalisisEditor('listo'));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [analisisPrecio, proyectoId, estadoAnalisisEditor]);
+  }, [analisisPrecio, proyectoId]);
   const analisisParaModal: AnalisisPrecio = analisisParaEditor(analisisPrecio, precioTotal, proyectoParaAnalisis, empresa.margenObjetivoPorcentaje);
   const tipoTrabajoParaModal = tipoTrabajoParaEditor(proyectoParaAnalisis);
   const [paginaActivaId, setPaginaActivaId] = useState(documentoInicial.paginas[0].id);

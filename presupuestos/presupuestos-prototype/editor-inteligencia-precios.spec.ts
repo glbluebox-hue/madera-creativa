@@ -35,19 +35,17 @@ function proyectoBase(extra: Partial<Proyecto> = {}): Proyecto {
 
 describe('haceFaltaPedirProyecto — Fase 2C, integración en el editor', () => {
   it('presupuesto ACEPTADO (con snapshot congelado): nunca hace falta pedir el proyecto', () => {
-    expect(haceFaltaPedirProyecto(analisisDisponible, 'p1', false)).toBe(false);
+    expect(haceFaltaPedirProyecto(analisisDisponible, 'p1')).toBe(false);
   });
 
   it('sin proyecto vinculado: nunca hace falta pedir nada (analizarPrecioPresupuesto ya sabe explicarlo con null)', () => {
-    expect(haceFaltaPedirProyecto(undefined, undefined, false)).toBe(false);
+    expect(haceFaltaPedirProyecto(undefined, undefined)).toBe(false);
   });
 
-  it('presupuesto EN CURSO con proyecto, primera vez que se abre: hace falta pedirlo', () => {
-    expect(haceFaltaPedirProyecto(undefined, 'p1', false)).toBe(true);
-  });
-
-  it('presupuesto EN CURSO con proyecto, ya cargado antes en esta sesión: no se repite el fetch', () => {
-    expect(haceFaltaPedirProyecto(undefined, 'p1', true)).toBe(false);
+  it('presupuesto EN CURSO con proyecto: siempre hace falta pedirlo — sin caché entre aperturas (pedido real, 28/08/2026: "que siempre lea en vivo")', () => {
+    expect(haceFaltaPedirProyecto(undefined, 'p1')).toBe(true);
+    // Se pide igual la segunda vez que se llama — nunca se "recuerda" que ya se pidió antes.
+    expect(haceFaltaPedirProyecto(undefined, 'p1')).toBe(true);
   });
 });
 
