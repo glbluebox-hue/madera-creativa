@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useLayoutEffect } from 'react';
 import { registrarTipoRender, obtenerTipoRender, type RenderElementoProps, type PanelPropiedadesProps } from './documento-registro-tipos-render.js';
 import editorStyles from './editor-documento.module.css';
 
@@ -66,6 +66,28 @@ function RenderTexto({ elemento, editando, onCambiarContenido, onSalirEdicion }:
   const texto = (elemento.contenido.texto as string) ?? '';
   const textoHtml = elemento.contenido.textoHtml as string | undefined;
   const htmlAMostrar = textoHtml !== undefined ? textoHtml : escaparHtmlPlano(texto);
+
+  /**
+   * Bug real, 28/08/2026: escribir `dangerouslySetInnerHTML` como prop de
+   * JSX hace que REACT reescriba el HTML del nodo en CUALQUIER repintado
+   * de este componente, no solo cuando el contenido cambia de verdad — a
+   * diferencia de un `children` de texto normal, React no compara si el
+   * HTML resultante es distinto, así que un repintado disparado por
+   * cualquier otro estado del editor (mover el ratón, seleccionar algo)
+   * mientras el usuario seguía escribiendo/con texto seleccionado
+   * BORRABA en el DOM real el formato recién aplicado (negrita) antes de
+   * que `onBlur` llegara a leerlo, y además interrumpía el cursor/la
+   * selección a mitad de un clic ("cuesta mucho entrar a escribir").
+   * Arreglo: escribir el HTML a mano en un efecto, y solo cuando el
+   * contenido guardado cambia de verdad — nunca en cada render, igual
+   * que React ya hacía "gratis" con el `{texto}` de antes.
+   */
+  useLayoutEffect(() => {
+    if (ref.current && ref.current.innerHTML !== htmlAMostrar) {
+      ref.current.innerHTML = htmlAMostrar;
+    }
+  }, [htmlAMostrar]);
+
   return (
     <div
       ref={ref}
@@ -84,7 +106,6 @@ function RenderTexto({ elemento, editando, onCambiarContenido, onSalirEdicion }:
         textAlign: (estilo.textAlign as any) ?? 'left', lineHeight: estilo.lineHeight ?? 1.2,
         letterSpacing: `${estilo.letterSpacing ?? 0}px`, overflow: 'hidden', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
       }}
-      dangerouslySetInnerHTML={{ __html: htmlAMostrar }}
     />
   );
 }
@@ -118,6 +139,12 @@ function haySeleccionDeTextoActiva(): boolean {
  */
 function aplicarFormatoCaracter(comando: 'bold' | 'italic' | 'underline', aplicarATodaLaCaja: () => void): void {
   if (haySeleccionDeTextoActiva()) {
+    // Fuerza que el navegador use etiquetas semánticas (<b>/<i>/<u>) en vez
+    // de `<span style="...">` — sin esto, algunos navegadores producen
+    // estilos en línea que el saneado (lista blanca de etiquetas, nunca de
+    // atributos) descartaría por completo, perdiendo el formato recién
+    // aplicado en cuanto se guarda.
+    document.execCommand('styleWithCSS', false, 'false');
     document.execCommand(comando);
     return;
   }
@@ -636,7 +663,7 @@ function PanelPrecioDestacado({ elemento, onCambiarContenido, onCambiarEstilo, p
           <option value="fijo">Texto fijo</option>
         </select>
       </label>
-      {modo === 'vinculado' && onCambiarPrecioTotal && (
+      {onCambiarPrecioTotal && (
         <label className={editorStyles.panelCampo}>
           Precio total del presupuesto
           <input
@@ -650,7 +677,7 @@ function PanelPrecioDestacado({ elemento, onCambiarContenido, onCambiarEstilo, p
               if (Number.isFinite(v) && v >= 0) onCambiarPrecioTotal(v);
             }}
           />
-          <span className={editorStyles.panelNota}>Este es el precio real del presupuesto — se ve en la lista de "Presupuestos" y en el margen de Inteligencia de Precios, no solo aquí.</span>
+          <span className={editorStyles.panelNota}>Este es el precio real del presupuesto — se ve en la lista de "Presupuestos" y en el margen de Inteligencia de Precios. Se guarda igual sin importar si el "Origen" de arriba está en Vinculado o Texto fijo.</span>
         </label>
       )}
       {modo === 'fijo' && (
