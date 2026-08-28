@@ -138,6 +138,8 @@ function CapturaFirma({ onCapturar }: { onCapturar: (dataUrl: string) => void })
   };
 
   const iniciar = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
     dibujando.current = true;
     const ctx = canvasRef.current?.getContext('2d');
     const { x, y } = posicion(e);
@@ -192,7 +194,25 @@ function CapturaFirma({ onCapturar }: { onCapturar: (dataUrl: string) => void })
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
       <canvas
         ref={canvasRef} width={280} height={140}
-        style={{ border: '1px solid var(--borde)', borderRadius: 6, touchAction: 'none', background: '#fff' }}
+        style={{
+          // Bug real, 28/08/2026 ("el cuadrante de firma no se ve entero /
+          // firma más abajo de donde toco"): sin un tamaño CSS explícito
+          // aquí, el `useLayoutEffect` de abajo (que escala el búfer interno
+          // a `devicePixelRatio` para que el trazo no salga pixelado) también
+          // agrandaba el tamaño VISIBLE del lienzo — al no haber CSS que lo
+          // fije, el navegador usa el propio búfer como tamaño de pantalla.
+          // En una pantalla de alta densidad (2x/3x, la mayoría de móviles)
+          // el cuadrado de firma se volvía 2-3 veces más grande de lo
+          // previsto, desbordando el panel — y como el punto donde se
+          // dibuja SÍ seguía la geometría real (ahora mayor) del lienzo, el
+          // trazo aparecía descolocado respecto a lo que se veía en pantalla.
+          // Mismo patrón ya corregido y en uso real en `firma-canvas.tsx`
+          // (Portal del cliente / firma de empresa): fijar el tamaño CSS
+          // aquí deja que el búfer interno crezca para nitidez sin que el
+          // tamaño visible se mueva ni un píxel.
+          width: 280, height: 140,
+          border: '1px solid var(--borde)', borderRadius: 6, touchAction: 'none', background: '#fff', cursor: 'crosshair',
+        }}
         onPointerDown={iniciar} onPointerMove={mover} onPointerUp={terminar} onPointerLeave={terminar}
       />
       <div style={{ display: 'flex', gap: '0.5rem' }}>
