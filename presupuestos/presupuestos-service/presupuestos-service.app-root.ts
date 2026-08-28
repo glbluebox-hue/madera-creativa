@@ -75,6 +75,7 @@ import {
   esquemaEstadoClienteEntrada,
   esquemaPresupuestoClienteEntrada,
   esquemaCaracteristicaEntrada,
+  esquemaAdjuntoNuevoEntrada,
   esquemaActualizarCobros,
   esquemaNotifPrefs,
   esquemaActualizarRecordatorios,
@@ -1231,6 +1232,17 @@ export function run() {
 
   app.delete('/proyectos/:id/movimientos/:movId', requireAuth, async (req: AuthRequest, res) => {
     try { res.json(await svc.borrarMovimientoProyecto(req.params.id, req.usuarioId!, req.params.movId)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  /** Ver `svc.anadirAdjuntoProyecto`/`svc.borrarAdjuntoProyecto` — corrige el bug real de adjuntos que no se podían borrar. */
+  app.post('/proyectos/:id/adjuntos', requireAuth, validar(esquemaAdjuntoNuevoEntrada), async (req: AuthRequest, res) => {
+    try { res.json(await svc.anadirAdjuntoProyecto(req.params.id, req.usuarioId!, req.body)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.delete('/proyectos/:id/adjuntos/:adjuntoId', requireAuth, async (req: AuthRequest, res) => {
+    try { res.json(await svc.borrarAdjuntoProyecto(req.params.id, req.usuarioId!, req.params.adjuntoId)); }
     catch (err) { responderError(req, res, err); }
   });
 

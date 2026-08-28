@@ -1,4 +1,4 @@
-import type { Cliente, Proyecto, Factura, Proveedor, Producto, Dibujo, Carpeta, GastoPeriodico, Movimiento, Tarea } from './types.js';
+import type { Cliente, Proyecto, Factura, Proveedor, Producto, Dibujo, Carpeta, GastoPeriodico, Movimiento, Tarea, Adjunto } from './types.js';
 import type { NotaMC } from './notas-modelo.js';
 import type { CodigoQRMC } from './codigos-qr-modelo.js';
 import type { PresupuestoMC, PresupuestoPublico } from './presupuestos-modelo.js';
@@ -660,6 +660,30 @@ export async function editarMovimientoProyecto(proyectoId: string, movimientoId:
 export async function borrarMovimientoProyecto(proyectoId: string, movimientoId: string): Promise<Proyecto> {
   const res = await fetchConAuth(`/proyectos/${proyectoId}/movimientos/${movimientoId}`, { method: 'DELETE' });
   await comprobarRespuesta(res, 'No se pudo borrar el movimiento');
+  return res.json();
+}
+
+/**
+ * Sube UN adjunto nuevo y devuelve la lista de adjuntos ya actualizada
+ * (con la URL real de almacenamiento) — ruta quirúrgica dedicada, corrige
+ * el bug real de adjuntos que no se podían borrar (ver el comentario de
+ * `svc.anadirAdjuntoProyecto`, backend): nunca reenvía el resto del
+ * proyecto ni los adjuntos ya subidos.
+ */
+export async function anadirAdjuntoProyecto(proyectoId: string, adjunto: Adjunto): Promise<Adjunto[]> {
+  const res = await fetchConAuth(`/proyectos/${proyectoId}/adjuntos`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(adjunto),
+  });
+  await comprobarRespuesta(res, 'No se pudo subir el archivo');
+  return res.json();
+}
+
+/** Borra UN adjunto por su id y devuelve la lista ya actualizada — ver `anadirAdjuntoProyecto`. */
+export async function borrarAdjuntoProyecto(proyectoId: string, adjuntoId: string): Promise<Adjunto[]> {
+  const res = await fetchConAuth(`/proyectos/${proyectoId}/adjuntos/${adjuntoId}`, { method: 'DELETE' });
+  await comprobarRespuesta(res, 'No se pudo borrar el archivo');
   return res.json();
 }
 

@@ -262,6 +262,20 @@ const esquemaAdjunto = z.object({
   ...camposAlmacenamiento,
 });
 
+/**
+ * Cuerpo de POST /proyectos/:id/adjuntos — un adjunto NUEVO, subido a
+ * mano por el usuario. Deliberadamente sin `claveAlmacenamiento`: ese
+ * campo lo asigna siempre el servidor al procesar el Base64
+ * (`procesarAdjuntos`), nunca se acepta del cliente.
+ */
+export const esquemaAdjuntoNuevoEntrada = z.object({
+  id: z.string().min(1).max(64),
+  nombre: z.string().max(255),
+  tipo: z.string().max(120),
+  tamano: z.number().finite().nonnegative(),
+  url: z.string().min(1),
+});
+
 const esquemaFotoProyecto = z.object({
   id: z.string().min(1).max(64),
   url: z.string(),

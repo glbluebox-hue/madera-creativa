@@ -101,6 +101,7 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
   // Los adjuntos ya no llegan con la ficha (ver comentario en api.ts) — se
   // piden aparte para que abrir la ficha no dependa de transferir varios MB.
   const [adjuntosProyecto, setAdjuntosProyecto] = useState<Adjunto[]>([]);
+  const [errorAdjuntos, setErrorAdjuntos] = useState('');
   useEffect(() => {
     api.obtenerAdjuntosProyecto(proyecto.id).then(setAdjuntosProyecto).catch(() => setAdjuntosProyecto([]));
   }, [proyecto.id]);
@@ -159,16 +160,32 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
   const borrarHoras = (id: string) =>
     onActualizarProyecto({ ...proyecto, horas: proyecto.horas.filter((x) => x.id !== id) });
 
+  /**
+   * Bug real, 28/08/2026: "el PDF subido no se puede borrar". Causa raíz
+   * — `adjuntosProyecto` es una copia LOCAL (los adjuntos se cargan aparte
+   * de la ficha, ver arriba); el código anterior la actualizaba solo de
+   * forma optimista y nunca recibía de vuelta la URL real de
+   * almacenamiento tras subir, así que cada operación siguiente (incluido
+   * borrar) reenviaba TODOS los adjuntos ya subidos otra vez en Base64 a
+   * través del `guardarProyecto` genérico — payloads que crecían sin
+   * límite en la misma sesión, con el guardado fallando en silencio (sin
+   * `.catch()`) al superar el límite de tamaño. Ahora usan rutas
+   * quirúrgicas dedicadas (mismo patrón que movimientos, arriba) que solo
+   * tocan el adjunto que corresponde y devuelven la lista real ya
+   * actualizada — sin reenviar nunca lo que ya estaba subido.
+   */
   const anadirAdjunto = (a: Adjunto) => {
-    const nuevos = [...adjuntosProyecto, a];
-    setAdjuntosProyecto(nuevos);
-    onActualizarProyecto({ ...proyecto, adjuntos: nuevos });
+    setErrorAdjuntos('');
+    api.anadirAdjuntoProyecto(proyecto.id, a)
+      .then(setAdjuntosProyecto)
+      .catch(() => setErrorAdjuntos('No se pudo subir el archivo — inténtalo de nuevo.'));
   };
 
   const borrarAdjunto = (id: string) => {
-    const nuevos = adjuntosProyecto.filter((x) => x.id !== id);
-    setAdjuntosProyecto(nuevos);
-    onActualizarProyecto({ ...proyecto, adjuntos: nuevos });
+    setErrorAdjuntos('');
+    api.borrarAdjuntoProyecto(proyecto.id, id)
+      .then(setAdjuntosProyecto)
+      .catch(() => setErrorAdjuntos('No se pudo borrar el archivo — inténtalo de nuevo.'));
   };
 
   const cambiarEstado = (estado: Proyecto['estado']) => {
@@ -308,6 +325,7 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
             onAnadir={(fs: FotoProyecto[]) => onActualizarProyecto({ ...proyecto, fotos: [...(proyecto.fotos || []), ...fs] })}
             onBorrar={(id: string) => onActualizarProyecto({ ...proyecto, fotos: (proyecto.fotos || []).filter((f) => f.id !== id) })}
           />
+          {errorAdjuntos && <p style={{ margin: '0 0 0.75rem', fontSize: '0.78rem', color: 'var(--rojo)' }}>{errorAdjuntos}</p>}
           <PanelAdjuntos
             adjuntos={adjuntosProyecto}
             onAnadir={anadirAdjunto}

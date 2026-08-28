@@ -535,6 +535,56 @@ export class PresupuestosService {
   }
 
   /**
+   * Añade UN adjunto a un proyecto — ruta quirúrgica dedicada (bug real,
+   * 28/08/2026: "el PDF subido no se puede borrar"). Causa raíz: los
+   * adjuntos se cargan aparte de la ficha (`obtenerAdjuntosProyecto`,
+   * para no pesar la apertura) y el `Proyecto` que ve el frontend nunca
+   * los incluye — el frontend mantenía su PROPIA copia local
+   * (`adjuntosProyecto` en `ficha-cliente.tsx`) y la actualizaba solo de
+   * forma optimista, sin nunca recibir de vuelta la URL real de
+   * almacenamiento tras subir. Cada operación posterior (incluido
+   * borrar) reenviaba entonces TODOS los adjuntos ya subidos otra vez en
+   * Base64 a través del `guardarProyecto` genérico — payloads que
+   * crecían sin límite en la misma sesión y podían superar el límite de
+   * tamaño (`LIMITE_BLOBS_CLIENTE_BYTES`) o el del propio servidor, con
+   * el guardado fallando en silencio (sin manejo de error en el
+   * frontend). Esta ruta sube/persiste solo el adjunto que corresponde,
+   * sin tocar el resto del proyecto ni reenviar nada ya subido.
+   */
+  async anadirAdjuntoProyecto(proyectoId: string, usuarioId: string, adjunto: { id: string; nombre: string; tipo: string; tamano: number; url: string }): Promise<unknown[]> {
+    await conectar();
+    const proyecto = await ProyectoModel.findOne({ id: proyectoId, usuarioId }).select('adjuntos').lean().exec();
+    if (!proyecto) throw new ErrorDeNegocio('Proyecto no encontrado', 400);
+    const [procesado] = await procesarAdjuntos([adjunto]);
+    const actuales = Array.isArray((proyecto as any).adjuntos) ? (proyecto as any).adjuntos : [];
+    const doc = await ProyectoModel.findOneAndUpdate(
+      { id: proyectoId, usuarioId },
+      { $set: { adjuntos: [...actuales, procesado] } },
+      { new: true }
+    ).select('adjuntos').lean().exec();
+    if (!doc) throw new ErrorDeNegocio('Proyecto no encontrado', 400);
+    return (this.limpiarProyecto(doc as Record<string, unknown>).adjuntos as unknown[]) ?? [];
+  }
+
+  /** Borra UN adjunto de un proyecto por su id — ruta quirúrgica dedicada, ver `anadirAdjuntoProyecto`. Borra también su blob de almacenamiento externo (mismo criterio que `borrarBlobsHuerfanos`). */
+  async borrarAdjuntoProyecto(proyectoId: string, usuarioId: string, adjuntoId: string): Promise<unknown[]> {
+    await conectar();
+    const proyecto = await ProyectoModel.findOne({ id: proyectoId, usuarioId }).select('adjuntos').lean().exec();
+    if (!proyecto) throw new ErrorDeNegocio('Proyecto no encontrado', 400);
+    const actuales: any[] = Array.isArray((proyecto as any).adjuntos) ? (proyecto as any).adjuntos : [];
+    const borrado = actuales.find((a) => a.id === adjuntoId);
+    const nuevos = actuales.filter((a) => a.id !== adjuntoId);
+    const doc = await ProyectoModel.findOneAndUpdate(
+      { id: proyectoId, usuarioId },
+      { $set: { adjuntos: nuevos } },
+      { new: true }
+    ).select('adjuntos').lean().exec();
+    if (!doc) throw new ErrorDeNegocio('Proyecto no encontrado', 400);
+    if (borrado?.claveAlmacenamiento) await almacenamiento.borrar(borrado.claveAlmacenamiento).catch(() => {});
+    return (this.limpiarProyecto(doc as Record<string, unknown>).adjuntos as unknown[]) ?? [];
+  }
+
+  /**
    * Añade un movimiento manual a un proyecto — ruta quirúrgica dedicada;
    * `guardarProyecto` ya no acepta cambios en `movimientos`. Nunca lleva
    * `facturaId`: los movimientos vinculados a una factura solo los crea
