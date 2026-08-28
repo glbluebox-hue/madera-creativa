@@ -190,6 +190,21 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
   const [pasado, setPasado] = useState<DocumentoMC[]>([]);
   const [futuro, setFuturo] = useState<DocumentoMC[]>([]);
   const [titulo, setTitulo] = useState(contenedor.titulo);
+  /**
+   * Precio total del presupuesto (pedido real, 28/08/2026, tras varias
+   * rondas fallidas guardándolo desde el panel del elemento "Precio"): se
+   * trata exactamente igual que `titulo` — mismo estado local, mismo
+   * `datosParaGuardar`, mismo autoguardado — a propósito. La causa real de
+   * que el precio "volviera a 0" no era ninguno de los bugs de negrita: el
+   * campo del panel llamaba a `onGuardar` DIRECTAMENTE con `{...contenedor,
+   * precioTotal}`, en paralelo al autoguardado normal; el siguiente
+   * autoguardado (disparado por cualquier otro cambio del documento) volvía
+   * a enviar el `contenedor` de sus props, que nunca se había refrescado
+   * con el precio nuevo, pisando el valor recién guardado. Unificar en un
+   * único estado y una única vía de guardado elimina esa carrera de raíz.
+   */
+  const [precioTotal, setPrecioTotal] = useState<number>(precioVinculado ?? 0);
+  const [precioTotalTexto, setPrecioTotalTexto] = useState<string>(String(precioVinculado ?? 0));
   const [paginaActivaId, setPaginaActivaId] = useState(documentoInicial.paginas[0].id);
   const [seleccion, setSeleccion] = useState<string[]>([]);
   const [editandoId, setEditandoId] = useState<string | null>(null);
@@ -748,9 +763,18 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
   // debe ser una referencia estable (por eso `useMemo`) para que el motor
   // pueda comparar "¿cambió de verdad?" por igualdad de referencia, no por
   // una recreación accidental del objeto en cada render.
-  const datosParaGuardar = useMemo(() => ({ documento, titulo }), [documento, titulo]);
-  const guardarContenedor = useCallback(async (datos: { documento: DocumentoMC; titulo: string }) => {
-    await onGuardar({ ...contenedor, titulo: datos.titulo.trim() || contenedor.titulo, contenidoDocumento: datos.documento as unknown as Record<string, unknown>, actualizado: new Date().toISOString() });
+  const datosParaGuardar = useMemo(
+    () => ({ documento, titulo, precioTotal: esPlantilla ? undefined : precioTotal }),
+    [documento, titulo, precioTotal, esPlantilla],
+  );
+  const guardarContenedor = useCallback(async (datos: { documento: DocumentoMC; titulo: string; precioTotal: number | undefined }) => {
+    await onGuardar({
+      ...contenedor,
+      titulo: datos.titulo.trim() || contenedor.titulo,
+      contenidoDocumento: datos.documento as unknown as Record<string, unknown>,
+      ...(datos.precioTotal !== undefined ? { precioTotal: datos.precioTotal } : {}),
+      actualizado: new Date().toISOString(),
+    } as DocumentoContenedorMC);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contenedor, onGuardar]);
   const { estado: estadoGuardado, errorMensaje: error, guardarAhora } = useAutoguardado(datosParaGuardar, guardarContenedor);
@@ -1011,7 +1035,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
     // la arquitectura) se resuelven en un ElementoMC "de presentación" — nunca
     // se persiste el valor resuelto, siempre se recalcula a partir de la
     // referencia (`estiloNombradoId` / `contenido.modo:'vinculado'`).
-    const elementoPresentacion = resolverElementoPresentacion(documento, elemento, { logoEmpresa: empresa.logo ?? undefined, precioVinculado, firmaEmpresa: empresa.firmaEmpresa || undefined, firmaClienteUrl, firmaClienteFecha });
+    const elementoPresentacion = resolverElementoPresentacion(documento, elemento, { logoEmpresa: empresa.logo ?? undefined, precioVinculado: !esPlantilla && precioVinculado !== undefined ? precioTotal : precioVinculado, firmaEmpresa: empresa.firmaEmpresa || undefined, firmaClienteUrl, firmaClienteFecha });
 
     return (
       <div
@@ -1077,7 +1101,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
   function renderElementoZona(elemento: ElementoMC) {
     if (!elementoVisibleEn(elemento, modoImpresion)) return null;
     const definicion = obtenerTipoRender(elemento.tipo);
-    const elementoPresentacion = resolverElementoPresentacion(documento, elemento, { logoEmpresa: empresa.logo ?? undefined, precioVinculado, firmaEmpresa: empresa.firmaEmpresa || undefined, firmaClienteUrl, firmaClienteFecha });
+    const elementoPresentacion = resolverElementoPresentacion(documento, elemento, { logoEmpresa: empresa.logo ?? undefined, precioVinculado: !esPlantilla && precioVinculado !== undefined ? precioTotal : precioVinculado, firmaEmpresa: empresa.firmaEmpresa || undefined, firmaClienteUrl, firmaClienteFecha });
     return (
       <div
         key={elemento.id}
@@ -1251,10 +1275,10 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
         onSubirABiblioteca={elemento.tipo === 'imagen' ? (file) => subirArchivoABiblioteca(elemento.id, 'imagen', file) : undefined}
         onGenerarConIA={elemento.tipo === 'bloqueIA' ? (instrucciones) => generarBloqueIA(elemento.id, instrucciones) : undefined}
         errorGenerarConIA={elemento.tipo === 'bloqueIA' ? errorGeneracionIA : undefined}
-        precioTotal={elemento.tipo === 'precioDestacado' ? precioVinculado : undefined}
+        precioTotal={elemento.tipo === 'precioDestacado' && !esPlantilla && precioVinculado !== undefined ? precioTotal : undefined}
         onCambiarPrecioTotal={
-          elemento.tipo === 'precioDestacado' && !esPlantilla
-            ? (valor) => onGuardar({ ...contenedor, precioTotal: valor } as DocumentoContenedorMC)
+          elemento.tipo === 'precioDestacado' && !esPlantilla && precioVinculado !== undefined
+            ? (valor) => { setPrecioTotal(valor); setPrecioTotalTexto(String(valor)); }
             : undefined
         }
       />
@@ -1379,6 +1403,31 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
       <div className={editorStyles.barraSuperior}>
         <button className={styles.btn} onClick={alPulsarVolver}>← Volver</button>
         <input className={editorStyles.titulo} value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Título del documento" />
+        {!esPlantilla && precioVinculado !== undefined && (
+          <label
+            title="El precio del presupuesto — se guarda solo, igual que el título. No hace falta tocar el lienzo para nada."
+            style={{
+              display: 'flex', alignItems: 'center', gap: '0.35rem', background: '#eaf3ee',
+              border: '1px solid #3d7a52', borderRadius: 6, padding: '0.25rem 0.55rem', fontSize: '0.8rem', fontWeight: 600, color: '#245134',
+            }}
+          >
+            💶 Precio total
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              value={precioTotalTexto}
+              onChange={(e) => {
+                setPrecioTotalTexto(e.target.value);
+                const n = Number(e.target.value);
+                if (e.target.value.trim() !== '' && Number.isFinite(n) && n >= 0) setPrecioTotal(n);
+              }}
+              onBlur={() => setPrecioTotalTexto(String(precioTotal))}
+              style={{ width: '6.5rem', border: '1px solid #3d7a52', borderRadius: 4, padding: '0.15rem 0.35rem', fontSize: '0.85rem', fontWeight: 600, color: '#245134' }}
+            />
+            €
+          </label>
+        )}
         {onCambiarCliente && clientesDisponibles ? (
           <button
             className={styles.btn}
