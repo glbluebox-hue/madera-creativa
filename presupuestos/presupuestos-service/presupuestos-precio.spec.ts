@@ -161,3 +161,166 @@ describe('aceptarPresupuesto — snapshot de análisis de precio (Fase 1)', () =
     expect(doc.analisisPrecio).toBeFalsy(); // sin proyecto vinculado -> sin datos, nunca inventado
   });
 });
+
+/**
+ * `analizarPresupuestosAceptados` — detección automática (ajuste
+ * 28/08/2026) de presupuestos ya aceptados ANTES de que existiera el
+ * snapshot al aceptar, o aceptados sin margen objetivo configurado
+ * todavía. Los presupuestos se crean aquí ya con `estado:'aceptado'`
+ * directamente en el Model (nunca vía `svc.aceptarPresupuesto`), a
+ * propósito: así se simula exactamente el caso real reportado — un
+ * presupuesto que YA estaba aceptado y nunca pasó por la transición que
+ * dispara el cálculo.
+ */
+describe('analizarPresupuestosAceptados — detección automática (ajuste 28/08/2026)', () => {
+  // Caso A: aceptado + proyecto + gastos + horas -> aparece automáticamente.
+  it('A. calcula y persiste el análisis de un presupuesto ya aceptado con gastos y horas', async () => {
+    await ClienteModel.create(clienteBase('cA', USUARIO_A));
+    await ProyectoModel.create(proyectoBase('pA', 'cA', USUARIO_A));
+    await PresupuestoModel.create({ ...presupuestoBase('prA', 'cA', 'pA', USUARIO_A, 1000), estado: 'aceptado' });
+    await EmpresaModel.create({ usuarioId: USUARIO_A, margenObjetivoPorcentaje: 35 });
+
+    const resultado = await svc.analizarPresupuestosAceptados(USUARIO_A);
+    const prA = resultado.find((p: any) => p.id === 'prA') as any;
+    expect(prA.analisisPrecio).toBeTruthy();
+    expect(prA.analisisPrecio.costeEstimado).toBe(700);
+
+    // Debe quedar persistido, no solo en la respuesta en memoria.
+    const doc = await PresupuestoModel.findOne({ id: 'prA' }).lean().exec() as any;
+    expect(doc.analisisPrecio).toBeTruthy();
+  });
+
+  // Caso B: aceptado + proyecto + solo gastos (sin horas) -> calcula igual.
+  it('B. calcula con solo gastos registrados (sin horas)', async () => {
+    await ClienteModel.create(clienteBase('cB', USUARIO_A));
+    await ProyectoModel.create(proyectoBase('pB', 'cB', USUARIO_A, { horas: [] }));
+    await PresupuestoModel.create({ ...presupuestoBase('prB', 'cB', 'pB', USUARIO_A, 1000), estado: 'aceptado' });
+    await EmpresaModel.create({ usuarioId: USUARIO_A, margenObjetivoPorcentaje: 35 });
+
+    const resultado = await svc.analizarPresupuestosAceptados(USUARIO_A);
+    const prB = resultado.find((p: any) => p.id === 'prB') as any;
+    expect(prB.analisisPrecio.costeEstimado).toBe(500); // solo el gasto, sin mano de obra
+  });
+
+  // Caso C: aceptado + proyecto + solo horas (sin gastos) -> calcula igual.
+  it('C. calcula con solo horas registradas (sin gastos)', async () => {
+    await ClienteModel.create(clienteBase('cC', USUARIO_A));
+    await ProyectoModel.create(proyectoBase('pC', 'cC', USUARIO_A, { movimientos: [] }));
+    await PresupuestoModel.create({ ...presupuestoBase('prC', 'cC', 'pC', USUARIO_A, 1000), estado: 'aceptado' });
+    await EmpresaModel.create({ usuarioId: USUARIO_A, margenObjetivoPorcentaje: 35 });
+
+    const resultado = await svc.analizarPresupuestosAceptados(USUARIO_A);
+    const prC = resultado.find((p: any) => p.id === 'prC') as any;
+    expect(prC.analisisPrecio.costeEstimado).toBe(200); // 10h * 20€/h, sin gastos
+  });
+
+  // Caso D: aceptado sin proyecto -> nunca inventa un coste.
+  it('D. no calcula (y no persiste) un presupuesto aceptado sin proyecto vinculado', async () => {
+    await ClienteModel.create(clienteBase('cD', USUARIO_A));
+    await PresupuestoModel.create({ ...presupuestoBase('prD', 'cD', '', USUARIO_A, 1000), estado: 'aceptado' });
+    await EmpresaModel.create({ usuarioId: USUARIO_A, margenObjetivoPorcentaje: 35 });
+
+    const resultado = await svc.analizarPresupuestosAceptados(USUARIO_A);
+    const prD = resultado.find((p: any) => p.id === 'prD') as any;
+    expect(prD.analisisPrecio).toBeFalsy();
+  });
+
+  // Caso E: proyecto sin datos suficientes -> queda "pendiente de datos".
+  it('E. deja pendiente (sin analisisPrecio) un proyecto sin gastos ni horas', async () => {
+    await ClienteModel.create(clienteBase('cE', USUARIO_A));
+    await ProyectoModel.create(proyectoBase('pE', 'cE', USUARIO_A, { movimientos: [], horas: [] }));
+    await PresupuestoModel.create({ ...presupuestoBase('prE', 'cE', 'pE', USUARIO_A, 1000), estado: 'aceptado' });
+    await EmpresaModel.create({ usuarioId: USUARIO_A, margenObjetivoPorcentaje: 35 });
+
+    const resultado = await svc.analizarPresupuestosAceptados(USUARIO_A);
+    const prE = resultado.find((p: any) => p.id === 'prE') as any;
+    expect(prE.analisisPrecio).toBeFalsy();
+  });
+
+  // Caso F: varios presupuestos -> se agregan todos correctamente en una sola llamada.
+  it('F. procesa varios presupuestos a la vez, cada uno con su propio resultado', async () => {
+    await ClienteModel.create(clienteBase('cF', USUARIO_A));
+    await ProyectoModel.create(proyectoBase('pF1', 'cF', USUARIO_A));
+    await ProyectoModel.create(proyectoBase('pF2', 'cF', USUARIO_A, { movimientos: [], horas: [] }));
+    await PresupuestoModel.create({ ...presupuestoBase('prF1', 'cF', 'pF1', USUARIO_A, 1000), estado: 'aceptado' });
+    await PresupuestoModel.create({ ...presupuestoBase('prF2', 'cF', 'pF2', USUARIO_A, 2000), estado: 'aceptado' });
+    await PresupuestoModel.create({ ...presupuestoBase('prF3', 'cF', '', USUARIO_A, 3000), estado: 'aceptado' });
+    await EmpresaModel.create({ usuarioId: USUARIO_A, margenObjetivoPorcentaje: 35 });
+
+    const resultado = await svc.analizarPresupuestosAceptados(USUARIO_A);
+    expect(resultado.length).toBe(3);
+    const porId = new Map(resultado.map((p: any) => [p.id, p]));
+    expect((porId.get('prF1') as any).analisisPrecio).toBeTruthy();
+    expect((porId.get('prF2') as any).analisisPrecio).toBeFalsy();
+    expect((porId.get('prF3') as any).analisisPrecio).toBeFalsy();
+  });
+
+  // Caso G: aislamiento — nunca mezclar datos de otra empresa/usuario.
+  it('G. nunca calcula con el proyecto o el objetivo de otro usuario', async () => {
+    await ClienteModel.create(clienteBase('cG-a', USUARIO_A));
+    await ClienteModel.create(clienteBase('cG-b', USUARIO_B));
+    await ProyectoModel.create(proyectoBase('pG-a', 'cG-a', USUARIO_A));
+    await ProyectoModel.create(proyectoBase('pG-b', 'cG-b', USUARIO_B, {
+      movimientos: [{ id: 'm-fuga', fecha: '2026-08-01', concepto: 'Fuga', tipo: 'gasto', importe: 999999 }], horas: [],
+    }));
+    await PresupuestoModel.create({ ...presupuestoBase('prG-a', 'cG-a', 'pG-a', USUARIO_A, 1000), estado: 'aceptado' });
+    await PresupuestoModel.create({ ...presupuestoBase('prG-b', 'cG-b', 'pG-b', USUARIO_B, 1000), estado: 'aceptado' });
+    await EmpresaModel.create({ usuarioId: USUARIO_A, margenObjetivoPorcentaje: 35 });
+    await EmpresaModel.create({ usuarioId: USUARIO_B, margenObjetivoPorcentaje: 99 });
+
+    const resultadoA = await svc.analizarPresupuestosAceptados(USUARIO_A);
+    expect(resultadoA.length).toBe(1); // nunca ve el presupuesto de B
+    const prGa = resultadoA[0] as any;
+    expect(prGa.analisisPrecio.costeEstimado).toBe(700); // nunca los 999999 del proyecto de B
+    expect(prGa.analisisPrecio.margenObjetivoPorcentaje).toBe(35); // nunca el 99 de B
+  });
+
+  // Caso H: presupuesto antiguo (campos mínimos, sin los que se añadieron en fases posteriores).
+  it('H. no rompe con un presupuesto antiguo con solo los campos mínimos', async () => {
+    await ClienteModel.create(clienteBase('cH', USUARIO_A));
+    await ProyectoModel.create(proyectoBase('pH', 'cH', USUARIO_A));
+    const ahora = new Date().toISOString();
+    await PresupuestoModel.create({
+      id: 'prH', usuarioId: USUARIO_A, clienteId: 'cH', proyectoId: 'pH',
+      titulo: 'Presupuesto antiguo', precioTotal: 1000, estado: 'aceptado',
+      creado: ahora, actualizado: ahora,
+    });
+    await EmpresaModel.create({ usuarioId: USUARIO_A, margenObjetivoPorcentaje: 35 });
+
+    await expect(svc.analizarPresupuestosAceptados(USUARIO_A)).resolves.toBeTruthy();
+    const resultado = await svc.analizarPresupuestosAceptados(USUARIO_A);
+    const prH = resultado.find((p: any) => p.id === 'prH') as any;
+    expect(prH.analisisPrecio).toBeTruthy();
+  });
+
+  // Caso I: un presupuesto que YA tiene snapshot nunca se sobrescribe.
+  it('I. no sobrescribe un analisisPrecio ya existente, aunque el coste actual del proyecto haya cambiado', async () => {
+    await ClienteModel.create(clienteBase('cI', USUARIO_A));
+    await ProyectoModel.create(proyectoBase('pI', 'cI', USUARIO_A));
+    const snapshotOriginal = {
+      precio: 1000, costeEstimado: 111, margenPorcentaje: 88.9, margenObjetivoPorcentaje: 35,
+      diferenciaPuntos: 53.9, estado: 'por_encima', fecha: '2020-01-01T00:00:00.000Z',
+    };
+    await PresupuestoModel.create({ ...presupuestoBase('prI', 'cI', 'pI', USUARIO_A, 1000), estado: 'aceptado', analisisPrecio: snapshotOriginal });
+    await EmpresaModel.create({ usuarioId: USUARIO_A, margenObjetivoPorcentaje: 35 });
+
+    const resultado = await svc.analizarPresupuestosAceptados(USUARIO_A);
+    const prI = resultado.find((p: any) => p.id === 'prI') as any;
+    expect(prI.analisisPrecio.costeEstimado).toBe(111); // el valor original, no el 700 recalculable ahora
+    expect(prI.analisisPrecio.fecha).toBe('2020-01-01T00:00:00.000Z');
+  });
+
+  // Caso J: nunca lanza, ni con datos numéricos atípicos (Mongoose ya
+  // rechaza NaN/no-numéricos al guardar — lo atípico-pero-válido que sí
+  // puede llegar a persistirse es, por ejemplo, un importe negativo).
+  it('J. nunca lanza con datos numéricos atípicos pero válidos (importe negativo)', async () => {
+    await ClienteModel.create(clienteBase('cJ', USUARIO_A));
+    await ProyectoModel.create(proyectoBase('pJ', 'cJ', USUARIO_A, {
+      movimientos: [{ id: 'm1', fecha: '2026-08-01', concepto: 'raro', tipo: 'gasto', importe: -500 }],
+    }));
+    await PresupuestoModel.create({ ...presupuestoBase('prJ', 'cJ', 'pJ', USUARIO_A, 1000), estado: 'aceptado' });
+    await EmpresaModel.create({ usuarioId: USUARIO_A, margenObjetivoPorcentaje: 35 });
+
+    await expect(svc.analizarPresupuestosAceptados(USUARIO_A)).resolves.toBeTruthy();
+  });
+});

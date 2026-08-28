@@ -1712,6 +1712,72 @@ export class PresupuestosService {
   }
 
   /**
+   * Inteligencia de Precios (Fase 1, ajuste 28/08/2026) — detección
+   * automática de presupuestos aceptados con margen calculable.
+   *
+   * Causa raíz del problema real reportado: `Presupuesto.analisisPrecio`
+   * SOLO se escribe dentro de `ejecutarConsecuenciasAceptacion`, que a su
+   * vez SOLO se dispara en la transición `estado !== 'aceptado'` →
+   * `'aceptado'` (ver el filtro `estado: {$ne:'aceptado'}` de
+   * `aceptarPresupuesto`). Un presupuesto aceptado ANTES de que existiera
+   * esta función, o aceptado cuando `Empresa.margenObjetivoPorcentaje`
+   * todavía era `null`, nunca vuelve a pasar por esa transición — así que
+   * nunca podía llegar a tener snapshot, para siempre, aunque el usuario
+   * configurase el margen objetivo después. No era un problema de
+   * relación entre datos (`Presupuesto.proyectoId` → `Proyecto.movimientos`/`horas`
+   * ya funcionaba y ya se usaba correctamente al aceptar) sino de que ese
+   * cálculo solo ocurría en un único instante que ya había pasado.
+   *
+   * Este método resuelve el hueco calculando (y persistiendo, "rellenando
+   * lo que falta") el análisis de CUALQUIER presupuesto ya aceptado que
+   * todavía no tenga `analisisPrecio`, reutilizando exactamente el mismo
+   * motor determinista — nunca inventa un coste ni una relación que no
+   * exista. Un presupuesto con snapshot ya guardado se devuelve tal cual,
+   * sin recalcular ni sobrescribir (mismo principio que ya rige el
+   * snapshot: se congela una vez, no se actualiza solo).
+   *
+   * @param usuarioId Propietario.
+   * @returns Todos los presupuestos aceptados del usuario, con
+   * `analisisPrecio` relleno en los que tenían datos suficientes.
+   */
+  async analizarPresupuestosAceptados(usuarioId: string): Promise<Record<string, unknown>[]> {
+    await conectar();
+    const [empresa, aceptados] = await Promise.all([
+      EmpresaModel.findOne({ usuarioId }).select('margenObjetivoPorcentaje').lean().exec() as Promise<any>,
+      PresupuestoModel.find({ usuarioId, estado: 'aceptado' })
+        .select('id titulo clienteId proyectoId precioTotal estado analisisPrecio creado actualizado')
+        .sort({ actualizado: -1 })
+        .lean()
+        .exec(),
+    ]);
+    const margenObjetivoPorcentaje = empresa?.margenObjetivoPorcentaje ?? null;
+
+    const pendientes = (aceptados as any[]).filter((p) => !p.analisisPrecio && p.proyectoId);
+    const proyectoIds = [...new Set(pendientes.map((p) => p.proyectoId as string))];
+    const proyectos = proyectoIds.length > 0
+      ? await ProyectoModel.find({ id: { $in: proyectoIds }, usuarioId }).select('id movimientos horas tarifaHora').lean().exec()
+      : [];
+    const proyectosPorId = new Map(proyectos.map((p: any) => [p.id, p]));
+
+    // Persistidos en paralelo pero sin bloquear la respuesta por cada uno
+    // individualmente — volumen esperado (presupuestos aceptados de un
+    // único estudio) demasiado pequeño para justificar un bulkWrite.
+    const escrituras: Promise<unknown>[] = [];
+    for (const p of aceptados as any[]) {
+      if (p.analisisPrecio) continue; // ya congelado — nunca se recalcula ni se pisa.
+      const proyecto = p.proyectoId ? proyectosPorId.get(p.proyectoId) : null;
+      const analisis = analizarPrecioPresupuesto(p.precioTotal || 0, proyecto ?? null, margenObjetivoPorcentaje);
+      if (!analisis.disponible) continue; // sigue "pendiente de datos" — nunca se inventa un coste.
+      const snapshot = { ...analisis, fecha: new Date().toISOString() };
+      p.analisisPrecio = snapshot; // refleja el cálculo en la respuesta sin una segunda lectura.
+      escrituras.push(PresupuestoModel.updateOne({ id: p.id, usuarioId }, { $set: { analisisPrecio: snapshot } }).exec());
+    }
+    await Promise.all(escrituras);
+
+    return aceptados.map((d) => this.limpiar(d as Record<string, unknown>));
+  }
+
+  /**
    * Devuelve un presupuesto por id, o `null` si no existe o no pertenece
    * al usuario. Usado hoy por `automatizaciones-listener.ts` (Incremento
    * 11 — acción `modificarElemento`, que necesita cargar el `DocumentoMC`

@@ -69,7 +69,7 @@ export function AnalisisPrecioPresupuesto({ analisis, esSnapshot }: AnalisisPrec
 
       {esSnapshot && (
         <p style={{ margin: '0.5rem 0 0', fontSize: '0.7rem', color: 'var(--topo-claro)' }}>
-          Análisis del momento en que se aceptó — no se recalcula después.
+          Análisis congelado — no se recalcula automáticamente después.
         </p>
       )}
 

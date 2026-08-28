@@ -914,6 +914,21 @@ export async function obtenerTodosLosPresupuestos(): Promise<PresupuestoMC[]> {
   return res.json();
 }
 
+/**
+ * Inteligencia de Precios (Fase 1, ajuste 28/08/2026) — todos los
+ * presupuestos ACEPTADOS del usuario, con `analisisPrecio` ya calculado y
+ * persistido para los que tienen datos suficientes (proyecto vinculado con
+ * gastos y/o horas, margen objetivo configurado) — incluye tanto los que
+ * ya tenían snapshot como los que se acaban de rellenar en esta misma
+ * llamada. Ver `svc.analizarPresupuestosAceptados` para la causa raíz que
+ * resuelve.
+ */
+export async function analizarInteligenciaPrecios(): Promise<PresupuestoMC[]> {
+  const res = await fetchConAuth('/inteligencia-precios/analisis');
+  await comprobarRespuesta(res, 'No se pudo analizar los presupuestos');
+  return res.json();
+}
+
 /** Crea o actualiza un presupuesto. */
 export async function guardarPresupuesto(p: PresupuestoMC): Promise<PresupuestoMC> {
   const res = await fetchConAuth(`/presupuestos/${p.id}`, {
