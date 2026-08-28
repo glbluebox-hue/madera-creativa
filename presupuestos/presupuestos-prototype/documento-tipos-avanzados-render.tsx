@@ -141,23 +141,36 @@ function RenderFirma({ elemento }: RenderElementoProps) {
  * modal centrado y grande en vez de encajado dentro del panel — nada de
  * arrastrar ni de encoger el trazo al borde del panel.
  */
-function ModalFirma({ onFirmar, onCerrar }: { onFirmar: (dataUrl: string) => void; onCerrar: () => void }) {
+/**
+ * Segundo intento fallido (28/08/2026): un modal centrado seguía sin caber
+ * en una ventana de navegador con poca altura visible, aunque fuera
+ * compacto — "así es inviable". Petición explícita del propio usuario para
+ * la solución definitiva: "una pantalla entera para poner una firma...
+ * horizontal... borrar (para volver a firmar), guardar". Pantalla completa
+ * de verdad (`position:fixed;inset:0`, sin tarjeta ni recorte alrededor),
+ * con el lienzo a `60vh` — un tamaño relativo al alto REAL de la ventana,
+ * así que crece o se achica solo con ella y nunca necesita scroll, y en
+ * cualquier portátil en horizontal queda mucho más ancho que alto.
+ */
+function PantallaFirma({ onFirmar, onCerrar }: { onFirmar: (dataUrl: string) => void; onCerrar: () => void }) {
   return (
-    <div className={styles.overlay} style={{ alignItems: 'center' }} onClick={onCerrar}>
-      {/*
-       * Sin título ni párrafo de introducción, y con un lienzo más bajo
-       * (130px en vez de los 200px del Portal) — a propósito, para que el
-       * modal entero quepa SIEMPRE sin scroll interno ni externo, incluso
-       * en una ventana de navegador con poca altura visible (pedido real,
-       * 28/08/2026: "no puede haber scroll donde firmo, tiene que ser un
-       * cuadrante fijo... horizontal, no vertical"). Ancho generoso
-       * (`maxWidth`) para que el lienzo quede claramente apaisado.
-       */}
-      <div className={styles.modal} style={{ maxWidth: 480, padding: '1.1rem' }} onClick={(e) => e.stopPropagation()}>
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 300,
+        background: 'var(--blanco)',
+        display: 'flex', flexDirection: 'column',
+        padding: '1rem 1.5rem',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+        <h2 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>Firmar</h2>
+        <button type="button" className={`${styles.btn} ${styles.btnSecundario}`} onClick={onCerrar}>✕ Cerrar</button>
+      </div>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
         <FirmaCanvas
           textoIntro="Dibuja la firma con el dedo o el ratón."
           textoConfirmar="Guardar firma"
-          alturaCanvas="130px"
+          alturaCanvas="60vh"
           onFirmar={(dataUrl) => { onFirmar(dataUrl); onCerrar(); }}
           onCancelar={onCerrar}
         />
@@ -179,7 +192,7 @@ function PanelFirma({ elemento, onCambiarContenido, onSustituirArchivo }: PanelP
         <input type="text" value={(elemento.contenido.nombreFirmante as string) ?? ''} onChange={(e) => onCambiarContenido({ nombreFirmante: e.target.value })} />
       </label>
       {modalAbierto && (
-        <ModalFirma
+        <PantallaFirma
           onFirmar={(dataUrl) => onSustituirArchivo?.(dataUrlAFile(dataUrl, 'firma.png'))}
           onCerrar={() => setModalAbierto(false)}
         />
