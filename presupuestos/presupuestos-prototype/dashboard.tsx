@@ -35,8 +35,6 @@ export type DashboardProps = {
   onBorrarFactura: (id: string) => void;
   /** Cambia la fecha de montaje/medición de un proyecto (Próximos montajes y mediciones). Rechaza si el guardado falla — `guardarRecordatorio` lo espera para no cerrar el formulario como si hubiera ido bien. */
   onActualizarRecordatorio: (proyectoId: string, cambios: { fechaMontaje?: string; fechaMedicion?: string }) => Promise<void>;
-  /** Va a la sección Notas (enlace "ver más" del banner "Cosas por hacer"). */
-  onIrANotas: () => void;
 };
 
 const ICONOS: Record<string, ReactNode> = {
@@ -77,7 +75,7 @@ type ItemActividad =
   | { tipo: 'factura'; fecha: string; factura: Factura }
   | { tipo: 'presupuestoAceptado'; fecha: string; presupuesto: PresupuestoMC };
 
-export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlternarPrivacidad, onAbrir, onBorrarFactura, onActualizarRecordatorio, onIrANotas }: DashboardProps) {
+export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlternarPrivacidad, onAbrir, onBorrarFactura, onActualizarRecordatorio }: DashboardProps) {
   const m = calcularMetricas(proyectos);
   const primerNombre = (nombre || '').split(' ')[0];
 
@@ -329,8 +327,16 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
           (() => {
             const ordenados = ordenarItemsLista(listaCosas.items);
             return (
-              <>
-                {ordenados.slice(0, 5).map((it) => {
+              // Con muchas tareas, antes se cortaba en las 5 primeras y
+              // había que ir a Notas para ver/gestionar el resto — petición
+              // explícita del usuario (28/08/2026): que se pueda hacer
+              // scroll aquí mismo y gestionarlas todas sin salir del panel.
+              // Altura fija en vez de crecer sin límite: ~5 tareas visibles
+              // antes de necesitar scroll, igual que antes se veían 5 de
+              // golpe, pero ahora el resto sigue ahí debajo en vez de
+              // desaparecer.
+              <div style={{ maxHeight: 360, overflowY: 'auto' }}>
+                {ordenados.map((it) => {
                   if (editandoTareaId === it.id) {
                     return (
                       <div key={it.id} className={styles.actividadItem} style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -416,16 +422,7 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
                     </div>
                   );
                 })}
-                {ordenados.length > 5 && (
-                  <button
-                    type="button"
-                    onClick={onIrANotas}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--topo)', fontSize: '0.78rem', fontWeight: 600, padding: '0.6rem 0 0' }}
-                  >
-                    Ver {ordenados.length - 5} más en Notas →
-                  </button>
-                )}
-              </>
+              </div>
             );
           })()
         )}
