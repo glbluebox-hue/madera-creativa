@@ -17,10 +17,55 @@ type EstiloTexto = {
   textDecoration?: string; color?: string; textAlign?: string; lineHeight?: number; letterSpacing?: number;
 };
 
+/**
+ * Etiquetas permitidas dentro de un bloque de texto enriquecido (negrita/
+ * cursiva/subrayado por SELECCIÓN, pedido real 28/08/2026 — antes solo se
+ * podía aplicar formato a la caja entera, nunca a una palabra suelta).
+ * Solo formato de carácter, nunca atributos — cualquier etiqueta que no
+ * esté en esta lista se elimina entera (conservando su texto), y las que
+ * sí se permiten pierden TODOS sus atributos (nunca `style=`/`onerror=`/
+ * clases). El servidor vuelve a sanitizar de forma independiente
+ * (`documento-tipos-iniciales.ts`, backend) — este saneado del cliente es
+ * una comodidad de edición, nunca la única defensa: este contenido puede
+ * acabar renderizado en el Portal del cliente, sin sesión.
+ */
+const ETIQUETAS_TEXTO_PERMITIDAS = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'BR']);
+
+function limpiarNodoTexto(nodo: Node): void {
+  for (const hijo of Array.from(nodo.childNodes)) {
+    if (hijo.nodeType === Node.TEXT_NODE) continue;
+    if (hijo.nodeType !== Node.ELEMENT_NODE) { nodo.removeChild(hijo); continue; }
+    const el = hijo as HTMLElement;
+    if (!ETIQUETAS_TEXTO_PERMITIDAS.has(el.tagName)) {
+      while (el.firstChild) nodo.insertBefore(el.firstChild, el);
+      nodo.removeChild(el);
+      continue;
+    }
+    while (el.attributes.length > 0) el.removeAttribute(el.attributes[0].name);
+    limpiarNodoTexto(el);
+  }
+}
+
+function sanitizarHtmlTexto(html: string): string {
+  const contenedor = document.createElement('div');
+  contenedor.innerHTML = html;
+  limpiarNodoTexto(contenedor);
+  return contenedor.innerHTML;
+}
+
+/** Convierte texto plano (documentos antiguos, sin `textoHtml` todavía) en HTML seguro — nunca lo interpreta como marcado, solo escapa `< > &` para que se vea exactamente igual que antes. */
+function escaparHtmlPlano(texto: string): string {
+  const div = document.createElement('div');
+  div.textContent = texto;
+  return div.innerHTML;
+}
+
 function RenderTexto({ elemento, editando, onCambiarContenido, onSalirEdicion }: RenderElementoProps) {
   const ref = useRef<HTMLDivElement>(null);
   const estilo = elemento.estilo as EstiloTexto;
   const texto = (elemento.contenido.texto as string) ?? '';
+  const textoHtml = elemento.contenido.textoHtml as string | undefined;
+  const htmlAMostrar = textoHtml !== undefined ? textoHtml : escaparHtmlPlano(texto);
   return (
     <div
       ref={ref}
@@ -28,7 +73,7 @@ function RenderTexto({ elemento, editando, onCambiarContenido, onSalirEdicion }:
       suppressContentEditableWarning
       onBlur={() => {
         if (!editando || !ref.current) return;
-        onCambiarContenido({ texto: ref.current.innerText });
+        onCambiarContenido({ texto: ref.current.innerText, textoHtml: sanitizarHtmlTexto(ref.current.innerHTML) });
         onSalirEdicion();
       }}
       style={{
@@ -39,10 +84,44 @@ function RenderTexto({ elemento, editando, onCambiarContenido, onSalirEdicion }:
         textAlign: (estilo.textAlign as any) ?? 'left', lineHeight: estilo.lineHeight ?? 1.2,
         letterSpacing: `${estilo.letterSpacing ?? 0}px`, overflow: 'hidden', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
       }}
-    >
-      {texto}
-    </div>
+      dangerouslySetInnerHTML={{ __html: htmlAMostrar }}
+    />
   );
+}
+
+/**
+ * true si hay una selección de texto real (no colapsada) dentro de una
+ * caja de texto en edición — distingue "el usuario ha marcado una
+ * palabra/frase" de "solo tiene el cursor puesto" o "no está editando
+ * texto en absoluto" (p. ej. tiene el elemento completo seleccionado
+ * como objeto del lienzo).
+ */
+function haySeleccionDeTextoActiva(): boolean {
+  const seleccion = window.getSelection();
+  if (!seleccion || seleccion.rangeCount === 0 || seleccion.isCollapsed) return false;
+  const nodo = seleccion.anchorNode;
+  const elementoAncla = nodo instanceof Element ? nodo : nodo?.parentElement;
+  return !!elementoAncla?.closest('[contenteditable="true"]');
+}
+
+/**
+ * Negrita/cursiva/subrayado por SELECCIÓN (pedido real, 28/08/2026): si
+ * hay una parte del texto realmente marcada dentro de la caja en edición,
+ * el formato se aplica SOLO a esa selección vía `execCommand` (API del
+ * navegador ya obsoleta formalmente, pero todavía soportada en todos los
+ * navegadores modernos y la única forma práctica de aplicar
+ * negrita/cursiva/subrayado a una selección dentro de un contentEditable
+ * sin construir un editor de texto enriquecido completo). Si no hay nada
+ * seleccionado (o el elemento solo está seleccionado como objeto del
+ * lienzo, sin estar editando texto), cae al comportamiento de siempre:
+ * cambia el estilo de toda la caja.
+ */
+function aplicarFormatoCaracter(comando: 'bold' | 'italic' | 'underline', aplicarATodaLaCaja: () => void): void {
+  if (haySeleccionDeTextoActiva()) {
+    document.execCommand(comando);
+    return;
+  }
+  aplicarATodaLaCaja();
 }
 
 function PanelTexto({ elemento, onCambiarEstilo }: PanelPropiedadesProps) {
@@ -67,9 +146,24 @@ function PanelTexto({ elemento, onCambiarEstilo }: PanelPropiedadesProps) {
         <input type="number" min={6} max={200} value={estilo.fontSize ?? 16} onChange={(e) => { if (e.target.value.trim() === '') return; const v = Number(e.target.value); if (Number.isFinite(v) && v >= 6) onCambiarEstilo({ fontSize: v }); }} />
       </label>
       <div className={editorStyles.panelFila}>
-        <button type="button" className={negrita ? editorStyles.toggleActivo : editorStyles.toggle} onClick={() => onCambiarEstilo({ fontWeight: negrita ? 'normal' : 'bold' })}><b>N</b></button>
-        <button type="button" className={cursiva ? editorStyles.toggleActivo : editorStyles.toggle} onClick={() => onCambiarEstilo({ fontStyle: cursiva ? 'normal' : 'italic' })}><i>K</i></button>
-        <button type="button" className={subrayado ? editorStyles.toggleActivo : editorStyles.toggle} onClick={() => onCambiarEstilo({ textDecoration: subrayado ? 'none' : 'underline' })}><u>S</u></button>
+        <button
+          type="button"
+          className={negrita ? editorStyles.toggleActivo : editorStyles.toggle}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => aplicarFormatoCaracter('bold', () => onCambiarEstilo({ fontWeight: negrita ? 'normal' : 'bold' }))}
+        ><b>N</b></button>
+        <button
+          type="button"
+          className={cursiva ? editorStyles.toggleActivo : editorStyles.toggle}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => aplicarFormatoCaracter('italic', () => onCambiarEstilo({ fontStyle: cursiva ? 'normal' : 'italic' }))}
+        ><i>K</i></button>
+        <button
+          type="button"
+          className={subrayado ? editorStyles.toggleActivo : editorStyles.toggle}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => aplicarFormatoCaracter('underline', () => onCambiarEstilo({ textDecoration: subrayado ? 'none' : 'underline' }))}
+        ><u>S</u></button>
       </div>
       <div className={editorStyles.panelFila}>
         {(['left', 'center', 'right', 'justify'] as const).map((a) => (
@@ -530,7 +624,7 @@ function RenderPrecioDestacado({ elemento }: RenderElementoProps) {
   );
 }
 
-function PanelPrecioDestacado({ elemento, onCambiarContenido, onCambiarEstilo }: PanelPropiedadesProps) {
+function PanelPrecioDestacado({ elemento, onCambiarContenido, onCambiarEstilo, precioTotal, onCambiarPrecioTotal }: PanelPropiedadesProps) {
   const modo = (elemento.contenido.modo as string) ?? 'vinculado';
   const estilo = elemento.estilo as EstiloPrecio;
   return (
@@ -542,6 +636,23 @@ function PanelPrecioDestacado({ elemento, onCambiarContenido, onCambiarEstilo }:
           <option value="fijo">Texto fijo</option>
         </select>
       </label>
+      {modo === 'vinculado' && onCambiarPrecioTotal && (
+        <label className={editorStyles.panelCampo}>
+          Precio total del presupuesto
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            value={precioTotal ?? 0}
+            onChange={(e) => {
+              if (e.target.value.trim() === '') return;
+              const v = Number(e.target.value);
+              if (Number.isFinite(v) && v >= 0) onCambiarPrecioTotal(v);
+            }}
+          />
+          <span className={editorStyles.panelNota}>Este es el precio real del presupuesto — se ve en la lista de "Presupuestos" y en el margen de Inteligencia de Precios, no solo aquí.</span>
+        </label>
+      )}
       {modo === 'fijo' && (
         <label className={editorStyles.panelCampo}>
           Texto

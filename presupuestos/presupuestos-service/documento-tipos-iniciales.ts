@@ -26,6 +26,31 @@ const esquemaEstiloTexto = z.object({
   letterSpacing: z.number().default(0),
 });
 
+/**
+ * Etiquetas permitidas dentro de `contenido.textoHtml` (negrita/cursiva/
+ * subrayado por selección, 28/08/2026) — SIN atributos nunca. Guardián
+ * del lado servidor: el frontend ya sanea el HTML que produce su propio
+ * `contentEditable` (`documento-tipos-iniciales-render.tsx`), pero un
+ * cliente podría llamar a esta API directamente saltándose ese saneado —
+ * este es el que de verdad protege, porque este texto puede acabar
+ * renderizado en el Portal del cliente, sin sesión. Cualquier etiqueta
+ * que no coincida EXACTAMENTE con esta lista se elimina entera (con
+ * cualquier atributo que llevara) — nunca se "limpia" conservando
+ * atributos, así no hay ninguna forma de colar `onerror=`/`style=`
+ * `javascript:` ni nada parecido.
+ */
+const ETIQUETAS_TEXTO_ENRIQUECIDO_PERMITIDAS = new Set(['<b>', '</b>', '<strong>', '</strong>', '<i>', '</i>', '<em>', '</em>', '<u>', '</u>', '<br>', '<br/>', '<br />']);
+
+function sanitizarHtmlTextoEnriquecido(html: string): string {
+  return html.replace(/<[^>]*>/g, (etiqueta) => {
+    const normalizada = etiqueta.toLowerCase().replace(/\s+/g, '');
+    // La versión normalizada (sin espacios) también debe coincidir con una
+    // de las formas permitidas ya normalizadas, para aceptar `<br />` y `<br/>` por igual.
+    const formaEncontrada = [...ETIQUETAS_TEXTO_ENRIQUECIDO_PERMITIDAS].find((permitida) => permitida.replace(/\s+/g, '') === normalizada);
+    return formaEncontrada ?? '';
+  });
+}
+
 function obtenerRecursoUrl(elemento: ElementoMC) {
   const c = elemento.contenido as { url: string; claveAlmacenamiento?: string };
   return { url: c.url, claveAlmacenamiento: c.claveAlmacenamiento };
@@ -38,9 +63,13 @@ function establecerRecursoUrl(elemento: ElementoMC, recurso: { url: string; clav
 export const definicionesTiposIniciales: RegistroTipoElemento[] = [
   {
     tipo: 'texto',
-    descripcion: 'Bloque de texto con formato uniforme (fuente, tamaño, negrita/cursiva/subrayado, color, alineación).',
+    descripcion: 'Bloque de texto: fuente/tamaño/color/alineación uniformes para toda la caja, negrita/cursiva/subrayado aplicables también a una selección parcial.',
     contieneRecurso: false,
-    esquemaContenido: z.object({ texto: z.string() }),
+    esquemaContenido: z.object({
+      texto: z.string(),
+      /** HTML enriquecido saneado (negrita/cursiva/subrayado por selección) — opcional: ausente en cajas de texto creadas antes de esta función, o nunca reeditadas desde entonces. Ver `sanitizarHtmlTextoEnriquecido` arriba. */
+      textoHtml: z.string().max(20000).optional().transform((v) => (v === undefined ? undefined : sanitizarHtmlTextoEnriquecido(v))),
+    }),
     esquemaPropiedadesEspecificas: z.object({}),
     esquemaEstilo: esquemaEstiloTexto,
   },

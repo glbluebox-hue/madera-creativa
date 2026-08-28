@@ -1231,6 +1231,12 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
         onSubirABiblioteca={elemento.tipo === 'imagen' ? (file) => subirArchivoABiblioteca(elemento.id, 'imagen', file) : undefined}
         onGenerarConIA={elemento.tipo === 'bloqueIA' ? (instrucciones) => generarBloqueIA(elemento.id, instrucciones) : undefined}
         errorGenerarConIA={elemento.tipo === 'bloqueIA' ? errorGeneracionIA : undefined}
+        precioTotal={elemento.tipo === 'precioDestacado' ? precioVinculado : undefined}
+        onCambiarPrecioTotal={
+          elemento.tipo === 'precioDestacado' && !esPlantilla
+            ? (valor) => onGuardar({ ...contenedor, precioTotal: valor } as DocumentoContenedorMC)
+            : undefined
+        }
       />
     );
   }

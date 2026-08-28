@@ -38,6 +38,16 @@ export type PanelPropiedadesProps = {
   onGenerarConIA?: (instrucciones: string) => void;
   /** Solo bloqueIA — mensaje de la última generación fallida, si la hay (transitorio, no se persiste en el documento). */
   errorGenerarConIA?: string | null;
+  /**
+   * Precio total del PRESUPUESTO contenedor (no del elemento) — solo
+   * "precioDestacado" lo usa, para poder editarlo desde su panel (pedido
+   * real, 28/08/2026: el elemento "Precio" en modo vinculado no permitía
+   * escribir en el lienzo por diseño, y no existía ningún otro sitio del
+   * editor de documentos para fijar el precio del presupuesto). `undefined`
+   * si se está editando una plantilla, que no tiene precio propio.
+   */
+  precioTotal?: number;
+  onCambiarPrecioTotal?: (valor: number) => void;
 };
 
 export interface DefinicionTipoRender {
