@@ -662,6 +662,21 @@ function RenderPrecioDestacado({ elemento }: RenderElementoProps) {
 function PanelPrecioDestacado({ elemento, onCambiarContenido, onCambiarEstilo, precioTotal, onCambiarPrecioTotal }: PanelPropiedadesProps) {
   const modo = (elemento.contenido.modo as string) ?? 'vinculado';
   const estilo = elemento.estilo as EstiloPrecio;
+
+  /**
+   * Bug real, 28/08/2026 ("escribo el precio pero se queda en 0"): el
+   * campo llamaba a `onCambiarPrecioTotal` (guardado real en el servidor)
+   * en CADA PULSACIÓN DE TECLA — con varias peticiones asíncronas en
+   * vuelo a la vez, sin ningún orden garantizado, la respuesta de una
+   * pulsación anterior podía llegar DESPUÉS y pisar el valor de una
+   * posterior, dejando en el servidor un número a medio escribir (a
+   * veces literalmente vacío → 0). Igual que ya hacen las celdas de
+   * "Tabla" en este mismo editor: valor LOCAL mientras se escribe,
+   * confirmar (guardar de verdad) solo al salir del campo.
+   */
+  const [valorLocal, setValorLocal] = useState<string | null>(null);
+  const valorMostrado = valorLocal ?? String(precioTotal ?? 0);
+
   return (
     <div className={editorStyles.panelSeccion}>
       {onCambiarPrecioTotal && (
@@ -671,11 +686,13 @@ function PanelPrecioDestacado({ elemento, onCambiarContenido, onCambiarEstilo, p
             type="number"
             min={0}
             step="0.01"
-            value={precioTotal ?? 0}
-            onChange={(e) => {
-              if (e.target.value.trim() === '') return;
-              const v = Number(e.target.value);
-              if (Number.isFinite(v) && v >= 0) onCambiarPrecioTotal(v);
+            value={valorMostrado}
+            onChange={(e) => setValorLocal(e.target.value)}
+            onBlur={() => {
+              if (valorLocal === null) return;
+              const v = Number(valorLocal);
+              if (valorLocal.trim() !== '' && Number.isFinite(v) && v >= 0) onCambiarPrecioTotal(v);
+              setValorLocal(null);
             }}
           />
           <span className={editorStyles.panelNota}>Esto es lo único que cambia el precio real del presupuesto — se ve en la lista de "Presupuestos" y en Inteligencia de Precios. El campo "Texto" de abajo NO lo cambia, solo decora esta insignia.</span>
