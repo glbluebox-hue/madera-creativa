@@ -3,6 +3,8 @@ import * as api from './api.js';
 import type { TrabajoAnalizado, AnalisisPrecio } from './inteligencia-precios.js';
 import type { Empresa } from './use-empresa.js';
 import { interpretarAnalisis, desviacionPuntos } from './inteligencia-precios.js';
+import { calcularMetricasPorTipo } from './metricas-por-tipo.js';
+import { MetricasPorTipoVista } from './metricas-por-tipo-vista.js';
 import { formatoEuro, formatoFecha } from './calculos.js';
 import styles from './styles.module.css';
 
@@ -277,11 +279,15 @@ function HistoricoInteligente({ trabajos, onVerDetalle }: { trabajos: TrabajoAna
     return copia.sort((a, b) => (b.actualizado || '').localeCompare(a.actualizado || ''));
   }, [filtrados, orden]);
 
+  const metricasPorTipo = useMemo(() => calcularMetricasPorTipo(trabajos), [trabajos]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--topo-claro)' }}>
         Estos son tus trabajos anteriores — lo que presupuestaste, lo que realmente ocurrió y el margen que obtuviste.
       </p>
+
+      <MetricasPorTipoVista metricas={metricasPorTipo} />
 
       <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
         <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)} style={estiloSelect}>
