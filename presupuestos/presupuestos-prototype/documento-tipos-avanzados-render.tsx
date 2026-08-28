@@ -1,7 +1,9 @@
-import { useRef, useState, useEffect, useLayoutEffect } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import QRCode from 'qrcode';
 import { registrarTipoRender, type RenderElementoProps, type PanelPropiedadesProps } from './documento-registro-tipos-render.js';
 import editorStyles from './editor-documento.module.css';
+import styles from './styles.module.css';
+import { FirmaCanvas } from './firma-canvas.js';
 
 /**
  * Adaptadores de render de los cinco tipos avanzados del Incremento 7
@@ -128,110 +130,51 @@ function RenderFirma({ elemento }: RenderElementoProps) {
   );
 }
 
-function CapturaFirma({ onCapturar }: { onCapturar: (dataUrl: string) => void }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const dibujando = useRef(false);
-
-  const posicion = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-  };
-
-  const iniciar = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
-    dibujando.current = true;
-    const ctx = canvasRef.current?.getContext('2d');
-    const { x, y } = posicion(e);
-    ctx?.beginPath();
-    ctx?.moveTo(x, y);
-  };
-  const mover = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!dibujando.current) return;
-    const ctx = canvasRef.current?.getContext('2d');
-    const { x, y } = posicion(e);
-    if (ctx) { ctx.lineTo(x, y); ctx.stroke(); }
-  };
-  const terminar = () => { dibujando.current = false; };
-  const limpiar = () => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (canvas && ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
-  };
-  const guardar = () => {
-    const canvas = canvasRef.current;
-    if (canvas) onCapturar(canvas.toDataURL('image/png'));
-  };
-
-  /**
-   * Ajusta la resolución REAL del canvas a los píxeles físicos de la
-   * pantalla — corrección 24/08/2026 (reportado: "firma pixelada"), mismo
-   * motivo que `firma-canvas.tsx`: sin esto, el canvas dibuja siempre a
-   * 280×140 píxeles fijos y sale borroso en cualquier pantalla de alta
-   * densidad (2x/3x, la mayoría de móviles y portátiles modernos).
-   * `useLayoutEffect` para que corra ANTES que el efecto de estilo de
-   * abajo — cambiar `canvas.width/height` resetea el contexto (incluido
-   * cualquier `strokeStyle`/`lineWidth` ya aplicado), así que el orden
-   * importa; React garantiza que los `useLayoutEffect` se ejecutan antes
-   * que los `useEffect`, sin depender del orden en el código.
-   */
-  useLayoutEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.round(rect.width * dpr);
-    canvas.height = Math.round(rect.height * dpr);
-    canvas.getContext('2d')?.scale(dpr, dpr);
-  }, []);
-
-  useEffect(() => {
-    const ctx = canvasRef.current?.getContext('2d');
-    if (ctx) { ctx.strokeStyle = '#18140f'; ctx.lineWidth = 2; ctx.lineCap = 'round'; }
-  }, []);
-
+/**
+ * Rediseño completo del cuadro de firma (pedido real, 28/08/2026: "no
+ * quiero que se abra toda una tabla... quiero que se abra un cuadrado,
+ * donde insertar la firma, muy sencillo"). El lienzo fijo de 280×140
+ * embebido en el panel lateral (estrecho, con scroll) hacía que la firma
+ * quedara descentrada e incómoda de dibujar — se sustituye por el MISMO
+ * componente `FirmaCanvas` ya usado y aprobado en el Portal del cliente y
+ * en Ajustes de empresa (ancho 100%, alto fijo generoso), abierto en un
+ * modal centrado y grande en vez de encajado dentro del panel — nada de
+ * arrastrar ni de encoger el trazo al borde del panel.
+ */
+function ModalFirma({ onFirmar, onCerrar }: { onFirmar: (dataUrl: string) => void; onCerrar: () => void }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      <canvas
-        ref={canvasRef} width={280} height={140}
-        style={{
-          // Bug real, 28/08/2026 ("el cuadrante de firma no se ve entero /
-          // firma más abajo de donde toco"): sin un tamaño CSS explícito
-          // aquí, el `useLayoutEffect` de abajo (que escala el búfer interno
-          // a `devicePixelRatio` para que el trazo no salga pixelado) también
-          // agrandaba el tamaño VISIBLE del lienzo — al no haber CSS que lo
-          // fije, el navegador usa el propio búfer como tamaño de pantalla.
-          // En una pantalla de alta densidad (2x/3x, la mayoría de móviles)
-          // el cuadrado de firma se volvía 2-3 veces más grande de lo
-          // previsto, desbordando el panel — y como el punto donde se
-          // dibuja SÍ seguía la geometría real (ahora mayor) del lienzo, el
-          // trazo aparecía descolocado respecto a lo que se veía en pantalla.
-          // Mismo patrón ya corregido y en uso real en `firma-canvas.tsx`
-          // (Portal del cliente / firma de empresa): fijar el tamaño CSS
-          // aquí deja que el búfer interno crezca para nitidez sin que el
-          // tamaño visible se mueva ni un píxel.
-          width: 280, height: 140,
-          border: '1px solid var(--borde)', borderRadius: 6, touchAction: 'none', background: '#fff', cursor: 'crosshair',
-        }}
-        onPointerDown={iniciar} onPointerMove={mover} onPointerUp={terminar} onPointerLeave={terminar}
-      />
-      <div style={{ display: 'flex', gap: '0.5rem' }}>
-        <button type="button" className={editorStyles.btnPanel} onClick={limpiar}>Borrar</button>
-        <button type="button" className={editorStyles.btnPanel} onClick={guardar}>Guardar firma</button>
+    <div className={styles.overlay} onClick={onCerrar}>
+      <div className={styles.modal} style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
+        <h2 className={styles.modalTitulo}>Firmar</h2>
+        <FirmaCanvas
+          textoIntro="Dibuja la firma con el dedo o el ratón."
+          textoConfirmar="Guardar firma"
+          onFirmar={(dataUrl) => { onFirmar(dataUrl); onCerrar(); }}
+          onCancelar={onCerrar}
+        />
       </div>
     </div>
   );
 }
 
 function PanelFirma({ elemento, onCambiarContenido, onSustituirArchivo }: PanelPropiedadesProps) {
+  const [modalAbierto, setModalAbierto] = useState(false);
+  const url = elemento.contenido.url as string;
   return (
     <div className={editorStyles.panelSeccion}>
-      <label className={editorStyles.panelCampo}>
-        Nombre del firmante
+      <button type="button" className={editorStyles.btnPanel} onClick={() => setModalAbierto(true)}>
+        {url ? '✍️ Cambiar firma' : '✍️ Firmar'}
+      </button>
+      <label className={editorStyles.panelCampo} style={{ marginTop: '0.4rem' }}>
+        Nombre del firmante <span style={{ fontWeight: 400, color: 'var(--topo-claro)' }}>(opcional)</span>
         <input type="text" value={(elemento.contenido.nombreFirmante as string) ?? ''} onChange={(e) => onCambiarContenido({ nombreFirmante: e.target.value })} />
       </label>
-      <p className={editorStyles.panelTituloSeccion} style={{ margin: '0.4rem 0 0' }}>Dibujar firma</p>
-      <CapturaFirma onCapturar={(dataUrl) => onSustituirArchivo?.(dataUrlAFile(dataUrl, 'firma.png'))} />
+      {modalAbierto && (
+        <ModalFirma
+          onFirmar={(dataUrl) => onSustituirArchivo?.(dataUrlAFile(dataUrl, 'firma.png'))}
+          onCerrar={() => setModalAbierto(false)}
+        />
+      )}
     </div>
   );
 }
