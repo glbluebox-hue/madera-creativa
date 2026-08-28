@@ -483,7 +483,27 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
 
   // ── Selección ────────────────────────────────────────────────────────────────
 
+  /**
+   * Bug real, 28/08/2026 ("la negrita no se guarda, el texto vuelve a
+   * como estaba al hacer clic fuera"): `seleccionarElemento`/`limpiarSeleccion`
+   * cambiaban `editandoId` a mano vía estado de React ANTES de que el
+   * `blur` NATIVO del elemento en edición (el que de verdad dispara su
+   * guardado, ver `onBlur` en `documento-tipos-iniciales-render.tsx`)
+   * llegara a producirse — al re-renderizar con `editando:false` primero,
+   * el manejador de blur que finalmente se ejecutaba ya cerraba sobre ese
+   * `editando:false` y se saltaba el guardado por completo (su propia
+   * comprobación `if (!editando) return`). Forzar aquí el `.blur()`
+   * explícito del elemento activo, ANTES de tocar el estado de React,
+   * garantiza que el guardado ya se ha disparado y completado con
+   * `editando` todavía en `true` en el momento correcto.
+   */
+  const confirmarEdicionEnCurso = () => {
+    const activo = document.activeElement;
+    if (activo instanceof HTMLElement && activo.isContentEditable) activo.blur();
+  };
+
   const seleccionarElemento = useCallback((id: string, opciones: { extender?: boolean; paginaId?: string } = {}) => {
+    confirmarEdicionEnCurso();
     setEditandoId(null);
     if (opciones.paginaId) setPaginaActivaId(opciones.paginaId);
     setSeleccion((actual) => {
@@ -500,7 +520,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
     setPanelMovilAbierto('derecho');
   }, []);
 
-  const limpiarSeleccion = useCallback(() => { setSeleccion([]); setEditandoId(null); }, []);
+  const limpiarSeleccion = useCallback(() => { confirmarEdicionEnCurso(); setSeleccion([]); setEditandoId(null); }, []);
 
   // ── Inserción / eliminación ──────────────────────────────────────────────────
 

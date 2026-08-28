@@ -94,7 +94,15 @@ function RenderTexto({ elemento, editando, onCambiarContenido, onSalirEdicion }:
       contentEditable={editando}
       suppressContentEditableWarning
       onBlur={() => {
-        if (!editando || !ref.current) return;
+        // Deliberadamente SIN comprobar `editando` aquí (bug real,
+        // 28/08/2026): si algo fuera de este componente ya cambió
+        // `editandoId` a mano antes de que este blur nativo llegara a
+        // dispararse, `editando` cerraría sobre el valor viejo y el
+        // guardado se saltaría en silencio, perdiendo el formato recién
+        // aplicado. Guardar SIEMPRE que haya un nodo real es seguro: si
+        // no había nada editado de verdad, guarda exactamente lo mismo
+        // que ya estaba.
+        if (!ref.current) return;
         onCambiarContenido({ texto: ref.current.innerText, textoHtml: sanitizarHtmlTexto(ref.current.innerHTML) });
         onSalirEdicion();
       }}
@@ -656,16 +664,9 @@ function PanelPrecioDestacado({ elemento, onCambiarContenido, onCambiarEstilo, p
   const estilo = elemento.estilo as EstiloPrecio;
   return (
     <div className={editorStyles.panelSeccion}>
-      <label className={editorStyles.panelCampo}>
-        Origen
-        <select value={modo} onChange={(e) => onCambiarContenido({ modo: e.target.value })}>
-          <option value="vinculado">Vinculado al precio total</option>
-          <option value="fijo">Texto fijo</option>
-        </select>
-      </label>
       {onCambiarPrecioTotal && (
-        <label className={editorStyles.panelCampo}>
-          Precio total del presupuesto
+        <label className={editorStyles.panelCampo} style={{ background: '#eaf3ee', padding: '0.5rem', borderRadius: 6, border: '1px solid #3d7a52' }}>
+          <span style={{ fontWeight: 700 }}>💶 Precio total del presupuesto (el precio real)</span>
           <input
             type="number"
             min={0}
@@ -677,13 +678,21 @@ function PanelPrecioDestacado({ elemento, onCambiarContenido, onCambiarEstilo, p
               if (Number.isFinite(v) && v >= 0) onCambiarPrecioTotal(v);
             }}
           />
-          <span className={editorStyles.panelNota}>Este es el precio real del presupuesto — se ve en la lista de "Presupuestos" y en el margen de Inteligencia de Precios. Se guarda igual sin importar si el "Origen" de arriba está en Vinculado o Texto fijo.</span>
+          <span className={editorStyles.panelNota}>Esto es lo único que cambia el precio real del presupuesto — se ve en la lista de "Presupuestos" y en Inteligencia de Precios. El campo "Texto" de abajo NO lo cambia, solo decora esta insignia.</span>
         </label>
       )}
+      <label className={editorStyles.panelCampo}>
+        Origen de esta insignia (solo visual)
+        <select value={modo} onChange={(e) => onCambiarContenido({ modo: e.target.value })}>
+          <option value="vinculado">Mostrar el precio total (arriba)</option>
+          <option value="fijo">Mostrar un texto fijo, a mano</option>
+        </select>
+      </label>
       {modo === 'fijo' && (
         <label className={editorStyles.panelCampo}>
-          Texto
+          Texto de la insignia (decorativo)
           <input type="text" value={(elemento.contenido.valor as string) ?? ''} onChange={(e) => onCambiarContenido({ valor: e.target.value })} />
+          <span className={editorStyles.panelNota}>Solo cambia lo que se VE aquí — usa el campo verde de arriba para cambiar el precio real del presupuesto.</span>
         </label>
       )}
       <label className={editorStyles.panelCampo}>
