@@ -47,6 +47,8 @@ export function AbrirDocumento({ presupuesto, clienteId, clienteNombre, empresa,
       <EditorDocumento
         contenedor={presupuesto}
         precioVinculado={presupuesto.precioTotal}
+        proyectoId={presupuesto.proyectoId}
+        analisisPrecio={presupuesto.analisisPrecio}
         firmaClienteUrl={presupuesto.firmaClienteUrl}
         firmaClienteFecha={presupuesto.firmaClienteFecha}
         clienteId={clienteId}

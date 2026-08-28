@@ -90,14 +90,38 @@ export function AnalisisPrecioPresupuesto({ analisis, esSnapshot, tipoTrabajo, e
   );
 }
 
-function AnalisisPrecioCompleto({
-  analisis, tipoTrabajo, excluirId, onCerrar,
-}: {
-  analisis: Extract<AnalisisPrecio, { disponible: true }>;
+export type AnalisisPrecioCompletoProps = {
+  analisis: AnalisisPrecio;
   tipoTrabajo: string | null;
   excluirId?: string;
   onCerrar: () => void;
-}) {
+};
+
+/**
+ * Modal completo del análisis de precio — exportado (28/08/2026) para
+ * poder abrirse también directamente desde el editor de documentos
+ * ("🧠 Inteligencia de precios" en la barra superior), sin pasar por la
+ * insignia de `AnalisisPrecioPresupuesto` (pensada para una fila de
+ * listado, no para una barra de herramientas). Mismo componente, mismo
+ * JSX, dos sitios desde donde se puede abrir — nunca una segunda
+ * implementación. Acepta ahora también `disponible:false` (antes solo
+ * `disponible:true`, porque su único llamante ya garantizaba eso) para
+ * poder explicar con claridad por qué no hay análisis en vez de exigir
+ * que el llamante nunca lo abra sin datos.
+ */
+export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, onCerrar }: AnalisisPrecioCompletoProps) {
+  if (!analisis.disponible) {
+    return (
+      <div className={styles.overlay} onClick={onCerrar}>
+        <div className={styles.modal} style={{ maxWidth: 420, padding: '1.5rem' }} onClick={(e) => e.stopPropagation()}>
+          <h2 className={styles.modalTitulo}>🧠 Inteligencia de precios</h2>
+          <p style={{ margin: '0.5rem 0 0', fontSize: '0.88rem', color: 'var(--topo-claro)' }}>{interpretarAnalisis(analisis)}</p>
+          <button className={styles.btn} style={{ marginTop: '1.25rem', width: '100%' }} onClick={onCerrar}>Cerrar</button>
+        </div>
+      </div>
+    );
+  }
+
   const cfg = COLOR_ESTADO[analisis.estado];
   return (
     <div className={styles.overlay} onClick={onCerrar}>

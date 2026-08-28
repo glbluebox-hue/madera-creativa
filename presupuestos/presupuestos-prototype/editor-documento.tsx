@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import type { ComponentType, CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
+import { createPortal } from 'react-dom';
 import * as ReactMoveable from 'react-moveable';
 import type { OnDrag, OnDragGroup, OnResize } from 'react-moveable';
 
@@ -41,6 +42,10 @@ import { extraerContextoDocumento } from './documento-contexto-ia.js';
 import { TutorialOverlay } from './TutorialOverlay.js';
 import { useTutorial } from './use-tutorial.js';
 import { TUTORIAL_EDITOR } from './tutorial-definiciones.js';
+import type { Proyecto } from './types.js';
+import type { AnalisisPrecio } from './inteligencia-precios.js';
+import { AnalisisPrecioCompleto } from './analisis-precio-presupuesto.js';
+import { haceFaltaPedirProyecto, analisisParaEditor, tipoTrabajoParaEditor } from './editor-inteligencia-precios.js';
 import editorStyles from './editor-documento.module.css';
 import styles from './styles.module.css';
 
@@ -73,6 +78,17 @@ export type EditorDocumentoProps = {
    * que vincularse todavía.
    */
   precioVinculado?: number;
+  /**
+   * Proyecto vinculado y análisis ya congelado (Fase 2C, "🧠 Inteligencia
+   * de precios" dentro del editor, 28/08/2026) — `proyectoId` solo se usa
+   * para pedir el proyecto de forma perezosa (nunca al abrir el editor,
+   * solo al pulsar el botón) y para excluirse a sí mismo de sus propios
+   * comparables; `analisisPrecio` es el snapshot ya congelado si el
+   * presupuesto está aceptado, para no tener que recalcular nada. Ambos
+   * `undefined` en Contratos/Plantillas, que no tienen este concepto.
+   */
+  proyectoId?: string;
+  analisisPrecio?: AnalisisPrecio;
   /**
    * Firma real del cliente (y fecha de aceptación) para el tipo "firma
    * cliente" del elemento — solo tiene valor si se reabre un presupuesto
@@ -161,7 +177,7 @@ function documentoVacio(): DocumentoMC {
  * incremento posterior — con la selección actual, redimensionar/rotar
  * solo actúa cuando hay un único elemento seleccionado.
  */
-export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa, precioVinculado, firmaClienteUrl, firmaClienteFecha, esPlantilla, onGuardar, onVolver, onCambiarLogoEmpresa, clientesDisponibles, onCambiarCliente }: EditorDocumentoProps) {
+export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa, precioVinculado, proyectoId, analisisPrecio, firmaClienteUrl, firmaClienteFecha, esPlantilla, onGuardar, onVolver, onCambiarLogoEmpresa, clientesDisponibles, onCambiarCliente }: EditorDocumentoProps) {
   const documentoInicial = useMemo<DocumentoMC>(() => {
     const contenido = contenedor.contenidoDocumento as unknown as DocumentoMC;
     return contenido && contenido.paginas && contenido.paginas.length > 0 ? contenido : documentoVacio();
@@ -205,6 +221,31 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
    */
   const [precioTotal, setPrecioTotal] = useState<number>(precioVinculado ?? 0);
   const [precioTotalTexto, setPrecioTotalTexto] = useState<string>(String(precioVinculado ?? 0));
+
+  /**
+   * "🧠 Inteligencia de precios" dentro del editor (Fase 2C, integración
+   * 28/08/2026) — reutiliza tal cual `analizarPrecioPresupuesto` (motor de
+   * Fase 1) y `AnalisisPrecioCompleto`/`TrabajosComparables` (Fase 2C), sin
+   * ningún cálculo nuevo. El proyecto vinculado se pide de forma
+   * PEREZOSA — nunca al abrir el editor, solo la primera vez que el
+   * usuario pulsa el botón — y se cachea en `proyectoParaAnalisis` para no
+   * repetir la llamada si vuelve a abrir el modal en la misma sesión.
+   */
+  const [inteligenciaAbierta, setInteligenciaAbierta] = useState(false);
+  const [estadoAnalisisEditor, setEstadoAnalisisEditor] = useState<'inactivo' | 'cargando' | 'listo'>('inactivo');
+  const [proyectoParaAnalisis, setProyectoParaAnalisis] = useState<Proyecto | null>(null);
+  const abrirInteligenciaPrecios = useCallback(() => {
+    setInteligenciaAbierta(true);
+    if (!haceFaltaPedirProyecto(analisisPrecio, proyectoId, estadoAnalisisEditor === 'listo')) { setEstadoAnalisisEditor('listo'); return; }
+    setEstadoAnalisisEditor('cargando');
+    api.obtenerProyecto(proyectoId!)
+      .then((p) => setProyectoParaAnalisis(p))
+      .catch(() => setProyectoParaAnalisis(null)) // fallo de red: se comporta como "sin proyecto", nunca rompe el modal
+      .finally(() => setEstadoAnalisisEditor('listo'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analisisPrecio, proyectoId, estadoAnalisisEditor]);
+  const analisisParaModal: AnalisisPrecio = analisisParaEditor(analisisPrecio, precioTotal, proyectoParaAnalisis, empresa.margenObjetivoPorcentaje);
+  const tipoTrabajoParaModal = tipoTrabajoParaEditor(proyectoParaAnalisis);
   const [paginaActivaId, setPaginaActivaId] = useState(documentoInicial.paginas[0].id);
   const [seleccion, setSeleccion] = useState<string[]>([]);
   const [editandoId, setEditandoId] = useState<string | null>(null);
@@ -1428,6 +1469,17 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
             €
           </label>
         )}
+        {!esPlantilla && precioVinculado !== undefined && (
+          <button
+            type="button"
+            className={styles.btn}
+            style={{ fontSize: '0.8rem', fontWeight: 600, padding: '0.3rem 0.6rem' }}
+            onClick={abrirInteligenciaPrecios}
+            title="Analiza el precio de este presupuesto frente a tu coste y busca trabajos parecidos en tu propio histórico — no es generación de texto."
+          >
+            🧠 Inteligencia de precios
+          </button>
+        )}
         {onCambiarCliente && clientesDisponibles ? (
           <button
             className={styles.btn}
@@ -1897,6 +1949,25 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
         onAbrirMenuMovil={() => {}}
         onCerrarMenuMovil={() => {}}
       />
+
+      {inteligenciaAbierta && createPortal(
+        estadoAnalisisEditor === 'cargando' ? (
+          <div className={styles.overlay} onClick={() => setInteligenciaAbierta(false)}>
+            <div className={styles.modal} style={{ maxWidth: 420, padding: '1.5rem' }} onClick={(e) => e.stopPropagation()}>
+              <h2 className={styles.modalTitulo}>🧠 Inteligencia de precios</h2>
+              <p style={{ margin: '0.5rem 0 0', fontSize: '0.85rem', color: 'var(--topo-claro)' }}>🔎 Calculando análisis de precio…</p>
+            </div>
+          </div>
+        ) : (
+          <AnalisisPrecioCompleto
+            analisis={analisisParaModal}
+            tipoTrabajo={tipoTrabajoParaModal}
+            excluirId={proyectoId || contenedor.id}
+            onCerrar={() => setInteligenciaAbierta(false)}
+          />
+        ),
+        document.querySelector(`.${styles.app}`) ?? document.body,
+      )}
     </div>
   );
 }

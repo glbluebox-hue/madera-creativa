@@ -44,7 +44,7 @@ export function TrabajosComparables({ precio, tipoTrabajo, excluirId }: Trabajos
 
   if (resultado.disponible === false) {
     const texto = resultado.motivo === 'sin_historico'
-      ? 'Todavía no tienes trabajos anteriores con los que comparar este.'
+      ? 'Todavía no tienes trabajos anteriores suficientes con los que comparar este presupuesto.'
       : 'Este presupuesto todavía no tiene un precio con el que comparar.';
     return <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--topo-claro)' }}>⚪ {texto}</p>;
   }
