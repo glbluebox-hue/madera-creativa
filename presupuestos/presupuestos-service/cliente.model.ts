@@ -143,6 +143,35 @@ const ClienteSchema = new Schema({
  * `migracion-proyectos.ts` pueda copiar cada ficha vieja tal cual, campo a
  * campo, sin perder ni transformar ningún dato existente.
  */
+/**
+ * Una característica estructurada del trabajo (Histórico Inteligente,
+ * Fase 2A) — forma GENÉRICA a propósito: añadir una característica nueva
+ * en el futuro (número de módulos, material, complejidad, o cualquiera
+ * que un futuro análisis por fotografía llegue a producir) significa un
+ * valor nuevo de `clave`, nunca un campo nuevo ni una migración.
+ *
+ * `origen`/`confirmadoPorUsuario`/`confianza` dejan sitio a una futura
+ * fuente `'ia'` sin cambiar el esquema: una característica con
+ * `confirmadoPorUsuario:false` no debe usarse jamás en comparables ni en
+ * cálculos del histórico (regla de producto, no solo de datos) — en esta
+ * fase esa distinción existe en la forma pero no se ejercita todavía:
+ * la única vía de escritura real (`guardarCaracteristicaProyecto`,
+ * `presupuestos-service.ts`) fija siempre `origen:'usuario'`,
+ * `confirmadoPorUsuario:true`, `confianza:null`, decidido por el
+ * servidor — nunca confiado del cliente.
+ */
+const CaracteristicaTrabajoSchema = new Schema(
+  {
+    clave: { type: String, required: true },
+    valor: { type: String, required: true },
+    origen: { type: String, enum: ['usuario', 'ia'], required: true },
+    confirmadoPorUsuario: { type: Boolean, required: true },
+    confianza: { type: String, enum: ['alta', 'media', 'baja', null], default: null },
+    fecha: { type: String, required: true },
+  },
+  { _id: false }
+);
+
 const ProyectoSchema = new Schema({
   id: { type: String, required: true, unique: true, index: true },
   usuarioId: { type: String, required: true, index: true, default: 'admin' },
@@ -182,6 +211,8 @@ const ProyectoSchema = new Schema({
    * caída posterior sí vuelva a avisar.
    */
   margenAvisado: { type: Boolean, default: false },
+  /** Características estructuradas del trabajo (Histórico Inteligente, Fase 2A) — ver `CaracteristicaTrabajoSchema` arriba. Vacío en todo proyecto existente, nunca migrado ni inferido. */
+  caracteristicas: { type: [CaracteristicaTrabajoSchema], default: [] },
 });
 ProyectoSchema.index({ usuarioId: 1, clienteId: 1, creado: -1 });
 

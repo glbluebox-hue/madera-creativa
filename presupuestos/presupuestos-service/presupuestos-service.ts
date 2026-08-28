@@ -611,6 +611,31 @@ export class PresupuestosService {
     return this.limpiarProyecto(doc);
   }
 
+  /**
+   * Guarda (o reemplaza) una característica estructurada del trabajo
+   * (Histórico Inteligente, Fase 2A) — identificada por `clave`, nunca
+   * duplica dos entradas con la misma clave. `origen`/`confirmadoPorUsuario`/
+   * `confianza` los decide el servidor, SIEMPRE `'usuario'`/`true`/`null`
+   * en esta vía de escritura — nunca se confía en lo que mande el cliente
+   * para estos tres campos (ver `esquemaCaracteristicaEntrada`, que ni
+   * siquiera los acepta en el body).
+   */
+  async guardarCaracteristicaProyecto(proyectoId: string, usuarioId: string, clave: string, valor: string): Promise<ProyectoDoc> {
+    await conectar();
+    const proyecto = await ProyectoModel.findOne({ id: proyectoId, usuarioId }).lean().exec();
+    if (!proyecto) throw new ErrorDeNegocio('Proyecto no encontrado', 400);
+    const existentes = Array.isArray((proyecto as any).caracteristicas) ? (proyecto as any).caracteristicas : [];
+    const sinEsaClave = existentes.filter((c: any) => c.clave !== clave);
+    const nueva = { clave, valor, origen: 'usuario', confirmadoPorUsuario: true, confianza: null, fecha: new Date().toISOString() };
+    const doc = await ProyectoModel.findOneAndUpdate(
+      { id: proyectoId, usuarioId },
+      { $set: { caracteristicas: [...sinEsaClave, nueva] } },
+      { new: true }
+    ).lean().exec();
+    if (!doc) throw new ErrorDeNegocio('Proyecto no encontrado', 400);
+    return this.limpiarProyecto(doc);
+  }
+
   /** Cambia el presupuesto acordado a mano. */
   async cambiarPresupuestoProyecto(proyectoId: string, usuarioId: string, presupuesto: number): Promise<ProyectoDoc> {
     await conectar();

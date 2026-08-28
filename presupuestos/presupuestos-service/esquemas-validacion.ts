@@ -287,6 +287,27 @@ const esquemaEstancia = z.object({
   observaciones: z.string().max(1000).optional(),
 });
 
+/**
+ * Característica estructurada del trabajo (Histórico Inteligente, Fase
+ * 2A) — ver `CaracteristicaTrabajoSchema` en `cliente.model.ts`. `clave`
+ * no se restringe a un enum a propósito: nuevas características futuras
+ * son valores nuevos de `clave`, nunca un cambio de esquema.
+ */
+const esquemaCaracteristica = z.object({
+  clave: z.string().min(1).max(60),
+  valor: z.string().min(1).max(300),
+  origen: z.enum(['usuario', 'ia']),
+  confirmadoPorUsuario: z.boolean(),
+  confianza: z.enum(['alta', 'media', 'baja']).nullable().optional().default(null),
+  fecha: z.string().min(1).max(64),
+});
+
+/** Cuerpo de PUT /proyectos/:id/caracteristica — el usuario solo aporta `clave`/`valor`; `origen`/`confirmadoPorUsuario`/`confianza` los decide siempre el servidor (ver `guardarCaracteristicaProyecto`), nunca el cliente. */
+export const esquemaCaracteristicaEntrada = z.object({
+  clave: z.string().min(1).max(60),
+  valor: z.string().trim().min(1).max(300),
+});
+
 const esquemaNota = z.object({
   id: z.string().min(1).max(64),
   fecha: z.string().min(1).max(32),
@@ -412,6 +433,8 @@ export const esquemaProyecto = z.object({
   observacionesAcceso: textoOpcional(1000),
   fechaMedicion: textoOpcional(32),
   fechaMontaje: textoOpcional(32),
+  /** Histórico Inteligente (Fase 2A) — sin esto, el PUT genérico de proyecto borraría en silencio las características ya guardadas al no reconocer el campo. */
+  caracteristicas: arrayOpcional(esquemaCaracteristica),
   estancias: arrayOpcional(esquemaEstancia),
   tareas: arrayOpcional(esquemaTarea),
   movimientos: arrayOpcional(esquemaMovimiento),

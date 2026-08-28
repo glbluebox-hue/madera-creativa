@@ -330,4 +330,27 @@ export type Proyecto = {
   adjuntos: Adjunto[];
   /** Fotos del proyecto acabado. */
   fotos: FotoProyecto[];
+  /** Características estructuradas del trabajo (Histórico Inteligente, Fase 2A) — vacío en todo proyecto existente, nunca inferido. */
+  caracteristicas?: CaracteristicaTrabajo[];
+};
+
+/**
+ * Una característica estructurada del trabajo (Histórico Inteligente,
+ * Fase 2A) — forma genérica a propósito: una característica nueva en el
+ * futuro (módulos, material, complejidad…) es un valor nuevo de `clave`,
+ * nunca un campo nuevo. `origen`/`confirmadoPorUsuario`/`confianza`
+ * dejan sitio a una futura fuente `'ia'` sin cambiar el tipo — hoy la
+ * única vía de escritura real fija siempre `origen:'usuario'`,
+ * `confirmadoPorUsuario:true`, `confianza:null`, decidido por el
+ * servidor. Regla de producto: una característica con
+ * `confirmadoPorUsuario:false` no debe usarse en comparables ni en
+ * cálculos del histórico.
+ */
+export type CaracteristicaTrabajo = {
+  clave: string;
+  valor: string;
+  origen: 'usuario' | 'ia';
+  confirmadoPorUsuario: boolean;
+  confianza: 'alta' | 'media' | 'baja' | null;
+  fecha: string;
 };

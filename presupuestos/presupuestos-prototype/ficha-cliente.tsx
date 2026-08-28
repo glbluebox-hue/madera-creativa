@@ -24,6 +24,7 @@ import { TabNotas } from './tab-notas.js';
 import { TabDibujos } from './tab-dibujos.js';
 import { TabPresupuestosProyecto } from './tab-presupuestos-proyecto.js';
 import { TabContratos } from './tab-contratos.js';
+import { PreguntaTipoTrabajo } from './pregunta-tipo-trabajo.js';
 import type { Empresa } from './use-empresa.js';
 import styles from './styles.module.css';
 
@@ -88,6 +89,8 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
   const [pestana, setPestana] = useState<Pestana>('resumen');
   /** Fallo real, 28/08/2026: si `api.cambiarEstadoProyecto` fallaba (red, sesión...), el desplegable de estado no avisaba de nada — el usuario creía haberlo puesto "En curso" y el cambio nunca llegaba a guardarse, con consecuencias reales (la notificación del briefing diario cuenta proyectos por este mismo campo). */
   const [errorEstado, setErrorEstado] = useState('');
+  /** Histórico Inteligente (Fase 2A) — se abre solo al marcar "Finalizado" un proyecto que todavía no tiene la característica `tipoTrabajo`; nunca bloquea el cambio de estado, que ya se guardó antes de mostrarse. */
+  const [preguntarTipoTrabajo, setPreguntarTipoTrabajo] = useState(false);
   /** Contador-disparador: cada incremento fuerza `TabDatos` a abrirse en modo edición (botón "Editar" de la cabecera, ver más abajo). */
   const [abrirEdicionDatos, setAbrirEdicionDatos] = useState(0);
   const editarDatos = () => { setPestana('proyectos'); setAbrirEdicionDatos((n) => n + 1); };
@@ -171,8 +174,20 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
   const cambiarEstado = (estado: Proyecto['estado']) => {
     setErrorEstado('');
     api.cambiarEstadoProyecto(proyecto.id, estado)
-      .then(onActualizarProyecto)
+      .then((actualizado) => {
+        onActualizarProyecto(actualizado);
+        const yaTieneTipoTrabajo = (actualizado.caracteristicas ?? []).some((c) => c.clave === 'tipoTrabajo');
+        if (estado === 'finalizado' && !yaTieneTipoTrabajo) setPreguntarTipoTrabajo(true);
+      })
       .catch(() => setErrorEstado('No se pudo guardar el cambio de estado — sigue siendo el anterior. Inténtalo de nuevo.'));
+  };
+
+  /** Histórico Inteligente (Fase 2A) — dato opcional y de bajo riesgo: si falla el guardado, simplemente no se ha etiquetado este trabajo, sin ningún efecto sobre el proyecto ya finalizado. */
+  const guardarTipoTrabajo = (valor: string) => {
+    setPreguntarTipoTrabajo(false);
+    api.guardarCaracteristicaProyecto(proyecto.id, 'tipoTrabajo', valor)
+      .then(onActualizarProyecto)
+      .catch(() => {});
   };
 
   return (
@@ -459,6 +474,10 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
           onDescargarPdf={api.descargarPdfFactura}
           privado={privado}
         />
+      )}
+
+      {preguntarTipoTrabajo && (
+        <PreguntaTipoTrabajo onConfirmar={guardarTipoTrabajo} onSaltar={() => setPreguntarTipoTrabajo(false)} />
       )}
     </div>
   );

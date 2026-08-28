@@ -683,6 +683,21 @@ export async function cambiarEstadoProyecto(proyectoId: string, estado: Proyecto
   return res.json();
 }
 
+/**
+ * Guarda (o reemplaza) una característica estructurada del trabajo
+ * (Histórico Inteligente, Fase 2A) — solo `clave`/`valor`; el servidor
+ * decide siempre `origen:'usuario'`, `confirmadoPorUsuario:true`.
+ */
+export async function guardarCaracteristicaProyecto(proyectoId: string, clave: string, valor: string): Promise<Proyecto> {
+  const res = await fetchConAuth(`/proyectos/${proyectoId}/caracteristica`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clave, valor }),
+  });
+  await comprobarRespuesta(res, 'No se pudo guardar el tipo de trabajo');
+  return res.json();
+}
+
 export async function cambiarPresupuestoProyecto(proyectoId: string, presupuesto: number): Promise<Proyecto> {
   const res = await fetchConAuth(`/proyectos/${proyectoId}/presupuesto`, {
     method: 'PUT',

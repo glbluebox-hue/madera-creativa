@@ -74,6 +74,7 @@ import {
   esquemaTareasEntrada,
   esquemaEstadoClienteEntrada,
   esquemaPresupuestoClienteEntrada,
+  esquemaCaracteristicaEntrada,
   esquemaActualizarCobros,
   esquemaNotifPrefs,
   esquemaActualizarRecordatorios,
@@ -1245,6 +1246,12 @@ export function run() {
 
   app.put('/proyectos/:id/presupuesto', requireAuth, validar(esquemaPresupuestoClienteEntrada), async (req: AuthRequest, res) => {
     try { res.json(await svc.cambiarPresupuestoProyecto(req.params.id, req.usuarioId!, req.body.presupuesto)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  /** Histórico Inteligente (Fase 2A) — ver `svc.guardarCaracteristicaProyecto`. */
+  app.put('/proyectos/:id/caracteristica', requireAuth, validar(esquemaCaracteristicaEntrada), async (req: AuthRequest, res) => {
+    try { res.json(await svc.guardarCaracteristicaProyecto(req.params.id, req.usuarioId!, req.body.clave, req.body.valor)); }
     catch (err) { responderError(req, res, err); }
   });
 
