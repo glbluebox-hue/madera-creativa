@@ -621,7 +621,11 @@
 }
 .loginInputWrap:focus-within {
   border-color: var(--topo);
-  background: #fff;
+  /* Antes cambiaba a #fff sólido al enfocar/escribir — un blanco puro que
+     desentona con el fondo cálido del resto de la caja de login (reportado
+     28/08/2026: "se pone en blanco"). Mantiene el mismo fondo cálido de
+     siempre; el foco ya se distingue con el borde y el halo de abajo. */
+  background: var(--login-input-fondo);
   box-shadow: 0 0 0 3px rgba(81,72,63,0.08);
 }
 .loginIconoBadge {
@@ -649,6 +653,24 @@
 }
 .loginInputSimple:focus { outline: none !important; }
 .loginInputSimple::placeholder { color: var(--login-gris); }
+/*
+ * El autorrelleno de Chrome (usuario/contraseña guardados) pinta su propio
+ * fondo (blanco o amarillo pálido) por encima de cualquier `background`
+ * normal, incluso con `!important` — la única forma real de anularlo es
+ * esta sombra interior enorme del mismo color que el fondo cálido del
+ * login, con `transition-delay` altísimo para que Chrome no pueda
+ * revertirla en el siguiente repintado (mismo motivo que "se pone en
+ * blanco al rellenar", reportado 28/08/2026 — el otro factor era
+ * `:focus-within`, ya corregido arriba).
+ */
+.loginInputSimple:-webkit-autofill,
+.loginInputSimple:-webkit-autofill:hover,
+.loginInputSimple:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--topo);
+  -webkit-box-shadow: 0 0 0px 1000px var(--login-input-fondo) inset !important;
+  box-shadow: 0 0 0px 1000px var(--login-input-fondo) inset !important;
+  transition: background-color 9999s ease-in-out 0s;
+}
 .loginOjoBtn {
   position: static;
   flex-shrink: 0;
