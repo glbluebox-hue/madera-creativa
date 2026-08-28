@@ -54,6 +54,52 @@ export type TrabajoAnalizado = {
   origenPrincipal: OrigenAnalisis | null;
 };
 
+// ── Comparables Inteligentes (Fase 2C) ────────────────────────────────────────
+// Mismos tipos que produce `svc.obtenerComparables` (backend) — ver
+// `comparables.ts` para el motor determinista real. Aquí solo se declara la
+// FORMA de la respuesta, el cálculo vive exclusivamente en el backend.
+
+export type NivelComparable = 'muy_comparable' | 'comparable' | 'poco_comparable';
+
+/** Motivo por el que un trabajo se considera comparable — siempre generado por una regla determinista, nunca por IA. */
+export type MotivoComparable =
+  | { tipo: 'mismo_tipo_trabajo' }
+  | { tipo: 'precio_similar'; diferenciaPorcentaje: number }
+  | { tipo: 'reciente'; mesesAntiguedad: number };
+
+export type Comparable = {
+  trabajo: TrabajoAnalizado;
+  /** 0-100, solo para ordenar — nunca se muestra al usuario tal cual. */
+  puntuacion: number;
+  nivel: NivelComparable;
+  motivos: MotivoComparable[];
+  /** true si el trabajo nuevo o este candidato no tienen `tipoTrabajo` guardado — "comparable secundario". */
+  esSecundario: boolean;
+};
+
+export type ResultadoComparables =
+  | { disponible: true; comparables: Comparable[]; totalEvaluados: number }
+  | { disponible: false; motivo: 'sin_historico' | 'sin_precio_referencia' };
+
+const ETIQUETA_NIVEL: Record<NivelComparable, { icono: string; texto: string }> = {
+  muy_comparable: { icono: '🟢', texto: 'Muy comparable' },
+  comparable: { icono: '🟡', texto: 'Comparable' },
+  poco_comparable: { icono: '⚪', texto: 'Poco comparable' },
+};
+
+export function etiquetaNivelComparable(nivel: NivelComparable): { icono: string; texto: string } {
+  return ETIQUETA_NIVEL[nivel];
+}
+
+/** Texto corto y en lenguaje llano para un motivo — generado por código, nunca por IA (ver principio 3 de la autorización de 2C). */
+export function textoMotivoComparable(motivo: MotivoComparable): string {
+  switch (motivo.tipo) {
+    case 'mismo_tipo_trabajo': return '🍳 Mismo tipo de trabajo';
+    case 'precio_similar': return `💰 Precio similar (±${motivo.diferenciaPorcentaje.toFixed(0)}%)`;
+    case 'reciente': return motivo.mesesAntiguedad < 1 ? '📅 Trabajo muy reciente' : `📅 Trabajo reciente (hace ${Math.round(motivo.mesesAntiguedad)} mes${Math.round(motivo.mesesAntiguedad) === 1 ? '' : 'es'})`;
+  }
+}
+
 /**
  * Desviación en puntos porcentuales (margen real − margen previsto) de un
  * trabajo — Histórico Inteligente, Fase 2B. Solo tiene sentido cuando

@@ -241,6 +241,18 @@ describe('analizarTrabajos — margen real de proyectos finalizados (ampliación
     expect((trabajos[0] as any).tipoTrabajo).toBeNull();
   });
 
+  // Caso 14 (Fase 2C, principio 15): una característica no confirmada por el usuario nunca cuenta como tipoTrabajo.
+  it('14. una característica tipoTrabajo con confirmadoPorUsuario:false se ignora (preparación para IA futura, no implementada)', async () => {
+    await ClienteModel.create(clienteBase('c14', USUARIO_A));
+    await ProyectoModel.create(proyectoBase('p14', 'c14', USUARIO_A, {
+      caracteristicas: [{ clave: 'tipoTrabajo', valor: 'Cocina', origen: 'ia', confirmadoPorUsuario: false, confianza: 'alta', fecha: new Date().toISOString() }],
+    }));
+    await EmpresaModel.create({ usuarioId: USUARIO_A, margenObjetivoPorcentaje: 45 });
+
+    const trabajos = await svc.analizarTrabajos(USUARIO_A);
+    expect((trabajos[0] as any).tipoTrabajo).toBeNull();
+  });
+
   // Caso 10: no sobrescribir un snapshot de margen previsto ya existente.
   it('10. no sobrescribe un analisisPrecio (previsto) ya congelado, aunque el proyecto ahora esté finalizado', async () => {
     await ClienteModel.create(clienteBase('c10', USUARIO_A));

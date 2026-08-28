@@ -1793,6 +1793,23 @@ export function run() {
     catch (err) { responderError(req, res, err); }
   });
 
+  /**
+   * Comparables Inteligentes (Fase 2C) — solo lectura. `precio` es
+   * obligatorio (sin un precio de referencia no hay nada que comparar);
+   * `tipoTrabajo`/`excluirId`/`top` opcionales. Ver `svc.obtenerComparables`.
+   */
+  app.get('/inteligencia-precios/comparables', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const precio = Number(req.query.precio);
+      if (!Number.isFinite(precio) || precio <= 0) { res.status(400).json({ error: 'precio (mayor que 0) es obligatorio' }); return; }
+      const tipoTrabajo = typeof req.query.tipoTrabajo === 'string' && req.query.tipoTrabajo.trim() ? req.query.tipoTrabajo.trim() : null;
+      const excluirId = typeof req.query.excluirId === 'string' && req.query.excluirId.trim() ? req.query.excluirId.trim() : undefined;
+      const topBruto = Number(req.query.top);
+      const top = Number.isFinite(topBruto) && topBruto > 0 ? Math.min(10, Math.round(topBruto)) : undefined;
+      res.json(await svc.obtenerComparables(req.usuarioId!, precio, tipoTrabajo, excluirId, top));
+    } catch (err) { responderError(req, res, err); }
+  });
+
   app.put('/presupuestos/:id', requireAuth, validar(esquemaPresupuestoMC), async (req: AuthRequest, res) => {
     try { res.json(await svc.guardarPresupuesto({ ...req.body, id: req.params.id }, req.usuarioId!)); }
     catch (err) { responderError(req, res, err); }

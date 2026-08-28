@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { AnalisisPrecio } from './inteligencia-precios.js';
 import { interpretarAnalisis } from './inteligencia-precios.js';
 import { formatoEuro } from './calculos.js';
+import { TrabajosComparables } from './trabajos-comparables.js';
 import styles from './styles.module.css';
 
 const COLOR_ESTADO: Record<'por_encima' | 'cerca' | 'por_debajo', { color: string; fondo: string; icono: string; etiqueta: string }> = {
@@ -15,6 +16,15 @@ export type AnalisisPrecioPresupuestoProps = {
   analisis: AnalisisPrecio | undefined;
   /** `true` si este es el snapshot congelado al aceptar (en vez del cálculo en vivo) — cambia el pie de página. */
   esSnapshot?: boolean;
+  /**
+   * Tipo de trabajo del proyecto vinculado (Fase 2C, "Trabajos
+   * comparables") — solo se pasa donde ya hay un `Proyecto` cargado
+   * (`tab-presupuestos-proyecto.tsx`); en otras vistas sin ese contexto
+   * simplemente no se activa la sección de comparables.
+   */
+  tipoTrabajo?: string | null;
+  /** Id de trabajo a excluir del histórico al buscar comparables (el propio proyecto), para no compararse consigo mismo. */
+  excluirId?: string;
 };
 
 /**
@@ -24,7 +34,7 @@ export type AnalisisPrecioPresupuestoProps = {
  * calculado por `analizarPrecioPresupuesto` (en vivo) o el snapshot
  * guardado (`PresupuestoMC.analisisPrecio`, tras aceptar).
  */
-export function AnalisisPrecioPresupuesto({ analisis, esSnapshot }: AnalisisPrecioPresupuestoProps) {
+export function AnalisisPrecioPresupuesto({ analisis, esSnapshot, tipoTrabajo, excluirId }: AnalisisPrecioPresupuestoProps) {
   const [completoAbierto, setCompletoAbierto] = useState(false);
 
   if (!analisis) {
@@ -74,13 +84,20 @@ export function AnalisisPrecioPresupuesto({ analisis, esSnapshot }: AnalisisPrec
       )}
 
       {completoAbierto && (
-        <AnalisisPrecioCompleto analisis={analisis} onCerrar={() => setCompletoAbierto(false)} />
+        <AnalisisPrecioCompleto analisis={analisis} tipoTrabajo={tipoTrabajo ?? null} excluirId={excluirId} onCerrar={() => setCompletoAbierto(false)} />
       )}
     </div>
   );
 }
 
-function AnalisisPrecioCompleto({ analisis, onCerrar }: { analisis: Extract<AnalisisPrecio, { disponible: true }>; onCerrar: () => void }) {
+function AnalisisPrecioCompleto({
+  analisis, tipoTrabajo, excluirId, onCerrar,
+}: {
+  analisis: Extract<AnalisisPrecio, { disponible: true }>;
+  tipoTrabajo: string | null;
+  excluirId?: string;
+  onCerrar: () => void;
+}) {
   const cfg = COLOR_ESTADO[analisis.estado];
   return (
     <div className={styles.overlay} onClick={onCerrar}>
@@ -92,7 +109,12 @@ function AnalisisPrecioCompleto({ analisis, onCerrar }: { analisis: Extract<Anal
           <Pregunta titulo="¿Qué margen tengo?" respuesta={`${analisis.margenPorcentaje.toFixed(1)}%`} />
           <Pregunta titulo="¿Cuál es mi margen objetivo?" respuesta={`${analisis.margenObjetivoPorcentaje.toFixed(1)}%`} />
           <Pregunta titulo="¿Cómo estoy respecto al mercado?" respuesta="Disponible en una fase posterior." atenuado />
-          <Pregunta titulo="¿Cómo estoy respecto a mis propios trabajos?" respuesta="Disponible en una fase posterior." atenuado />
+          <div>
+            <p style={{ margin: '0 0 0.35rem', fontSize: '0.72rem', fontWeight: 700, color: 'var(--topo-claro)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+              ¿Cómo estoy respecto a mis propios trabajos?
+            </p>
+            <TrabajosComparables precio={analisis.precio} tipoTrabajo={tipoTrabajo} excluirId={excluirId} />
+          </div>
           <Pregunta
             titulo="¿Qué recomienda Madera Creativa?"
             respuesta={interpretarAnalisis(analisis)}

@@ -45,6 +45,10 @@ export function TabPresupuestosProyecto({ cliente, proyecto, empresa, onActualiz
 
   useEffect(() => { cargar(); }, [cargar]);
 
+  // Fase 2C ("Trabajos comparables") — tipo de trabajo ya guardado en este
+  // proyecto, si lo hay; `null` si nunca se rellenó (2A es opcional).
+  const tipoTrabajoProyecto = proyecto.caracteristicas?.find((c) => c.clave === 'tipoTrabajo')?.valor ?? null;
+
   const guardar = async (p: PresupuestoMC) => {
     const guardado = await api.guardarPresupuesto(p);
     setPresupuestos((prev) => prev.map((x) => (x.id === guardado.id ? guardado : x)));
@@ -103,7 +107,12 @@ export function TabPresupuestosProyecto({ cliente, proyecto, empresa, onActualiz
                   <strong style={{ fontSize: '0.95rem' }}>{formatoEuroPrivado(p.precioTotal, false)}</strong>
                 </button>
                 <div onClick={(e) => e.stopPropagation()}>
-                  <AnalisisPrecioPresupuesto analisis={analisis} esSnapshot={p.estado === 'aceptado' && !!p.analisisPrecio} />
+                  <AnalisisPrecioPresupuesto
+                    analisis={analisis}
+                    esSnapshot={p.estado === 'aceptado' && !!p.analisisPrecio}
+                    tipoTrabajo={tipoTrabajoProyecto}
+                    excluirId={proyecto.id}
+                  />
                 </div>
               </div>
             );

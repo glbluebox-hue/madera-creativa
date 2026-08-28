@@ -16,6 +16,8 @@ import { subirORecuperarRecurso } from './documento-recursos-biblioteca.js';
 import type { DocumentoMC, TemaMC, RecursoMC } from './documento-modelo.js';
 import { analizarPrecioPresupuesto, calcularMargenRealProyecto } from './inteligencia-precios.js';
 import type { AnalisisPrecio } from './inteligencia-precios.js';
+import { calcularComparables } from './comparables.js';
+import type { ResultadoComparables } from './comparables.js';
 
 /**
  * Checklist base de carpintería (Fase 1 — "presupuesto aceptado") —
@@ -1924,7 +1926,18 @@ export class PresupuestosService {
       : [];
     const tipoTrabajoPorProyectoId = new Map<string, string>();
     for (const p of [...(proyectosFinalizados as any[]), ...proyectosSoloCaracteristicas]) {
-      const caracteristica = Array.isArray(p.caracteristicas) ? p.caracteristicas.find((c: any) => c.clave === 'tipoTrabajo') : null;
+      // Filtro deliberado por `confirmadoPorUsuario` (Fase 2C, principio
+      // 15 de la autorización): hoy la única vía de escritura de
+      // `tipoTrabajo` ya fuerza siempre `confirmadoPorUsuario:true`
+      // (`guardarCaracteristicaProyecto`), así que este filtro no cambia
+      // nada observable TODAVÍA — pero es la barrera estructural que
+      // impide que una futura característica `origen:'ia'` sin confirmar
+      // (análisis por fotografía) se cuele en el Histórico o en
+      // Comparables antes de que el usuario la revise, sin tener que
+      // recordar añadir esta comprobación el día que exista esa fuente.
+      const caracteristica = Array.isArray(p.caracteristicas)
+        ? p.caracteristicas.find((c: any) => c.clave === 'tipoTrabajo' && c.confirmadoPorUsuario === true)
+        : null;
       if (caracteristica?.valor) tipoTrabajoPorProyectoId.set(p.id, caracteristica.valor);
     }
 
@@ -1990,6 +2003,36 @@ export class PresupuestosService {
     }
 
     return [...trabajos.values()];
+  }
+
+  /**
+   * Comparables Inteligentes (Fase 2C) — encuentra, dentro del histórico
+   * propio del usuario, los trabajos más parecidos al que se está
+   * presupuestando ahora mismo. Reutiliza `analizarTrabajos` para obtener
+   * el histórico YA aislado por `usuarioId` y se lo pasa a la función pura
+   * `calcularComparables` (`comparables.ts`) — ese motor nunca toca Mongo
+   * por su cuenta, así que no hay ninguna vía por la que pudiera mezclar
+   * datos de dos usuarios distintos (principio 12 de la autorización).
+   *
+   * @param usuarioId Propietario — el único límite de aislamiento.
+   * @param precio Precio de referencia del trabajo que se está presupuestando.
+   * @param tipoTrabajo Tipo de trabajo del proyecto vinculado, si ya lo tiene guardado.
+   * @param excluirId Id de trabajo a excluir del histórico (para no comparase consigo mismo al reanalizar uno ya existente).
+   * @param top Cuántos comparables devolver como máximo (por defecto 5).
+   */
+  async obtenerComparables(
+    usuarioId: string,
+    precio: number,
+    tipoTrabajo: string | null,
+    excluirId?: string,
+    top?: number
+  ): Promise<ResultadoComparables> {
+    const historico = await this.analizarTrabajos(usuarioId);
+    return calcularComparables(
+      { precio, tipoTrabajo, excluirId },
+      historico as any,
+      { top }
+    );
   }
 
   /**

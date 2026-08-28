@@ -2,7 +2,7 @@ import type { Cliente, Proyecto, Factura, Proveedor, Producto, Dibujo, Carpeta, 
 import type { NotaMC } from './notas-modelo.js';
 import type { CodigoQRMC } from './codigos-qr-modelo.js';
 import type { PresupuestoMC, PresupuestoPublico } from './presupuestos-modelo.js';
-import type { TrabajoAnalizado } from './inteligencia-precios.js';
+import type { TrabajoAnalizado, ResultadoComparables } from './inteligencia-precios.js';
 import type { PlantillaMC, RecursoMC, ComponenteMC } from './documento-modelo.js';
 import type { ContratoMC } from './contratos-modelo.js';
 import type { Empresa } from './use-empresa.js';
@@ -979,6 +979,21 @@ export async function obtenerTodosLosPresupuestos(): Promise<PresupuestoMC[]> {
 export async function analizarInteligenciaPrecios(): Promise<TrabajoAnalizado[]> {
   const res = await fetchConAuth('/inteligencia-precios/analisis');
   await comprobarRespuesta(res, 'No se pudo analizar los presupuestos');
+  return res.json();
+}
+
+/**
+ * Comparables Inteligentes (Fase 2C) — trabajos del propio histórico más
+ * parecidos al que se está presupuestando. Ver `svc.obtenerComparables`
+ * (backend) para el motor de puntuación.
+ */
+export async function obtenerComparables(precio: number, tipoTrabajo: string | null, excluirId?: string, top?: number): Promise<ResultadoComparables> {
+  const params = new URLSearchParams({ precio: String(precio) });
+  if (tipoTrabajo) params.set('tipoTrabajo', tipoTrabajo);
+  if (excluirId) params.set('excluirId', excluirId);
+  if (top) params.set('top', String(top));
+  const res = await fetchConAuth(`/inteligencia-precios/comparables?${params.toString()}`);
+  await comprobarRespuesta(res, 'No se pudieron calcular los trabajos comparables');
   return res.json();
 }
 
