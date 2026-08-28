@@ -178,7 +178,7 @@ function PantallaFirma({ onFirmar, onCerrar }: { onFirmar: (dataUrl: string) => 
   );
 }
 
-function PanelFirma({ elemento, onCambiarContenido, onSustituirArchivo }: PanelPropiedadesProps) {
+function PanelFirma({ elemento, onCambiarContenido }: PanelPropiedadesProps) {
   const [modalAbierto, setModalAbierto] = useState(false);
   const url = elemento.contenido.url as string;
   return (
@@ -191,22 +191,19 @@ function PanelFirma({ elemento, onCambiarContenido, onSustituirArchivo }: PanelP
         <input type="text" value={(elemento.contenido.nombreFirmante as string) ?? ''} onChange={(e) => onCambiarContenido({ nombreFirmante: e.target.value })} />
       </label>
       {modalAbierto && (
+        // Escribe el PNG (data URL) directamente en el contenido del
+        // elemento — antes pasaba por `onSustituirArchivo`, que convierte
+        // a `File` y de vuelta a data URL solo para volver al mismo sitio
+        // (`sustituirArchivoDe` termina haciendo exactamente esto mismo);
+        // quitar esa vuelta redundante evita un punto de fallo async
+        // innecesario en imágenes grandes, sin cambiar el resultado.
         <PantallaFirma
-          onFirmar={(dataUrl) => onSustituirArchivo?.(dataUrlAFile(dataUrl, 'firma.png'))}
+          onFirmar={(dataUrl) => onCambiarContenido({ url: dataUrl })}
           onCerrar={() => setModalAbierto(false)}
         />
       )}
     </div>
   );
-}
-
-function dataUrlAFile(dataUrl: string, nombre: string): File {
-  const coincide = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-  const mime = coincide?.[1] ?? 'image/png';
-  const binario = atob(coincide?.[2] ?? '');
-  const bytes = new Uint8Array(binario.length);
-  for (let i = 0; i < binario.length; i++) bytes[i] = binario.charCodeAt(i);
-  return new File([bytes], nombre, { type: mime });
 }
 
 registrarTipoRender({
