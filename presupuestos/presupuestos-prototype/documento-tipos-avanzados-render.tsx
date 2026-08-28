@@ -143,12 +143,21 @@ function RenderFirma({ elemento }: RenderElementoProps) {
  */
 function ModalFirma({ onFirmar, onCerrar }: { onFirmar: (dataUrl: string) => void; onCerrar: () => void }) {
   return (
-    <div className={styles.overlay} onClick={onCerrar}>
-      <div className={styles.modal} style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
-        <h2 className={styles.modalTitulo}>Firmar</h2>
+    <div className={styles.overlay} style={{ alignItems: 'center' }} onClick={onCerrar}>
+      {/*
+       * Sin título ni párrafo de introducción, y con un lienzo más bajo
+       * (130px en vez de los 200px del Portal) — a propósito, para que el
+       * modal entero quepa SIEMPRE sin scroll interno ni externo, incluso
+       * en una ventana de navegador con poca altura visible (pedido real,
+       * 28/08/2026: "no puede haber scroll donde firmo, tiene que ser un
+       * cuadrante fijo... horizontal, no vertical"). Ancho generoso
+       * (`maxWidth`) para que el lienzo quede claramente apaisado.
+       */}
+      <div className={styles.modal} style={{ maxWidth: 480, padding: '1.1rem' }} onClick={(e) => e.stopPropagation()}>
         <FirmaCanvas
           textoIntro="Dibuja la firma con el dedo o el ratón."
           textoConfirmar="Guardar firma"
+          alturaCanvas="130px"
           onFirmar={(dataUrl) => { onFirmar(dataUrl); onCerrar(); }}
           onCancelar={onCerrar}
         />

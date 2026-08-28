@@ -13,6 +13,16 @@ export type FirmaCanvasProps = {
   textoIntro?: string;
   /** Texto del botón de confirmar — por defecto, el de aceptar un presupuesto (Portal del cliente). */
   textoConfirmar?: string;
+  /**
+   * Alto CSS del lienzo — por defecto 200px (Portal del cliente / Ajustes
+   * de empresa, donde el panel vive en el flujo normal de la página, sin
+   * límite de alto). El editor de documentos lo abre dentro de un modal de
+   * tamaño fijo (pedido real, 28/08/2026: "no puede haber scroll donde
+   * firmo, tiene que ser un cuadrante fijo") — ahí pasa un valor menor para
+   * garantizar que el modal entero quepa sin scroll incluso en una ventana
+   * de navegador con poca altura visible.
+   */
+  alturaCanvas?: string;
 };
 
 /**
@@ -30,6 +40,7 @@ export function FirmaCanvas({
   onFirmar, onCancelar, enviando,
   textoIntro = 'Firma con el dedo o el ratón para aceptar el presupuesto.',
   textoConfirmar = 'Firmar y aceptar',
+  alturaCanvas = '200px',
 }: FirmaCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const dibujandoRef = useRef(false);
@@ -122,7 +133,7 @@ export function FirmaCanvas({
         height={280}
         style={{
           width: '100%',
-          height: '200px',
+          height: alturaCanvas,
           touchAction: 'none',
           background: 'var(--blanco)',
           border: '2px dashed var(--borde)',
