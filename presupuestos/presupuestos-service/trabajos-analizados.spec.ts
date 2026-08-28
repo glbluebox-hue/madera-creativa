@@ -203,6 +203,44 @@ describe('analizarTrabajos — margen real de proyectos finalizados (ampliación
     expect((trabajosA[0] as any).real.margenObjetivoPorcentaje).toBe(45); // nunca el 10 de B
   });
 
+  // Caso 11 (Histórico Inteligente, Fase 2B): tipoTrabajo del proyecto finalizado se refleja en el trabajo.
+  it('11. incluye tipoTrabajo de Proyecto.caracteristicas[] cuando el proyecto está finalizado', async () => {
+    await ClienteModel.create(clienteBase('c11', USUARIO_A));
+    await ProyectoModel.create(proyectoBase('p11', 'c11', USUARIO_A, {
+      caracteristicas: [{ clave: 'tipoTrabajo', valor: 'Cocina', origen: 'usuario', confirmadoPorUsuario: true, confianza: null, fecha: new Date().toISOString() }],
+    }));
+    await EmpresaModel.create({ usuarioId: USUARIO_A, margenObjetivoPorcentaje: 45 });
+
+    const trabajos = await svc.analizarTrabajos(USUARIO_A);
+    expect((trabajos[0] as any).tipoTrabajo).toBe('Cocina');
+  });
+
+  // Caso 12: tipoTrabajo también se refleja cuando el trabajo viene SOLO de un presupuesto (proyecto aún no finalizado).
+  it('12. incluye tipoTrabajo aunque el trabajo venga solo del margen previsto (proyecto no finalizado)', async () => {
+    await ClienteModel.create(clienteBase('c12', USUARIO_A));
+    await ProyectoModel.create(proyectoBase('p12', 'c12', USUARIO_A, {
+      estado: 'en_curso',
+      caracteristicas: [{ clave: 'tipoTrabajo', valor: 'Armario', origen: 'usuario', confirmadoPorUsuario: true, confianza: null, fecha: new Date().toISOString() }],
+    }));
+    await PresupuestoModel.create(presupuestoBase('pr12', 'c12', 'p12', USUARIO_A, 9000));
+    await EmpresaModel.create({ usuarioId: USUARIO_A, margenObjetivoPorcentaje: 45 });
+
+    const trabajos = await svc.analizarTrabajos(USUARIO_A);
+    const t = trabajos.find((x: any) => x.id === 'p12') as any;
+    expect(t.origenPrincipal).toBe('previsto');
+    expect(t.tipoTrabajo).toBe('Armario');
+  });
+
+  // Caso 13: sin tipoTrabajo guardado -> null, nunca inventado ni vacío ambiguo.
+  it('13. tipoTrabajo es null cuando el proyecto no lo tiene guardado', async () => {
+    await ClienteModel.create(clienteBase('c13', USUARIO_A));
+    await ProyectoModel.create(proyectoBase('p13', 'c13', USUARIO_A));
+    await EmpresaModel.create({ usuarioId: USUARIO_A, margenObjetivoPorcentaje: 45 });
+
+    const trabajos = await svc.analizarTrabajos(USUARIO_A);
+    expect((trabajos[0] as any).tipoTrabajo).toBeNull();
+  });
+
   // Caso 10: no sobrescribir un snapshot de margen previsto ya existente.
   it('10. no sobrescribe un analisisPrecio (previsto) ya congelado, aunque el proyecto ahora esté finalizado', async () => {
     await ClienteModel.create(clienteBase('c10', USUARIO_A));

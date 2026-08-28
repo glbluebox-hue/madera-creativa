@@ -43,6 +43,8 @@ export type TrabajoAnalizado = {
   titulo: string;
   clienteId: string;
   actualizado: string;
+  /** Tipo de trabajo (Histórico Inteligente, Fase 2A/2B) — de `Proyecto.caracteristicas[]`, clave `tipoTrabajo`. `null` si el proyecto no lo tiene guardado (opcional, nunca inferido). */
+  tipoTrabajo: string | null;
   /** Presente solo si el proyecto está `finalizado` con ingresos reales suficientes. */
   real: AnalisisPrecio | null;
   /** Presente solo si hay un presupuesto aceptado con datos suficientes (snapshot congelado al aceptar). */
@@ -51,6 +53,19 @@ export type TrabajoAnalizado = {
   principal: AnalisisPrecio;
   origenPrincipal: OrigenAnalisis | null;
 };
+
+/**
+ * Desviación en puntos porcentuales (margen real − margen previsto) de un
+ * trabajo — Histórico Inteligente, Fase 2B. Solo tiene sentido cuando
+ * AMBOS existen; `null` en cualquier otro caso, nunca una aproximación con
+ * un solo dato. Resta trivial sobre cifras ya calculadas por cada motor
+ * (`analizarPrecioPresupuesto`/`calcularMargenRealProyecto`) — no es una
+ * fórmula de margen nueva.
+ */
+export function desviacionPuntos(trabajo: TrabajoAnalizado): number | null {
+  if (!trabajo.real?.disponible || !trabajo.previsto?.disponible) return null;
+  return trabajo.real.margenPorcentaje - trabajo.previsto.margenPorcentaje;
+}
 
 export type AnalisisPrecio =
   | {

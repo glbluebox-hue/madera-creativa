@@ -1900,14 +1900,37 @@ export class PresupuestosService {
       EmpresaModel.findOne({ usuarioId }).select('margenObjetivoPorcentaje').lean().exec() as Promise<any>,
       this.analizarPresupuestosAceptados(usuarioId), // reutiliza la resolución/persistencia de "previsto" ya probada
       ProyectoModel.find({ usuarioId, estado: 'finalizado' })
-        .select('id clienteId proyecto movimientos horas tarifaHora creado')
+        .select('id clienteId proyecto movimientos horas tarifaHora creado caracteristicas')
         .lean()
         .exec(),
     ]);
     const margenObjetivoPorcentaje = empresa?.margenObjetivoPorcentaje ?? null;
 
+    /**
+     * `tipoTrabajo` (Histórico Inteligente, 2B) — se muestra junto a cada
+     * trabajo cuando existe, sea cual sea su origen principal (real o
+     * previsto). Los proyectos finalizados ya lo traen en la consulta de
+     * arriba (campo añadido al `.select()`); los que solo tienen un
+     * presupuesto aceptado, sin estar finalizados todavía, necesitan una
+     * consulta aparte — pero UN SOLO `$in` con los ids que de verdad
+     * faltan, nunca una consulta por trabajo (nunca N+1).
+     */
+    const idsConReal = new Set((proyectosFinalizados as any[]).map((p) => p.id));
+    const idsFaltantes = [...new Set(
+      (presupuestos as any[]).map((p) => p.proyectoId as string | undefined).filter((id): id is string => !!id && !idsConReal.has(id))
+    )];
+    const proyectosSoloCaracteristicas = idsFaltantes.length > 0
+      ? await ProyectoModel.find({ id: { $in: idsFaltantes }, usuarioId }).select('id caracteristicas').lean().exec()
+      : [];
+    const tipoTrabajoPorProyectoId = new Map<string, string>();
+    for (const p of [...(proyectosFinalizados as any[]), ...proyectosSoloCaracteristicas]) {
+      const caracteristica = Array.isArray(p.caracteristicas) ? p.caracteristicas.find((c: any) => c.clave === 'tipoTrabajo') : null;
+      if (caracteristica?.valor) tipoTrabajoPorProyectoId.set(p.id, caracteristica.valor);
+    }
+
     type Trabajo = {
       id: string; titulo: string; clienteId: string; actualizado: string;
+      tipoTrabajo: string | null;
       real: AnalisisPrecio | null; previsto: AnalisisPrecio | null;
       principal: AnalisisPrecio; origenPrincipal: 'real' | 'previsto' | null;
     };
@@ -1921,6 +1944,7 @@ export class PresupuestosService {
         titulo: proyecto.proyecto || 'Proyecto sin nombre',
         clienteId: proyecto.clienteId,
         actualizado: proyecto.creado, // Proyecto no lleva campo `actualizado` propio.
+        tipoTrabajo: tipoTrabajoPorProyectoId.get(proyecto.id) ?? null,
         real: real.disponible ? real : null,
         previsto: null,
         principal: real,
@@ -1956,6 +1980,7 @@ export class PresupuestosService {
           titulo: p.titulo as string,
           clienteId: p.clienteId as string,
           actualizado: (p.actualizado as string) || (p.creado as string),
+          tipoTrabajo: (p.proyectoId && tipoTrabajoPorProyectoId.get(p.proyectoId as string)) ?? null,
           real: null,
           previsto: previsto ?? null,
           principal: previstoResultado,
