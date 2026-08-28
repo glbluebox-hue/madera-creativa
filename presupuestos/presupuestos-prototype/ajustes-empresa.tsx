@@ -59,6 +59,7 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
   const [repepActivo, setRepepActivo] = useState(empresa.repepActivo);
   const [logoTamano, setLogoTamano] = useState(empresa.logoTamano || 187);
   const [tiempoInactividadMin, setTiempoInactividadMin] = useState<number | null>(empresa.tiempoInactividadMin);
+  const [margenObjetivoPorcentaje, setMargenObjetivoPorcentaje] = useState<number | null>(empresa.margenObjetivoPorcentaje);
   const [guardando, setGuardando] = useState(false);
   const [errorGuardar, setErrorGuardar] = useState('');
 
@@ -101,6 +102,7 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
       imagenResena,
       firmaEmpresa,
       tiempoInactividadMin,
+      margenObjetivoPorcentaje,
     });
     setGuardando(false);
     if (!ok) { setErrorGuardar('No se pudo guardar. Comprueba tu conexión e inténtalo de nuevo.'); return; }
@@ -253,6 +255,20 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
               <option value="180">3 horas</option>
             </select>
             <p className={styles.logoAyuda}>Si no se toca la aplicación durante este tiempo, se cierra la sesión sola y vuelve a la pantalla de acceso.</p>
+          </div>
+          <div className={styles.campo}>
+            <label className={styles.campoLabel}>🧠 Margen objetivo (%)</label>
+            <input
+              className={styles.input}
+              type="number"
+              min={0}
+              max={100}
+              step={0.5}
+              placeholder="Ej. 35"
+              value={margenObjetivoPorcentaje === null ? '' : String(margenObjetivoPorcentaje)}
+              onChange={(e) => setMargenObjetivoPorcentaje(e.target.value === '' ? null : Number(e.target.value))}
+            />
+            <p className={styles.logoAyuda}>Usado por Inteligencia de Precios para comparar el margen de cada presupuesto — sin configurar, esa sección no puede mostrar ninguna comparación.</p>
           </div>
           <div className={`${styles.campo} ${styles.full}`}>
             <label className={styles.campoLabel}>Enlace de reseñas de Google (Google My Business)</label>

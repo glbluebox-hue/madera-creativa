@@ -12,6 +12,7 @@ import './documento-variables-iniciales.js'; // registro de variables por efecto
 import { autoRellenarDatosCliente, type DatosClienteAutoRelleno } from './presupuestos-datos-cliente.js';
 import { formatoEuro, formatoFecha } from './calculos.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
+import { AnalisisPrecioPresupuesto } from './analisis-precio-presupuesto.js';
 import styles from './styles.module.css';
 
 export type PresupuestosListaGlobalProps = {
@@ -580,25 +581,38 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
             <div
               key={p.id}
               className={`${styles.filaLista} ${styles.filaListaClic}`}
-              style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem',
-                padding: '1rem', flexWrap: 'wrap',
-              }}
-              onClick={() => abrir(p)}
+              style={{ padding: '1rem' }}
             >
-              <div style={{ minWidth: 0, flex: '1 1 160px' }}>
-                <p style={{ margin: 0, fontWeight: 700, fontSize: '0.95rem' }}>{p.titulo}</p>
-                <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>
-                  {nombreDe(p.clienteId)} · {p.formato === 'lienzo' ? 'Plantilla libre (legado)' : p.formato === 'documento' ? 'Documento' : 'Narrativo'} · {formatoFecha(p.creado)}
-                </p>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'flex-end', minWidth: 0 }}>
-                <span style={{ fontWeight: 800, fontSize: '1.05rem', whiteSpace: 'nowrap' }}>{formatoEuro(p.precioTotal)}</span>
-                <div onClick={(e) => e.stopPropagation()}>{accionEnlace(p)}</div>
-                <div onClick={(e) => e.stopPropagation()}>
-                  <ConfirmarBorrado onConfirmar={() => borrar(p.id)} titulo="Borrar presupuesto" />
+              <div
+                style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem',
+                  flexWrap: 'wrap', cursor: 'pointer',
+                }}
+                onClick={() => abrir(p)}
+              >
+                <div style={{ minWidth: 0, flex: '1 1 160px' }}>
+                  <p style={{ margin: 0, fontWeight: 700, fontSize: '0.95rem' }}>{p.titulo}</p>
+                  <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>
+                    {nombreDe(p.clienteId)} · {p.formato === 'lienzo' ? 'Plantilla libre (legado)' : p.formato === 'documento' ? 'Documento' : 'Narrativo'} · {formatoFecha(p.creado)}
+                  </p>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'flex-end', minWidth: 0 }}>
+                  <span style={{ fontWeight: 800, fontSize: '1.05rem', whiteSpace: 'nowrap' }}>{formatoEuro(p.precioTotal)}</span>
+                  <div onClick={(e) => e.stopPropagation()}>{accionEnlace(p)}</div>
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <ConfirmarBorrado onConfirmar={() => borrar(p.id)} titulo="Borrar presupuesto" />
+                  </div>
                 </div>
               </div>
+              {/* Solo el snapshot ya congelado (presupuestos aceptados con datos
+                  suficientes) — esta lista mezcla TODOS los clientes, así que
+                  mostrar "Datos insuficientes" en cada borrador sería ruido
+                  (Inteligencia de Precios, Fase 1: "no dashboard sobrecargado"). */}
+              {p.analisisPrecio && (
+                <div onClick={(e) => e.stopPropagation()}>
+                  <AnalisisPrecioPresupuesto analisis={p.analisisPrecio} esSnapshot />
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -47,6 +47,8 @@ export type Empresa = {
   firmaEmpresa: string | null;
   /** Minutos de inactividad antes de cerrar sesión sola y volver al login — `null` = nunca (petición real, 25/08/2026). */
   tiempoInactividadMin: number | null;
+  /** Margen objetivo (%) del negocio (Inteligencia de Precios, Fase 1) — `null` = sin configurar; nunca se asume un valor por defecto. */
+  margenObjetivoPorcentaje: number | null;
 };
 
 /** Datos por defecto para el admin — marca Madera Creativa. */
@@ -75,6 +77,7 @@ const EMPRESA_ADMIN: Empresa = {
   imagenResena: cartelResenaMadera,
   firmaEmpresa: null,
   tiempoInactividadMin: null,
+  margenObjetivoPorcentaje: null,
 };
 
 /** Datos vacíos para usuarios normales — cada uno pone su propia marca. */
@@ -100,6 +103,7 @@ const EMPRESA_USUARIO: Empresa = {
   imagenResena: null,
   firmaEmpresa: null,
   tiempoInactividadMin: null,
+  margenObjetivoPorcentaje: null,
 };
 
 /**
@@ -168,6 +172,7 @@ export function useEmpresa(autenticado = false, esAdmin = false): {
           imagenResena: datos.imagenResena || inicial.imagenResena,
           firmaEmpresa: datos.firmaEmpresa || inicial.firmaEmpresa,
           tiempoInactividadMin: datos.tiempoInactividadMin ?? inicial.tiempoInactividadMin,
+          margenObjetivoPorcentaje: datos.margenObjetivoPorcentaje ?? inicial.margenObjetivoPorcentaje,
         });
       })
       .catch(() => { /* sin conexión: mantener valores por defecto */ })

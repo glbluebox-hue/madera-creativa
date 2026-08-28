@@ -8,6 +8,7 @@ import { FormularioCliente } from './formulario-cliente.js';
 import { AjustesEmpresa } from './ajustes-empresa.js';
 import { Facturas } from './facturas.js';
 import { SeccionPresupuestosContenedor } from './seccion-presupuestos-contenedor.js';
+import { InteligenciaPreciosVista } from './inteligencia-precios-vista.js';
 import { NotasVista } from './notas-vista.js';
 import { CodigosQRVista } from './codigos-qr-vista.js';
 import { SeccionDibujos } from './seccion-dibujos.js';
@@ -40,7 +41,7 @@ import logoMadera from './assets/logo.png';
 import styles from './styles.module.css';
 
 /** Secciones principales de la app. */
-type Seccion = 'inicio' | 'clientes' | 'presupuestos' | 'facturas' | 'notas' | 'proveedores' | 'dibujos' | 'codigosQR';
+type Seccion = 'inicio' | 'clientes' | 'presupuestos' | 'inteligenciaPrecios' | 'facturas' | 'notas' | 'proveedores' | 'dibujos' | 'codigosQR';
 
 /**
  * App de presupuestos de cliente para Madera Creativa.
@@ -319,6 +320,14 @@ export function PresupuestosPrototype() {
                 Motor Documental — vuelve en el Incremento 2 apuntando ya al
                 editor nuevo (ver ARQUITECTURA-MOTOR-DOCUMENTAL.md). */}
             <button
+              className={`${styles.sidebarNavItem} ${seccion === 'inteligenciaPrecios' ? styles.sidebarNavItemActivo : ''}`}
+              onClick={() => cambiarSeccion('inteligenciaPrecios')}
+              data-tutorial-id="nav-inteligencia-precios"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg>
+              Inteligencia de precios
+            </button>
+            <button
               className={`${styles.sidebarNavItem} ${seccion === 'facturas' ? styles.sidebarNavItemActivo : ''}`}
               onClick={() => cambiarSeccion('facturas')}
               data-tutorial-id="nav-facturas"
@@ -495,7 +504,7 @@ export function PresupuestosPrototype() {
             Inicio
           </button>
           <p className={styles.barraVolverTitulo}>
-            {seccion === 'presupuestos' ? 'Presupuestos' : seccion === 'facturas' ? 'Facturas' : seccion === 'notas' ? 'Notas' : seccion === 'dibujos' ? 'Pizarra de medición' : seccion === 'codigosQR' ? 'Código QR' : 'Proveedores'}
+            {seccion === 'presupuestos' ? 'Presupuestos' : seccion === 'inteligenciaPrecios' ? 'Inteligencia de precios' : seccion === 'facturas' ? 'Facturas' : seccion === 'notas' ? 'Notas' : seccion === 'dibujos' ? 'Pizarra de medición' : seccion === 'codigosQR' ? 'Código QR' : 'Proveedores'}
           </p>
           <div style={{ width: 56, flexShrink: 0 }} />
         </div>
@@ -550,6 +559,11 @@ export function PresupuestosPrototype() {
             onActualizarEmpresa={actualizar}
             onCrearProyecto={alCrearProyectoRapido}
           />
+        )}
+
+        {/* ── SECCIÓN INTELIGENCIA DE PRECIOS (Fase 1) ── */}
+        {seccion === 'inteligenciaPrecios' && (
+          <InteligenciaPreciosVista empresa={empresa} />
         )}
 
         {/* ── SECCIÓN FACTURAS ── */}

@@ -913,6 +913,8 @@ export const esquemaEmpresa = z.object({
   logoTamano: z.number().min(40).max(400).optional().default(187),
   /** Minutos de inactividad antes de cerrar sesión sola — `null` = nunca. Ver `EmpresaSchema.tiempoInactividadMin` en `cliente.model.ts`. */
   tiempoInactividadMin: z.number().int().min(1).max(1440).nullable().optional().default(null),
+  /** Margen objetivo (%) del negocio (Inteligencia de Precios, Fase 1) — `null` = sin configurar, nunca se asume un valor por defecto. Ver `EmpresaSchema.margenObjetivoPorcentaje` en `cliente.model.ts`. */
+  margenObjetivoPorcentaje: z.number().min(0).max(100).nullable().optional().default(null),
   /**
    * Enlace de Google My Business — destino de "Pedir reseña" (ver
    * `enlace-resena.model.ts`). Se sirve dentro de un atributo `href` en

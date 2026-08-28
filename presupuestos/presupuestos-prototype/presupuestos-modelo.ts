@@ -63,6 +63,15 @@ export type PresupuestoMC = {
    * "Generar enlace" rompía en silencio el que ya funcionaba).
    */
   enlaceActivoExpiraEn?: string | null;
+  /**
+   * Snapshot del análisis de precio (Inteligencia de Precios, Fase 1),
+   * congelado por el servidor al aceptar el presupuesto — ver
+   * `AnalisisPrecio` en `inteligencia-precios.ts`. Ausente en presupuestos
+   * creados antes de esta fase, o aceptados sin datos suficientes (sin
+   * proyecto vinculado, sin costes registrados, o sin margen objetivo
+   * configurado en Ajustes de empresa) — nunca tratar su ausencia como cero.
+   */
+  analisisPrecio?: import('./inteligencia-precios.js').AnalisisPrecio;
 };
 
 /** Vista pública de un presupuesto (Portal del cliente) — lista blanca, ver `obtenerPresupuestoPublico` en el backend. */

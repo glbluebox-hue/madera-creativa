@@ -14,6 +14,7 @@ import { procesarRecursosDocumento, borrarRecursosDocumentoHuerfanos } from './d
 import { esGastoPeriodicoDeducible } from './gasto-periodico-fiscal.js';
 import { subirORecuperarRecurso } from './documento-recursos-biblioteca.js';
 import type { DocumentoMC, TemaMC, RecursoMC } from './documento-modelo.js';
+import { analizarPrecioPresupuesto } from './inteligencia-precios.js';
 
 /**
  * Checklist base de carpintería (Fase 1 — "presupuesto aceptado") —
@@ -240,6 +241,8 @@ export type EmpresaDoc = {
   firmaEmpresa: string;
   /** Minutos de inactividad antes de cerrar sesión sola — `null` = nunca. */
   tiempoInactividadMin: number | null;
+  /** Margen objetivo (%) del negocio (Inteligencia de Precios, Fase 1) — `null` = sin configurar. */
+  margenObjetivoPorcentaje: number | null;
 };
 
 // ── Portal del cliente (enlace público de un presupuesto) ──────────────────────
@@ -704,6 +707,7 @@ export class PresupuestosService {
       imagenResena: (doc as any).imagenResena || '',
       firmaEmpresa: (doc as any).firmaEmpresa || '',
       tiempoInactividadMin: (doc as any).tiempoInactividadMin ?? null,
+      margenObjetivoPorcentaje: (doc as any).margenObjetivoPorcentaje ?? null,
     };
   }
 
@@ -738,6 +742,7 @@ export class PresupuestosService {
       imagenResena: (doc as any).imagenResena || '',
       firmaEmpresa: (doc as any).firmaEmpresa || '',
       tiempoInactividadMin: (doc as any).tiempoInactividadMin ?? null,
+      margenObjetivoPorcentaje: (doc as any).margenObjetivoPorcentaje ?? null,
     };
   }
 
@@ -2110,6 +2115,12 @@ export class PresupuestosService {
    *   usuario ya hubiera ajustado a mano.
    * - Notificación push al propio dueño del presupuesto (no al admin —
    *   este evento es sobre el negocio del propio usuario).
+   * - `Presupuesto.analisisPrecio` → snapshot congelado del análisis de
+   *   margen (Inteligencia de Precios, Fase 1, `inteligencia-precios.ts`) —
+   *   "lo que pensábamos cuando se aceptó", nunca recalculado después. Solo
+   *   se guarda si hay datos suficientes (proyecto con costes registrados y
+   *   margen objetivo configurado); si no, se deja sin escribir en vez de
+   *   guardar un análisis a medias.
    */
   private async ejecutarConsecuenciasAceptacion(presupuesto: Record<string, unknown>, usuarioId: string): Promise<void> {
     const clienteId = presupuesto.clienteId as string;
@@ -2132,6 +2143,19 @@ export class PresupuestosService {
         cambios.presupuesto = (presupuesto.precioTotal as number) || 0;
       }
       await ProyectoModel.findOneAndUpdate({ id: proyecto.id, usuarioId }, { $set: cambios }).exec();
+    }
+
+    const empresa = await EmpresaModel.findOne({ usuarioId }).lean().exec() as any;
+    const analisis = analizarPrecioPresupuesto(
+      (presupuesto.precioTotal as number) || 0,
+      proyecto,
+      empresa?.margenObjetivoPorcentaje ?? null
+    );
+    if (analisis.disponible) {
+      await PresupuestoModel.findOneAndUpdate(
+        { id: presupuesto.id, usuarioId },
+        { $set: { analisisPrecio: { ...analisis, fecha: new Date().toISOString() } } }
+      ).exec();
     }
 
     // Cobros pendientes (roadmap, 18/08/2026) — se generan solo la primera

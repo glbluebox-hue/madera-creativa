@@ -4,6 +4,8 @@ import type { PresupuestoMC } from './presupuestos-modelo.js';
 import type { Empresa } from './use-empresa.js';
 import { AbrirDocumento } from './abrir-documento.js';
 import { formatoEuroPrivado, formatoFecha } from './calculos.js';
+import { analizarPrecioPresupuesto } from './inteligencia-precios.js';
+import { AnalisisPrecioPresupuesto } from './analisis-precio-presupuesto.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
 
@@ -77,24 +79,35 @@ export function TabPresupuestosProyecto({ cliente, proyecto, empresa, onActualiz
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-          {presupuestos.map((p) => (
-            <button
-              key={p.id}
-              className={styles.filaLista}
-              onClick={() => setEditor(p)}
-              style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap',
-                padding: '1rem', width: '100%', textAlign: 'left', cursor: 'pointer',
-                border: 'none', background: 'var(--fondo-panel)', font: 'inherit', color: 'inherit',
-              }}
-            >
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                <strong style={{ fontSize: '0.9rem' }}>{p.titulo}</strong>
-                <span style={{ fontSize: '0.72rem', color: 'var(--topo-muy-claro)' }}>{formatoFecha(p.creado)}</span>
+          {presupuestos.map((p) => {
+            // Snapshot congelado si ya se aceptó (Inteligencia de Precios,
+            // Fase 1) — nunca recalculado; en vivo (con el `proyecto` ya
+            // cargado en esta pantalla) mientras sigue en borrador.
+            const analisis = p.estado === 'aceptado' && p.analisisPrecio
+              ? p.analisisPrecio
+              : analizarPrecioPresupuesto(p.precioTotal, proyecto, empresa.margenObjetivoPorcentaje);
+            return (
+              <div key={p.id} className={styles.filaLista} style={{ padding: '1rem' }}>
+                <button
+                  onClick={() => setEditor(p)}
+                  style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap',
+                    width: '100%', textAlign: 'left', cursor: 'pointer',
+                    border: 'none', padding: 0, background: 'transparent', font: 'inherit', color: 'inherit',
+                  }}
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                    <strong style={{ fontSize: '0.9rem' }}>{p.titulo}</strong>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--topo-muy-claro)' }}>{formatoFecha(p.creado)}</span>
+                  </div>
+                  <strong style={{ fontSize: '0.95rem' }}>{formatoEuroPrivado(p.precioTotal, false)}</strong>
+                </button>
+                <div onClick={(e) => e.stopPropagation()}>
+                  <AnalisisPrecioPresupuesto analisis={analisis} esSnapshot={p.estado === 'aceptado' && !!p.analisisPrecio} />
+                </div>
               </div>
-              <strong style={{ fontSize: '0.95rem' }}>{formatoEuroPrivado(p.precioTotal, false)}</strong>
-            </button>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

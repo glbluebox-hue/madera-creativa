@@ -240,6 +240,15 @@ const EmpresaSchema = new Schema({
    */
   tiempoInactividadMin: { type: Number, default: null },
   /**
+   * Margen objetivo (%) del negocio (Inteligencia de Precios, Fase 1) —
+   * usado por `inteligencia-precios.ts` para comparar el margen calculado
+   * de cada presupuesto contra el objetivo del propio negocio. `null` =
+   * sin configurar todavía: nunca se asume un 35% ni ningún otro valor por
+   * defecto, así que un negocio que no ha entrado en Ajustes de empresa ve
+   * "Datos insuficientes" en vez de una comparación inventada.
+   */
+  margenObjetivoPorcentaje: { type: Number, default: null },
+  /**
    * Enlace de la ficha de Google My Business del negocio (sección
    * "Solicitud de reseñas", 20/08/2026) — destino final de los enlaces/QR
    * individuales por cliente (`enlace-resena.model.ts`). Por empresa, no
@@ -398,6 +407,32 @@ const CobroSchema = new Schema(
 );
 
 /**
+ * Snapshot del análisis de precio (Inteligencia de Precios, Fase 1) —
+ * congelado en el momento en que se acepta el presupuesto
+ * (`ejecutarConsecuenciasAceptacion`, `inteligencia-precios.ts`), nunca
+ * recalculado retroactivamente: es "lo que pensábamos cuando se aceptó",
+ * no un valor en vivo. Antes de la aceptación, la interfaz calcula el
+ * análisis en el momento (mismo motor, en el frontend) sin persistir nada
+ * — este subdocumento solo existe para poder comparar más adelante ese
+ * cálculo original con el coste/margen real del proyecto ya terminado
+ * (preparación para la fase futura de Histórico, ver la especificación).
+ * Ausente (`null`) en presupuestos creados antes de esta fase o que nunca
+ * se aceptaron con datos suficientes — nunca tratar su ausencia como cero.
+ */
+const AnalisisPrecioSchema = new Schema(
+  {
+    precio: { type: Number, required: true },
+    costeEstimado: { type: Number, required: true },
+    margenPorcentaje: { type: Number, required: true },
+    margenObjetivoPorcentaje: { type: Number, required: true },
+    diferenciaPuntos: { type: Number, required: true },
+    estado: { type: String, enum: ['por_encima', 'cerca', 'por_debajo'], required: true },
+    fecha: { type: String, required: true },
+  },
+  { _id: false }
+);
+
+/**
  * Esquema de presupuesto — tres formatos conviven en la misma colección,
  * `formato` explícito, nunca inferido:
  * - `'simple'` (Fase 5, sin cambios): descripción + alcance (bullets sin
@@ -469,6 +504,14 @@ const PresupuestoSchema = new Schema({
    * `actualizarCobros`.
    */
   cobros: { type: [CobroSchema], default: [] },
+  /**
+   * Snapshot del análisis de precio en el momento de la aceptación —
+   * EXCLUIDO a propósito de `esquemaPresupuestoMC` (mismo patrón que
+   * `estado`/`firmaClienteUrl`/`cobros`), así que un guardado normal del
+   * editor nunca puede pisarlo; solo lo escribe
+   * `ejecutarConsecuenciasAceptacion`. Ver `AnalisisPrecioSchema` arriba.
+   */
+  analisisPrecio: { type: AnalisisPrecioSchema, default: null },
 });
 PresupuestoSchema.index({ usuarioId: 1, clienteId: 1, creado: -1 });
 

@@ -1141,6 +1141,7 @@ export async function obtenerEmpresa(): Promise<Empresa> {
     imagenResena: data.imagenResena || null,
     firmaEmpresa: data.firmaEmpresa || null,
     tiempoInactividadMin: data.tiempoInactividadMin ?? null,
+    margenObjetivoPorcentaje: data.margenObjetivoPorcentaje ?? null,
   };
 }
 
@@ -1176,6 +1177,7 @@ export async function guardarEmpresa(empresa: Partial<Empresa>): Promise<Empresa
     imagenResena: data.imagenResena || null,
     firmaEmpresa: data.firmaEmpresa || null,
     tiempoInactividadMin: data.tiempoInactividadMin ?? null,
+    margenObjetivoPorcentaje: data.margenObjetivoPorcentaje ?? null,
   };
 }
 
