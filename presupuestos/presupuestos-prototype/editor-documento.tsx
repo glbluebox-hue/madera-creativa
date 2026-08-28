@@ -1469,17 +1469,6 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
             €
           </label>
         )}
-        {!esPlantilla && precioVinculado !== undefined && (
-          <button
-            type="button"
-            className={styles.btn}
-            style={{ fontSize: '0.8rem', fontWeight: 600, padding: '0.3rem 0.6rem' }}
-            onClick={abrirInteligenciaPrecios}
-            title="Analiza el precio de este presupuesto frente a tu coste y busca trabajos parecidos en tu propio histórico — no es generación de texto."
-          >
-            🧠 Inteligencia de precios
-          </button>
-        )}
         {onCambiarCliente && clientesDisponibles ? (
           <button
             className={styles.btn}
@@ -1561,6 +1550,15 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
         >
           ✨ IA del presupuesto
         </button>
+        {!esPlantilla && precioVinculado !== undefined && (
+          <button
+            className={editorStyles.btnHerramienta}
+            onClick={abrirInteligenciaPrecios}
+            title="Analiza el precio de este presupuesto frente a tu coste y busca trabajos parecidos en tu propio histórico — no es generación de texto."
+          >
+            🧠 Inteligencia de precios
+          </button>
+        )}
       </div>
 
       {selectorComponentesAbierto && (
