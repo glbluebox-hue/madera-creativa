@@ -75,6 +75,7 @@ import {
   esquemaEstadoClienteEntrada,
   esquemaPresupuestoClienteEntrada,
   esquemaCaracteristicaEntrada,
+  esquemaTrabajoExtraEntrada,
   esquemaAdjuntoNuevoEntrada,
   esquemaActualizarCobros,
   esquemaNotifPrefs,
@@ -1264,6 +1265,12 @@ export function run() {
   /** Histórico Inteligente (Fase 2A) — ver `svc.guardarCaracteristicaProyecto`. */
   app.put('/proyectos/:id/caracteristica', requireAuth, validar(esquemaCaracteristicaEntrada), async (req: AuthRequest, res) => {
     try { res.json(await svc.guardarCaracteristicaProyecto(req.params.id, req.usuarioId!, req.body.clave, req.body.valor)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  /** Trabajo extra durante la obra (pedido real, 28/08/2026) — ver `svc.anadirTrabajoExtraProyecto`. */
+  app.post('/proyectos/:id/trabajo-extra', requireAuth, validar(esquemaTrabajoExtraEntrada), async (req: AuthRequest, res) => {
+    try { res.json(await svc.anadirTrabajoExtraProyecto(req.params.id, req.usuarioId!, req.body.descripcion, req.body.precio)); }
     catch (err) { responderError(req, res, err); }
   });
 

@@ -332,6 +332,16 @@ export type Proyecto = {
   fotos: FotoProyecto[];
   /** Características estructuradas del trabajo (Histórico Inteligente, Fase 2A) — vacío en todo proyecto existente, nunca inferido. */
   caracteristicas?: CaracteristicaTrabajo[];
+  /** Trabajos extra acordados con el cliente durante la obra (pedido real, 28/08/2026) — cada uno suma su `precio` al `presupuesto` acordado en el momento de añadirlo. */
+  trabajosExtra?: TrabajoExtra[];
+};
+
+/** Un trabajo extra acordado con el cliente después del presupuesto inicial, ya en obra. */
+export type TrabajoExtra = {
+  id: string;
+  descripcion: string;
+  precio: number;
+  fecha: string;
 };
 
 /**

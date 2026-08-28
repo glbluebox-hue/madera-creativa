@@ -25,6 +25,7 @@ import { TabDibujos } from './tab-dibujos.js';
 import { TabPresupuestosProyecto } from './tab-presupuestos-proyecto.js';
 import { TabContratos } from './tab-contratos.js';
 import { PreguntaTipoTrabajo } from './pregunta-tipo-trabajo.js';
+import { TrabajoExtraModal } from './trabajo-extra-modal.js';
 import type { Empresa } from './use-empresa.js';
 import styles from './styles.module.css';
 
@@ -91,6 +92,9 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
   const [errorEstado, setErrorEstado] = useState('');
   /** Histórico Inteligente (Fase 2A) — se abre solo al marcar "Finalizado" un proyecto que todavía no tiene la característica `tipoTrabajo`; nunca bloquea el cambio de estado, que ya se guardó antes de mostrarse. */
   const [preguntarTipoTrabajo, setPreguntarTipoTrabajo] = useState(false);
+  const [trabajoExtraAbierto, setTrabajoExtraAbierto] = useState(false);
+  const [anadiendoTrabajoExtra, setAnadiendoTrabajoExtra] = useState(false);
+  const [errorTrabajoExtra, setErrorTrabajoExtra] = useState('');
   /** Contador-disparador: cada incremento fuerza `TabDatos` a abrirse en modo edición (botón "Editar" de la cabecera, ver más abajo). */
   const [abrirEdicionDatos, setAbrirEdicionDatos] = useState(0);
   const editarDatos = () => { setPestana('proyectos'); setAbrirEdicionDatos((n) => n + 1); };
@@ -207,6 +211,21 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
       .catch(() => {});
   };
 
+  /**
+   * "+ Trabajo extra" (pedido real, 28/08/2026) — a diferencia de
+   * `tipoTrabajo`, esto sí cambia dinero real (el presupuesto acordado),
+   * así que aquí SÍ se muestra el error si falla, en vez de tragárselo en
+   * silencio.
+   */
+  const anadirTrabajoExtra = (descripcion: string, precio: number) => {
+    setAnadiendoTrabajoExtra(true);
+    setErrorTrabajoExtra('');
+    api.anadirTrabajoExtraProyecto(proyecto.id, descripcion, precio)
+      .then((actualizado) => { onActualizarProyecto(actualizado); setTrabajoExtraAbierto(false); })
+      .catch(() => setErrorTrabajoExtra('No se pudo añadir el trabajo extra — inténtalo de nuevo.'))
+      .finally(() => setAnadiendoTrabajoExtra(false));
+  };
+
   return (
     <div>
       {/* Barra volver móvil — tipo iOS */}
@@ -314,6 +333,8 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
           privado={privado}
           onIrAProyecto={() => setPestana('proyectos')}
           onIrADocumentos={() => setPestana('proyectos')}
+          onAnadirTrabajoExtra={() => setTrabajoExtraAbierto(true)}
+          errorTrabajoExtra={errorTrabajoExtra}
         />
       )}
 
@@ -496,6 +517,14 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
 
       {preguntarTipoTrabajo && (
         <PreguntaTipoTrabajo onConfirmar={guardarTipoTrabajo} onSaltar={() => setPreguntarTipoTrabajo(false)} />
+      )}
+
+      {trabajoExtraAbierto && (
+        <TrabajoExtraModal
+          onConfirmar={anadirTrabajoExtra}
+          onCerrar={() => setTrabajoExtraAbierto(false)}
+          enviando={anadiendoTrabajoExtra}
+        />
       )}
     </div>
   );

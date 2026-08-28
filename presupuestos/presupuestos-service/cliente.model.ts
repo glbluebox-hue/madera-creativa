@@ -172,6 +172,25 @@ const CaracteristicaTrabajoSchema = new Schema(
   { _id: false }
 );
 
+/**
+ * Trabajo extra acordado con el cliente durante la obra, después de fijar
+ * el presupuesto inicial (pedido real, 28/08/2026: "el cliente me pide
+ * otras cosas durante la obra, ¿cómo sumo esto al presupuesto?"). Cada
+ * entrada queda como registro (qué se acordó y por cuánto) — el efecto en
+ * el número "Presupuesto acordado" es un incremento atómico junto con el
+ * `$push`, nunca un reemplazo, para no perder de vista el presupuesto
+ * original si algún día hace falta desglosarlo.
+ */
+const TrabajoExtraSchema = new Schema(
+  {
+    id: { type: String, required: true },
+    descripcion: { type: String, required: true },
+    precio: { type: Number, required: true },
+    fecha: { type: String, required: true },
+  },
+  { _id: false }
+);
+
 const ProyectoSchema = new Schema({
   id: { type: String, required: true, unique: true, index: true },
   usuarioId: { type: String, required: true, index: true, default: 'admin' },
@@ -200,6 +219,7 @@ const ProyectoSchema = new Schema({
   estancias: { type: [EstanciaSchema], default: [] },
   tareas: { type: [TareaSchema], default: [] },
   movimientos: { type: [MovimientoSchema], default: [] },
+  trabajosExtra: { type: [TrabajoExtraSchema], default: [] },
   horas: { type: [HorasSchema], default: [] },
   adjuntos: { type: [AdjuntoSchema], default: [] },
   fotos: { type: [FotoSchema], default: [] },

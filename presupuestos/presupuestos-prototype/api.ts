@@ -722,6 +722,21 @@ export async function guardarCaracteristicaProyecto(proyectoId: string, clave: s
   return res.json();
 }
 
+/**
+ * Añade un trabajo extra acordado durante la obra (pedido real,
+ * 28/08/2026) — el servidor suma `precio` al presupuesto acordado en la
+ * misma operación atómica, ver `svc.anadirTrabajoExtraProyecto`.
+ */
+export async function anadirTrabajoExtraProyecto(proyectoId: string, descripcion: string, precio: number): Promise<Proyecto> {
+  const res = await fetchConAuth(`/proyectos/${proyectoId}/trabajo-extra`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ descripcion, precio }),
+  });
+  await comprobarRespuesta(res, 'No se pudo añadir el trabajo extra');
+  return res.json();
+}
+
 export async function cambiarPresupuestoProyecto(proyectoId: string, presupuesto: number): Promise<Proyecto> {
   const res = await fetchConAuth(`/proyectos/${proyectoId}/presupuesto`, {
     method: 'PUT',

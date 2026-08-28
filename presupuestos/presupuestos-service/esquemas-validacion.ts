@@ -322,6 +322,24 @@ export const esquemaCaracteristicaEntrada = z.object({
   valor: z.string().trim().min(1).max(300),
 });
 
+/**
+ * Trabajo extra acordado durante la obra (pedido real, 28/08/2026) — ver
+ * `TrabajoExtraSchema` en `cliente.model.ts`. `id`/`fecha` los asigna
+ * siempre el servidor (ver `anadirTrabajoExtraProyecto`).
+ */
+const esquemaTrabajoExtra = z.object({
+  id: z.string().min(1).max(64),
+  descripcion: z.string().min(1).max(300),
+  precio: z.number().finite(),
+  fecha: z.string().min(1).max(64),
+});
+
+/** Cuerpo de POST /proyectos/:id/trabajo-extra — el usuario solo aporta descripción y precio. */
+export const esquemaTrabajoExtraEntrada = z.object({
+  descripcion: z.string().trim().min(1).max(300),
+  precio: z.number().finite().positive(),
+});
+
 const esquemaNota = z.object({
   id: z.string().min(1).max(64),
   fecha: z.string().min(1).max(32),
@@ -452,6 +470,8 @@ export const esquemaProyecto = z.object({
   estancias: arrayOpcional(esquemaEstancia),
   tareas: arrayOpcional(esquemaTarea),
   movimientos: arrayOpcional(esquemaMovimiento),
+  /** Sin esto, el PUT genérico de proyecto borraría en silencio los trabajos extra ya guardados al no reconocer el campo (mismo motivo que `caracteristicas`, arriba). */
+  trabajosExtra: arrayOpcional(esquemaTrabajoExtra),
   horas: arrayOpcional(esquemaRegistroHoras),
   adjuntos: arrayOpcional(esquemaAdjunto),
   fotos: arrayOpcional(esquemaFotoProyecto),

@@ -686,6 +686,27 @@ export class PresupuestosService {
     return this.limpiarProyecto(doc);
   }
 
+  /**
+   * Añade un trabajo extra acordado con el cliente durante la obra (pedido
+   * real, 28/08/2026: "el cliente me pide otras cosas durante la obra,
+   * ¿cómo sumo esto al presupuesto?"). Un solo `findOneAndUpdate` atómico:
+   * `$push` la entrada (queda como registro de qué se acordó y por
+   * cuánto) y `$inc` el presupuesto acordado en la misma operación — nunca
+   * dos escrituras separadas, para que no puedan quedar desincronizados
+   * por una carrera entre dos peticiones simultáneas.
+   */
+  async anadirTrabajoExtraProyecto(proyectoId: string, usuarioId: string, descripcion: string, precio: number): Promise<ProyectoDoc> {
+    await conectar();
+    const trabajoExtra = { id: randomUUID(), descripcion, precio, fecha: new Date().toISOString() };
+    const doc = await ProyectoModel.findOneAndUpdate(
+      { id: proyectoId, usuarioId },
+      { $push: { trabajosExtra: trabajoExtra }, $inc: { presupuesto: precio } },
+      { new: true }
+    ).lean().exec();
+    if (!doc) throw new ErrorDeNegocio('Proyecto no encontrado', 400);
+    return this.limpiarProyecto(doc);
+  }
+
   /** Cambia el presupuesto acordado a mano. */
   async cambiarPresupuestoProyecto(proyectoId: string, usuarioId: string, presupuesto: number): Promise<ProyectoDoc> {
     await conectar();

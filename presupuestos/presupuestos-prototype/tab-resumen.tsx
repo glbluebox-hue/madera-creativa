@@ -17,6 +17,10 @@ export type TabResumenProps = {
   onIrAProyecto: () => void;
   /** Va a la pestaña de Notas/Documentos. */
   onIrADocumentos: () => void;
+  /** Abre el modal "+ Trabajo extra" (pedido real, 28/08/2026). */
+  onAnadirTrabajoExtra: () => void;
+  /** Error del último intento de añadir un trabajo extra, si lo hay. */
+  errorTrabajoExtra?: string;
 };
 
 type ItemActividad = {
@@ -33,7 +37,7 @@ type ItemActividad = {
  * proyecto actual, cifras clave, actividad reciente real (facturas y
  * movimientos, no datos de ejemplo) y los documentos más recientes.
  */
-export function TabResumen({ proyecto, facturasGasto, adjuntos, totalIngresos, privado, onIrAProyecto, onIrADocumentos }: TabResumenProps) {
+export function TabResumen({ proyecto, facturasGasto, adjuntos, totalIngresos, privado, onIrAProyecto, onIrADocumentos, onAnadirTrabajoExtra, errorTrabajoExtra }: TabResumenProps) {
   const pendiente = Math.max(0, (proyecto.presupuesto || 0) - totalIngresos);
   const foto = (proyecto.fotos ?? [])[0];
 
@@ -45,6 +49,10 @@ export function TabResumen({ proyecto, facturasGasto, adjuntos, totalIngresos, p
     ...proyecto.movimientos.map((m): ItemActividad => ({
       fecha: m.fecha, icono: 'cobro', titulo: m.tipo === 'ingreso' ? 'Cobro registrado' : 'Gasto registrado', sub: m.concepto || m.categoria,
       importe: m.importe, tipoImporte: m.tipo,
+    })),
+    ...(proyecto.trabajosExtra ?? []).map((t): ItemActividad => ({
+      fecha: t.fecha, icono: 'cobro', titulo: 'Trabajo extra añadido al presupuesto', sub: t.descripcion,
+      importe: t.precio, tipoImporte: 'ingreso',
     })),
     ...(proyecto.notas ?? []).map((n): ItemActividad => ({
       fecha: n.fecha, icono: 'nota', titulo: 'Nota añadida', sub: n.texto,
@@ -73,8 +81,20 @@ export function TabResumen({ proyecto, facturasGasto, adjuntos, totalIngresos, p
       </div>
 
       <div className={styles.statStrip}>
-        <div className={styles.statBox}><div className={styles.statBoxValor}>{formatoEuroPrivado(proyecto.presupuesto || 0, privado)}</div><div className={styles.statBoxLabel}>Presupuesto acordado</div></div>
+        <div className={styles.statBox}>
+          <div className={styles.statBoxValor}>{formatoEuroPrivado(proyecto.presupuesto || 0, privado)}</div>
+          <div className={styles.statBoxLabel}>Presupuesto acordado</div>
+          <button
+            className={styles.btnIcono}
+            style={{ marginTop: '0.3rem', fontSize: '0.72rem', fontWeight: 600, color: 'var(--azul)' }}
+            onClick={onAnadirTrabajoExtra}
+            title="Añade algo que el cliente ha pedido durante la obra — se suma a este total"
+          >
+            + Trabajo extra
+          </button>
+        </div>
         <div className={styles.statBox}><div className={styles.statBoxValor}>{facturasGasto.length}</div><div className={styles.statBoxLabel}>Facturas de gasto</div></div>
+        {errorTrabajoExtra && <p style={{ color: 'var(--rojo)', fontSize: '0.78rem', margin: 0, gridColumn: '1 / -1' }}>{errorTrabajoExtra}</p>}
         <div className={styles.statBox}><div className={styles.statBoxValor}>{formatoEuroPrivado(totalIngresos, privado)}</div><div className={styles.statBoxLabel}>Cobrado</div></div>
         <div className={styles.statBox}><div className={styles.statBoxValor} style={{ color: pendiente > 0 ? 'var(--rojo)' : 'var(--verde)' }}>{formatoEuroPrivado(pendiente, privado)}</div><div className={styles.statBoxLabel}>Pendiente</div></div>
       </div>
