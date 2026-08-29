@@ -72,6 +72,25 @@ describe('resolverUrlsFactura — token propio en vez de URL firmada de R2', () 
   });
 });
 
+describe('guardarFactura (reguardado) nunca borra la clave del archivo privado', () => {
+  it('editar un campo cualquiera (ej. importe) preserva imagenClave aunque el frontend nunca la reenvíe', async () => {
+    await svc.guardarFactura(facturaConImagenPrivada('f1'), USUARIO_A);
+    const leida = await svc.obtenerFactura('f1', USUARIO_A);
+    // Lo que el frontend recibe (y por tanto reenviaría en un guardado
+    // posterior) nunca trae `imagenClave` — `resolverUrlsFactura` la quita
+    // antes de responder. Simula exactamente ese reguardado real: el mismo
+    // objeto que llegó del servidor, solo con el importe cambiado.
+    expect((leida as any).imagenClave).toBeUndefined();
+    await svc.guardarFactura({ ...(leida as any), importe: 999 }, USUARIO_A);
+
+    const trasEditar = await svc.obtenerFactura('f1', USUARIO_A);
+    expect((trasEditar as any).importe).toBe(999);
+    expect(trasEditar?.imagen).toMatch(/^\/almacenamiento-privado\?token=/);
+    const token = decodeURIComponent((trasEditar?.imagen as string).split('token=')[1]);
+    expect(verificarTokenArchivo(token)).toBe('facturas-privado/f1-imagen');
+  });
+});
+
 describe('Aislamiento: un usuario ajeno nunca obtiene un token para una factura que no es suya', () => {
   it('obtenerFactura de otro usuario devuelve null -- nunca llega a construirse ningún token', async () => {
     await svc.guardarFactura(facturaConImagenPrivada('f1'), USUARIO_A);

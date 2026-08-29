@@ -1360,9 +1360,23 @@ export class PresupuestosService {
     // el campo `*Clave` correspondiente. Para facturas antiguas sin clave
     // propia, se sigue pudiendo derivar de la URL con `claveDesdeUrl()`
     // (compatibilidad, ver más abajo).
+    // Bug real, 29/08/2026: `resolverUrlsFactura` (más arriba) quita los
+    // campos `*Clave` de toda factura antes de enviarla al frontend (nunca
+    // debe ver ni reenviar la referencia interna de almacenamiento) — así
+    // que en CUALQUIER reguardado (editar importe, categoría, fecha...) el
+    // objeto que llega aquí en `factura` nunca trae su propio `imagenClave`/
+    // `imagenesClaves`/`pdfOriginalClave`/`paginas[].clave`, aunque el
+    // archivo siga siendo el mismo. Si esas claves solo se tomaran de
+    // `factura` (como antes), CADA reguardado real desde el frontend las
+    // borraría a `''`/`undefined` — la factura se queda sin forma fiable de
+    // servir su propio archivo (justo el fallo que impedía comprobar en
+    // producción el arreglo de las URLs firmadas de R2). Por eso, cuando no
+    // hay subida nueva, se cae primero en la clave que trajera `factura`
+    // (permite a llamadas internas/tests fijarla explícitamente) y solo
+    // después en la que ya tenía el documento en Mongo (`anterior`).
     const resultadoImagen = await subirSiEsBase64((factura as any).imagen, 'facturas');
     const imagen = resultadoImagen ? resultadoImagen.url : (factura as any).imagen;
-    const imagenClave = resultadoImagen ? resultadoImagen.clave : (factura as any).imagenClave || '';
+    const imagenClave = resultadoImagen ? resultadoImagen.clave : ((factura as any).imagenClave || anterior?.imagenClave || '');
 
     const imagenesOriginal = (factura as any).imagenes;
     const imagenesSubidas = Array.isArray(imagenesOriginal)
@@ -1372,8 +1386,8 @@ export class PresupuestosService {
       ? imagenesSubidas.map((r, i) => (r ? r.url : imagenesOriginal[i]))
       : imagenesOriginal;
     const imagenesClaves = imagenesSubidas
-      ? imagenesSubidas.map((r, i) => (r ? r.clave : (factura as any).imagenesClaves?.[i] || ''))
-      : (factura as any).imagenesClaves;
+      ? imagenesSubidas.map((r, i) => (r ? r.clave : (factura as any).imagenesClaves?.[i] || anterior?.imagenesClaves?.[i] || ''))
+      : ((factura as any).imagenesClaves ?? anterior?.imagenesClaves);
 
     // Igual tratamiento para el PDF original (si la factura se subió
     // directamente como PDF) y para `paginas` (el documento completo en
@@ -1381,13 +1395,13 @@ export class PresupuestosService {
     // Facturas Profesional, mismo patrón que `imagen`/`imagenes`.
     const resultadoPdfOriginal = await subirSiEsBase64((factura as any).pdfOriginalUrl, 'facturas');
     const pdfOriginalUrl = resultadoPdfOriginal ? resultadoPdfOriginal.url : (factura as any).pdfOriginalUrl;
-    const pdfOriginalClave = resultadoPdfOriginal ? resultadoPdfOriginal.clave : (factura as any).pdfOriginalClave || '';
+    const pdfOriginalClave = resultadoPdfOriginal ? resultadoPdfOriginal.clave : ((factura as any).pdfOriginalClave || anterior?.pdfOriginalClave || '');
 
     const paginasOriginal = (factura as any).paginas;
     const paginas = Array.isArray(paginasOriginal)
-      ? await Promise.all(paginasOriginal.map(async (p: { tipo: string; url: string; clave?: string }) => {
+      ? await Promise.all(paginasOriginal.map(async (p: { tipo: string; url: string; clave?: string }, i: number) => {
           const r = await subirSiEsBase64(p.url, 'facturas');
-          return r ? { ...p, url: r.url, clave: r.clave } : p;
+          return r ? { ...p, url: r.url, clave: r.clave } : { ...p, clave: p.clave || anterior?.paginas?.[i]?.clave || '' };
         }))
       : paginasOriginal;
 
