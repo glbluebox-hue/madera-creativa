@@ -62,6 +62,45 @@ function huellaSecreto(secreto: string): string {
   return createHash('sha256').update(secreto).digest('hex').slice(0, 10);
 }
 
+/**
+ * Token de un solo propósito para servir un archivo del bucket PRIVADO de
+ * facturas a través de nuestro propio dominio (`/almacenamiento-privado`,
+ * `presupuestos-service.app-root.ts`) en vez de una URL firmada directa de
+ * R2 — incidencia real, 29/08/2026: tanto el dominio público de R2
+ * (`cdn.maderacreativa.com`) como una URL firmada de R2 pedida DIRECTAMENTE
+ * por el navegador devuelven 503 de forma intermitente (mismo problema ya
+ * documentado el 19/08/2026 en `imagen-fallback.ts` para el bucket
+ * público); el servidor, en cambio, siempre ha podido leer el objeto sin
+ * fallos por la API S3 autenticada. Este token traslada esa misma
+ * fiabilidad al bucket privado: nunca lleva un usuarioId (no hace falta —
+ * solo se firma para una `clave` ya verificada como propiedad del usuario
+ * en el momento de construir la respuesta de la factura, ver
+ * `resolverUrlsFactura`), tiene una vida corta (por defecto 15 min, igual
+ * que la URL firmada de R2 a la que sustituye) y solo sirve para ESTA
+ * clave concreta — nunca un proxy abierto a cualquier objeto del bucket.
+ */
+export type PayloadArchivoPrivado = { clave: string };
+
+/** TTL por defecto — igual que `generarUrlTemporal()` en `almacenamiento-r2.ts`, al que sustituye para las facturas. */
+export const TTL_TOKEN_ARCHIVO_SEGUNDOS = 900;
+
+export function firmarTokenArchivo(clave: string, ttlSegundos: number = TTL_TOKEN_ARCHIVO_SEGUNDOS): string {
+  const secreto = obtenerSecreto();
+  return jwt.sign({ clave } satisfies PayloadArchivoPrivado, secreto, { expiresIn: ttlSegundos });
+}
+
+/** Devuelve la clave si el token es válido y no ha caducado, o `null` en cualquier otro caso — nunca lanza. */
+export function verificarTokenArchivo(token: string): string | null {
+  const secreto = obtenerSecreto();
+  try {
+    const payload = jwt.verify(token, secreto);
+    if (typeof payload === 'string' || !('clave' in payload) || typeof (payload as { clave: unknown }).clave !== 'string') return null;
+    return (payload as PayloadArchivoPrivado).clave;
+  } catch {
+    return null;
+  }
+}
+
 /** Firma un access token JWT de corta duración. */
 export function firmarAccessToken(payload: PayloadAcceso): string {
   const secreto = obtenerSecreto();

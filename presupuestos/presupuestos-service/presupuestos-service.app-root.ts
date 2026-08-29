@@ -30,7 +30,7 @@ import { crearRouterPortal } from './portal-rutas.js';
 import { crearRouterResena } from './resena-rutas.js';
 import { validar } from './validacion.middleware.js';
 import { hashPassword, verificarPassword, verificarPasswordLegado } from './password.service.js';
-import { firmarAccessToken, verificarAccessToken } from './token.service.js';
+import { firmarAccessToken, verificarAccessToken, verificarTokenArchivo } from './token.service.js';
 import { crearRefreshToken, rotarRefreshToken, revocarRefreshToken, revocarTodosDeUsuario } from './refresh-token.model.js';
 import { enviarEmail } from './resend.service.js';
 import { origenEsperado } from './webauthn-config.js';
@@ -1675,6 +1675,39 @@ export function run() {
       if (!archivo) { res.status(404).json({ error: 'No encontrado' }); return; }
       res.setHeader('Content-Type', archivo.contentType);
       res.setHeader('Cache-Control', 'private, max-age=3600');
+      res.send(archivo.datos);
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /**
+   * Proxy del bucket PRIVADO de facturas (incidencia real, 29/08/2026):
+   * tanto el dominio público de R2 como una URL firmada de R2 pedida
+   * DIRECTAMENTE por el navegador devuelven 503 de forma intermitente
+   * (mismo fallo ya documentado el 19/08/2026 para el bucket público, ver
+   * `/imagen-proxy` arriba); el servidor, en cambio, siempre ha podido leer
+   * el objeto sin fallos por la API S3 autenticada. Esta ruta traslada esa
+   * misma fiabilidad al bucket PRIVADO — a diferencia de `/imagen-proxy`,
+   * aquí NO basta con comprobar el dominio (el archivo no es público de por
+   * sí): la autorización viene enteramente del propio `token`, firmado por
+   * el servidor únicamente en `resolverUrlsFactura()` para una factura ya
+   * verificada como propiedad del usuario en ese mismo momento — nadie
+   * puede fabricar un token válido para una clave ajena sin el secreto
+   * (`JWT_SECRET`). Vida corta (15 min, igual que la URL de R2 a la que
+   * sustituye) y solo sirve para ESTA clave — nunca un proxy abierto.
+   * Sin `requireAuth` a propósito, por el mismo motivo que `/imagen-proxy`:
+   * una etiqueta `<img>` no puede mandar un token Bearer; la comprobación
+   * de propiedad ya ocurrió antes de firmar el token, no hace falta repetirla aquí.
+   */
+  app.get('/almacenamiento-privado', async (req, res) => {
+    try {
+      const tokenParam = req.query.token;
+      if (typeof tokenParam !== 'string') { res.status(400).json({ error: 'Falta el parámetro token' }); return; }
+      const clave = verificarTokenArchivo(tokenParam);
+      if (!clave || !clave.startsWith('facturas-privado/')) { res.status(403).json({ error: 'Token inválido o caducado' }); return; }
+      const archivo = await almacenamiento.obtener(clave);
+      if (!archivo) { res.status(404).json({ error: 'No encontrado' }); return; }
+      res.setHeader('Content-Type', archivo.contentType);
+      res.setHeader('Cache-Control', 'private, max-age=600');
       res.send(archivo.datos);
     } catch (err) { responderError(req, res, err); }
   });

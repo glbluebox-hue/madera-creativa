@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect, useLayoutEffect } from 'react';
 import { registrarTipoRender, obtenerTipoRender, type RenderElementoProps, type PanelPropiedadesProps } from './documento-registro-tipos-render.js';
+import { urlImagenFiable } from './imagen-fallback.js';
 import editorStyles from './editor-documento.module.css';
 
 /**
@@ -243,7 +244,7 @@ function RenderImagen({ elemento }: RenderElementoProps) {
   const url = elemento.contenido.url as string;
   const bordeRadio = (elemento.propiedadesEspecificas.bordeRadio as number) ?? 0;
   return url
-    ? <img src={url} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: bordeRadio, pointerEvents: 'none' }} />
+    ? <img src={urlImagenFiable(url)} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: bordeRadio, pointerEvents: 'none' }} />
     : <div className={editorStyles.marcadorVacio}>Imagen</div>;
 }
 
@@ -280,7 +281,7 @@ registrarTipoRender({
 function RenderLogotipo({ elemento }: RenderElementoProps) {
   const url = elemento.contenido.url as string;
   return url
-    ? <img src={url} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />
+    ? <img src={urlImagenFiable(url)} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />
     : <div className={editorStyles.marcadorVacio}>Logo</div>;
 }
 
@@ -328,7 +329,7 @@ registrarTipoRender({
 function RenderFirmaEmpresa({ elemento }: RenderElementoProps) {
   const url = elemento.contenido.url as string;
   return url
-    ? <img src={url} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />
+    ? <img src={urlImagenFiable(url)} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />
     : <div className={editorStyles.marcadorVacio}>Firma</div>;
 }
 
@@ -377,7 +378,7 @@ function RenderFirmaCliente({ elemento }: RenderElementoProps) {
   if (!url) return <div className={editorStyles.marcadorVacio}>Firma del cliente</div>;
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
-      <img src={url} alt="Firma del cliente" draggable={false} style={{ maxWidth: '100%', flex: 1, minHeight: 0, objectFit: 'contain', pointerEvents: 'none' }} />
+      <img src={urlImagenFiable(url)} alt="Firma del cliente" draggable={false} style={{ maxWidth: '100%', flex: 1, minHeight: 0, objectFit: 'contain', pointerEvents: 'none' }} />
       {fecha && <span style={{ fontSize: '0.68rem', color: '#8a7f6f', fontWeight: 600, flexShrink: 0 }}>{fecha}</span>}
     </div>
   );

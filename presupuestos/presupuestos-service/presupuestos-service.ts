@@ -5,6 +5,7 @@ import { UsuarioModel, conectarUsuarios } from './usuario.model.js';
 import { crearEnlacePresupuesto, buscarEnlacePorToken, reclamarEnlaceAceptado, guardarFirmaEnlace, formatoTokenValido, enlacesActivosDeUsuario } from './enlace-presupuesto.model.js';
 import { crearEnlaceResena, buscarEnlaceResenaPorToken, registrarUsoEnlaceResena, formatoTokenValidoResena } from './enlace-resena.model.js';
 import { almacenamiento } from './almacenamiento.service.js';
+import { firmarTokenArchivo } from './token.service.js';
 import { intentarBorrarArchivo } from './borrado-pendiente.service.js';
 import { busEventos } from './eventos.service.js';
 import { enviarNotificacion } from './push.service.js';
@@ -125,20 +126,52 @@ async function subirSiEsBase64(valor: unknown, carpeta: string) {
  * imagen con `fetch(url)` para incrustarla en el PDF, y una URL de un
  * bucket privado sin firmar devolvería 403.
  */
+/**
+ * Prefijo EXCLUSIVO de las claves del bucket privado nuevo (ver
+ * `AlmacenamientoR2.PREFIJO_FACTURAS_PRIVADO` en `almacenamiento-r2.ts`,
+ * la misma constante duplicada a propósito: este archivo no importa la
+ * clase de R2 directamente, solo `almacenamiento.service.js`). Las
+ * facturas de ANTES del incremento "Facturas privadas" pueden tener una
+ * `imagenClave` con el prefijo genérico `facturas/` (bucket histórico,
+ * público) — esas deben seguir resolviéndose exactamente como antes
+ * (`almacenamiento.generarUrlTemporal`), nunca por el proxy nuevo, que
+ * solo tiene sentido y solo está autorizado para el bucket realmente
+ * privado.
+ */
+const PREFIJO_FACTURAS_PRIVADO = 'facturas-privado/';
+
+/**
+ * Construye la URL por la que el navegador debe pedir un archivo del
+ * bucket PRIVADO de facturas — nunca una URL firmada de R2 directa
+ * (incidencia real, 29/08/2026: tanto el dominio público de R2 como una
+ * URL firmada pedida DIRECTAMENTE por el navegador devuelven 503 de forma
+ * intermitente; el servidor, en cambio, siempre ha podido leer el objeto
+ * sin fallos — ver `firmarTokenArchivo` en `token.service.ts` y la ruta
+ * `/almacenamiento-privado` en `presupuestos-service.app-root.ts`, que es
+ * quien de verdad llama a `almacenamiento.obtener()`).
+ */
+function urlProxyArchivoPrivado(clave: string): string {
+  return `/almacenamiento-privado?token=${encodeURIComponent(firmarTokenArchivo(clave))}`;
+}
+
+/** Resuelve una clave a la URL con la que debe verla el navegador — proxy propio para el bucket privado nuevo, comportamiento de siempre (`generarUrlTemporal`) para cualquier otra clave. */
+async function resolverUrlClave(clave: string): Promise<string> {
+  return clave.startsWith(PREFIJO_FACTURAS_PRIVADO) ? urlProxyArchivoPrivado(clave) : almacenamiento.generarUrlTemporal(clave);
+}
+
 async function resolverUrlsFactura(doc: Record<string, unknown>): Promise<Record<string, unknown>> {
   const d = doc as any;
   const { imagenClave, imagenesClaves, pdfOriginalClave, ...resto } = d;
 
-  const imagen = imagenClave ? await almacenamiento.generarUrlTemporal(imagenClave) : d.imagen;
-  const pdfOriginalUrl = pdfOriginalClave ? await almacenamiento.generarUrlTemporal(pdfOriginalClave) : d.pdfOriginalUrl;
+  const imagen = imagenClave ? await resolverUrlClave(imagenClave) : d.imagen;
+  const pdfOriginalUrl = pdfOriginalClave ? await resolverUrlClave(pdfOriginalClave) : d.pdfOriginalUrl;
   const imagenes = Array.isArray(d.imagenes)
-    ? await Promise.all(d.imagenes.map((url: string, i: number) =>
-        imagenesClaves?.[i] ? almacenamiento.generarUrlTemporal(imagenesClaves[i]) : url))
+    ? await Promise.all(d.imagenes.map((url: string, i: number) => (imagenesClaves?.[i] ? resolverUrlClave(imagenesClaves[i]) : url)))
     : d.imagenes;
   const paginas = Array.isArray(d.paginas)
     ? await Promise.all(d.paginas.map(async (p: Record<string, unknown>) => {
         const { clave, ...pRest } = p as any;
-        return clave ? { ...pRest, url: await almacenamiento.generarUrlTemporal(clave) } : pRest;
+        return clave ? { ...pRest, url: await resolverUrlClave(clave) } : pRest;
       }))
     : d.paginas;
 

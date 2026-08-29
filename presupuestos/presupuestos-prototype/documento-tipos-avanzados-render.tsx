@@ -2,6 +2,7 @@ import { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import { registrarTipoRender, type RenderElementoProps, type PanelPropiedadesProps } from './documento-registro-tipos-render.js';
+import { urlImagenFiable } from './imagen-fallback.js';
 import editorStyles from './editor-documento.module.css';
 import styles from './styles.module.css';
 import { FirmaCanvas } from './firma-canvas.js';
@@ -124,7 +125,7 @@ function RenderFirma({ elemento }: RenderElementoProps) {
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', borderBottom: `1px solid ${estilo.colorLinea ?? '#51483f'}` }}>
-        {url && <img src={url} alt="Firma" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />}
+        {url && <img src={urlImagenFiable(url)} alt="Firma" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />}
       </div>
       {nombreFirmante && <p style={{ margin: '0.2rem 0 0', fontSize: '0.7rem', textAlign: 'center', color: 'var(--topo-claro)' }}>{nombreFirmante}</p>}
     </div>
@@ -267,7 +268,7 @@ registrarTipoRender({
 function RenderDibujo({ elemento }: RenderElementoProps) {
   const url = elemento.contenido.url as string;
   return url
-    ? <img src={url} alt="Dibujo" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />
+    ? <img src={urlImagenFiable(url)} alt="Dibujo" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} />
     : <div className={editorStyles.marcadorVacio}>Dibujo</div>;
 }
 

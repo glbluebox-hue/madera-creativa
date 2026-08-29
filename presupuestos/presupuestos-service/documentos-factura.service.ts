@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import JSZip from 'jszip';
 import { almacenamiento } from './almacenamiento.service.js';
+import { verificarTokenArchivo } from './token.service.js';
 
 /**
  * Generación de PDF/ZIP para facturas (Fase Facturas Profesional). Antes no
@@ -23,6 +24,22 @@ async function obtenerBytesDesdeUrl(url: string): Promise<Buffer> {
   const prefijoLocal = '/api/presupuestos-service/almacenamiento/';
   if (url.startsWith(prefijoLocal)) {
     const clave = url.slice(prefijoLocal.length);
+    const archivo = await almacenamiento.obtener(clave);
+    if (!archivo) throw new Error(`Archivo no encontrado en almacenamiento: ${clave}`);
+    return archivo.datos;
+  }
+  // Factura del bucket privado (Fase "Facturas privadas" + incidencia
+  // 29/08/2026) — `resolverUrlsFactura` ya no devuelve una URL firmada de
+  // R2 externa para estos archivos, sino esta ruta propia relativa (ver
+  // `token.service.ts`). Un `fetch()` normal fallaría (URL relativa sin
+  // base) e iría innecesariamente por HTTP contra el propio servidor —
+  // se resuelve el token aquí mismo y se lee directo de `almacenamiento`,
+  // exactamente igual que hace la propia ruta `/almacenamiento-privado`.
+  const prefijoPrivado = '/almacenamiento-privado?token=';
+  if (url.startsWith(prefijoPrivado)) {
+    const token = decodeURIComponent(url.slice(prefijoPrivado.length));
+    const clave = verificarTokenArchivo(token);
+    if (!clave) throw new Error('Token de archivo privado inválido o caducado');
     const archivo = await almacenamiento.obtener(clave);
     if (!archivo) throw new Error(`Archivo no encontrado en almacenamiento: ${clave}`);
     return archivo.datos;
