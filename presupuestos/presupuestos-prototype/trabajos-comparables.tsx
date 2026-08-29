@@ -1,43 +1,23 @@
-import { useState, useEffect } from 'react';
-import * as api from './api.js';
 import type { ResultadoComparables, Comparable } from './inteligencia-precios.js';
 import { etiquetaNivelComparable, textoMotivoComparable } from './inteligencia-precios.js';
 import { formatoEuro, formatoFecha } from './calculos.js';
 import styles from './styles.module.css';
 
 export type TrabajosComparablesProps = {
-  /** Precio de referencia del trabajo que se está presupuestando (`analisis.precio`, ya calculado). */
-  precio: number;
-  /** Tipo de trabajo del proyecto vinculado, si ya lo tiene guardado (`Proyecto.caracteristicas[]`, clave `tipoTrabajo`). */
-  tipoTrabajo: string | null;
-  /** Id de trabajo a excluir del histórico (el propio proyecto/presupuesto), para no compararse consigo mismo. */
-  excluirId?: string;
+  /** `null` mientras se está cargando. El fetch ya no ocurre aquí (Fase 2E, 28/08/2026) — lo hace `AnalisisPrecioCompleto`, que también lo necesita para `evaluarPrecio()`; sin esto habría dos llamadas idénticas a `api.obtenerComparables` por cada apertura del modal. */
+  resultado: ResultadoComparables | null;
+  /** `true` si ya se pidieron los 10 (en vez de los 5 por defecto). */
+  verMas: boolean;
+  onVerMas: () => void;
 };
 
 /**
- * "Trabajos comparables" (Fase 2C) — primera integración: dentro del
- * análisis de precio de un presupuesto ("🧠 Analizar precio → Ver análisis
- * completo"), sustituyendo el placeholder "Disponible en una fase
- * posterior" de "¿Cómo estoy respecto a mis propios trabajos?". Puramente
- * presentacional: pide el resultado ya calculado a
- * `api.obtenerComparables` (que a su vez llama al motor determinista del
- * backend, `comparables.ts`) — cero cálculo de similitud aquí.
+ * "Trabajos comparables" (Fase 2C) — puramente presentacional: recibe el
+ * resultado ya calculado por `api.obtenerComparables` (que a su vez llama
+ * al motor determinista del backend, `comparables.ts`) — cero cálculo de
+ * similitud aquí, cero llamada a red aquí.
  */
-export function TrabajosComparables({ precio, tipoTrabajo, excluirId }: TrabajosComparablesProps) {
-  const [resultado, setResultado] = useState<ResultadoComparables | null>(null);
-  const [error, setError] = useState('');
-  const [verMas, setVerMas] = useState(false);
-
-  useEffect(() => {
-    setResultado(null);
-    setError('');
-    api.obtenerComparables(precio, tipoTrabajo, excluirId, verMas ? 10 : 5)
-      .then(setResultado)
-      .catch((e) => setError(String(e).replace(/^Error:\s*/, '')));
-  }, [precio, tipoTrabajo, excluirId, verMas]);
-
-  if (error) return <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--rojo)' }}>{error}</p>;
-
+export function TrabajosComparables({ resultado, verMas, onVerMas }: TrabajosComparablesProps) {
   if (resultado === null) {
     return <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--topo-claro)' }}>🔎 Buscando trabajos parecidos…</p>;
   }
@@ -62,7 +42,7 @@ export function TrabajosComparables({ precio, tipoTrabajo, excluirId }: Trabajos
           type="button"
           className={`${styles.btn} ${styles.btnSecundario}`}
           style={{ fontSize: '0.76rem', padding: '0.35rem 0.7rem', alignSelf: 'flex-start' }}
-          onClick={() => setVerMas(true)}
+          onClick={onVerMas}
         >
           Ver más
         </button>

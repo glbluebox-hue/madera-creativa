@@ -112,6 +112,7 @@ export function TabPresupuestosProyecto({ cliente, proyecto, empresa, onActualiz
                     esSnapshot={p.estado === 'aceptado' && !!p.analisisPrecio}
                     tipoTrabajo={tipoTrabajoProyecto}
                     excluirId={proyecto.id}
+                    proyectoEstado={proyecto.estado}
                   />
                 </div>
               </div>

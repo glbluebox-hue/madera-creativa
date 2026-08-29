@@ -1963,6 +1963,8 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
             analisis={analisisParaModal}
             tipoTrabajo={tipoTrabajoParaModal}
             excluirId={proyectoId || contenedor.id}
+            proyectoEstado={proyectoParaAnalisis?.estado ?? null}
+            esSnapshot={!!analisisPrecio}
             onCerrar={() => setInteligenciaAbierta(false)}
           />
         ),

@@ -1,8 +1,12 @@
-import { useState } from 'react';
-import type { AnalisisPrecio } from './inteligencia-precios.js';
+import { useState, useEffect, useMemo } from 'react';
+import type { AnalisisPrecio, ResultadoComparables, TrabajoAnalizado } from './inteligencia-precios.js';
 import { interpretarAnalisis } from './inteligencia-precios.js';
+import { calcularMetricasPorTipo } from './metricas-por-tipo.js';
+import { evaluarPrecio } from './evaluar-precio.js';
+import { ConsejoPrecio } from './consejo-precio.js';
 import { formatoEuro } from './calculos.js';
 import { TrabajosComparables } from './trabajos-comparables.js';
+import * as api from './api.js';
 import styles from './styles.module.css';
 
 const COLOR_ESTADO: Record<'por_encima' | 'cerca' | 'por_debajo', { color: string; fondo: string; icono: string; etiqueta: string }> = {
@@ -25,6 +29,15 @@ export type AnalisisPrecioPresupuestoProps = {
   tipoTrabajo?: string | null;
   /** Id de trabajo a excluir del histórico al buscar comparables (el propio proyecto), para no compararse consigo mismo. */
   excluirId?: string;
+  /**
+   * `Proyecto.estado` (Fase 2E, "Consejo de precio", 28/08/2026) — permite
+   * distinguir un margen previsto en vivo (o un snapshot congelado) de un
+   * proyecto que sigue en obra de uno ya terminado, para no dar la cifra
+   * como definitiva cuando todavía puede cambiar. `undefined`/`null` en
+   * vistas sin proyecto cargado — el consejero simplemente no añade esa
+   * nota, nunca inventa el estado.
+   */
+  proyectoEstado?: string | null;
 };
 
 /**
@@ -34,7 +47,7 @@ export type AnalisisPrecioPresupuestoProps = {
  * calculado por `analizarPrecioPresupuesto` (en vivo) o el snapshot
  * guardado (`PresupuestoMC.analisisPrecio`, tras aceptar).
  */
-export function AnalisisPrecioPresupuesto({ analisis, esSnapshot, tipoTrabajo, excluirId }: AnalisisPrecioPresupuestoProps) {
+export function AnalisisPrecioPresupuesto({ analisis, esSnapshot, tipoTrabajo, excluirId, proyectoEstado }: AnalisisPrecioPresupuestoProps) {
   const [completoAbierto, setCompletoAbierto] = useState(false);
 
   if (!analisis) {
@@ -84,7 +97,14 @@ export function AnalisisPrecioPresupuesto({ analisis, esSnapshot, tipoTrabajo, e
       )}
 
       {completoAbierto && (
-        <AnalisisPrecioCompleto analisis={analisis} tipoTrabajo={tipoTrabajo ?? null} excluirId={excluirId} onCerrar={() => setCompletoAbierto(false)} />
+        <AnalisisPrecioCompleto
+          analisis={analisis}
+          tipoTrabajo={tipoTrabajo ?? null}
+          excluirId={excluirId}
+          proyectoEstado={proyectoEstado ?? null}
+          esSnapshot={!!esSnapshot}
+          onCerrar={() => setCompletoAbierto(false)}
+        />
       )}
     </div>
   );
@@ -94,6 +114,10 @@ export type AnalisisPrecioCompletoProps = {
   analisis: AnalisisPrecio;
   tipoTrabajo: string | null;
   excluirId?: string;
+  /** Ver `AnalisisPrecioPresupuestoProps.proyectoEstado`. */
+  proyectoEstado?: string | null;
+  /** `true` si `analisis` es el snapshot congelado de un presupuesto ya aceptado — cambia qué nota de "costes provisionales" construye `evaluarPrecio()`. */
+  esSnapshot?: boolean;
   onCerrar: () => void;
 };
 
@@ -104,13 +128,49 @@ export type AnalisisPrecioCompletoProps = {
  * insignia de `AnalisisPrecioPresupuesto` (pensada para una fila de
  * listado, no para una barra de herramientas). Mismo componente, mismo
  * JSX, dos sitios desde donde se puede abrir — nunca una segunda
- * implementación. Acepta ahora también `disponible:false` (antes solo
- * `disponible:true`, porque su único llamante ya garantizaba eso) para
- * poder explicar con claridad por qué no hay análisis en vez de exigir
- * que el llamante nunca lo abra sin datos.
+ * implementación. Acepta también `disponible:false` para poder explicar
+ * con claridad por qué no hay análisis en vez de exigir que el llamante
+ * nunca lo abra sin datos.
+ *
+ * Fase 2E (28/08/2026): este componente ahora también orquesta las dos
+ * llamadas que necesita el "🧠 Consejo de precio" — comparables (2C) e
+ * histórico completo (2B, para calcular las métricas por tipo de 2D) —
+ * una sola vez cada una, nunca repetidas: `TrabajosComparables` ya no
+ * pide sus propios datos (evita una llamada duplicada a
+ * `api.obtenerComparables`), y `calcularMetricasPorTipo`/`evaluarPrecio`
+ * son funciones puras que solo ENSAMBLAN lo que 2A-2D ya calculan — cero
+ * fórmula nueva, cero llamada a IA.
  */
-export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, onCerrar }: AnalisisPrecioCompletoProps) {
-  if (!analisis.disponible) {
+export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proyectoEstado, esSnapshot, onCerrar }: AnalisisPrecioCompletoProps) {
+  const [resultadoComparables, setResultadoComparables] = useState<ResultadoComparables | null>(null);
+  const [verMasComparables, setVerMasComparables] = useState(false);
+  const [historico, setHistorico] = useState<TrabajoAnalizado[] | null>(null);
+
+  useEffect(() => {
+    if (analisis.disponible === false) return; // sin precio, no hay nada que comparar
+    setResultadoComparables(null);
+    api.obtenerComparables(analisis.precio, tipoTrabajo, excluirId, verMasComparables ? 10 : 5)
+      .then(setResultadoComparables)
+      .catch(() => setResultadoComparables({ disponible: false, motivo: 'sin_historico' }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analisis.disponible, analisis.disponible ? analisis.precio : null, tipoTrabajo, excluirId, verMasComparables]);
+
+  useEffect(() => {
+    api.analizarInteligenciaPrecios().then(setHistorico).catch(() => setHistorico([]));
+  }, []);
+
+  const metricasGrupo = useMemo(() => {
+    if (!historico || !tipoTrabajo) return null;
+    return calcularMetricasPorTipo(historico).find((m) => m.tipoTrabajo === tipoTrabajo) ?? null;
+  }, [historico, tipoTrabajo]);
+
+  const consejo = useMemo(() => {
+    if (historico === null || resultadoComparables === null) return null; // todavía cargando alguna de las dos piezas
+    const comparables = resultadoComparables.disponible ? resultadoComparables.comparables : [];
+    return evaluarPrecio(analisis, metricasGrupo, comparables, { proyectoEstado: proyectoEstado ?? null, esSnapshot: !!esSnapshot });
+  }, [analisis, metricasGrupo, resultadoComparables, historico, proyectoEstado, esSnapshot]);
+
+  if (analisis.disponible === false) {
     return (
       <div className={styles.overlay} onClick={onCerrar}>
         <div className={styles.modal} style={{ maxWidth: 420, padding: '1.5rem' }} onClick={(e) => e.stopPropagation()}>
@@ -125,7 +185,7 @@ export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, onCer
   const cfg = COLOR_ESTADO[analisis.estado];
   return (
     <div className={styles.overlay} onClick={onCerrar}>
-      <div className={styles.modal} style={{ maxWidth: 420, padding: '1.5rem' }} onClick={(e) => e.stopPropagation()}>
+      <div className={styles.modal} style={{ maxWidth: 460, padding: '1.5rem' }} onClick={(e) => e.stopPropagation()}>
         <h2 className={styles.modalTitulo}>🧠 Análisis de precio</h2>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem', marginTop: '0.5rem' }}>
@@ -137,12 +197,14 @@ export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, onCer
             <p style={{ margin: '0 0 0.35rem', fontSize: '0.72rem', fontWeight: 700, color: 'var(--topo-claro)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
               ¿Cómo estoy respecto a mis propios trabajos?
             </p>
-            <TrabajosComparables precio={analisis.precio} tipoTrabajo={tipoTrabajo} excluirId={excluirId} />
+            <TrabajosComparables resultado={resultadoComparables} verMas={verMasComparables} onVerMas={() => setVerMasComparables(true)} />
           </div>
-          <Pregunta
-            titulo="¿Qué recomienda Madera Creativa?"
-            respuesta={interpretarAnalisis(analisis)}
-          />
+          <div>
+            <p style={{ margin: '0 0 0.35rem', fontSize: '0.72rem', fontWeight: 700, color: 'var(--topo-claro)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+              🧠 Consejo de precio
+            </p>
+            <ConsejoPrecio resultado={consejo} />
+          </div>
           <div>
             <p style={{ margin: '0 0 0.2rem', fontSize: '0.72rem', fontWeight: 700, color: 'var(--topo-claro)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
               Estado
