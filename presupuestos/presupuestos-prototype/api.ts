@@ -3,6 +3,7 @@ import type { NotaMC } from './notas-modelo.js';
 import type { CodigoQRMC } from './codigos-qr-modelo.js';
 import type { PresupuestoMC, PresupuestoPublico } from './presupuestos-modelo.js';
 import type { TrabajoAnalizado, ResultadoComparables } from './inteligencia-precios.js';
+import type { ReferenciaMercado } from './mercado-local.js';
 import type { PlantillaMC, RecursoMC, ComponenteMC } from './documento-modelo.js';
 import type { ContratoMC } from './contratos-modelo.js';
 import type { Empresa } from './use-empresa.js';
@@ -997,6 +998,32 @@ export async function obtenerComparables(precio: number, tipoTrabajo: string | n
   return res.json();
 }
 
+/**
+ * Referencias de Mercado (Fase 2F, "Consenso de Precio") — anotaciones
+ * manuales del usuario sobre su mercado local, aisladas por usuarioId.
+ * Nunca scraping, nunca IA — ver `mercado-local.ts` para cómo se combinan.
+ */
+export async function listarReferenciasMercado(): Promise<ReferenciaMercado[]> {
+  const res = await fetchConAuth('/referencias-mercado');
+  await comprobarRespuesta(res, 'No se pudieron cargar las referencias de mercado');
+  return res.json();
+}
+
+export async function crearReferenciaMercado(referencia: Omit<ReferenciaMercado, 'id' | 'creado'>): Promise<ReferenciaMercado> {
+  const res = await fetchConAuth('/referencias-mercado', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...referencia, id: crypto.randomUUID(), creado: new Date().toISOString() }),
+  });
+  await comprobarRespuesta(res, 'No se pudo guardar la referencia de mercado');
+  return res.json();
+}
+
+export async function borrarReferenciaMercado(id: string): Promise<void> {
+  const res = await fetchConAuth(`/referencias-mercado/${id}`, { method: 'DELETE' });
+  await comprobarRespuesta(res, 'No se pudo borrar la referencia de mercado');
+}
+
 /** Crea o actualiza un presupuesto. */
 export async function guardarPresupuesto(p: PresupuestoMC): Promise<PresupuestoMC> {
   const res = await fetchConAuth(`/presupuestos/${p.id}`, {
@@ -1218,6 +1245,9 @@ export async function obtenerEmpresa(): Promise<Empresa> {
     validezDiasDefecto: data.validezDiasDefecto ?? 30,
     temaPorDefecto: data.temaPorDefecto ?? null,
     regionFiscal: data.regionFiscal || '',
+    comunidadAutonoma: data.comunidadAutonoma || '',
+    provincia: data.provincia || '',
+    isla: data.isla || '',
     repepActivo: !!data.repepActivo,
     logoTamano: data.logoTamano || 187,
     enlaceResenaGoogle: data.enlaceResenaGoogle || '',
@@ -1254,6 +1284,9 @@ export async function guardarEmpresa(empresa: Partial<Empresa>): Promise<Empresa
     validezDiasDefecto: data.validezDiasDefecto ?? 30,
     temaPorDefecto: data.temaPorDefecto ?? null,
     regionFiscal: data.regionFiscal || '',
+    comunidadAutonoma: data.comunidadAutonoma || '',
+    provincia: data.provincia || '',
+    isla: data.isla || '',
     repepActivo: !!data.repepActivo,
     logoTamano: data.logoTamano || 187,
     enlaceResenaGoogle: data.enlaceResenaGoogle || '',

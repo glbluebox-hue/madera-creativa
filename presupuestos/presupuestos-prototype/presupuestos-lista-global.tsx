@@ -610,7 +610,7 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
                   (Inteligencia de Precios, Fase 1: "no dashboard sobrecargado"). */}
               {p.analisisPrecio && (
                 <div onClick={(e) => e.stopPropagation()}>
-                  <AnalisisPrecioPresupuesto analisis={p.analisisPrecio} esSnapshot />
+                  <AnalisisPrecioPresupuesto analisis={p.analisisPrecio} esSnapshot ubicacionEmpresa={{ comunidadAutonoma: empresa.comunidadAutonoma, provincia: empresa.provincia, isla: empresa.isla }} />
                 </div>
               )}
             </div>

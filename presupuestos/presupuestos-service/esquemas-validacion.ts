@@ -609,6 +609,26 @@ export const esquemaNotaMC = z.object({
   { message: 'La nota no puede estar vacía.' }
 );
 
+/**
+ * Referencia de Mercado (Fase 2F, "Consenso de Precio", 29/08/2026) —
+ * anotación manual del usuario sobre su mercado local. `zona` debe
+ * coincidir con el campo de ubicación de Empresa al nivel correspondiente
+ * (ver `ReferenciaMercadoSchema` en `cliente.model.ts`) — aquí solo se
+ * valida que no esté vacía, la coincidencia exacta la exige el motor
+ * `resolverMercadoLocal` (frontend), no este esquema.
+ */
+export const esquemaReferenciaMercado = z.object({
+  id: z.string().min(1).max(64),
+  tipoTrabajo: z.string().trim().min(1, 'Indica a qué tipo de trabajo corresponde.').max(100),
+  nivelGeografico: z.enum(['local', 'regional', 'nacional']),
+  zona: z.string().trim().min(1).max(100),
+  precioMin: z.number().min(0),
+  precioMax: z.number().min(0),
+  fuente: z.string().trim().max(300).optional().default(''),
+  fecha: z.string().min(1).max(64),
+  creado: z.string().min(1).max(64),
+}).refine((r) => r.precioMax >= r.precioMin, { message: 'El precio máximo no puede ser menor que el mínimo.' });
+
 /** Código QR guardado (sección propia del menú, 19/08/2026) — imagen ya subida a la biblioteca de recursos, aquí solo el nombre y a qué url apunta. */
 export const esquemaCodigoQRMC = z.object({
   id: z.string().min(1).max(64),
@@ -965,6 +985,10 @@ export const esquemaEmpresa = z.object({
   validezDiasDefecto: z.number().int().min(1).max(365).optional().default(30),
   temaPorDefecto: esquemaTema.nullable().optional().default(null),
   regionFiscal: z.enum(['canarias', 'peninsula', '']).optional().default(''),
+  /** Ubicación estructurada (Fase 2F, "Consenso de Precio") — ver `EmpresaSchema.comunidadAutonoma/provincia/isla` en `cliente.model.ts`. */
+  comunidadAutonoma: z.string().max(100).optional().default(''),
+  provincia: z.string().max(100).optional().default(''),
+  isla: z.string().max(100).optional().default(''),
   repepActivo: z.boolean().optional().default(false),
   /** Ancho en píxeles del logo en la barra lateral — ajustable a mano por el usuario, ver `sidebarLogoImg`. */
   logoTamano: z.number().min(40).max(400).optional().default(187),

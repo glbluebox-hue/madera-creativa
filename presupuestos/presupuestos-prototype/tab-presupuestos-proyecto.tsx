@@ -113,6 +113,7 @@ export function TabPresupuestosProyecto({ cliente, proyecto, empresa, onActualiz
                     tipoTrabajo={tipoTrabajoProyecto}
                     excluirId={proyecto.id}
                     proyectoEstado={proyecto.estado}
+                    ubicacionEmpresa={{ comunidadAutonoma: empresa.comunidadAutonoma, provincia: empresa.provincia, isla: empresa.isla }}
                   />
                 </div>
               </div>

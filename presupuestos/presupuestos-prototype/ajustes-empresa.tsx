@@ -5,6 +5,7 @@ import { comprimirImagen } from './procesamiento-imagenes.js';
 import { TEMA_POR_DEFECTO } from './documento-modelo.js';
 import type { TemaMC } from './documento-modelo.js';
 import { FirmaCanvas } from './firma-canvas.js';
+import { COMUNIDADES_AUTONOMAS, PROVINCIAS_POR_COMUNIDAD, ISLAS_POR_COMUNIDAD, esComunidadInsular } from './geografia-espana.js';
 import styles from './styles.module.css';
 
 /**
@@ -56,6 +57,9 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
   const [validezDiasDefecto, setValidezDiasDefecto] = useState(String(empresa.validezDiasDefecto));
   const [tema, setTema] = useState<TemaMC>(empresa.temaPorDefecto ?? TEMA_POR_DEFECTO);
   const [regionFiscal, setRegionFiscal] = useState(empresa.regionFiscal);
+  const [comunidadAutonoma, setComunidadAutonoma] = useState(empresa.comunidadAutonoma);
+  const [provincia, setProvincia] = useState(empresa.provincia);
+  const [isla, setIsla] = useState(empresa.isla);
   const [repepActivo, setRepepActivo] = useState(empresa.repepActivo);
   const [logoTamano, setLogoTamano] = useState(empresa.logoTamano || 187);
   const [tiempoInactividadMin, setTiempoInactividadMin] = useState<number | null>(empresa.tiempoInactividadMin);
@@ -96,6 +100,9 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
       validezDiasDefecto: Number(validezDiasDefecto) || 30,
       temaPorDefecto: tema,
       regionFiscal,
+      comunidadAutonoma,
+      provincia,
+      isla: esComunidadInsular(comunidadAutonoma) ? isla : '',
       repepActivo: regionFiscal === 'canarias' ? repepActivo : false,
       logoTamano,
       enlaceResenaGoogle: enlaceResenaGoogle.trim(),
@@ -235,6 +242,47 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
               </label>
             )}
           </div>
+          <div className={`${styles.campo} ${styles.full}`}>
+            <label className={styles.campoLabel}>🧭 Ubicación del negocio — determina qué mercado local investiga el Consejero de Precios</label>
+            <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+              <select
+                className={styles.select}
+                style={{ flex: 1, minWidth: 180 }}
+                value={comunidadAutonoma}
+                onChange={(e) => { setComunidadAutonoma(e.target.value); setProvincia(''); setIsla(''); }}
+              >
+                <option value="">Comunidad autónoma…</option>
+                {COMUNIDADES_AUTONOMAS.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <select
+                className={styles.select}
+                style={{ flex: 1, minWidth: 180 }}
+                value={provincia}
+                disabled={!comunidadAutonoma}
+                onChange={(e) => setProvincia(e.target.value)}
+              >
+                <option value="">Provincia…</option>
+                {(comunidadAutonoma ? PROVINCIAS_POR_COMUNIDAD[comunidadAutonoma] : [])?.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+              {esComunidadInsular(comunidadAutonoma) && (
+                <select
+                  className={styles.select}
+                  style={{ flex: 1, minWidth: 180 }}
+                  value={isla}
+                  onChange={(e) => setIsla(e.target.value)}
+                >
+                  <option value="">Isla…</option>
+                  {ISLAS_POR_COMUNIDAD[comunidadAutonoma]?.map((i) => <option key={i} value={i}>{i}</option>)}
+                </select>
+              )}
+            </div>
+            <p className={styles.logoAyuda}>
+              {esComunidadInsular(comunidadAutonoma)
+                ? 'En Canarias/Baleares, la isla es tu mercado local — más precisa que la provincia, que agrupa varias islas.'
+                : 'Sin esto, el Consejero de Precios no puede mostrar el bloque de mercado local — el resto sigue funcionando igual.'}
+            </p>
+          </div>
+
           <div className={`${styles.campo} ${styles.full}`}>
             <label className={styles.campoLabel}>Cerrar sesión sola por inactividad</label>
             <select

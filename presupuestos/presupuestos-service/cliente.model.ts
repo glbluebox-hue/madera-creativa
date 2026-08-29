@@ -273,6 +273,20 @@ const EmpresaSchema = new Schema({
    */
   regionFiscal: { type: String, enum: ['canarias', 'peninsula', ''], default: '' },
   /**
+   * Ubicación estructurada del negocio (Fase 2F, "Consenso de Precio",
+   * 29/08/2026) — determina qué mercado local investigar en el Consejero
+   * de Precios: nunca se recomienda un precio de Madrid a una empresa de
+   * Tenerife. `isla` solo aplica a Canarias/Baleares (una provincia
+   * canaria agrupa varias islas con mercados de instalación distintos) y
+   * tiene prioridad sobre `provincia` como nivel "local" cuando está
+   * presente. Los tres vacíos hasta que el usuario los configura en
+   * Ajustes de empresa — nunca se asume ninguna zona por defecto (mismo
+   * criterio que `regionFiscal`/`margenObjetivoPorcentaje`).
+   */
+  comunidadAutonoma: { type: String, default: '' },
+  provincia: { type: String, default: '' },
+  isla: { type: String, default: '' },
+  /**
    * REPEP (Régimen Especial del Pequeño Empresario o Profesional) — exime
    * del IGIC a autónomos canarios con hasta 50.000€/año de facturación,
    * activo desde julio 2026, voluntario (modelo 400). Solo relevante si
@@ -408,6 +422,37 @@ const NotaSchema = new Schema({
 NotaSchema.index({ usuarioId: 1, clienteId: 1 });
 NotaSchema.index({ usuarioId: 1, proyectoId: 1 });
 NotaSchema.index({ usuarioId: 1, creado: -1 });
+
+/**
+ * Referencia de Mercado (Fase 2F, "Consenso de Precio", 29/08/2026) —
+ * anotación MANUAL de lo que el propio usuario conoce de su mercado local
+ * (una guía de precios que ha leído, un competidor que ha visto anunciarse,
+ * etc.), nunca obtenida por scraping ni por IA (ver auditoría "Brújula de
+ * Mercado"). Siempre aislada por `usuarioId` — el mercado externo puede
+ * ser información pública, pero lo que UN usuario decide anotar sobre su
+ * zona es suyo, nunca visible para otra empresa (autorización, condición 8).
+ *
+ * `zona` debe coincidir EXACTAMENTE con el campo de ubicación de Empresa al
+ * que corresponde (`isla`/`provincia` para `nivelGeografico:'local'`,
+ * `comunidadAutonoma` para `'regional'`, literal `'España'` para
+ * `'nacional'`) — así `resolverMercadoLocal` (frontend) puede comparar por
+ * igualdad exacta, sin ambigüedad de texto libre.
+ */
+const ReferenciaMercadoSchema = new Schema({
+  id: { type: String, required: true, unique: true, index: true },
+  usuarioId: { type: String, required: true, index: true },
+  tipoTrabajo: { type: String, required: true },
+  nivelGeografico: { type: String, enum: ['local', 'regional', 'nacional'], required: true },
+  zona: { type: String, required: true },
+  precioMin: { type: Number, required: true, min: 0 },
+  precioMax: { type: Number, required: true, min: 0 },
+  /** Texto libre — de dónde sale este dato (ej. "Habitissimo, guía de precios", "Competidor visto en Instagram"). Nunca oculto al usuario que lo consulta. */
+  fuente: { type: String, default: '' },
+  /** Fecha a la que corresponde el precio (no la fecha en la que se anota) — para poder aplicar la ventana de vigencia en el futuro. */
+  fecha: { type: String, required: true },
+  creado: { type: String, required: true },
+});
+ReferenciaMercadoSchema.index({ usuarioId: 1, tipoTrabajo: 1 });
 
 /**
  * Código QR guardado (imagen ya diseñada por el usuario, ej. un cartel
@@ -691,6 +736,9 @@ export const ProveedorModel: Model<any> = models.Proveedor || model('Proveedor',
 
 /** Modelo Mongoose de Nota — colección nueva, sin nombre de colección heredado que respetar. */
 export const NotaModel: Model<any> = models.Nota || model('Nota', NotaSchema);
+
+/** Modelo Mongoose de Referencia de Mercado (Fase 2F, "Consenso de Precio") — colección nueva. */
+export const ReferenciaMercadoModel: Model<any> = models.ReferenciaMercado || model('ReferenciaMercado', ReferenciaMercadoSchema);
 
 /** Modelo Mongoose de Código QR guardado — colección nueva. */
 export const CodigoQRModel: Model<any> = models.CodigoQR || model('CodigoQR', CodigoQRSchema);

@@ -35,6 +35,16 @@ export type Empresa = {
   temaPorDefecto: TemaMC | null;
   /** Región fiscal (Fase Facturas Profesional) — determina si el Trimestral calcula IGIC (Canarias) o IVA (Península). Vacío hasta que se configura. */
   regionFiscal: 'canarias' | 'peninsula' | '';
+  /**
+   * Ubicación estructurada (Fase 2F, "Consenso de Precio", 29/08/2026) —
+   * determina qué mercado local investiga el Consejero de Precios. `isla`
+   * solo aplica a Canarias/Baleares y tiene prioridad sobre `provincia`
+   * como nivel "local" cuando está presente. Vacíos hasta que el negocio
+   * los configura — nunca se asume ninguna zona por defecto.
+   */
+  comunidadAutonoma: string;
+  provincia: string;
+  isla: string;
   /** REPEP activo (exención de IGIC por bajo volumen, solo relevante en Canarias) — decisión del usuario, nunca inferida. */
   repepActivo: boolean;
   /** Ancho en píxeles del logo en la barra lateral — ajustable a mano por el usuario (Ajustes de empresa). */
@@ -71,6 +81,9 @@ const EMPRESA_ADMIN: Empresa = {
   // por el usuario 11/08/2026) — ver auditoría fiscal de la Fase Facturas
   // Profesional.
   regionFiscal: 'canarias',
+  comunidadAutonoma: 'Canarias',
+  provincia: 'Santa Cruz de Tenerife',
+  isla: 'Tenerife',
   repepActivo: true,
   logoTamano: 187,
   enlaceResenaGoogle: 'https://g.page/r/CdtYE6HZ9ap5EBM/review',
@@ -97,6 +110,9 @@ const EMPRESA_USUARIO: Empresa = {
   // explícitamente antes de que el Trimestral calcule ningún impuesto
   // indirecto (nunca se asume Canarias/Península por defecto).
   regionFiscal: '',
+  comunidadAutonoma: '',
+  provincia: '',
+  isla: '',
   repepActivo: false,
   logoTamano: 187,
   enlaceResenaGoogle: '',
@@ -166,6 +182,9 @@ export function useEmpresa(autenticado = false, esAdmin = false): {
           validezDiasDefecto: datos.validezDiasDefecto ?? inicial.validezDiasDefecto,
           temaPorDefecto: datos.temaPorDefecto ?? null,
           regionFiscal: datos.regionFiscal ?? inicial.regionFiscal,
+          comunidadAutonoma: datos.comunidadAutonoma || inicial.comunidadAutonoma,
+          provincia: datos.provincia || inicial.provincia,
+          isla: datos.isla || inicial.isla,
           repepActivo: datos.repepActivo ?? inicial.repepActivo,
           logoTamano: datos.logoTamano ?? inicial.logoTamano,
           enlaceResenaGoogle: datos.enlaceResenaGoogle || inicial.enlaceResenaGoogle,

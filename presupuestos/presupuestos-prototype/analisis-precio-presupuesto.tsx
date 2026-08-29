@@ -1,13 +1,19 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import type { AnalisisPrecio, ResultadoComparables, TrabajoAnalizado } from './inteligencia-precios.js';
 import { interpretarAnalisis } from './inteligencia-precios.js';
 import { calcularMetricasPorTipo } from './metricas-por-tipo.js';
 import { evaluarPrecio } from './evaluar-precio.js';
 import { ConsejoPrecio } from './consejo-precio.js';
+import { resolverMercadoLocal } from './mercado-local.js';
+import type { ReferenciaMercado, UbicacionEmpresa } from './mercado-local.js';
+import { ReferenciasMercadoVista } from './referencias-mercado-vista.js';
 import { formatoEuro } from './calculos.js';
 import { TrabajosComparables } from './trabajos-comparables.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
+
+/** Ubicación "sin configurar" — el bloque de mercado simplemente no se activa, nunca se asume una zona por defecto (Fase 2F). */
+const UBICACION_VACIA: UbicacionEmpresa = { comunidadAutonoma: '', provincia: '', isla: '' };
 
 const COLOR_ESTADO: Record<'por_encima' | 'cerca' | 'por_debajo', { color: string; fondo: string; icono: string; etiqueta: string }> = {
   por_encima: { color: 'var(--verde)', fondo: 'var(--verde-bg)', icono: '🟢', etiqueta: 'Por encima del objetivo' },
@@ -38,6 +44,8 @@ export type AnalisisPrecioPresupuestoProps = {
    * nota, nunca inventa el estado.
    */
   proyectoEstado?: string | null;
+  /** Ubicación estructurada de la Empresa (Fase 2F, "Consenso de Precio") — determina qué mercado local investigar. `undefined` en vistas sin ese dato a mano; el bloque de mercado simplemente no se activa. */
+  ubicacionEmpresa?: UbicacionEmpresa;
 };
 
 /**
@@ -47,7 +55,7 @@ export type AnalisisPrecioPresupuestoProps = {
  * calculado por `analizarPrecioPresupuesto` (en vivo) o el snapshot
  * guardado (`PresupuestoMC.analisisPrecio`, tras aceptar).
  */
-export function AnalisisPrecioPresupuesto({ analisis, esSnapshot, tipoTrabajo, excluirId, proyectoEstado }: AnalisisPrecioPresupuestoProps) {
+export function AnalisisPrecioPresupuesto({ analisis, esSnapshot, tipoTrabajo, excluirId, proyectoEstado, ubicacionEmpresa }: AnalisisPrecioPresupuestoProps) {
   const [completoAbierto, setCompletoAbierto] = useState(false);
 
   if (!analisis) {
@@ -103,6 +111,7 @@ export function AnalisisPrecioPresupuesto({ analisis, esSnapshot, tipoTrabajo, e
           excluirId={excluirId}
           proyectoEstado={proyectoEstado ?? null}
           esSnapshot={!!esSnapshot}
+          ubicacionEmpresa={ubicacionEmpresa ?? UBICACION_VACIA}
           onCerrar={() => setCompletoAbierto(false)}
         />
       )}
@@ -118,6 +127,8 @@ export type AnalisisPrecioCompletoProps = {
   proyectoEstado?: string | null;
   /** `true` si `analisis` es el snapshot congelado de un presupuesto ya aceptado — cambia qué nota de "costes provisionales" construye `evaluarPrecio()`. */
   esSnapshot?: boolean;
+  /** Ver `AnalisisPrecioPresupuestoProps.ubicacionEmpresa`. */
+  ubicacionEmpresa?: UbicacionEmpresa;
   onCerrar: () => void;
 };
 
@@ -141,10 +152,12 @@ export type AnalisisPrecioCompletoProps = {
  * son funciones puras que solo ENSAMBLAN lo que 2A-2D ya calculan — cero
  * fórmula nueva, cero llamada a IA.
  */
-export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proyectoEstado, esSnapshot, onCerrar }: AnalisisPrecioCompletoProps) {
+export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proyectoEstado, esSnapshot, ubicacionEmpresa, onCerrar }: AnalisisPrecioCompletoProps) {
   const [resultadoComparables, setResultadoComparables] = useState<ResultadoComparables | null>(null);
   const [verMasComparables, setVerMasComparables] = useState(false);
   const [historico, setHistorico] = useState<TrabajoAnalizado[] | null>(null);
+  const [referenciasMercado, setReferenciasMercado] = useState<ReferenciaMercado[] | null>(null);
+  const ubicacion = ubicacionEmpresa ?? UBICACION_VACIA;
 
   useEffect(() => {
     if (analisis.disponible === false) return; // sin precio, no hay nada que comparar
@@ -159,16 +172,26 @@ export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proye
     api.analizarInteligenciaPrecios().then(setHistorico).catch(() => setHistorico([]));
   }, []);
 
+  const cargarReferenciasMercado = useCallback(() => {
+    api.listarReferenciasMercado().then(setReferenciasMercado).catch(() => setReferenciasMercado([]));
+  }, []);
+  useEffect(() => { cargarReferenciasMercado(); }, [cargarReferenciasMercado]);
+
   const metricasGrupo = useMemo(() => {
     if (!historico || !tipoTrabajo) return null;
     return calcularMetricasPorTipo(historico).find((m) => m.tipoTrabajo === tipoTrabajo) ?? null;
   }, [historico, tipoTrabajo]);
 
+  const mercadoLocal = useMemo(
+    () => resolverMercadoLocal(ubicacion, referenciasMercado ?? [], tipoTrabajo),
+    [ubicacion, referenciasMercado, tipoTrabajo]
+  );
+
   const consejo = useMemo(() => {
-    if (historico === null || resultadoComparables === null) return null; // todavía cargando alguna de las dos piezas
+    if (historico === null || resultadoComparables === null || referenciasMercado === null) return null; // todavía cargando alguna de las tres piezas
     const comparables = resultadoComparables.disponible ? resultadoComparables.comparables : [];
-    return evaluarPrecio(analisis, metricasGrupo, comparables, { proyectoEstado: proyectoEstado ?? null, esSnapshot: !!esSnapshot });
-  }, [analisis, metricasGrupo, resultadoComparables, historico, proyectoEstado, esSnapshot]);
+    return evaluarPrecio(analisis, metricasGrupo, comparables, mercadoLocal, { proyectoEstado: proyectoEstado ?? null, esSnapshot: !!esSnapshot });
+  }, [analisis, metricasGrupo, resultadoComparables, historico, referenciasMercado, mercadoLocal, proyectoEstado, esSnapshot]);
 
   if (analisis.disponible === false) {
     return (
@@ -192,7 +215,28 @@ export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proye
           <Pregunta titulo="¿Cuánto me cuesta?" respuesta={formatoEuro(analisis.costeEstimado)} nota="Coste registrado del proyecto vinculado (gastos + horas × tarifa)." />
           <Pregunta titulo="¿Qué margen tengo?" respuesta={`${analisis.margenPorcentaje.toFixed(1)}%`} />
           <Pregunta titulo="¿Cuál es mi margen objetivo?" respuesta={`${analisis.margenObjetivoPorcentaje.toFixed(1)}%`} />
-          <Pregunta titulo="¿Cómo estoy respecto al mercado?" respuesta="Disponible en una fase posterior." atenuado />
+          <div>
+            <p style={{ margin: '0 0 0.35rem', fontSize: '0.72rem', fontWeight: 700, color: 'var(--topo-claro)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+              ¿Cómo estoy respecto al mercado?
+            </p>
+            {mercadoLocal.disponible ? (
+              <p style={{ margin: '0 0 0.5rem', fontSize: '0.88rem' }}>
+                Mercado {mercadoLocal.nivelUsado === 'local' ? 'local' : mercadoLocal.nivelUsado === 'regional' ? 'regional' : 'nacional'} ({mercadoLocal.zona}): {formatoEuro(mercadoLocal.precioMin)} – {formatoEuro(mercadoLocal.precioMax)}
+              </p>
+            ) : (
+              <p style={{ margin: '0 0 0.5rem', fontSize: '0.88rem', color: 'var(--topo-claro)', fontStyle: 'italic' }}>
+                {ubicacion.comunidadAutonoma ? 'Todavía no tienes ninguna referencia de mercado guardada para este tipo de trabajo.' : 'Configura la ubicación de tu empresa en Ajustes de empresa para activar esta sección.'}
+              </p>
+            )}
+            {tipoTrabajo && (
+              <ReferenciasMercadoVista
+                tipoTrabajo={tipoTrabajo}
+                ubicacion={ubicacion}
+                referencias={(referenciasMercado ?? []).filter((r) => r.tipoTrabajo === tipoTrabajo)}
+                onCambio={cargarReferenciasMercado}
+              />
+            )}
+          </div>
           <div>
             <p style={{ margin: '0 0 0.35rem', fontSize: '0.72rem', fontWeight: 700, color: 'var(--topo-claro)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
               ¿Cómo estoy respecto a mis propios trabajos?
@@ -201,7 +245,7 @@ export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proye
           </div>
           <div>
             <p style={{ margin: '0 0 0.35rem', fontSize: '0.72rem', fontWeight: 700, color: 'var(--topo-claro)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-              🧠 Consejo de precio
+              🧭 Consenso de precio
             </p>
             <ConsejoPrecio resultado={consejo} />
           </div>

@@ -1,6 +1,6 @@
 import { randomUUID, createHash } from 'node:crypto';
 import type { PipelineStage } from 'mongoose';
-import { ClienteModel, ProyectoModel, EmpresaModel, FacturaModel, ProveedorModel, ProductoModel, DibujoModel, CarpetaModel, NotaModel, PresupuestoModel, PlantillaModel, RecursoModel, ComponenteModel, CodigoQRModel, AutomatizacionModel, ContratoModel, GastoPeriodicoModel, conectar } from './cliente.model.js';
+import { ClienteModel, ProyectoModel, EmpresaModel, FacturaModel, ProveedorModel, ProductoModel, DibujoModel, CarpetaModel, NotaModel, PresupuestoModel, PlantillaModel, RecursoModel, ComponenteModel, CodigoQRModel, AutomatizacionModel, ContratoModel, GastoPeriodicoModel, ReferenciaMercadoModel, conectar } from './cliente.model.js';
 import { UsuarioModel, conectarUsuarios } from './usuario.model.js';
 import { crearEnlacePresupuesto, buscarEnlacePorToken, reclamarEnlaceAceptado, guardarFirmaEnlace, formatoTokenValido, enlacesActivosDeUsuario } from './enlace-presupuesto.model.js';
 import { crearEnlaceResena, buscarEnlaceResenaPorToken, registrarUsoEnlaceResena, formatoTokenValidoResena } from './enlace-resena.model.js';
@@ -232,6 +232,10 @@ export type EmpresaDoc = {
   temaPorDefecto: TemaMC | null;
   /** Región fiscal (Fase Facturas Profesional) — determina si el Trimestral calcula IGIC (Canarias) o IVA (Península). */
   regionFiscal: 'canarias' | 'peninsula' | '';
+  /** Ubicación estructurada (Fase 2F, "Consenso de Precio") — determina qué mercado local investigar. `isla` solo aplica a Canarias/Baleares. Vacíos hasta que el usuario los configura. */
+  comunidadAutonoma: string;
+  provincia: string;
+  isla: string;
   /** REPEP activo (exención de IGIC por bajo volumen, solo Canarias) — decisión del usuario, nunca inferida. */
   repepActivo: boolean;
   /** Ancho en píxeles del logo en la barra lateral — ajustable a mano por el usuario. */
@@ -813,6 +817,9 @@ export class PresupuestosService {
       validezDiasDefecto: (doc as any).validezDiasDefecto || 30,
       temaPorDefecto: (doc as any).temaPorDefecto ?? null,
       regionFiscal: (doc as any).regionFiscal || '',
+      comunidadAutonoma: (doc as any).comunidadAutonoma || '',
+      provincia: (doc as any).provincia || '',
+      isla: (doc as any).isla || '',
       repepActivo: !!(doc as any).repepActivo,
       logoTamano: (doc as any).logoTamano || 187,
       enlaceResenaGoogle: (doc as any).enlaceResenaGoogle || '',
@@ -848,6 +855,9 @@ export class PresupuestosService {
       validezDiasDefecto: (doc as any).validezDiasDefecto || 30,
       temaPorDefecto: (doc as any).temaPorDefecto ?? null,
       regionFiscal: (doc as any).regionFiscal || '',
+      comunidadAutonoma: (doc as any).comunidadAutonoma || '',
+      provincia: (doc as any).provincia || '',
+      isla: (doc as any).isla || '',
       repepActivo: !!(doc as any).repepActivo,
       logoTamano: (doc as any).logoTamano || 187,
       enlaceResenaGoogle: (doc as any).enlaceResenaGoogle || '',
@@ -1736,6 +1746,32 @@ export class PresupuestosService {
   async borrarNota(id: string, usuarioId: string): Promise<void> {
     await conectar();
     await NotaModel.deleteOne({ id, usuarioId }).exec();
+  }
+
+  // ── Referencias de Mercado (Fase 2F, "Consenso de Precio", 29/08/2026) ──────
+  // Anotaciones MANUALES del propio usuario sobre su mercado local — nunca
+  // scraping, nunca IA. Aisladas por `usuarioId` como cualquier otro dato
+  // interno (autorización, condición 8): lo que un usuario anota sobre su
+  // zona nunca es visible ni usable por otra empresa.
+
+  /** Lista las referencias de mercado del usuario, sin paginar (mismo criterio que Notas/Proveedores: el volumen esperado no lo justifica). */
+  async listarReferenciasMercado(usuarioId: string): Promise<Record<string, unknown>[]> {
+    await conectar();
+    const docs = await ReferenciaMercadoModel.find({ usuarioId }).sort({ creado: -1 }).lean().exec();
+    return docs.map((d) => this.limpiar(d as Record<string, unknown>));
+  }
+
+  /** Crea una referencia de mercado. No admite edición — se borra y se vuelve a crear, mismo criterio de simplicidad que otras entidades pequeñas de solo-anotación. */
+  async crearReferenciaMercado(referencia: Record<string, unknown>, usuarioId: string): Promise<Record<string, unknown>> {
+    await conectar();
+    const doc = await ReferenciaMercadoModel.create({ ...referencia, usuarioId });
+    return this.limpiar(doc.toObject() as Record<string, unknown>);
+  }
+
+  /** Borra una referencia de mercado. */
+  async borrarReferenciaMercado(id: string, usuarioId: string): Promise<void> {
+    await conectar();
+    await ReferenciaMercadoModel.deleteOne({ id, usuarioId }).exec();
   }
 
   // ── Códigos QR (sección propia del menú, 19/08/2026) ────────────────────────

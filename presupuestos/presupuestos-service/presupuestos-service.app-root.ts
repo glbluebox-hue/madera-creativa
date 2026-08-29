@@ -58,6 +58,7 @@ import {
   esquemaProveedor,
   esquemaProducto,
   esquemaNotaMC,
+  esquemaReferenciaMercado,
   esquemaCodigoQRMC,
   esquemaPresupuestoMC,
   esquemaPlantillaMC,
@@ -1747,6 +1748,27 @@ export function run() {
 
   app.delete('/notas/:id', requireAuth, async (req: AuthRequest, res) => {
     try { await svc.borrarNota(req.params.id, req.usuarioId!); res.json({ ok: true }); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  /**
+   * Referencias de Mercado (Fase 2F, "Consenso de Precio") — anotaciones
+   * manuales del usuario sobre su mercado local, aisladas por usuarioId.
+   * Sin PUT/edición: se borra y se vuelve a crear (mismo criterio que
+   * Códigos QR, entidades de solo-anotación).
+   */
+  app.get('/referencias-mercado', requireAuth, async (req: AuthRequest, res) => {
+    try { res.json(await svc.listarReferenciasMercado(req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.post('/referencias-mercado', requireAuth, validar(esquemaReferenciaMercado), async (req: AuthRequest, res) => {
+    try { res.json(await svc.crearReferenciaMercado(req.body, req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.delete('/referencias-mercado/:id', requireAuth, async (req: AuthRequest, res) => {
+    try { await svc.borrarReferenciaMercado(req.params.id, req.usuarioId!); res.json({ ok: true }); }
     catch (err) { responderError(req, res, err); }
   });
 
