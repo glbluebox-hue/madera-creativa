@@ -451,6 +451,26 @@ const ReferenciaMercadoSchema = new Schema({
   /** Fecha a la que corresponde el precio (no la fecha en la que se anota) — para poder aplicar la ventana de vigencia en el futuro. */
   fecha: { type: String, required: true },
   creado: { type: String, required: true },
+  /**
+   * Alcance real del trabajo (ampliación "Ficha Comparable", 29/08/2026,
+   * auditoría "Filtro de Mercado") — obligatorio: sin esto, "cocina solo
+   * mobiliario" y "cocina reforma integral" se mezclarían en el mismo
+   * rango pese a diferir casi el doble en precio real observado.
+   */
+  alcance: { type: String, enum: ['solo_mobiliario', 'mobiliario_encimera', 'reforma_completa'], required: true },
+  obraIncluida: { type: Boolean, default: false },
+  /** `null` = no aplica o desconocido (solo tiene sentido declarado para cocinas) — nunca se asume `false`. */
+  electrodomesticosIncluidos: { type: Boolean, default: null },
+  /** `null` = desconocido — nunca se asume "estándar" por defecto. */
+  nivelCalidad: { type: String, enum: ['economico', 'estandar', 'alto', null], default: null },
+  tamano: { type: Number, default: null },
+  unidad: { type: String, enum: ['total', 'm2', 'metro_lineal', 'unidad'], default: 'total' },
+  /** `false` = no se sabe si el precio incluye IGIC/IVA — nunca se adivina la tasa (reduce el techo de confianza). */
+  impuestosConocidos: { type: Boolean, default: false },
+  /** Un precio 'desde' nunca se trata como rango completo ni como techo de mercado — ver `mercado-local.ts`. */
+  tipoPrecio: { type: String, enum: ['publicado', 'medio', 'desde', 'indice_oficial'], default: 'publicado' },
+  /** Único valor posible hoy — declarado explícito para no migrar de nuevo el día que exista una fuente oficial/comercial verificada. */
+  origen: { type: String, enum: ['manual'], default: 'manual' },
 });
 ReferenciaMercadoSchema.index({ usuarioId: 1, tipoTrabajo: 1 });
 

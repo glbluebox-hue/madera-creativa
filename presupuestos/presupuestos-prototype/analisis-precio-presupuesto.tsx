@@ -6,7 +6,7 @@ import { evaluarPrecio } from './evaluar-precio.js';
 import { ConsejoPrecio } from './consejo-precio.js';
 import { resolverMercadoLocal } from './mercado-local.js';
 import type { ReferenciaMercado, UbicacionEmpresa } from './mercado-local.js';
-import { ReferenciasMercadoVista } from './referencias-mercado-vista.js';
+import { ReferenciasMercadoVista, ETIQUETA_ALCANCE } from './referencias-mercado-vista.js';
 import { formatoEuro } from './calculos.js';
 import { TrabajosComparables } from './trabajos-comparables.js';
 import * as api from './api.js';
@@ -221,7 +221,7 @@ export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proye
             </p>
             {mercadoLocal.disponible ? (
               <p style={{ margin: '0 0 0.5rem', fontSize: '0.88rem' }}>
-                Mercado {mercadoLocal.nivelUsado === 'local' ? 'local' : mercadoLocal.nivelUsado === 'regional' ? 'regional' : 'nacional'} ({mercadoLocal.zona}): {formatoEuro(mercadoLocal.precioMin)} – {formatoEuro(mercadoLocal.precioMax)}
+                Mercado {mercadoLocal.nivelUsado === 'local' ? 'local' : mercadoLocal.nivelUsado === 'regional' ? 'regional' : 'nacional'} ({mercadoLocal.zona}), {ETIQUETA_ALCANCE[mercadoLocal.alcance].toLowerCase()}: {formatoEuro(mercadoLocal.precioMin)} – {formatoEuro(mercadoLocal.precioMax)}
               </p>
             ) : (
               <p style={{ margin: '0 0 0.5rem', fontSize: '0.88rem', color: 'var(--topo-claro)', fontStyle: 'italic' }}>
@@ -233,6 +233,7 @@ export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proye
                 tipoTrabajo={tipoTrabajo}
                 ubicacion={ubicacion}
                 referencias={(referenciasMercado ?? []).filter((r) => r.tipoTrabajo === tipoTrabajo)}
+                idsNoComparables={mercadoLocal.disponible ? mercadoLocal.referenciasNoComparables.map((r) => r.id) : []}
                 onCambio={cargarReferenciasMercado}
               />
             )}

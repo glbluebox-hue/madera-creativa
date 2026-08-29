@@ -82,7 +82,7 @@ function mediana(valores: number[]): number {
  * precio no hay dispersión que medir — se trata como "no penaliza",
  * nunca como "muy disperso" por falta de datos.
  */
-function dispersionBaja(precios: number[]): boolean {
+export function dispersionBaja(precios: number[]): boolean {
   if (precios.length < 2) return true;
   const m = media(precios);
   if (m === 0) return true;

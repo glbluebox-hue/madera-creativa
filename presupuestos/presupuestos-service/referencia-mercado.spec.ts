@@ -27,6 +27,8 @@ function referenciaBase(id: string, extra: Record<string, unknown> = {}) {
     fuente: 'Test',
     fecha: '2026-06-01',
     creado: new Date().toISOString(),
+    // Campos de la ampliación "Ficha Comparable" — alcance es obligatorio, el resto lleva su default seguro.
+    alcance: 'mobiliario_encimera' as const,
     ...extra,
   };
 }
@@ -81,5 +83,32 @@ describe('borrarReferenciaMercado — aislamiento por usuario', () => {
     await svc.borrarReferenciaMercado('r1', USUARIO_A);
     const lista = await svc.listarReferenciasMercado(USUARIO_A);
     expect(lista).toHaveLength(0);
+  });
+});
+
+describe('compatibilidad con datos antiguos (ampliación "Ficha Comparable")', () => {
+  it('un documento guardado antes de esta ampliación (sin los 8 campos nuevos) se sigue leyendo, con los defaults seguros', async () => {
+    // Inserción directa en Mongo, saltándose crearReferenciaMercado(), simulando una fila real
+    // de antes de esta fase — la colección en producción está vacía hoy, pero el esquema debe
+    // seguir sirviendo estos documentos si alguna vez existieran.
+    await ReferenciaMercadoModel.create({
+      id: 'antigua-1', usuarioId: USUARIO_A, tipoTrabajo: 'Cocina', nivelGeografico: 'local',
+      zona: 'Tenerife', precioMin: 5000, precioMax: 6000, fuente: 'Test', fecha: '2026-01-01',
+      creado: '2026-01-01T00:00:00.000Z',
+      alcance: 'mobiliario_encimera', // único campo nuevo obligatorio — sin default posible, ver "Ficha Comparable"
+      // Nótese: sin unidad, sin impuestosConocidos, sin tipoPrecio, sin origen, sin obraIncluida,
+      // sin electrodomesticosIncluidos, sin nivelCalidad — tal como quedaría un documento mínimo
+      // anterior a que el formulario empezara a rellenar estos campos opcionales.
+    });
+    const lista = await svc.listarReferenciasMercado(USUARIO_A);
+    expect(lista).toHaveLength(1);
+    const doc = lista[0] as Record<string, unknown>;
+    expect(doc.unidad).toBe('total');
+    expect(doc.impuestosConocidos).toBe(false);
+    expect(doc.tipoPrecio).toBe('publicado');
+    expect(doc.origen).toBe('manual');
+    expect(doc.obraIncluida).toBe(false);
+    expect(doc.electrodomesticosIncluidos).toBeNull();
+    expect(doc.nivelCalidad).toBeNull();
   });
 });

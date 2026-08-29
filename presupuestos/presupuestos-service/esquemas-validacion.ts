@@ -627,6 +627,16 @@ export const esquemaReferenciaMercado = z.object({
   fuente: z.string().trim().max(300).optional().default(''),
   fecha: z.string().min(1).max(64),
   creado: z.string().min(1).max(64),
+  /** Ampliación "Ficha Comparable" — ver `ReferenciaMercadoSchema` en `cliente.model.ts` para la justificación de cada campo. */
+  alcance: z.enum(['solo_mobiliario', 'mobiliario_encimera', 'reforma_completa']),
+  obraIncluida: z.boolean().optional().default(false),
+  electrodomesticosIncluidos: z.boolean().nullable().optional().default(null),
+  nivelCalidad: z.enum(['economico', 'estandar', 'alto']).nullable().optional().default(null),
+  tamano: z.number().positive().nullable().optional().default(null),
+  unidad: z.enum(['total', 'm2', 'metro_lineal', 'unidad']).optional().default('total'),
+  impuestosConocidos: z.boolean().optional().default(false),
+  tipoPrecio: z.enum(['publicado', 'medio', 'desde', 'indice_oficial']).optional().default('publicado'),
+  origen: z.enum(['manual']).optional().default('manual'),
 }).refine((r) => r.precioMax >= r.precioMin, { message: 'El precio máximo no puede ser menor que el mínimo.' });
 
 /** Código QR guardado (sección propia del menú, 19/08/2026) — imagen ya subida a la biblioteca de recursos, aquí solo el nombre y a qué url apunta. */

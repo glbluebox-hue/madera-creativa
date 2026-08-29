@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { NivelGeografico, ReferenciaMercado, UbicacionEmpresa } from './mercado-local.js';
+import type { NivelGeografico, AlcanceTrabajo, NivelCalidad, ReferenciaMercado, UbicacionEmpresa } from './mercado-local.js';
 import { formatoEuro } from './calculos.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
@@ -9,10 +9,11 @@ export type ReferenciasMercadoVistaProps = {
   ubicacion: UbicacionEmpresa;
   /** Referencias YA guardadas de este tipo de trabajo, para poder borrarlas desde aquí mismo. */
   referencias: ReferenciaMercado[];
+  /** Ids de las referencias que, aunque coinciden en tipo/zona, NO se han usado en el cálculo del mercado por no compartir alcance/unidad con el resto (autorización "Ficha Comparable", punto 10) — nunca desaparecen, se marcan. */
+  idsNoComparables: string[];
   onCambio: () => void;
 };
 
-/** La zona de cada nivel sale SIEMPRE de la ubicación de la Empresa, nunca se escribe a mano — evita cualquier error de coincidencia con `resolverMercadoLocal` (comparación por igualdad exacta de texto). */
 function zonaParaNivel(nivel: NivelGeografico, ubicacion: UbicacionEmpresa): string | null {
   if (nivel === 'nacional') return 'España';
   if (nivel === 'regional') return ubicacion.comunidadAutonoma || null;
@@ -20,17 +21,39 @@ function zonaParaNivel(nivel: NivelGeografico, ubicacion: UbicacionEmpresa): str
 }
 
 const ETIQUETA_NIVEL: Record<NivelGeografico, string> = { local: 'Local', regional: 'Regional', nacional: 'Nacional' };
+export const ETIQUETA_ALCANCE: Record<AlcanceTrabajo, string> = { solo_mobiliario: 'Solo mobiliario', mobiliario_encimera: 'Mobiliario + encimera', reforma_completa: 'Reforma completa' };
+const ETIQUETA_CALIDAD: Record<NivelCalidad, string> = { economico: 'Económico', estandar: 'Estándar', alto: 'Alto' };
+
+function Chip({ activo, onClick, children }: { activo: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      className={`${styles.btn} ${activo ? styles.btnPrimario : styles.btnSecundario}`}
+      style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
 
 /**
- * Añadir/listar/borrar referencias de mercado manuales (Fase 2F, "Consenso
- * de Precio") — deliberadamente simple (autorización, condición 9: "no
- * quiero una pantalla financiera complicada"): la zona nunca se escribe a
- * mano, sale siempre de la ubicación ya configurada en Ajustes de empresa.
- * Nunca scraping, nunca IA — el usuario anota lo que él mismo conoce.
+ * Añadir/listar/borrar referencias de mercado manuales (Fase 2F, ampliado
+ * en "Ficha Comparable") — deliberadamente visual, no un formulario
+ * técnico: alcance/calidad se eligen con chips, no con selects de
+ * catálogo. La zona nunca se escribe a mano, sale siempre de la
+ * ubicación ya configurada en Ajustes de empresa. Nunca scraping, nunca
+ * IA — el usuario anota lo que él mismo conoce.
  */
-export function ReferenciasMercadoVista({ tipoTrabajo, ubicacion, referencias, onCambio }: ReferenciasMercadoVistaProps) {
+export function ReferenciasMercadoVista({ tipoTrabajo, ubicacion, referencias, idsNoComparables, onCambio }: ReferenciasMercadoVistaProps) {
   const [abierto, setAbierto] = useState(false);
   const [nivel, setNivel] = useState<NivelGeografico>('local');
+  const [alcance, setAlcance] = useState<AlcanceTrabajo>('mobiliario_encimera');
+  const [obraIncluida, setObraIncluida] = useState(false);
+  const [electrodomesticosIncluidos, setElectrodomesticosIncluidos] = useState(false);
+  const [nivelCalidad, setNivelCalidad] = useState<NivelCalidad | null>(null);
+  const [esDesde, setEsDesde] = useState(false);
+  const [impuestosConocidos, setImpuestosConocidos] = useState(false);
   const [precioMin, setPrecioMin] = useState('');
   const [precioMax, setPrecioMax] = useState('');
   const [fuente, setFuente] = useState('');
@@ -38,19 +61,27 @@ export function ReferenciasMercadoVista({ tipoTrabajo, ubicacion, referencias, o
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState('');
 
+  const esCocina = tipoTrabajo === 'Cocina';
   const zona = zonaParaNivel(nivel, ubicacion);
   const sinUbicacion = !ubicacion.comunidadAutonoma;
 
   const guardar = async () => {
     const min = Number(precioMin);
-    const max = Number(precioMax);
+    const max = esDesde ? min : Number(precioMax);
     if (!zona) { setError('Configura primero la ubicación de tu empresa en Ajustes de empresa.'); return; }
-    if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max < min) { setError('Revisa los precios — el máximo no puede ser menor que el mínimo.'); return; }
+    if (!Number.isFinite(min) || min <= 0 || (!esDesde && (!Number.isFinite(max) || max < min))) { setError('Revisa los precios — el máximo no puede ser menor que el mínimo.'); return; }
     setError('');
     setGuardando(true);
     try {
-      await api.crearReferenciaMercado({ tipoTrabajo, nivelGeografico: nivel, zona, precioMin: min, precioMax: max, fuente: fuente.trim(), fecha });
-      setPrecioMin(''); setPrecioMax(''); setFuente('');
+      await api.crearReferenciaMercado({
+        tipoTrabajo, nivelGeografico: nivel, zona,
+        precioMin: min, precioMax: esDesde ? min : max,
+        fuente: fuente.trim(), fecha,
+        alcance, obraIncluida, electrodomesticosIncluidos: esCocina ? electrodomesticosIncluidos : null,
+        nivelCalidad, unidad: 'total', tamano: null,
+        impuestosConocidos, tipoPrecio: esDesde ? 'desde' : 'publicado', origen: 'manual',
+      });
+      setPrecioMin(''); setPrecioMax(''); setFuente(''); setObraIncluida(false); setElectrodomesticosIncluidos(false); setNivelCalidad(null); setEsDesde(false); setImpuestosConocidos(false);
       setAbierto(false);
       onCambio();
     } catch {
@@ -65,43 +96,91 @@ export function ReferenciasMercadoVista({ tipoTrabajo, ubicacion, referencias, o
     onCambio();
   };
 
+  const numNoComparables = referencias.filter((r) => idsNoComparables.includes(r.id)).length;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      {referencias.map((r) => (
-        <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.6rem', fontSize: '0.78rem', padding: '0.35rem 0.6rem', background: 'var(--fondo-panel)', borderRadius: 8 }}>
-          <span>
-            <strong>{ETIQUETA_NIVEL[r.nivelGeografico]} · {r.zona}</strong>: {formatoEuro(r.precioMin)}–{formatoEuro(r.precioMax)}
-            {r.fuente && <span style={{ color: 'var(--topo-claro)' }}> · {r.fuente}</span>}
-          </span>
-          <button type="button" onClick={() => borrar(r.id)} style={{ background: 'none', border: 'none', color: 'var(--topo-claro)', cursor: 'pointer', fontSize: '0.78rem' }}>Borrar</button>
-        </div>
-      ))}
+      {numNoComparables > 0 && (
+        <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--ocre)', fontStyle: 'italic' }}>
+          {numNoComparables} referencia{numNoComparables === 1 ? '' : 's'} de otro alcance o unidad en tu zona — no se {numNoComparables === 1 ? 'ha' : 'han'} usado en el cálculo.
+        </p>
+      )}
+      {referencias.map((r) => {
+        const noComparable = idsNoComparables.includes(r.id);
+        return (
+          <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.6rem', fontSize: '0.78rem', padding: '0.35rem 0.6rem', background: 'var(--fondo-panel)', borderRadius: 8, opacity: noComparable ? 0.6 : 1 }}>
+            <span>
+              <strong>{ETIQUETA_NIVEL[r.nivelGeografico]} · {r.zona}</strong>: {r.tipoPrecio === 'desde' ? `desde ${formatoEuro(r.precioMin)}` : `${formatoEuro(r.precioMin)}–${formatoEuro(r.precioMax)}`}
+              {' · '}{ETIQUETA_ALCANCE[r.alcance]}
+              {r.nivelCalidad && ` · ${ETIQUETA_CALIDAD[r.nivelCalidad]}`}
+              {!r.impuestosConocidos && <span style={{ color: 'var(--topo-claro)' }}> · impuestos desconocidos</span>}
+              {noComparable && <span style={{ color: 'var(--ocre)' }}> · no comparable con el resto</span>}
+              {r.fuente && <span style={{ color: 'var(--topo-claro)' }}> · {r.fuente}</span>}
+            </span>
+            <button type="button" onClick={() => borrar(r.id)} style={{ background: 'none', border: 'none', color: 'var(--topo-claro)', cursor: 'pointer', fontSize: '0.78rem', flexShrink: 0 }}>Borrar</button>
+          </div>
+        );
+      })}
 
       {!abierto ? (
         <button type="button" className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.76rem', padding: '0.35rem 0.7rem', alignSelf: 'flex-start' }} onClick={() => setAbierto(true)}>
           + Añadir referencia de mercado
         </button>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '0.6rem', border: '1px dashed var(--borde)', borderRadius: 8 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', padding: '0.7rem', border: '1px dashed var(--borde)', borderRadius: 8 }}>
           {sinUbicacion && <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--topo-claro)' }}>Configura primero la ubicación de tu empresa en Ajustes de empresa.</p>}
-          <div style={{ display: 'flex', gap: '0.4rem' }}>
-            {(['local', 'regional', 'nacional'] as NivelGeografico[]).map((n) => (
-              <button
-                key={n}
-                type="button"
-                className={`${styles.btn} ${nivel === n ? styles.btnPrimario : styles.btnSecundario}`}
-                style={{ flex: 1, fontSize: '0.74rem', padding: '0.3rem 0.5rem', justifyContent: 'center' }}
-                onClick={() => setNivel(n)}
-              >
-                {ETIQUETA_NIVEL[n]}
-              </button>
-            ))}
+
+          <div>
+            <p style={{ margin: '0 0 0.3rem', fontSize: '0.7rem', fontWeight: 700, color: 'var(--topo-claro)', textTransform: 'uppercase' }}>Zona</p>
+            <div style={{ display: 'flex', gap: '0.4rem' }}>
+              {(['local', 'regional', 'nacional'] as NivelGeografico[]).map((n) => (
+                <Chip key={n} activo={nivel === n} onClick={() => setNivel(n)}>{ETIQUETA_NIVEL[n]}</Chip>
+              ))}
+            </div>
+            <p style={{ margin: '0.3rem 0 0', fontSize: '0.74rem', color: 'var(--topo-claro)' }}>{zona ?? '—'} · {tipoTrabajo}</p>
           </div>
-          <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--topo-claro)' }}>Zona: {zona ?? '—'} · Tipo de trabajo: {tipoTrabajo}</p>
-          <div style={{ display: 'flex', gap: '0.4rem' }}>
-            <input className={styles.input} type="number" min={0} placeholder="Precio mínimo" value={precioMin} onChange={(e) => setPrecioMin(e.target.value)} />
-            <input className={styles.input} type="number" min={0} placeholder="Precio máximo" value={precioMax} onChange={(e) => setPrecioMax(e.target.value)} />
+
+          <div>
+            <p style={{ margin: '0 0 0.3rem', fontSize: '0.7rem', fontWeight: 700, color: 'var(--topo-claro)', textTransform: 'uppercase' }}>¿Qué incluye?</p>
+            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+              {(Object.keys(ETIQUETA_ALCANCE) as AlcanceTrabajo[]).map((a) => (
+                <Chip key={a} activo={alcance === a} onClick={() => setAlcance(a)}>{ETIQUETA_ALCANCE[a]}</Chip>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem' }}>
+                <input type="checkbox" checked={obraIncluida} onChange={(e) => setObraIncluida(e.target.checked)} /> Obra incluida
+              </label>
+              {esCocina && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem' }}>
+                  <input type="checkbox" checked={electrodomesticosIncluidos} onChange={(e) => setElectrodomesticosIncluidos(e.target.checked)} /> Electrodomésticos incluidos
+                </label>
+              )}
+            </div>
           </div>
+
+          <div>
+            <p style={{ margin: '0 0 0.3rem', fontSize: '0.7rem', fontWeight: 700, color: 'var(--topo-claro)', textTransform: 'uppercase' }}>Calidad (opcional)</p>
+            <div style={{ display: 'flex', gap: '0.4rem' }}>
+              {(Object.keys(ETIQUETA_CALIDAD) as NivelCalidad[]).map((c) => (
+                <Chip key={c} activo={nivelCalidad === c} onClick={() => setNivelCalidad(nivelCalidad === c ? null : c)}>{ETIQUETA_CALIDAD[c]}</Chip>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.4rem' }}>
+            <input className={styles.input} type="number" min={0} placeholder={esDesde ? 'Precio "desde"' : 'Precio mínimo'} value={precioMin} onChange={(e) => setPrecioMin(e.target.value)} />
+            {!esDesde && <input className={styles.input} type="number" min={0} placeholder="Precio máximo" value={precioMax} onChange={(e) => setPrecioMax(e.target.value)} />}
+          </div>
+          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem' }}>
+              <input type="checkbox" checked={esDesde} onChange={(e) => setEsDesde(e.target.checked)} /> Es un precio "desde", no un rango real
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem' }}>
+              <input type="checkbox" checked={impuestosConocidos} onChange={(e) => setImpuestosConocidos(e.target.checked)} /> El precio incluye impuestos (IGIC/IVA)
+            </label>
+          </div>
+
           <input className={styles.input} placeholder="Fuente (ej. Habitissimo, competidor visto en Instagram…)" value={fuente} onChange={(e) => setFuente(e.target.value)} />
           <input className={styles.input} type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
           {error && <p style={{ margin: 0, fontSize: '0.74rem', color: 'var(--rojo)' }}>{error}</p>}

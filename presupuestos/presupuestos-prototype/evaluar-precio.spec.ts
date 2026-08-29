@@ -38,7 +38,11 @@ function comparable(nivel: Comparable['nivel'] = 'muy_comparable', precio?: numb
 }
 
 function mercado(extra: Partial<Extract<ResultadoMercadoLocal, { disponible: true }>> = {}): ResultadoMercadoLocal {
-  return { disponible: true, nivelUsado: 'local', zona: 'Tenerife', precioMin: 5500, precioMax: 6300, numReferencias: 2, confianza: 'baja', fuentes: ['Manual'], ...extra };
+  return {
+    disponible: true, nivelUsado: 'local', zona: 'Tenerife', alcance: 'mobiliario_encimera', unidad: 'total',
+    precioMin: 5500, precioMax: 6300, numReferencias: 2, confianza: 'baja', fuentes: ['Manual'], referenciasNoComparables: [],
+    ...extra,
+  };
 }
 
 const SIN_MERCADO: ResultadoMercadoLocal = { disponible: false };
