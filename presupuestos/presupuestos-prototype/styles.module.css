@@ -1361,6 +1361,19 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 0.84rem;
+  /*
+   * Bug real, 30/08/2026: en modo oscuro la app invierte el fondo general
+   * (`--fondo`, oscuro) pero mantiene claras las "ventanas" de contenido
+   * (`--blanco`) — los tokens de texto (`--negro`, etc.) están pensados
+   * para leerse SOBRE esas ventanas claras, nunca sobre el fondo general.
+   * Esta tabla nunca tenía fondo propio (invisible sobre el `--fondo`
+   * claro del modo día, por eso no se notaba): sin él, en modo oscuro el
+   * texto de cada celda queda negro sobre el fondo oscuro de la página —
+   * fecha, proveedor/concepto y cualquier columna sin color propio,
+   * exactamente lo reportado por el usuario en Facturas y en el detalle
+   * de un Proveedor (ambos usan esta misma clase compartida).
+   */
+  background: var(--blanco);
 }
 .tabla th {
   text-align: left;
