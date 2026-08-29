@@ -1418,6 +1418,55 @@
 .importeGasto { color: var(--rojo); font-weight: 600; font-variant-numeric: tabular-nums; }
 .importeIngreso { color: var(--verde); font-weight: 600; font-variant-numeric: tabular-nums; }
 
+/*
+ * Variante para la lista de Facturas (30/08/2026, petición explícita del
+ * usuario tras el arreglo de contraste de arriba): a diferencia del resto
+ * de usos de `.tabla` (Proveedores, proyecto...), aquí prefiere que la
+ * tabla mantenga el fondo oscuro de la página en vez de convertirse en una
+ * "ventana" clara — basta con aclarar el texto de cada celda. `--rojo`/
+ * `--verde` se redeclaran solo dentro de esta tabla (nunca globalmente:
+ * en el resto de la app siguen usándose sobre fondo claro, donde los
+ * tonos originales ya tienen buen contraste) porque los importes de esta
+ * tabla los pintan en color directamente, sin la insignia con fondo
+ * propio que ya llevan "Ingreso"/"Gasto".
+ */
+.app[data-theme="dark"] .tablaOscura {
+  background: transparent;
+  --rojo: #e0836d;
+  --verde: #7ec99a;
+  --topo-claro: #c9b89a;
+}
+.app[data-theme="dark"] .tablaOscura td { color: var(--blanco); }
+.app[data-theme="dark"] .tablaOscura tbody tr:hover { background: rgba(240, 226, 201, 0.08); }
+@media (prefers-color-scheme: dark) {
+  .app:not([data-theme="light"]) .tablaOscura {
+    background: transparent;
+    --rojo: #e0836d;
+    --verde: #7ec99a;
+    --topo-claro: #c9b89a;
+  }
+  .app:not([data-theme="light"]) .tablaOscura td { color: var(--blanco); }
+  .app:not([data-theme="light"]) .tablaOscura tbody tr:hover { background: rgba(240, 226, 201, 0.08); }
+}
+
+/*
+ * Facturas en móvil (30/08/2026, reporte del usuario: "es muy grande no
+ * puedo ver el contenido") — la tabla llevaba `min-width:640px` fijo, más
+ * ancha que cualquier móvil, así que solo se podía leer haciendo scroll
+ * horizontal columna a columna. En vez de eso: se ocultan las columnas
+ * menos esenciales (casilla de selección y Cliente — sigue disponible
+ * dentro de "Ver factura") y se reduce el tamaño de fuente/relleno, para
+ * que Fecha/Tipo/Proveedor/Importe quepan sin scroll lateral en un móvil
+ * normal. En escritorio no cambia nada (por debajo de 640px no entra
+ * ningún monitor de verdad).
+ */
+@media (max-width: 640px) {
+  .tablaFacturas { min-width: 0; }
+  .tablaFacturas .colOcultarMovil { display: none; }
+  .tablaFacturas th,
+  .tablaFacturas td { padding: 0.55rem 0.45rem; font-size: 0.76rem; }
+}
+
 .tipoBadge {
   display: inline-flex;
   align-items: center;

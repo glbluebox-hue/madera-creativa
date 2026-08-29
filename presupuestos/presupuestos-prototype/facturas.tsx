@@ -370,14 +370,14 @@ export function Facturas({
             // Mismo patrón que ya usan el resto de tablas de la app
             // (`.tablaWrap` / `overflowX:'auto'`).
             <div style={{ overflowX: 'auto' }}>
-            <table className={styles.tabla} style={{ width: '100%', minWidth: 640 }}>
+            <table className={`${styles.tabla} ${styles.tablaOscura} ${styles.tablaFacturas}`} style={{ width: '100%' }}>
               <thead>
                 <tr>
-                  <th style={{ width: 28 }}></th>
+                  <th className={styles.colOcultarMovil} style={{ width: 28 }}></th>
                   <th>Fecha</th>
                   <th>Tipo</th>
                   <th>Proveedor / Concepto</th>
-                  <th>Cliente</th>
+                  <th className={styles.colOcultarMovil}>Cliente</th>
                   <th style={{ textAlign: 'right' }}>Importe</th>
                   <th></th>
                 </tr>
@@ -385,7 +385,7 @@ export function Facturas({
               <tbody>
                 {facturasFiltradas.map((f) => (
                   <tr key={f.id}>
-                    <td>
+                    <td className={styles.colOcultarMovil}>
                       <input type="checkbox" checked={seleccionadas.has(f.id)} onChange={() => alternarSeleccion(f.id)} aria-label={`Seleccionar factura de ${f.proveedor || f.concepto || f.fecha}`} />
                     </td>
                     <td>{formatoFecha(f.fecha)}</td>
@@ -404,7 +404,7 @@ export function Facturas({
                       <strong>{f.proveedor || '—'}</strong>
                       {f.concepto && <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>{f.concepto}</span>}
                     </td>
-                    <td style={{ fontSize: '0.82rem', color: 'var(--topo-claro)' }}>
+                    <td className={styles.colOcultarMovil} style={{ fontSize: '0.82rem', color: 'var(--topo-claro)' }}>
                       {f.clienteId ? nombreCliente(f.clienteId) : '—'}
                     </td>
                     <td style={{ textAlign: 'right', fontWeight: 600, color: f.tipo === 'ingreso' ? 'var(--verde)' : 'var(--rojo)' }}>
