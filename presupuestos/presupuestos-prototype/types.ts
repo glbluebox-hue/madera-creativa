@@ -270,6 +270,13 @@ export type Cliente = {
    * en `PresupuestoMC`, ver presupuestos-modelo.ts).
    */
   dni?: string;
+  /**
+   * Dirección del propio cliente (su domicilio/sede) — distinta de la
+   * dirección del trabajo, que vive en cada `Proyecto` (29/08/2026): un
+   * mismo cliente puede encargar varios proyectos en sitios distintos.
+   * Opcional por el mismo motivo que `dni?` (ver arriba).
+   */
+  direccion?: string;
   /** Fecha de alta en formato ISO. */
   creado: string;
 };

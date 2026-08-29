@@ -34,6 +34,7 @@ export function FormularioCliente({ onGuardar, onCerrar }: FormularioClienteProp
   const [telefono, setTelefono] = useState('');
   const [email, setEmail] = useState('');
   const [dni, setDni] = useState('');
+  const [direccionCliente, setDireccionCliente] = useState('');
   const [proyecto, setProyecto] = useState('');
   const [direccion, setDireccion] = useState('');
   const [presupuesto, setPresupuesto] = useState('');
@@ -50,7 +51,7 @@ export function FormularioCliente({ onGuardar, onCerrar }: FormularioClienteProp
     try {
       const clienteId = modo === 'existente'
         ? clienteExistenteId
-        : (await api.crearCliente({ nombre: nombre.trim(), telefono: telefono.trim(), email: email.trim(), dni: dni.trim() })).id;
+        : (await api.crearCliente({ nombre: nombre.trim(), telefono: telefono.trim(), email: email.trim(), dni: dni.trim(), direccion: direccionCliente.trim() })).id;
       const nuevoProyecto = await api.crearProyecto({
         clienteId,
         proyecto: proyecto.trim(),
@@ -106,6 +107,10 @@ export function FormularioCliente({ onGuardar, onCerrar }: FormularioClienteProp
                 <label className={styles.campoLabel}>DNI/NIE</label>
                 <input className={styles.input} value={dni} onChange={(e) => setDni(e.target.value)} placeholder="12345678A" />
               </div>
+              <div className={`${styles.campo} ${styles.full}`}>
+                <label className={styles.campoLabel}>Dirección del cliente</label>
+                <input className={styles.input} value={direccionCliente} onChange={(e) => setDireccionCliente(e.target.value)} placeholder="Calle, número, ciudad" />
+              </div>
             </>
           )}
           <div className={`${styles.campo} ${styles.full}`}>
@@ -114,7 +119,7 @@ export function FormularioCliente({ onGuardar, onCerrar }: FormularioClienteProp
           </div>
           <div className={`${styles.campo} ${styles.full}`}>
             <label className={styles.campoLabel}>Dirección del trabajo</label>
-            <input className={styles.input} value={direccion} onChange={(e) => setDireccion(e.target.value)} placeholder="Calle, número, ciudad" />
+            <input className={styles.input} value={direccion} onChange={(e) => setDireccion(e.target.value)} placeholder="Calle, número, ciudad (si es distinta a la del cliente)" />
           </div>
           <div className={styles.campo}>
             <label className={styles.campoLabel}>Presupuesto (€)</label>

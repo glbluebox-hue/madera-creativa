@@ -128,6 +128,14 @@ const ClienteSchema = new Schema({
   email: { type: String, default: '' },
   /** DNI/NIE del cliente — dato de identidad (24/08/2026), para que aparezca en presupuestos/contratos sin tener que volver a pedirlo en cada proyecto. */
   dni: { type: String, default: '' },
+  /**
+   * Dirección del propio cliente (su domicilio/sede) — dato de identidad
+   * (29/08/2026): un mismo cliente puede encargar varios proyectos, cada
+   * uno con su obra en un sitio distinto (`ProyectoSchema.direccion`, más
+   * abajo), así que la dirección del cliente no puede vivir en el proyecto
+   * sin perderse o mezclarse entre encargos.
+   */
+  direccion: { type: String, default: '' },
   creado: { type: String, required: true },
 });
 

@@ -414,6 +414,8 @@ export const esquemaCliente = z.object({
   email: z.string().max(254).optional().default(''),
   /** DNI/NIE del cliente — dato de identidad (24/08/2026). */
   dni: z.string().max(20).optional().default(''),
+  /** Dirección del propio cliente (domicilio/sede) — distinta de la dirección del trabajo, que vive en cada `Proyecto` (29/08/2026). */
+  direccion: z.string().max(300).optional().default(''),
   creado: z.string().min(1).max(64),
 });
 
@@ -423,6 +425,7 @@ export const esquemaClienteEntrada = z.object({
   telefono: z.string().max(50).optional().default(''),
   email: z.string().max(254).optional().default(''),
   dni: z.string().max(20).optional().default(''),
+  direccion: z.string().max(300).optional().default(''),
 });
 
 /**

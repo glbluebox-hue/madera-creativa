@@ -5,8 +5,15 @@ import { ImporteInput } from './importe-input.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
 
-/** Datos combinados de identidad (Cliente) + proyecto, tal como los edita este formulario en un único sitio. */
-type FormDatos = Pick<Cliente, 'nombre' | 'telefono' | 'email' | 'dni'> &
+/**
+ * Datos combinados de identidad (Cliente) + proyecto, tal como los edita
+ * este formulario en un único sitio. `direccionCliente` (domicilio del
+ * cliente) y `direccion` (dirección del trabajo, del `Proyecto`) son campos
+ * distintos a propósito (29/08/2026): un mismo cliente puede encargar
+ * varios proyectos en sitios distintos, así que no pueden compartir nombre
+ * de campo ni destino al guardar.
+ */
+type FormDatos = Pick<Cliente, 'nombre' | 'telefono' | 'email' | 'dni'> & { direccionCliente: string } &
   Pick<Proyecto, 'proyecto' | 'direccion' | 'presupuesto' | 'tarifaHora' | 'whatsapp' | 'ubicacion' | 'codigoPuerta' | 'planta' | 'ascensor' | 'zonaCarga' | 'observacionesAcceso' | 'fechaMedicion' | 'fechaMontaje'>;
 
 /** Props del panel de datos del cliente/proyecto. */
@@ -31,6 +38,7 @@ export type TabDatosProps = {
 function formDesde(cliente: Cliente, proyecto: Proyecto): FormDatos {
   return {
     nombre: cliente.nombre, telefono: cliente.telefono, email: cliente.email, dni: cliente.dni ?? '',
+    direccionCliente: cliente.direccion ?? '',
     proyecto: proyecto.proyecto, direccion: proyecto.direccion, presupuesto: proyecto.presupuesto, tarifaHora: proyecto.tarifaHora,
     whatsapp: proyecto.whatsapp, ubicacion: proyecto.ubicacion, codigoPuerta: proyecto.codigoPuerta, planta: proyecto.planta,
     ascensor: proyecto.ascensor, zonaCarga: proyecto.zonaCarga, observacionesAcceso: proyecto.observacionesAcceso,
@@ -69,8 +77,11 @@ export function TabDatos({ cliente, proyecto, onActualizarCliente, onActualizarP
     if (form.presupuesto !== proyecto.presupuesto) {
       api.cambiarPresupuestoProyecto(proyecto.id, form.presupuesto || 0);
     }
-    if (form.nombre !== cliente.nombre || form.telefono !== cliente.telefono || form.email !== cliente.email || form.dni !== (cliente.dni ?? '')) {
-      onActualizarCliente({ ...cliente, nombre: form.nombre, telefono: form.telefono, email: form.email, dni: form.dni });
+    if (
+      form.nombre !== cliente.nombre || form.telefono !== cliente.telefono || form.email !== cliente.email ||
+      form.dni !== (cliente.dni ?? '') || form.direccionCliente !== (cliente.direccion ?? '')
+    ) {
+      onActualizarCliente({ ...cliente, nombre: form.nombre, telefono: form.telefono, email: form.email, dni: form.dni, direccion: form.direccionCliente });
     }
     onActualizarProyecto({
       ...proyecto,
@@ -88,7 +99,8 @@ export function TabDatos({ cliente, proyecto, onActualizarCliente, onActualizarP
       { label: 'WhatsApp', valor: proyecto.whatsapp || '—' },
       { label: 'Email', valor: cliente.email || '—' },
       { label: 'DNI/NIE', valor: cliente.dni || '—' },
-      { label: 'Dirección', valor: proyecto.direccion || '—' },
+      { label: 'Dirección del cliente', valor: cliente.direccion || '—' },
+      { label: 'Dirección del trabajo', valor: proyecto.direccion || '—' },
       { label: 'Ubicación / Maps', valor: proyecto.ubicacion || '—' },
       { label: 'Código de puerta', valor: proyecto.codigoPuerta || '—' },
       { label: 'Planta', valor: proyecto.planta || '—' },
@@ -142,7 +154,8 @@ export function TabDatos({ cliente, proyecto, onActualizarCliente, onActualizarP
         <Campo label="WhatsApp" valor={form.whatsapp ?? ''} onChange={(v) => set('whatsapp', v)} />
         <Campo label="Email" valor={form.email} onChange={(v) => set('email', v)} />
         <Campo label="DNI/NIE" valor={form.dni ?? ''} onChange={(v) => set('dni', v)} />
-        <Campo label="Dirección" valor={form.direccion} onChange={(v) => set('direccion', v)} full />
+        <Campo label="Dirección del cliente" valor={form.direccionCliente} onChange={(v) => set('direccionCliente', v)} full />
+        <Campo label="Dirección del trabajo" valor={form.direccion} onChange={(v) => set('direccion', v)} full />
         <Campo label="Ubicación / enlace Maps" valor={form.ubicacion ?? ''} onChange={(v) => set('ubicacion', v)} full />
         <Campo label="Código de puerta" valor={form.codigoPuerta ?? ''} onChange={(v) => set('codigoPuerta', v)} />
         <Campo label="Planta" valor={form.planta ?? ''} onChange={(v) => set('planta', v)} />

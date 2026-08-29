@@ -526,7 +526,7 @@ export async function obtenerNombresClientes(): Promise<{ id: string; nombre: st
 }
 
 /** Crea un cliente nuevo (solo identidad) — el primer proyecto se crea aparte con `crearProyecto`. */
-export async function crearCliente(datos: { nombre: string; telefono?: string; email?: string; dni?: string }): Promise<Cliente> {
+export async function crearCliente(datos: { nombre: string; telefono?: string; email?: string; dni?: string; direccion?: string }): Promise<Cliente> {
   const res = await fetchConAuth('/clientes', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
