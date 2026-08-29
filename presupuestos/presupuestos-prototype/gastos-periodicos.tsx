@@ -145,7 +145,7 @@ export function GastosPeriodicos({ gastos, onCambio }: GastosPeriodicosProps) {
       </div>
 
       {formAbierto && (
-        <div style={{ background: 'var(--fondo)', border: '1px solid var(--borde)', borderRadius: 8, padding: '0.9rem', marginBottom: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+        <div style={{ background: 'var(--fondo-caja)', border: '1px solid var(--borde)', borderRadius: 8, padding: '0.9rem', marginBottom: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
           {editandoId && (
             <p style={{ margin: 0, fontSize: '0.75rem', fontWeight: 700, color: 'var(--topo)' }}>Editando gasto periódico</p>
           )}
@@ -258,7 +258,7 @@ export function GastosPeriodicos({ gastos, onCambio }: GastosPeriodicosProps) {
           {gastos.map((g) => (
             <div key={g.id} style={{
               display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0.55rem 0.75rem',
-              background: g.activo ? 'var(--blanco)' : 'var(--fondo)', border: '1px solid var(--borde)', borderRadius: 6,
+              background: g.activo ? 'var(--blanco)' : 'var(--fondo-caja)', border: '1px solid var(--borde)', borderRadius: 6,
               opacity: g.activo ? 1 : 0.6, minWidth: 0,
             }}>
               {/* Línea 1: etiqueta + descripción — nunca comparte línea con precio/acciones */}

@@ -64,7 +64,7 @@ function TarjetaComparable({ comparable }: { comparable: Comparable }) {
       {motivos.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.4rem' }}>
           {motivos.map((m, i) => (
-            <span key={i} style={{ fontSize: '0.7rem', color: 'var(--topo-claro)', background: 'var(--fondo)', padding: '0.12rem 0.55rem', borderRadius: 999 }}>
+            <span key={i} style={{ fontSize: '0.7rem', color: 'var(--topo-claro)', background: 'var(--fondo-caja)', padding: '0.12rem 0.55rem', borderRadius: 999 }}>
               {textoMotivoComparable(m)}
             </span>
           ))}

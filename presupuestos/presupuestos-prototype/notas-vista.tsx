@@ -389,7 +389,7 @@ export function NotasVista({ clienteFijo, notasLegacy, onLegacyMigrada, clientes
 
       {/* Formulario de nueva nota */}
       {formAbierto && (
-        <div style={{ background: 'var(--fondo)', border: '1px solid var(--borde)', borderRadius: 12, padding: '1rem', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+        <div style={{ background: 'var(--fondo-caja)', border: '1px solid var(--borde)', borderRadius: 12, padding: '1rem', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
           <div style={{ display: 'flex', gap: '0.4rem' }}>
             {([
               { id: 'nota' as const, etiqueta: 'Nota' },

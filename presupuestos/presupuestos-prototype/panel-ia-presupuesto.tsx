@@ -216,7 +216,7 @@ export function PanelIaPresupuesto({ abierto, onCerrar, clienteId, contextoDocum
             <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--topo)', fontWeight: 600 }}>
               Tú: {estado.conversacion[estado.conversacion.length - 2]?.conImagen ? '🖼️ ' : ''}{estado.peticion}
             </p>
-            <div style={{ background: 'var(--fondo)', border: '1px solid var(--borde)', borderRadius: 8, padding: '0.75rem' }}>
+            <div style={{ background: 'var(--fondo-caja)', border: '1px solid var(--borde)', borderRadius: 8, padding: '0.75rem' }}>
               <p style={{ margin: '0 0 0.5rem', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--topo-claro)', fontWeight: 700 }}>Propuesta</p>
               {estado.editando ? (
                 <textarea

@@ -296,7 +296,7 @@ export function EscanerDocumento({ onConfirmar, onCerrar }: EscanerDocumentoProp
               {/* Zona drop */}
               <div
                 style={{ border: '2px dashed var(--borde)', borderRadius: 12, padding: '2rem', textAlign: 'center',
-                  color: 'var(--topo-claro)', cursor: 'pointer', background: 'var(--fondo)' }}
+                  color: 'var(--topo-claro)', cursor: 'pointer', background: 'var(--fondo-caja)' }}
                 onClick={() => galeriaRef.current?.click()}
                 onDragOver={e => e.preventDefault()}
                 onDrop={e => { e.preventDefault(); agregarImagenes(e.dataTransfer.files); }}
@@ -359,7 +359,7 @@ export function EscanerDocumento({ onConfirmar, onCerrar }: EscanerDocumentoProp
                   )}
                   <img src={paginaActual.procesada} alt="Documento" style={{ width: '100%', maxHeight: '42dvh', objectFit: 'contain', display: 'block' }} />
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.3rem',
-                    padding: '0.4rem 0.6rem', background: 'var(--fondo)', borderTop: '1px solid var(--borde-fino)' }}>
+                    padding: '0.4rem 0.6rem', background: 'var(--fondo-caja)', borderTop: '1px solid var(--borde-fino)' }}>
                     <span style={{ fontSize: '0.72rem', color: 'var(--topo-claro)', fontWeight: 600 }}>Hoja {paginaActiva + 1} / {paginas.length}</span>
                     <div style={{ display: 'flex', gap: '0.2rem' }}>
                       <button onClick={() => moverPagina(paginaActual.id, -1)} disabled={paginaActiva === 0}

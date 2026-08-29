@@ -180,7 +180,7 @@ export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCe
         </h2>
 
         {estadoPush !== 'concedido' && estadoPush !== 'no-soportado' && (
-          <div className={styles.campo} style={{ marginBottom: '1.25rem', padding: '0.75rem', background: 'var(--fondo)', borderRadius: 'var(--radio)' }}>
+          <div className={styles.campo} style={{ marginBottom: '1.25rem', padding: '0.75rem', background: 'var(--fondo-caja)', borderRadius: 'var(--radio)' }}>
             <p style={{ margin: '0 0 0.6rem', fontSize: '0.85rem', color: 'var(--topo)' }}>
               {estadoPush === 'denegado'
                 ? 'Has bloqueado las notificaciones en este navegador — actívalas desde sus ajustes de sitio para poder recibir avisos.'
@@ -200,7 +200,7 @@ export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCe
         )}
 
         {estadoPush === 'concedido' && (
-          <div className={styles.campo} style={{ marginBottom: '1.25rem', padding: '0.75rem', background: 'var(--fondo)', borderRadius: 'var(--radio)' }}>
+          <div className={styles.campo} style={{ marginBottom: '1.25rem', padding: '0.75rem', background: 'var(--fondo-caja)', borderRadius: 'var(--radio)' }}>
             <p style={{ margin: '0 0 0.6rem', fontSize: '0.85rem', color: 'var(--topo)' }}>
               Notificaciones activadas en este dispositivo.
             </p>

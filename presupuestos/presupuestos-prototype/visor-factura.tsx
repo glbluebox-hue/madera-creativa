@@ -81,7 +81,7 @@ export function VisorFactura({ facturaId, onCerrar, onEditar, onDescargarPdf, pr
                       {paginas.map((p, i) => (
                         <button key={i} onClick={() => setPaginaActiva(i)}
                           style={{ flexShrink: 0, width: 44, height: 58, border: `2px solid ${i === paginaActiva ? 'var(--topo)' : 'var(--borde)'}`,
-                            borderRadius: 6, overflow: 'hidden', cursor: 'pointer', padding: 0, background: 'var(--fondo)',
+                            borderRadius: 6, overflow: 'hidden', cursor: 'pointer', padding: 0, background: 'var(--fondo-caja)',
                             display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--topo-claro)', position: 'relative' }}>
                           {p.tipo === 'pdf' ? (
                             <span style={{ fontSize: '0.6rem', fontWeight: 700 }}>PDF</span>
@@ -94,7 +94,7 @@ export function VisorFactura({ facturaId, onCerrar, onEditar, onDescargarPdf, pr
                       ))}
                     </div>
                   )}
-                  <div style={{ border: '1px solid var(--borde)', borderRadius: 8, overflow: 'hidden', background: 'var(--fondo)' }}>
+                  <div style={{ border: '1px solid var(--borde)', borderRadius: 8, overflow: 'hidden', background: 'var(--fondo-caja)' }}>
                     {paginaActual.tipo === 'pdf' ? (
                       <iframe src={urlImagenFiable(paginaActual.url)} title="Documento de la factura" style={{ width: '100%', height: 420, border: 'none', display: 'block' }} />
                     ) : (

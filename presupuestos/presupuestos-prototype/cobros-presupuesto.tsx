@@ -63,7 +63,7 @@ export function CobrosPresupuesto({ cobros, onGuardar }: CobrosPresupuestoProps)
   };
 
   return (
-    <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: 'var(--fondo)', borderRadius: 'var(--radio)' }}>
+    <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: 'var(--fondo-caja)', borderRadius: 'var(--radio)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--topo)' }}>
           Cobros{totalPendiente > 0 ? ` · ${formatoEuro(totalPendiente)} pendiente` : ' · todo cobrado'}

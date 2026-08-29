@@ -653,7 +653,7 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
                     </div>
 
                     {verAccesosDe === u.id && (
-                      <div style={{ background: 'var(--fondo)', border: '1px solid var(--borde)', borderRadius: 8, padding: '0.6rem 0.75rem', maxHeight: 160, overflowY: 'auto' }}>
+                      <div style={{ background: 'var(--fondo-caja)', border: '1px solid var(--borde)', borderRadius: 8, padding: '0.6rem 0.75rem', maxHeight: 160, overflowY: 'auto' }}>
                         <p style={{ margin: '0 0 0.35rem', fontSize: '0.7rem', fontWeight: 700, color: 'var(--topo-claro)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                           Últimos accesos (más reciente primero)
                         </p>
@@ -1066,7 +1066,7 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
                 {hiloSoporteActual.mensajes.map((m) => (
                   <div key={m.id} style={{
                     alignSelf: m.autor === 'admin' ? 'flex-end' : 'flex-start',
-                    maxWidth: '85%', background: m.autor === 'admin' ? 'var(--topo-tinte)' : 'var(--fondo)',
+                    maxWidth: '85%', background: m.autor === 'admin' ? 'var(--topo-tinte)' : 'var(--fondo-caja)',
                     border: '1px solid var(--borde)', borderRadius: 10, padding: '0.6rem 0.8rem',
                   }}>
                     <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--negro)', whiteSpace: 'pre-wrap' }}>{m.texto}</p>

@@ -298,7 +298,7 @@ export function SeccionProveedores({
         </div>
 
         {/* Facturas del proveedor */}
-        <h3 style={{ margin: '0 0 0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><IconoFactura /> Facturas de compra</h3>
+        <h3 className={styles.h3} style={{ marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><IconoFactura /> Facturas de compra</h3>
         {factProv.length === 0 ? (
           <p style={{ fontSize: '0.82rem', color: 'var(--topo-claro)', marginBottom: '1.5rem' }}>Sin facturas vinculadas. Las facturas se vinculan automáticamente por nombre del proveedor.</p>
         ) : (
@@ -337,7 +337,7 @@ export function SeccionProveedores({
 
         {/* Productos de este proveedor */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-          <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}><IconoProducto /> Sus materiales en catálogo</h3>
+          <h3 className={styles.h3} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><IconoProducto /> Sus materiales en catálogo</h3>
           <button className={`${styles.btn} ${styles.btnPrimario}`} style={{ fontSize: '0.8rem' }}
             onClick={() => { setEditandoProducto({ proveedorId: proveedorActivo.id } as Producto); setModalProducto(true); }}>
             + Añadir material
@@ -348,7 +348,7 @@ export function SeccionProveedores({
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
             {prodProv.map(p => (
-              <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--fondo)', border: '1px solid var(--borde)', borderRadius: 'var(--radio-md)', padding: '0.6rem 0.85rem' }}>
+              <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--fondo-caja)', border: '1px solid var(--borde)', borderRadius: 'var(--radio-md)', padding: '0.6rem 0.85rem' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p style={{ margin: 0, fontWeight: 700, fontSize: '0.85rem' }}>{p.nombre}</p>
                   {p.descripcion && <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--topo-claro)' }}>{p.descripcion}</p>}

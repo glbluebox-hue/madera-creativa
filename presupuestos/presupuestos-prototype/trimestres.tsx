@@ -302,7 +302,7 @@ export function Trimestres({ anio, privado = false }: TrimestresProps) {
 
               {/* Caja IRPF */}
               <div style={{
-                background: pagado ? 'var(--ocre-bg)' : 'var(--fondo)',
+                background: pagado ? 'var(--ocre-bg)' : 'var(--fondo-caja)',
                 border: `1px solid ${pagado ? 'var(--ocre)' : 'var(--borde)'}`,
                 borderRadius: 6,
                 padding: '0.75rem 1rem',
@@ -338,7 +338,7 @@ export function Trimestres({ anio, privado = false }: TrimestresProps) {
               {/* Caja IGIC/IVA — solo si hay región fiscal configurada y no aplica REPEP */}
               {calculaIndirecto && (
                 <div style={{
-                  marginTop: '0.6rem', background: 'var(--fondo)', border: '1px solid var(--borde)', borderRadius: 6, padding: '0.75rem 1rem',
+                  marginTop: '0.6rem', background: 'var(--fondo-caja)', border: '1px solid var(--borde)', borderRadius: 6, padding: '0.75rem 1rem',
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
@@ -387,7 +387,7 @@ export function Trimestres({ anio, privado = false }: TrimestresProps) {
       {/* Aviso legal */}
       <p style={{
         marginTop: '1.75rem', fontSize: '0.72rem', color: 'var(--topo-muy-claro)',
-        background: 'var(--fondo)', padding: '0.75rem 1rem', borderRadius: 4,
+        background: 'var(--fondo-caja)', padding: '0.75rem 1rem', borderRadius: 4,
         borderLeft: '3px solid var(--borde)',
         display: 'flex', alignItems: 'flex-start', gap: '0.5rem',
       }}>

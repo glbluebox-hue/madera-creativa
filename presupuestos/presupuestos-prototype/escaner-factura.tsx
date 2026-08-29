@@ -453,7 +453,7 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
                     style={{ position: 'relative', flexShrink: 0, cursor: 'pointer',
                       border: `2px solid ${i === paginaVista ? 'var(--topo)' : 'var(--borde)'}`,
                       borderRadius: 6, overflow: 'hidden', width: 54, height: 72,
-                      background: 'var(--fondo)',
+                      background: 'var(--fondo-caja)',
                     }}
                   >
                     {p.tipo === 'pdf' ? (
@@ -487,7 +487,7 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
 
               {/* Vista previa de la hoja seleccionada */}
               {paginaActual && (
-                <div style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--borde)', background: 'var(--fondo)' }}>
+                <div style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--borde)', background: 'var(--fondo-caja)' }}>
                   {paginaActual.tipo === 'pdf' ? (
                     <iframe src={urlImagenFiable(paginaActual.dataUrl)} title={`Vista previa PDF — Hoja ${paginaVista + 1}`}
                       style={{ width: '100%', height: 220, border: 'none', display: 'block' }} />
@@ -619,7 +619,7 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
                           color: 'var(--negro)', display: 'flex', alignItems: 'center', gap: '0.5rem',
                           borderBottom: '1px solid var(--borde-fino)',
                         }}
-                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--fondo)')}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--fondo-caja)')}
                         onMouseLeave={e => (e.currentTarget.style.background = 'none')}
                       >
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: 'var(--topo-muy-claro)' }}><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /></svg>
@@ -692,7 +692,7 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
             {datosFiscalesAbierto ? '− Ocultar' : '+ Añadir'} datos fiscales (nº factura, NIF, impuesto…)
           </button>
           {datosFiscalesAbierto && (
-            <div style={{ background: 'var(--fondo)', border: '1px solid var(--borde)', borderRadius: 8, padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <div style={{ background: 'var(--fondo-caja)', border: '1px solid var(--borde)', borderRadius: 8, padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                 <label className={styles.label} style={{ flex: '1 1 120px', minWidth: 0 }}>Nº factura
                   <input className={styles.input} style={{ width: '100%', boxSizing: 'border-box' }} value={numeroFactura} onChange={(e) => setNumeroFactura(e.target.value)} />

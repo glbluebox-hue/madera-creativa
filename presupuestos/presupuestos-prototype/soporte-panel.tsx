@@ -102,7 +102,7 @@ export function SoportePanel({ onCerrar }: SoportePanelProps) {
               {hilo.mensajes.map((m) => (
                 <div key={m.id} style={{
                   alignSelf: m.autor === 'admin' ? 'flex-start' : 'flex-end',
-                  maxWidth: '85%', background: m.autor === 'admin' ? 'var(--fondo)' : 'var(--topo-tinte)',
+                  maxWidth: '85%', background: m.autor === 'admin' ? 'var(--fondo-caja)' : 'var(--topo-tinte)',
                   borderRadius: 10, padding: '0.6rem 0.8rem',
                 }}>
                   <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--negro)', whiteSpace: 'pre-wrap' }}>{m.texto}</p>
@@ -197,7 +197,7 @@ export function SoportePanel({ onCerrar }: SoportePanelProps) {
                       type="button"
                       onClick={() => setHiloAbierto(h.id)}
                       style={{
-                        textAlign: 'left', background: 'var(--fondo)', border: '1px solid var(--borde)',
+                        textAlign: 'left', background: 'var(--fondo-caja)', border: '1px solid var(--borde)',
                         borderRadius: 8, padding: '0.6rem 0.75rem', cursor: 'pointer',
                       }}
                     >

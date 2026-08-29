@@ -136,7 +136,7 @@ export function GaleriaFotos({ fotos, onAnadir, onBorrar }: GaleriaFotosProps) {
           marginTop: '1rem',
         }}>
           {fotos.map((foto) => (
-            <div key={foto.id} style={{ position: 'relative', borderRadius: 6, overflow: 'hidden', background: 'var(--fondo)', border: '1px solid var(--borde)', cursor: 'pointer' }}>
+            <div key={foto.id} style={{ position: 'relative', borderRadius: 6, overflow: 'hidden', background: 'var(--fondo-caja)', border: '1px solid var(--borde)', cursor: 'pointer' }}>
               {/* Imagen */}
               <img
                 src={foto.url}

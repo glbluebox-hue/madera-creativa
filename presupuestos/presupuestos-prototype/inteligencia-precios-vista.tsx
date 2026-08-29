@@ -342,7 +342,7 @@ function FilaHistorico({ trabajo, onClick }: { trabajo: TrabajoAnalizado; onClic
       <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>{trabajo.titulo}</span>
         <span style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', fontSize: '0.72rem', color: 'var(--topo-claro)' }}>
-          {trabajo.tipoTrabajo && <span style={{ background: 'var(--fondo)', padding: '0.1rem 0.55rem', borderRadius: 999 }}>{trabajo.tipoTrabajo}</span>}
+          {trabajo.tipoTrabajo && <span style={{ background: 'var(--fondo-caja)', padding: '0.1rem 0.55rem', borderRadius: 999 }}>{trabajo.tipoTrabajo}</span>}
           {trabajo.actualizado && <span>{formatoFecha(trabajo.actualizado)}</span>}
         </span>
       </div>

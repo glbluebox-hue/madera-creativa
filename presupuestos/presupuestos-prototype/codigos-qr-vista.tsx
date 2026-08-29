@@ -137,7 +137,7 @@ export function CodigosQRVista() {
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '0.75rem', marginTop: '1rem' }}>
           {codigos.map((c) => (
-            <div key={c.id} style={{ position: 'relative', borderRadius: 6, overflow: 'hidden', background: 'var(--fondo)', border: '1px solid var(--borde)', cursor: 'pointer' }}>
+            <div key={c.id} style={{ position: 'relative', borderRadius: 6, overflow: 'hidden', background: 'var(--fondo-caja)', border: '1px solid var(--borde)', cursor: 'pointer' }}>
               <img
                 src={urlImagenFiable(c.imagenUrl)}
                 alt={c.nombre}
@@ -207,7 +207,7 @@ export function CodigosQRVista() {
             <img
               src={urlImagenFiable(archivoNuevoEdicion ? URL.createObjectURL(archivoNuevoEdicion) : editando.imagenUrl)}
               alt={nombreEdicion}
-              style={{ width: '100%', maxHeight: 180, objectFit: 'contain', borderRadius: 6, background: 'var(--fondo)' }}
+              style={{ width: '100%', maxHeight: 180, objectFit: 'contain', borderRadius: 6, background: 'var(--fondo-caja)' }}
             />
 
             <input

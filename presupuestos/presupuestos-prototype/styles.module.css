@@ -46,6 +46,19 @@
   --topo-muy-claro: #b8b0a5;
   --fondo: #f5f3ef;
   --fondo-panel: #ffffff;
+  /*
+   * Fondo de "caja" — la sutil distinción de una fila/chip/recuadro DENTRO
+   * de una ventana clara (`--blanco`/`--fondo-panel`), nunca el fondo de la
+   * página. Antes de este token (30/08/2026) decenas de sitios usaban
+   * `var(--fondo)` con esa intención — funcionaba por accidente en modo
+   * claro (`--fondo` es casi blanco ahí), pero en modo oscuro `--fondo` es
+   * el marrón oscuro de TODA la página: cualquier caja que lo usara se
+   * volvía invisible (mismo color que el fondo) y el texto de dentro
+   * (pensado para leerse sobre una superficie clara) quedaba negro sobre
+   * negro. `--fondo-caja` vale lo mismo que `--fondo` en modo claro (cero
+   * cambio visual) y un tono claro, distinto de `--blanco`, en modo oscuro.
+   */
+  --fondo-caja: #f5f3ef;
   --borde: #e5e0d8;
   --borde-fino: #ede9e2;
   /* Tinte cálido de marca — fondo del elemento activo del menú lateral y
@@ -161,6 +174,7 @@
     --topo-muy-claro: #9c9184;
     --fondo: #241a10;
     --fondo-panel: #f0e2c9;
+    --fondo-caja: #e6d5ac;
     --borde: #ddd0b4;
     --borde-fino: #e6dbc0;
     --topo-tinte: #e3d2ac;
@@ -178,6 +192,7 @@
   --topo-muy-claro: #9c9184;
   --fondo: #241a10;
   --fondo-panel: #f0e2c9;
+  --fondo-caja: #e6d5ac;
   --borde: #ddd0b4;
   --borde-fino: #e6dbc0;
   --topo-tinte: #e3d2ac;
@@ -1398,7 +1413,7 @@
 .tabla tbody tr {
   transition: var(--trans-fast);
 }
-.tabla tbody tr:hover { background: var(--fondo); }
+.tabla tbody tr:hover { background: var(--fondo-caja); }
 
 .importeGasto { color: var(--rojo); font-weight: 600; font-variant-numeric: tabular-nums; }
 .importeIngreso { color: var(--verde); font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -1904,10 +1919,12 @@
    no pintar este texto claro también en modo claro. Los botones e iconos
    de estas cabeceras (Lista/Tarjetas, Editar…) no se tocan: ya tienen su
    propio fondo (`.btn`) y siguen leyéndose bien tal cual. */
+.app[data-theme="dark"] .h2,
 .app[data-theme="dark"] .dashboardTop h2,
 .app[data-theme="dark"] .barraSeccion h2,
 .app[data-theme="dark"] .tabPanel > h2,
 .app[data-theme="dark"] .tabPanel > div > h2 { color: #f0e2c9; }
+.app[data-theme="dark"] .h3 { color: var(--topo-muy-claro); }
 .app[data-theme="dark"] .dashboardSub { color: #c9b89a; }
 /*
  * Mismo motivo que arriba, pero para elementos cuyo color normal es
@@ -1933,10 +1950,12 @@
 .app[data-theme="dark"] .sidebarNavItem:hover,
 .app[data-theme="dark"] .proyectoActualNombre { color: #f0e2c9; }
 @media (prefers-color-scheme: dark) {
+  .app:not([data-theme="light"]) .h2,
   .app:not([data-theme="light"]) .dashboardTop h2,
   .app:not([data-theme="light"]) .barraSeccion h2,
   .app:not([data-theme="light"]) .tabPanel > h2,
   .app:not([data-theme="light"]) .tabPanel > div > h2 { color: #f0e2c9; }
+  .app:not([data-theme="light"]) .h3 { color: var(--topo-muy-claro); }
   .app:not([data-theme="light"]) .dashboardSub { color: #c9b89a; }
   .app:not([data-theme="light"]) .fichaTab:hover,
   .app:not([data-theme="light"]) .fichaTabActiva,
