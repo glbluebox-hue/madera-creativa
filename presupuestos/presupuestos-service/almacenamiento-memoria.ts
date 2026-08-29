@@ -41,6 +41,11 @@ export class AlmacenamientoMemoria implements AlmacenamientoArchivos {
     return url.startsWith(prefijoAntiguo) ? url.slice(prefijoAntiguo.length) : null;
   }
 
+  /** En desarrollo nunca se generan URLs firmadas de bucket privado. */
+  claveDesdeUrlPrivada(): string | null {
+    return null;
+  }
+
   async obtener(clave: string): Promise<{ datos: Buffer; contentType: string } | null> {
     const archivo = this.archivos.get(clave);
     return archivo ? { datos: archivo.datos, contentType: archivo.contentType } : null;

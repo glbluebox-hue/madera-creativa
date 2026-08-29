@@ -44,6 +44,19 @@ export interface AlmacenamientoArchivos {
   claveDesdeUrl(url: string): string | null;
 
   /**
+   * Deriva la clave interna a partir de una URL FIRMADA del bucket privado
+   * (la que devolvía `generarUrlTemporal()` antes de servir facturas
+   * privadas por proxy propio), o `null` si la URL no tiene esa forma.
+   * Bug real, 29/08/2026: `guardarFactura` guardaba antes esa URL firmada
+   * (con TTL de 15 min) directamente en `Factura.imagen` en vez de la
+   * clave — cualquier reguardado posterior perdía la clave para siempre
+   * (ver `presupuestos-service.ts`, `guardarFactura`). Esto permite
+   * recuperar la clave real de las facturas ya afectadas a partir del
+   * literal que quedó guardado, sin necesidad de un script de migración.
+   */
+  claveDesdeUrlPrivada(url: string): string | null;
+
+  /**
    * Recupera el contenido de un archivo por su clave interna, o `null` si no
    * existe. Solo lo usa `GET /almacenamiento/:carpeta/:id` — la ruta que
    * sirve los archivos de `AlmacenamientoMemoria` (que no tiene una URL

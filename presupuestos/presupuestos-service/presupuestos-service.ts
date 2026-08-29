@@ -159,19 +159,33 @@ async function resolverUrlClave(clave: string): Promise<string> {
   return clave.startsWith(PREFIJO_FACTURAS_PRIVADO) ? urlProxyArchivoPrivado(clave) : almacenamiento.generarUrlTemporal(clave);
 }
 
+/**
+ * Resuelve un campo `url`/`clave` de una factura — si no hay `clave` (bug
+ * real, 29/08/2026: un reguardado antes de la corrección de `guardarFactura`
+ * podía dejarla vacía) intenta derivarla del literal ya guardado en `url`
+ * con `claveDesdeUrlPrivada()`. Sin esto, una factura ya afectada por ese
+ * bug se queda enseñando la URL firmada de R2 caducada para siempre, aunque
+ * el objeto siga existiendo en el bucket privado.
+ */
+async function resolverUrlCampo(clave: string | undefined | null, url: string | undefined): Promise<string | undefined> {
+  if (clave) return resolverUrlClave(clave);
+  const claveDerivada = typeof url === 'string' ? almacenamiento.claveDesdeUrlPrivada(url) : null;
+  return claveDerivada ? urlProxyArchivoPrivado(claveDerivada) : url;
+}
+
 async function resolverUrlsFactura(doc: Record<string, unknown>): Promise<Record<string, unknown>> {
   const d = doc as any;
   const { imagenClave, imagenesClaves, pdfOriginalClave, ...resto } = d;
 
-  const imagen = imagenClave ? await resolverUrlClave(imagenClave) : d.imagen;
-  const pdfOriginalUrl = pdfOriginalClave ? await resolverUrlClave(pdfOriginalClave) : d.pdfOriginalUrl;
+  const imagen = await resolverUrlCampo(imagenClave, d.imagen);
+  const pdfOriginalUrl = await resolverUrlCampo(pdfOriginalClave, d.pdfOriginalUrl);
   const imagenes = Array.isArray(d.imagenes)
-    ? await Promise.all(d.imagenes.map((url: string, i: number) => (imagenesClaves?.[i] ? resolverUrlClave(imagenesClaves[i]) : url)))
+    ? await Promise.all(d.imagenes.map((url: string, i: number) => resolverUrlCampo(imagenesClaves?.[i], url)))
     : d.imagenes;
   const paginas = Array.isArray(d.paginas)
     ? await Promise.all(d.paginas.map(async (p: Record<string, unknown>) => {
         const { clave, ...pRest } = p as any;
-        return clave ? { ...pRest, url: await resolverUrlClave(clave) } : pRest;
+        return { ...pRest, url: await resolverUrlCampo(clave, (p as any).url) };
       }))
     : d.paginas;
 
@@ -1372,11 +1386,17 @@ export class PresupuestosService {
     // servir su propio archivo (justo el fallo que impedía comprobar en
     // producción el arreglo de las URLs firmadas de R2). Por eso, cuando no
     // hay subida nueva, se cae primero en la clave que trajera `factura`
-    // (permite a llamadas internas/tests fijarla explícitamente) y solo
-    // después en la que ya tenía el documento en Mongo (`anterior`).
+    // (permite a llamadas internas/tests fijarla explícitamente), luego en
+    // la que ya tenía el documento en Mongo (`anterior`) y, como último
+    // recurso, se intenta derivar de la URL firmada que quedó guardada en
+    // `anterior.imagen` — repara de forma permanente, en el primer
+    // reguardado, cualquier factura que ya se hubiera visto afectada por
+    // este bug antes de corregirlo.
     const resultadoImagen = await subirSiEsBase64((factura as any).imagen, 'facturas');
     const imagen = resultadoImagen ? resultadoImagen.url : (factura as any).imagen;
-    const imagenClave = resultadoImagen ? resultadoImagen.clave : ((factura as any).imagenClave || anterior?.imagenClave || '');
+    const imagenClave = resultadoImagen
+      ? resultadoImagen.clave
+      : ((factura as any).imagenClave || anterior?.imagenClave || (anterior?.imagen ? almacenamiento.claveDesdeUrlPrivada(anterior.imagen) : null) || '');
 
     const imagenesOriginal = (factura as any).imagenes;
     const imagenesSubidas = Array.isArray(imagenesOriginal)
@@ -1395,7 +1415,9 @@ export class PresupuestosService {
     // Facturas Profesional, mismo patrón que `imagen`/`imagenes`.
     const resultadoPdfOriginal = await subirSiEsBase64((factura as any).pdfOriginalUrl, 'facturas');
     const pdfOriginalUrl = resultadoPdfOriginal ? resultadoPdfOriginal.url : (factura as any).pdfOriginalUrl;
-    const pdfOriginalClave = resultadoPdfOriginal ? resultadoPdfOriginal.clave : ((factura as any).pdfOriginalClave || anterior?.pdfOriginalClave || '');
+    const pdfOriginalClave = resultadoPdfOriginal
+      ? resultadoPdfOriginal.clave
+      : ((factura as any).pdfOriginalClave || anterior?.pdfOriginalClave || (anterior?.pdfOriginalUrl ? almacenamiento.claveDesdeUrlPrivada(anterior.pdfOriginalUrl) : null) || '');
 
     const paginasOriginal = (factura as any).paginas;
     const paginas = Array.isArray(paginasOriginal)

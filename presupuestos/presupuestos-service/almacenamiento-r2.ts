@@ -138,6 +138,19 @@ export class AlmacenamientoR2 implements AlmacenamientoArchivos {
     return url.startsWith(prefijo) ? url.slice(prefijo.length) : null;
   }
 
+  /** Ver contrato en `AlmacenamientoArchivos.claveDesdeUrlPrivada`. */
+  claveDesdeUrlPrivada(url: string): string | null {
+    if (!this.bucketFacturas) return null;
+    let analizada: URL;
+    try {
+      analizada = new URL(url);
+    } catch {
+      return null;
+    }
+    const prefijo = `/${this.bucketFacturas}/`;
+    return analizada.pathname.startsWith(prefijo) ? decodeURIComponent(analizada.pathname.slice(prefijo.length)) : null;
+  }
+
   /** TTL por defecto — 15 minutos: suficiente para abrir/revisar/descargar una factura, corto para acotar la exposición si la URL se filtrase (captura de pantalla, historial del navegador…). */
   async generarUrlTemporal(clave: string, ttlSegundos = 900): Promise<string> {
     const { cliente, bucket } = this.destinoParaClave(clave);
