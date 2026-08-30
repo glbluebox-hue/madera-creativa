@@ -469,6 +469,16 @@ export function run() {
         // defecto) y bloquearía igual que `img-src`/`connect-src` un PDF
         // servido desde R2.
         'frame-src': ["'self'", ORIGEN_R2_LEGADO, ...(origenR2 && origenR2 !== ORIGEN_R2_LEGADO ? [origenR2] : []), ...(origenR2Facturas ? [origenR2Facturas] : [])],
+        // El visor de "Diseño 3D" (`@google/model-viewer`, sobre three.js)
+        // compila internamente un decodificador WebAssembly (Draco/KTX2)
+        // para modelos `.glb` con geometría/texturas comprimidas. Sin esto
+        // se queda en blanco en silencio: el único rastro es en consola,
+        // `CompileError: WebAssembly.instantiate(): ... 'unsafe-eval' is
+        // not an allowed source of script in ... "script-src 'self'"`
+        // (confirmado en vivo 30/08/2026 con un .glb real subido). Se usa
+        // `'wasm-unsafe-eval'` (CSP3), NO `'unsafe-eval'`: permite compilar
+        // WebAssembly sin abrir la puerta a `eval()`/`Function()` de JS.
+        'script-src': ["'self'", "'wasm-unsafe-eval'"],
       },
     },
   }));
