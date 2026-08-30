@@ -221,14 +221,206 @@ Siguiendo el encargo ("esta fase debe ser incremental. Primero audita y document
 - No se ha diseñado todavía el modelo de datos de aceptación/consentimiento versionado (punto 5 del encargo) — es el siguiente paso lógico (Fase 2), pero requiere antes que el usuario confirme algunas decisiones de esta auditoría (¿qué documentos hacen falta de verdad? ¿DNI es imprescindible en la ficha de cliente o se puede hacer opcional para minimizar?).
 - No se ha tocado la integración Trimble/SketchUp (instrucción explícita del encargo).
 
-## 14. Preguntas para el usuario / puntos que debe validar un abogado antes de la Fase 2
+## 14. Preguntas pendientes de validación legal (versión ampliada, revisada con el usuario 30/08/2026)
 
-1. **Identidad jurídica real**: razón social, NIF, domicilio, forma jurídica (autónomo/SL) — para el Aviso Legal y como responsable del tratamiento en la Política de Privacidad.
-2. **Confirmar con OpenAI, Resend, Cloudflare y MongoDB Atlas**: si hay DPA vigente, región de procesamiento/almacenamiento configurada realmente (no asumida), y si hay transferencia internacional a certificar (SCCs, adequacy decision, etc.).
-3. **¿El DNI/NIE de un cliente es imprescindible siempre?** — hoy es un campo opcional en el esquema (`default: ''`) pero conviene decidir si el flujo de producto debería dejarlo claramente opcional/justificado en la interfaz también.
-4. **Plazos de conservación** para cada categoría (cuenta inactiva, proyecto finalizado, factura — hay obligaciones fiscales de conservación mínima en España que probablemente marcan un mínimo, a confirmar).
-5. **Alcance real del DPA usuario↔Madera Creativa Estudio**: ¿se ofrece igual a todos los usuarios (contrato de adhesión) o varía por plan/volumen?
-6. **Prioridad de construcción**: ¿el borrado/exportación de cuenta se implementa en la Fase 2 junto con el consentimiento, o se trata como un proyecto aparte por su tamaño?
+**Ninguna respuesta a continuación está decidida.** Cada pregunta indica: qué decisión hace falta, por qué afecta a Madera Creativa Estudio, si requiere validación de abogado/asesor, y qué parte técnica depende de la respuesta. No se implementa nada de la Fase 2 hasta resolver este bloque.
+
+### 14.1 Términos y Condiciones
+
+**Q1.** ¿Partimos de algún borrador ya existente fuera del repositorio, o el primer documento nace 100% como placeholder "PENDIENTE DE VALIDACIÓN LEGAL"?
+- *Por qué afecta*: sin T&C no hay base contractual de uso (límites de responsabilidad, motivos de suspensión, condiciones de acceso).
+- *¿Abogado?* Sí — el contenido sustantivo debe redactarlo o revisarlo un abogado.
+- *Depende técnicamente*: el modelo de "documento legal versionado" (Fase 2) necesita al menos un documento real (aunque sea placeholder) para poder mostrarlo/enlazarlo en el registro.
+
+**Q2.** ¿Qué ley aplicable y jurisdicción se declaran?
+- *Por qué afecta*: contenido legal sustantivo, no técnico.
+- *¿Abogado?* Sí.
+- *Depende técnicamente*: nada directo — solo el texto del placeholder.
+
+### 14.2 Política de Privacidad
+
+**Q3.** Identidad jurídica completa del responsable (razón social exacta, NIF/CIF, domicilio, forma jurídica) — hoy el documento solo dice "Madera Creativa Estudio (Canarias, España)", sin NIF ni domicilio.
+- *Por qué afecta*: es obligatorio identificar al responsable de forma completa (Art. 13 RGPD).
+- *¿Abogado?* No para aportar el dato (lo tiene el propio negocio), sí para confirmar que el texto final que lo incluye es correcto.
+- *Depende técnicamente*: nada de código — dato de texto. (No confundir con `Empresa.nifCif`, que es el NIF de cada USUARIO de la plataforma, no el de Madera Creativa Estudio como responsable — hay que aclarar esta distinción en el propio documento).
+
+**Q4.** Reformular la frase actual "no las vendemos ni compartimos con terceros" para reflejar con precisión los encargados de tratamiento reales (OpenAI, Resend, Cloudflare R2, MongoDB Atlas).
+- *Por qué afecta*: tal como está podría ser jurídicamente inexacta si se lee de forma literal.
+- *¿Abogado?* Sí — la redacción exacta.
+- *Depende técnicamente*: ninguno.
+
+**Q5.** ¿Debe distinguirse explícitamente entre datos que Madera Creativa Estudio trata como responsable (cuenta, empresa) y datos que trata como encargado (clientes del usuario)?
+- *Por qué afecta*: son dos regímenes jurídicos distintos; hoy el documento los mezcla en una sola lista.
+- *¿Abogado?* Sí.
+- *Depende técnicamente*: estructura del documento parametrizable (Fase 3) y posible aviso de privacidad propio para el Portal público (ver Q14).
+
+### 14.3 Aviso Legal
+
+**Q6.** Misma identidad jurídica que Q3, más: ¿epígrafe/actividad de autónomo o datos de inscripción en registro mercantil si es sociedad?
+- *Por qué afecta*: contenido obligatorio de un Aviso Legal en España (LSSI).
+- *¿Abogado?* Sí, o al menos el titular del negocio debe aportarlo con la forma jurídica correcta.
+- *Depende técnicamente*: nueva página `/aviso-legal` — hoy no existe ninguna.
+
+### 14.4 Cookies
+
+**Q7.** ¿Es correcto el criterio "solo cookie estrictamente necesaria (sesión `httpOnly`) → sin banner de consentimiento", tal como está implementado hoy?
+- *Por qué afecta*: si un abogado considera que hace falta banner igualmente, cambia el punto 3 del encargo original ("Política de Cookies solo si corresponde").
+- *¿Abogado?* Sí.
+- *Depende técnicamente*: si la respuesta es "sí hace falta banner", construir un componente de consentimiento de cookies (hoy no existe ninguno); si es "no hace falta", no se toca nada.
+
+### 14.5 Bases jurídicas de los tratamientos
+
+**Q8.** Para cada fila de la matriz del §11, confirmar la base jurídica real (ejecución de contrato / consentimiento / interés legítimo / obligación legal) — hoy todas están marcadas "PENDIENTE" con una sugerencia entre paréntesis, nunca afirmadas como definitivas.
+- *Por qué afecta*: es el fundamento exigido por el Art. 6 RGPD para cada tratamiento; sin esto no se puede redactar correctamente la Política de Privacidad.
+- *¿Abogado?* Sí, obligatoriamente — es puramente jurídico.
+- *Depende técnicamente*: determina qué tratamientos necesitan checkbox de consentimiento explícito (los basados en consentimiento) frente a los que no (contrato/interés legítimo/obligación legal) — decide directamente el diseño del sistema de aceptación de la Fase 2.
+
+### 14.6 Encargados del tratamiento
+
+**Q9.** ¿Existe ya, o hay que firmar, un DPA/Acuerdo de Encargo de Tratamiento con cada proveedor: OpenAI, Resend, Cloudflare (R2), MongoDB Atlas, Render.com?
+- *Por qué afecta*: obligatorio (Art. 28 RGPD) cuando un tercero trata datos personales por cuenta del responsable.
+- *¿Abogado?* Sí para revisar/negociar términos, aunque varios de estos proveedores ofrecen su propio DPA estándar que solo hay que aceptar (a confirmar cuál aplica a cada cuenta real).
+- *Depende técnicamente*: nada de código en general; si algún proveedor exige activar una opción de configuración concreta (p. ej. elegir región de datos), eso sí sería un cambio de infraestructura a coordinar, no de código de producto.
+
+**Q10.** ¿Con qué proveedor(es) ya existe relación contractual firmada, y con cuál falta por completo?
+- *Por qué afecta*: puede que alguno ya esté cubierto (p. ej. cuenta OpenAI tipo empresa) y otros no.
+- *¿Abogado?* Recomendable para confirmar qué cubre cada contrato ya existente.
+- *Depende técnicamente*: nada directo.
+
+### 14.7 OpenAI y tratamiento de datos mediante IA
+
+**Q11.** ¿La cuenta de OpenAI usada es de tipo API estándar o Enterprise/Team con garantías contractuales de no-entrenamiento?
+- *Por qué afecta*: determina si se puede afirmar que los datos NO se usan para entrenar modelos de OpenAI — hoy no se puede afirmar nada de esto (ver §5).
+- *¿Abogado?* Parcialmente — es sobre todo una confirmación técnica/contractual con OpenAI, pero la redacción final del texto debe validarla un abogado.
+- *Depende técnicamente*: nada de código; solo determina qué se puede escribir con seguridad.
+
+**Q12.** ¿Cuánto tiempo conserva OpenAI las imágenes/textos enviados (facturas, fotos de clientes) en sus propios sistemas?
+- *Por qué afecta*: afecta al plazo de conservación declarable para estos flujos.
+- *¿Abogado?* No para el dato en sí (es contractual/técnico de OpenAI), sí para validar el texto final.
+- *Depende técnicamente*: nada.
+
+**Q13.** ¿Hace falta un aviso específico y separado (no solo una mención genérica) antes de subir una foto de un cliente o una factura al escáner con IA?
+- *Por qué afecta*: son datos de terceros (DNI/CIF, imagen de un espacio privado) enviados a un proveedor externo — puede requerir más transparencia que el resto.
+- *¿Abogado?* Sí.
+- *Depende técnicamente*: si la respuesta es sí, hace falta un aviso/consentimiento puntual en la propia pantalla del escáner y en la de "Buscar con IA" (`ia-capacidad-extraer-factura.ts`, `ia-capacidad-describir-trabajo-mercado.ts` + su frontend), no solo en la Política de Privacidad general.
+
+### 14.8 Transferencias internacionales
+
+**Q14.** Confirmar la región real de procesamiento/almacenamiento de cada proveedor: OpenAI (previsiblemente EE.UU.), Resend (a confirmar), Cloudflare R2 (configurable — confirmar la región elegida al crear el bucket), MongoDB Atlas (confirmar región del clúster).
+- *Por qué afecta*: si hay transferencia fuera del EEE, hace falta una garantía legal (cláusulas contractuales tipo, decisión de adecuación...) que declarar.
+- *¿Abogado?* Sí para confirmar qué garantía aplica y cómo declararla; el dato de la región en sí se puede consultar directamente en los paneles de cada proveedor, sin necesitar abogado para eso.
+- *Depende técnicamente*: nada de código — es una comprobación de configuración de infraestructura ya existente.
+
+### 14.9 Retención de datos
+
+**Q15.** ¿Cuánto tiempo se conservan los datos de un cliente/proyecto tras marcarse "finalizado" o "rechazado"?
+- *Por qué afecta*: hoy no hay ningún plazo definido — todo se conserva indefinidamente mientras la cuenta exista.
+- *¿Abogado?* Sí, especialmente en relación con las facturas (ver Q17).
+- *Depende técnicamente*: si se define un plazo, hará falta un proceso de borrado/anonimización automático tras ese plazo — no existe hoy.
+
+**Q16.** ¿Cuánto tiempo se conserva una cuenta de usuario inactiva (nunca eliminada, solo sin uso)?
+- *Por qué afecta*: mismo motivo, hoy indefinido.
+- *¿Abogado?* Sí.
+- *Depende técnicamente*: igual que Q15.
+
+**Q17.** ¿Cuál es el plazo legal mínimo de conservación de facturas/documentos fiscales en España, y prevalece sobre una petición de eliminación de cuenta?
+- *Por qué afecta*: relacionado directamente con §14.15 (datos que hay que conservar aunque el usuario pida borrar todo).
+- *¿Abogado?* Sí, obligatoriamente (fiscal + RGPD).
+- *Depende técnicamente*: sí, mucho — el futuro flujo de "eliminar cuenta" tendría que EXCLUIR las facturas de un borrado inmediato y aplicarles el plazo legal en su lugar.
+
+### 14.10 DNI/NIE de clientes
+
+**Q18.** ¿Es imprescindible pedir el DNI/NIE del cliente para el uso normal de la plataforma, o debería quedar opcional/justificado solo cuando de verdad haga falta (p. ej. un contrato que lo requiera)?
+- *Por qué afecta*: principio de minimización de datos (Art. 5.1.c RGPD) — hoy el campo (`ClienteSchema.dni`) existe siempre disponible sin ninguna advertencia sobre cuándo es necesario.
+- *¿Abogado?* Recomendable, aunque también es una decisión de producto del propio negocio.
+- *Depende técnicamente*: si se restringe su uso, añadir un texto de ayuda/advertencia en el formulario de ficha de cliente.
+
+### 14.11 Firma, IP y User-Agent en aceptación de presupuestos
+
+**Q19.** ¿Es correcto conservar la IP y el User-Agent del cliente que acepta un presupuesto de forma INDEFINIDA, tal como está implementado hoy?
+- *Por qué afecta*: es la única IP persistida de todo el sistema, y pertenece a un tercero sin cuenta (el cliente final); el propio esquema (`enlace-presupuesto.model.ts`) documenta esta conservación indefinida como intencional ("es la evidencia de aceptación"), pero nunca se ha validado jurídicamente si es correcto o excesivo.
+- *¿Abogado?* Sí.
+- *Depende técnicamente*: si hay que limitar el plazo, añadir un proceso de anonimización/borrado de esos dos campos tras ese plazo, sin borrar el resto de la evidencia (firma, fecha).
+
+**Q20.** ¿Hace falta un aviso de privacidad específico en la propia página del Portal público (`/portal/:token`), que hoy no tiene ninguno?
+- *Por qué afecta*: el cliente final es un tercero sin cuenta que nunca pasó por el registro ni vio la Política de Privacidad general.
+- *¿Abogado?* Sí.
+- *Depende técnicamente*: sí — nueva pieza de UI en el Portal (`portal-rutas.ts` + su frontend), independiente del sistema de aceptación de la Fase 2.
+
+### 14.12 Derechos de supresión y portabilidad
+
+**Q21.** ¿Borrado total e inmediato, o periodo de gracia (p. ej. 30 días) antes del borrado definitivo de una cuenta?
+- *Por qué afecta*: determina el diseño técnico del flujo (borrado inmediato vs. marcar para borrado diferido).
+- *¿Abogado?* Recomendable, aunque también es decisión de producto.
+- *Depende técnicamente*: sí — determina si hace falta un estado intermedio "pendiente de borrado" en el usuario (similar en espíritu a `BorradoPendienteModel`, hoy solo para archivos, no para cuentas).
+
+**Q22.** ¿En qué formato debe entregarse la portabilidad de datos (JSON estructurado, PDF legible, ambos)?
+- *Por qué afecta*: el Art. 20 RGPD exige un formato "estructurado, de uso común y lectura mecánica" — JSON cumpliría; un PDF por sí solo probablemente no.
+- *¿Abogado?* Sí, para confirmar qué formato es jurídicamente suficiente.
+- *Depende técnicamente*: sí — determina el diseño del endpoint de exportación.
+
+### 14.13 Exportación de datos
+
+**Q23.** ¿Debe la exportación incluir solo los datos de la propia cuenta (empresa, preferencias) o también todos los datos de los clientes/proyectos gestionados por esa cuenta?
+- *Por qué afecta*: son categorías de datos con responsables distintos (el propio usuario vs. terceros que el usuario gestiona) — no está claro si "exportar mis datos" debe incluir los de sus clientes.
+- *¿Abogado?* Sí.
+- *Depende técnicamente*: sí, cambia completamente el alcance del endpoint a construir.
+
+### 14.14 Borrado completo de cuenta
+
+**Q24.** Al eliminar una cuenta, ¿qué pasa con los datos de sus clientes (terceros)? ¿Se borran también, se anonimizan, o quedan retenidos por alguna obligación del propio usuario (p. ej. facturas que él mismo emitió)?
+- *Por qué afecta*: son datos de terceros introducidos por el usuario — borrarlos podría chocar con obligaciones de conservación del propio usuario, no solo de Madera Creativa Estudio.
+- *¿Abogado?* Sí, obligatoriamente.
+- *Depende técnicamente*: sí, es el diseño central del propio flujo de baja.
+
+**Q25.** ¿Qué pasa con las facturas (ver Q17) si el usuario pide eliminar su cuenta antes de que termine el plazo legal de conservación?
+- *Por qué afecta*: conflicto directo entre el derecho de supresión del usuario y una obligación legal de conservación.
+- *¿Abogado?* Sí, obligatoriamente.
+- *Depende técnicamente*: sí — probablemente exige "anonimizar pero no borrar" ciertos campos en vez de un borrado total.
+
+### 14.15 Datos que debemos conservar por obligaciones legales aunque el usuario pida la eliminación
+
+**Q26.** Listar de forma exhaustiva qué categorías de datos tienen una obligación legal de conservación que prevalece sobre una petición de borrado (facturas con seguridad; ¿evidencia de aceptación de presupuestos?; ¿logs de seguridad?).
+- *Por qué afecta*: sin esta lista, el flujo de borrado no puede implementarse de forma segura — podría borrar algo que la ley obliga a conservar, o conservar de más algo que no hace falta.
+- *¿Abogado?* Sí, obligatoriamente — lista puramente jurídica/fiscal.
+- *Depende técnicamente*: sí, totalmente — es el input necesario para diseñar la lógica de "borrado selectivo" quede pendiente para cuando se construya.
+
+### 14.16 Sistema de aceptación y versionado de documentos
+
+**Q27.** ¿Qué eventos generan una nueva "aceptación" registrada — solo el registro inicial, o también cada publicación de una nueva versión de un documento (¿re-aceptación obligatoria o solo notificación?)?
+- *Por qué afecta*: determina el diseño del modelo de versionado (punto 5 del encargo original) y si hace falta un flujo de "hemos actualizado los Términos, acéptalos de nuevo" para usuarios ya existentes.
+- *¿Abogado?* Recomendable — hay práctica jurídica establecida sobre cuándo re-pedir consentimiento tras un cambio material.
+- *Depende técnicamente*: sí, es el núcleo de la Fase 2.
+
+**Q28.** ¿Qué metadatos técnicos de cada aceptación deben conservarse (IP, User-Agent, timestamp) y durante cuánto tiempo?
+- *Por qué afecta*: mismo tipo de decisión que la IP del Portal (Q19) — cuánta evidencia técnica hace falta y durante cuánto tiempo es proporcional.
+- *¿Abogado?* Sí.
+- *Depende técnicamente*: sí, forma parte del esquema de datos de la Fase 2.
+
+### 14.17 Consentimientos opcionales
+
+**Q29.** ¿Qué consentimientos opcionales concretos hacen falta hoy? El encargo original menciona "comunicaciones comerciales" como ejemplo, pero hoy Madera Creativa Estudio **no envía ningún email de marketing/comercial** — solo el transaccional de recuperación de contraseña (`resend.service.ts`). No se ha encontrado en el código ninguna funcionalidad real que dependa de un consentimiento opcional.
+- *Por qué afecta*: si no hay ningún tratamiento opcional real, no hace falta ningún checkbox opcional en el registro.
+- *¿Abogado?* No para confirmar que no existe hoy (hecho técnico verificable), sí para confirmar que omitir cualquier consentimiento opcional en esta fase es correcto.
+- *Depende técnicamente*: si en el futuro se añade email comercial/newsletter, se necesitará entonces un consentimiento opcional real — hoy no.
+
+### 14.18 Otros puntos marcados PENDIENTE DE VALIDACIÓN LEGAL
+
+**Q30.** Logs de aplicación: ¿contienen incidentalmente datos personales en algún mensaje de error? ¿Hace falta una política de retención de logs propia?
+- *Por qué afecta*: los logs (Pino, stdout de Render) no se han auditado campo a campo en esta fase.
+- *¿Abogado?* Recomendable si se confirma que sí contienen datos personales.
+- *Depende técnicamente*: revisión puntual de los mensajes de log más sensibles (auth, facturación) si se decide auditar esto en detalle.
+
+**Q31.** Suspensión de cuenta por el admin (`estado: 'suspendido'`) frente a baja voluntaria del usuario: ¿debe la suspensión generar también algún aviso o derecho específico al usuario suspendido?
+- *Por qué afecta*: hoy revoca el acceso (refresh tokens) pero no borra ni notifica nada — es una acción unilateral del admin, no un ejercicio de derechos del usuario.
+- *¿Abogado?* Recomendable.
+- *Depende técnicamente*: ninguno urgente, es aclaración de proceso.
+
+**Nota aparte, no jurídica**: la migración del hash de contraseña legado (2/5 cuentas reales aún sin migrar a bcrypt) es un asunto de seguridad ya identificado y en seguimiento (ver memoria del proyecto) — no requiere validación legal, solo que esas cuentas vuelvan a iniciar sesión con éxito para completarse solas.
+
+---
+
+**Nada de la Fase 2 se implementa hasta resolver este bloque.** Sin cambios en producción relacionados con esta fase desde la entrega de la auditoría (30/08/2026).
 
 ---
 
