@@ -2,9 +2,10 @@ import { useReducer, useState, useEffect, useRef } from 'react';
 import * as api from './api.js';
 import type { ElementoMC } from './documento-modelo.js';
 import { textoDeElementoSeleccionado, puedeAplicarPropuestaA } from './documento-contexto-ia.js';
-import { reducirPanelIA, estadoInicialPanelIA, recortarConversacion } from './panel-ia-presupuesto-estado.js';
+import { reducirPanelIA, estadoInicialPanelIA, recortarConversacion, LIMITE_IMAGENES_ACTIVAS } from './panel-ia-presupuesto-estado.js';
 import { validarImagenParaIA, comprimirImagen, MIME_IMAGEN_PERMITIDOS } from './procesamiento-imagenes.js';
 import { leerArchivoComoBase64 } from './archivos.js';
+import { generarId } from './mock.js';
 import { Z_MODAL } from './z-index.js';
 import styles from './styles.module.css';
 
@@ -28,14 +29,15 @@ import styles from './styles.module.css';
  * tiene permiso de hacer (sigue sin herramientas, sigue sin poder escribir
  * nada por su cuenta).
  *
- * IMAGEN ACTIVA (Fase 3, IA Visual): el usuario puede adjuntar una foto
- * (p. ej. de una cocina) que queda como `estado.imagenActiva` — una
- * selección persistente del panel, no un campo de cada mensaje. Solo el
- * mensaje saliente de la petición en curso incluye `imagenes:[dataUrl]`
- * (mismo mecanismo que `extraer-datos-factura`: data URL en el body,
- * `perfilModelo:'vision'`, nunca R2 ni MongoDB) — el historial de
- * conversación nunca lleva la imagen, solo un texto y, si corresponde, la
- * marca informativa `conImagen`. La imagen se valida (MIME + tamaño) y se
+ * IMÁGENES ACTIVAS (Fase 3, IA Visual; ampliado a varias el 30/08/2026): el
+ * usuario puede adjuntar una o más fotos (p. ej. de una cocina) que quedan
+ * como `estado.imagenesActivas` — una selección persistente del panel, no
+ * un campo de cada mensaje. Solo el mensaje saliente de la petición en
+ * curso incluye `imagenes:[...dataUrls]` (mismo mecanismo que
+ * `extraer-datos-factura`: data URL en el body, `perfilModelo:'vision'`,
+ * nunca R2 ni MongoDB) — el historial de conversación nunca lleva las
+ * imágenes, solo un texto y, si corresponde, la marca informativa
+ * `conImagen`. Cada imagen se valida (MIME + tamaño) y se
  * comprime con el mismo pipeline que el resto de la app antes de enviarse.
  */
 export type PanelIaPresupuestoProps = {
@@ -81,7 +83,7 @@ export function PanelIaPresupuesto({ abierto, onCerrar, clienteId, contextoDocum
           content: m.texto,
         }));
         const ultimoMensaje: { role: 'user'; content: string; imagenes?: string[] } = { role: 'user', content: estado.peticion };
-        if (estado.imagenIncluida && estado.imagenActiva) ultimoMensaje.imagenes = [estado.imagenActiva.dataUrl];
+        if (estado.imagenIncluida && estado.imagenesActivas.length > 0) ultimoMensaje.imagenes = estado.imagenesActivas.map((img) => img.dataUrl);
         const resultado = await api.generarRespuestaIA({
           capacidad: 'copiloto-presupuesto',
           mensajes: [...turnosPrevios, ultimoMensaje],
@@ -123,9 +125,11 @@ export function PanelIaPresupuesto({ abierto, onCerrar, clienteId, contextoDocum
     dispatch({ tipo: 'aceptado' });
   };
 
-  // Añadir/sustituir la imagen activa: valida MIME+tamaño ANTES de intentar
-  // decodificar nada, comprime con el mismo pipeline que el resto de la app
-  // (nunca se salta este paso) y solo entonces la codifica a data URL.
+  // Añade una imagen más a las activas (hasta LIMITE_IMAGENES_ACTIVAS):
+  // valida MIME+tamaño ANTES de intentar decodificar nada, comprime con el
+  // mismo pipeline que el resto de la app (nunca se salta este paso) y solo
+  // entonces la codifica a data URL. Puede llamarse varias veces seguidas
+  // (una por archivo) sin pisar las imágenes ya añadidas.
   const seleccionarImagen = async (file: File) => {
     setErrorImagen('');
     const validacion = validarImagenParaIA(file);
@@ -134,7 +138,7 @@ export function PanelIaPresupuesto({ abierto, onCerrar, clienteId, contextoDocum
     try {
       const { blob } = await comprimirImagen(file, { forzarJpeg: true });
       const dataUrl = await leerArchivoComoBase64(blob);
-      dispatch({ tipo: 'imagenSeleccionada', dataUrl, nombre: file.name });
+      dispatch({ tipo: 'imagenSeleccionada', id: generarId(), dataUrl, nombre: file.name });
     } catch {
       setErrorImagen('No se pudo procesar la imagen. Prueba con otra.');
     } finally {
@@ -142,8 +146,8 @@ export function PanelIaPresupuesto({ abierto, onCerrar, clienteId, contextoDocum
     }
   };
 
-  const quitarImagen = () => {
-    dispatch({ tipo: 'imagenEliminada' });
+  const quitarImagen = (id: string) => {
+    dispatch({ tipo: 'imagenEliminada', id });
     setErrorImagen('');
   };
 
@@ -263,22 +267,42 @@ export function PanelIaPresupuesto({ abierto, onCerrar, clienteId, contextoDocum
         {errorImagen && (
           <p style={{ margin: '0 0 0.5rem', fontSize: '0.72rem', color: 'var(--rojo)' }}>{errorImagen}</p>
         )}
-        {estado.imagenActiva ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-            <img
-              src={estado.imagenActiva.dataUrl}
-              alt={estado.imagenActiva.nombre}
-              style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--borde)' }}
-            />
-            <span style={{ fontSize: '0.72rem', color: 'var(--topo-claro)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {estado.imagenActiva.nombre}
-            </span>
-            <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.72rem' }} onClick={() => inputImagenRef.current?.click()}>
-              Sustituir
-            </button>
-            <button className={styles.btnIcono} onClick={quitarImagen} aria-label="Quitar imagen">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-            </button>
+        {estado.imagenesActivas.length > 0 ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.4rem', marginBottom: '0.5rem' }}>
+            {estado.imagenesActivas.map((img) => (
+              <div key={img.id} style={{ position: 'relative', width: 40, height: 40, flexShrink: 0 }}>
+                <img
+                  src={img.dataUrl}
+                  alt={img.nombre}
+                  title={img.nombre}
+                  style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--borde)' }}
+                />
+                <button
+                  className={styles.btnIcono}
+                  onClick={() => quitarImagen(img.id)}
+                  aria-label={`Quitar ${img.nombre}`}
+                  style={{
+                    position: 'absolute', top: -6, right: -6, width: 18, height: 18, minWidth: 18, padding: 0,
+                    borderRadius: '50%', background: 'var(--blanco)', border: '1px solid var(--borde)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                </button>
+              </div>
+            ))}
+            {estado.imagenesActivas.length < LIMITE_IMAGENES_ACTIVAS && (
+              <button
+                className={styles.btnIcono}
+                onClick={() => inputImagenRef.current?.click()}
+                disabled={procesandoImagen}
+                aria-label="Añadir otra imagen"
+                title="Añadir otra imagen"
+                style={{ width: 40, height: 40, borderRadius: 6, border: '1px dashed var(--borde)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+              </button>
+            )}
           </div>
         ) : (
           <button
@@ -294,11 +318,15 @@ export function PanelIaPresupuesto({ abierto, onCerrar, clienteId, contextoDocum
           ref={inputImagenRef}
           type="file"
           accept={MIME_IMAGEN_PERMITIDOS.join(',')}
+          multiple
           style={{ display: 'none' }}
           onChange={(e) => {
-            const file = e.target.files?.[0];
+            const files = Array.from(e.target.files ?? []);
             e.target.value = '';
-            if (file) seleccionarImagen(file);
+            // Respeta el hueco que quede hasta el tope aunque se seleccionen
+            // más archivos de golpe — el resto simplemente no se procesa.
+            const hueco = LIMITE_IMAGENES_ACTIVAS - estado.imagenesActivas.length;
+            files.slice(0, hueco).forEach((file) => { void seleccionarImagen(file); });
           }}
         />
       </div>

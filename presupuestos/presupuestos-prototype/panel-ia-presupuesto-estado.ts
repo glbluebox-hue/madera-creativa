@@ -1,7 +1,8 @@
 /**
  * Máquina de estados pura de la IA del Presupuesto (23/08/2026, ampliada el
- * mismo día con conversación multi-turno, y de nuevo el mismo día con
- * imagen activa — Fase 3, IA Visual) — separada del componente React a
+ * mismo día con conversación multi-turno, el mismo día con imagen activa —
+ * Fase 3, IA Visual — y el 30/08/2026 con VARIAS imágenes activas a la vez,
+ * petición explícita del usuario) — separada del componente React a
  * propósito, para poder testear el flujo "pedir → propuesta →
  * Aceptar/Editar/Regenerar/Cancelar" sin red, sin OpenAI y sin renderizar
  * nada. `panel-ia-presupuesto.tsx` es la única pieza que llama a
@@ -26,31 +27,36 @@
  *   esto", tanto para el documento como para la conversación.
  * - Un error nunca añade nada (no hubo respuesta real que recordar).
  *
- * IMAGEN ACTIVA (Fase 3, IA Visual) — `imagenActiva` es una selección
- * persistente del panel, NO un campo de cada turno: vive junto a
- * `conversacion` en `EstadoBase` y sobrevive a enviar/responder/regenerar/
- * cancelar/aceptar sin cambiar, hasta que el usuario la quita o la sustituye
- * explícitamente (acciones `imagenSeleccionada`/`imagenEliminada`). Esto
- * evita reenviar la misma data URL (potencialmente cientos de KB) dentro de
- * cada mensaje histórico de `conversacion` — el historial solo recuerda
- * texto; `panel-ia-presupuesto.tsx` añade `imagenActiva.dataUrl` únicamente
- * al mensaje saliente de la petición en curso, mientras siga activa.
+ * IMÁGENES ACTIVAS (Fase 3, IA Visual; ampliado a varias el 30/08/2026) —
+ * `imagenesActivas` es una selección persistente del panel, NO un campo de
+ * cada turno: vive junto a `conversacion` en `EstadoBase` y sobrevive a
+ * enviar/responder/regenerar/cancelar/aceptar sin cambiar, hasta que el
+ * usuario quita una imagen concreta o añade otra (acciones
+ * `imagenSeleccionada`/`imagenEliminada`, esta última identifica la imagen
+ * por `id`, no por posición). Esto evita reenviar la misma data URL
+ * (potencialmente cientos de KB cada una) dentro de cada mensaje histórico
+ * de `conversacion` — el historial solo recuerda texto; `panel-ia-
+ * presupuesto.tsx` añade `imagenesActivas.map(i => i.dataUrl)` únicamente al
+ * mensaje saliente de la petición en curso, mientras sigan activas.
+ * `LIMITE_IMAGENES_ACTIVAS` coincide con el tope real del backend
+ * (`esquemaMensajeChat.imagenes`, máximo 5 por mensaje) — el reducer lo
+ * respeta también, por si el componente no llegara a impedirlo por su cuenta.
  *
  * Para que la conversación pueda seguir teniendo sentido tras aceptar o
  * regenerar, cada turno "enviando"/"error" recuerda con `imagenIncluida` si
- * la petición en curso llevaba imagen — se calcula SIEMPRE a partir de
- * `estado.imagenActiva` en el instante de entrar en 'enviando' (tanto por un
- * 'enviar' como por un 'regenerar'), nunca se recibe desde fuera: si el
- * usuario quita o sustituye la imagen entre un turno y el siguiente, cada
- * envío reflejará la imagen activa en ESE momento, no la de un turno
- * anterior. El campo `conImagen` que queda grabado en `conversacion` es solo
- * una marca informativa (para que la interfaz pueda mostrar un icono en ese
- * turno) — nunca contiene la imagen en sí.
+ * la petición en curso llevaba AL MENOS una imagen — se calcula SIEMPRE a
+ * partir de `estado.imagenesActivas` en el instante de entrar en 'enviando'
+ * (tanto por un 'enviar' como por un 'regenerar'), nunca se recibe desde
+ * fuera: si el usuario quita o añade imágenes entre un turno y el siguiente,
+ * cada envío reflejará las imágenes activas en ESE momento, no las de un
+ * turno anterior. El campo `conImagen` que queda grabado en `conversacion`
+ * es solo una marca informativa (para que la interfaz pueda mostrar un
+ * icono en ese turno) — nunca contiene las imágenes en sí.
  *
  * Regla de oro del flujo (pedida explícitamente): el documento NUNCA se
  * modifica en los estados `enviando`/`propuesta` — solo la fase `aceptado`
  * es la señal de que el componente debe aplicar el texto al elemento
- * seleccionado. La conversación (y la imagen activa) ayudan a la IA a
+ * seleccionado. La conversación (y las imágenes activas) ayudan a la IA a
  * entender mejor la petición; nunca son una vía para que algo se aplique sin
  * el paso explícito de Aceptar.
  *
@@ -70,8 +76,11 @@
 
 export type MensajeConversacionIA = { rol: 'usuario' | 'ia'; texto: string; conImagen?: boolean };
 
-/** Imagen seleccionada por el usuario, pendiente de usar en la próxima petición (o ya usada, mientras el usuario no la quite/sustituya). Efímera: solo vive en este estado de React, nunca se persiste. */
-export type ImagenActivaIA = { dataUrl: string; nombre: string };
+/** Imagen seleccionada por el usuario, pendiente de usar en la próxima petición (o ya usada, mientras el usuario no la quite). Efímera: solo vive en este estado de React, nunca se persiste. `id` la identifica de forma estable para poder quitar una en concreto sin afectar a las demás — lo genera quien despacha `imagenSeleccionada` (el componente), nunca este reducer. */
+export type ImagenActivaIA = { id: string; dataUrl: string; nombre: string };
+
+/** Tope de imágenes activas a la vez — igual que el máximo real que acepta el backend por mensaje (`esquemaMensajeChat.imagenes`, `presupuestos-service/esquemas-validacion.ts`). El reducer lo hace cumplir también, por si el componente no llegara a impedirlo por su cuenta (p. ej. el botón "+" ya deshabilitado). */
+export const LIMITE_IMAGENES_ACTIVAS = 5;
 
 /** Tope de mensajes (usuario+ia contados juntos) que se conservan — evita que la conversación crezca sin control. Par a par: 12 = últimos 6 turnos completos. */
 export const LIMITE_MENSAJES_CONVERSACION = 12;
@@ -81,7 +90,7 @@ export function recortarConversacion(conversacion: MensajeConversacionIA[], limi
   return conversacion.length > limite ? conversacion.slice(-limite) : conversacion;
 }
 
-type EstadoBase = { conversacion: MensajeConversacionIA[]; imagenActiva: ImagenActivaIA | null };
+type EstadoBase = { conversacion: MensajeConversacionIA[]; imagenesActivas: ImagenActivaIA[] };
 
 export type EstadoPanelIA =
   | ({ fase: 'inactivo' } & EstadoBase)
@@ -99,10 +108,10 @@ export type AccionPanelIA =
   | { tipo: 'regenerar' }
   | { tipo: 'cancelar' }
   | { tipo: 'aceptado' }
-  | { tipo: 'imagenSeleccionada'; dataUrl: string; nombre: string }
-  | { tipo: 'imagenEliminada' };
+  | { tipo: 'imagenSeleccionada'; id: string; dataUrl: string; nombre: string }
+  | { tipo: 'imagenEliminada'; id: string };
 
-export const estadoInicialPanelIA: EstadoPanelIA = { fase: 'inactivo', conversacion: [], imagenActiva: null };
+export const estadoInicialPanelIA: EstadoPanelIA = { fase: 'inactivo', conversacion: [], imagenesActivas: [] };
 
 /** Quita el último par usuario/ia de la conversación, si existe — usado al regenerar/cancelar un intento que no debe quedar recordado. */
 function sinUltimoPar(conversacion: MensajeConversacionIA[]): MensajeConversacionIA[] {
@@ -114,11 +123,12 @@ export function reducirPanelIA(estado: EstadoPanelIA, accion: AccionPanelIA): Es
     case 'enviar':
       // La conversación no cambia todavía — el par usuario/ia de esta
       // petición se añade solo si llega una respuesta real (ver 'respuesta').
-      // `imagenIncluida` se fija AHORA, a partir de la imagen activa en este
-      // instante — si se quita/sustituye después, no afecta a esta petición
-      // ya en curso. `elementoId` igual: el elemento seleccionado AHORA, para
-      // poder comprobar más tarde si sigue siendo el mismo al aceptar.
-      return { fase: 'enviando', peticion: accion.peticion, imagenIncluida: !!estado.imagenActiva, elementoId: accion.elementoId, conversacion: estado.conversacion, imagenActiva: estado.imagenActiva };
+      // `imagenIncluida` se fija AHORA, a partir de las imágenes activas en
+      // este instante — si se quitan/añaden después, no afecta a esta
+      // petición ya en curso. `elementoId` igual: el elemento seleccionado
+      // AHORA, para poder comprobar más tarde si sigue siendo el mismo al
+      // aceptar.
+      return { fase: 'enviando', peticion: accion.peticion, imagenIncluida: estado.imagenesActivas.length > 0, elementoId: accion.elementoId, conversacion: estado.conversacion, imagenesActivas: estado.imagenesActivas };
 
     case 'respuesta': {
       if (estado.fase !== 'enviando') return estado;
@@ -127,13 +137,13 @@ export function reducirPanelIA(estado: EstadoPanelIA, accion: AccionPanelIA): Es
         { rol: 'usuario', texto: estado.peticion, ...(estado.imagenIncluida ? { conImagen: true } : {}) },
         { rol: 'ia', texto: accion.texto },
       ];
-      return { fase: 'propuesta', peticion: estado.peticion, texto: accion.texto, editando: false, elementoId: estado.elementoId, conversacion, imagenActiva: estado.imagenActiva };
+      return { fase: 'propuesta', peticion: estado.peticion, texto: accion.texto, editando: false, elementoId: estado.elementoId, conversacion, imagenesActivas: estado.imagenesActivas };
     }
 
     case 'error':
       if (estado.fase !== 'enviando') return estado;
       // Un fallo no genera respuesta real — la conversación se queda tal como estaba.
-      return { fase: 'error', peticion: estado.peticion, mensaje: accion.mensaje, imagenIncluida: estado.imagenIncluida, elementoId: estado.elementoId, conversacion: estado.conversacion, imagenActiva: estado.imagenActiva };
+      return { fase: 'error', peticion: estado.peticion, mensaje: accion.mensaje, imagenIncluida: estado.imagenIncluida, elementoId: estado.elementoId, conversacion: estado.conversacion, imagenesActivas: estado.imagenesActivas };
 
     case 'entrarEdicion':
       return estado.fase === 'propuesta' ? { ...estado, editando: true } : estado;
@@ -156,45 +166,50 @@ export function reducirPanelIA(estado: EstadoPanelIA, accion: AccionPanelIA): Es
       // Descarta el intento rechazado (si lo hubo) y repite la MISMA
       // petición original — nunca la reformula ni usa el texto editado como
       // nueva petición. `imagenIncluida` se recalcula igual que en 'enviar':
-      // usa la imagen activa AHORA, no la que hubiera en el intento descartado.
+      // usa las imágenes activas AHORA, no las del intento descartado.
       // `elementoId` se mantiene del intento original (nunca se relee la
       // selección actual) — regenerar sigue apuntando al mismo elemento que
       // la petición inicial, tal como la propia petición no cambia.
       if (estado.fase === 'propuesta') {
-        return { fase: 'enviando', peticion: estado.peticion, imagenIncluida: !!estado.imagenActiva, elementoId: estado.elementoId, conversacion: sinUltimoPar(estado.conversacion), imagenActiva: estado.imagenActiva };
+        return { fase: 'enviando', peticion: estado.peticion, imagenIncluida: estado.imagenesActivas.length > 0, elementoId: estado.elementoId, conversacion: sinUltimoPar(estado.conversacion), imagenesActivas: estado.imagenesActivas };
       }
       if (estado.fase === 'error') {
-        return { fase: 'enviando', peticion: estado.peticion, imagenIncluida: !!estado.imagenActiva, elementoId: estado.elementoId, conversacion: estado.conversacion, imagenActiva: estado.imagenActiva };
+        return { fase: 'enviando', peticion: estado.peticion, imagenIncluida: estado.imagenesActivas.length > 0, elementoId: estado.elementoId, conversacion: estado.conversacion, imagenesActivas: estado.imagenesActivas };
       }
       return estado;
 
     case 'cancelar':
       // "Olvida esto": si había una propuesta pendiente, también se quita de
       // la conversación — cancelar no debe seguir influyendo en turnos
-      // futuros. La imagen activa NO se toca: cancelar una propuesta de
-      // texto no significa que el usuario quiera quitar la imagen que
+      // futuros. Las imágenes activas NO se tocan: cancelar una propuesta de
+      // texto no significa que el usuario quiera quitar las imágenes que
       // seleccionó (para eso está 'imagenEliminada').
-      if (estado.fase === 'propuesta') return { fase: 'inactivo', conversacion: sinUltimoPar(estado.conversacion), imagenActiva: estado.imagenActiva };
-      return { fase: 'inactivo', conversacion: estado.conversacion, imagenActiva: estado.imagenActiva };
+      if (estado.fase === 'propuesta') return { fase: 'inactivo', conversacion: sinUltimoPar(estado.conversacion), imagenesActivas: estado.imagenesActivas };
+      return { fase: 'inactivo', conversacion: estado.conversacion, imagenesActivas: estado.imagenesActivas };
 
     // Se dispara justo después de que el componente ya haya aplicado
     // `estado.texto` al documento — este reducer nunca aplica nada por sí
     // mismo. La conversación NO se toca aquí: ya incluía este turno desde
-    // 'respuesta', aceptar solo decide qué pasa con el documento. La imagen
-    // activa tampoco se toca — aceptar el texto no implica que el usuario
-    // haya terminado con la imagen, puede seguir pidiendo más sobre ella.
+    // 'respuesta', aceptar solo decide qué pasa con el documento. Las
+    // imágenes activas tampoco se tocan — aceptar el texto no implica que
+    // el usuario haya terminado con ellas, puede seguir pidiendo más.
     case 'aceptado':
-      return { fase: 'inactivo', conversacion: estado.conversacion, imagenActiva: estado.imagenActiva };
+      return { fase: 'inactivo', conversacion: estado.conversacion, imagenesActivas: estado.imagenesActivas };
 
-    // Añadir/sustituir/quitar la imagen activa es válido en cualquier fase —
-    // si hay una petición en curso ('enviando'), ya capturó su propia
-    // `imagenIncluida` al entrar en esa fase, así que cambiar la imagen aquí
-    // no afecta a la petición ya en vuelo, solo a la siguiente.
+    // Añadir/quitar una imagen activa es válido en cualquier fase — si hay
+    // una petición en curso ('enviando'), ya capturó su propia
+    // `imagenIncluida` al entrar en esa fase, así que cambiar las imágenes
+    // aquí no afecta a la petición ya en vuelo, solo a la siguiente.
     case 'imagenSeleccionada':
-      return { ...estado, imagenActiva: { dataUrl: accion.dataUrl, nombre: accion.nombre } };
+      // Tope duro (30/08/2026): si ya se alcanzó `LIMITE_IMAGENES_ACTIVAS`,
+      // ignora silenciosamente la nueva selección en vez de superar lo que
+      // el backend aceptaría — el componente ya debe deshabilitar el botón
+      // "+" al llegar aquí, esto es solo la última línea de defensa.
+      if (estado.imagenesActivas.length >= LIMITE_IMAGENES_ACTIVAS) return estado;
+      return { ...estado, imagenesActivas: [...estado.imagenesActivas, { id: accion.id, dataUrl: accion.dataUrl, nombre: accion.nombre }] };
 
     case 'imagenEliminada':
-      return { ...estado, imagenActiva: null };
+      return { ...estado, imagenesActivas: estado.imagenesActivas.filter((img) => img.id !== accion.id) };
 
     default:
       return estado;

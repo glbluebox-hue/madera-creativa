@@ -1,5 +1,5 @@
 import {
-  reducirPanelIA, estadoInicialPanelIA, recortarConversacion, LIMITE_MENSAJES_CONVERSACION,
+  reducirPanelIA, estadoInicialPanelIA, recortarConversacion, LIMITE_MENSAJES_CONVERSACION, LIMITE_IMAGENES_ACTIVAS,
   type EstadoPanelIA, type MensajeConversacionIA,
 } from './panel-ia-presupuesto-estado.js';
 
@@ -14,7 +14,7 @@ describe('reducirPanelIA — conversación multi-turno (23/08/2026)', () => {
     const r = pedirYResponder(estadoInicialPanelIA, 'Descríbeme esta cocina.', 'Cocina en L con acabado mate.');
     expect(r).toEqual({
       fase: 'propuesta', peticion: 'Descríbeme esta cocina.', texto: 'Cocina en L con acabado mate.', editando: false,
-      elementoId: 'el-1', imagenActiva: null,
+      elementoId: 'el-1', imagenesActivas: [],
       conversacion: [
         { rol: 'usuario', texto: 'Descríbeme esta cocina.' },
         { rol: 'ia', texto: 'Cocina en L con acabado mate.' },
@@ -47,7 +47,7 @@ describe('reducirPanelIA — conversación multi-turno (23/08/2026)', () => {
   it('4. Regenerar: descarta el último par (intento rechazado) y repite la MISMA petición, no el texto editado', () => {
     const propuesta = pedirYResponder(estadoInicialPanelIA, 'Describe esto.', 'Primer intento, no me convence.');
     const regenerando = reducirPanelIA(propuesta, { tipo: 'regenerar' });
-    expect(regenerando).toEqual({ fase: 'enviando', peticion: 'Describe esto.', imagenIncluida: false, elementoId: 'el-1', conversacion: [], imagenActiva: null });
+    expect(regenerando).toEqual({ fase: 'enviando', peticion: 'Describe esto.', imagenIncluida: false, elementoId: 'el-1', conversacion: [], imagenesActivas: [] });
 
     // Y si llega una respuesta nueva, sustituye limpiamente al intento descartado.
     const nuevaPropuesta = reducirPanelIA(regenerando, { tipo: 'respuesta', texto: 'Segundo intento, mejor.' });
@@ -62,7 +62,7 @@ describe('reducirPanelIA — conversación multi-turno (23/08/2026)', () => {
     const segundaFallida = pedirYResponder(primera, 'Más formal.', 'Intento fallido.');
     const regenerando = reducirPanelIA(segundaFallida, { tipo: 'regenerar' });
     expect(regenerando).toEqual({
-      fase: 'enviando', peticion: 'Más formal.', imagenIncluida: false, elementoId: 'el-1', imagenActiva: null,
+      fase: 'enviando', peticion: 'Más formal.', imagenIncluida: false, elementoId: 'el-1', imagenesActivas: [],
       conversacion: [{ rol: 'usuario', texto: 'Descríbeme esto.' }, { rol: 'ia', texto: 'Propuesta 1.' }],
     });
   });
@@ -71,20 +71,20 @@ describe('reducirPanelIA — conversación multi-turno (23/08/2026)', () => {
     const enviando = reducirPanelIA(estadoInicialPanelIA, { tipo: 'enviar', peticion: 'Redacta esto.', elementoId: 'el-1' });
     const error = reducirPanelIA(enviando, { tipo: 'error', mensaje: 'Fallo de red' });
     const reintentando = reducirPanelIA(error, { tipo: 'regenerar' });
-    expect(reintentando).toEqual({ fase: 'enviando', peticion: 'Redacta esto.', imagenIncluida: false, elementoId: 'el-1', conversacion: [], imagenActiva: null });
+    expect(reintentando).toEqual({ fase: 'enviando', peticion: 'Redacta esto.', imagenIncluida: false, elementoId: 'el-1', conversacion: [], imagenesActivas: [] });
   });
 
   it('5. Cancelación: descarta la propuesta pendiente Y su par de la conversación — "olvida esto"', () => {
     const primera = pedirYResponder(estadoInicialPanelIA, 'Descríbeme esto.', 'Propuesta 1.');
     const segunda = pedirYResponder(primera, 'Añade algo raro.', 'Propuesta descartable.');
     const cancelado = reducirPanelIA(segunda, { tipo: 'cancelar' });
-    expect(cancelado).toEqual({ fase: 'inactivo', imagenActiva: null, conversacion: [{ rol: 'usuario', texto: 'Descríbeme esto.' }, { rol: 'ia', texto: 'Propuesta 1.' }] });
+    expect(cancelado).toEqual({ fase: 'inactivo', imagenesActivas: [], conversacion: [{ rol: 'usuario', texto: 'Descríbeme esto.' }, { rol: 'ia', texto: 'Propuesta 1.' }] });
   });
 
   it('6. Aceptación: vuelve a inactivo SIN tocar la conversación — el turno aceptado ya estaba desde "respuesta"', () => {
     const propuesta = pedirYResponder(estadoInicialPanelIA, 'Descríbeme esto.', 'Propuesta final.');
     const aceptado = reducirPanelIA(propuesta, { tipo: 'aceptado' });
-    expect(aceptado).toEqual({ fase: 'inactivo', imagenActiva: null, conversacion: [{ rol: 'usuario', texto: 'Descríbeme esto.' }, { rol: 'ia', texto: 'Propuesta final.' }] });
+    expect(aceptado).toEqual({ fase: 'inactivo', imagenesActivas: [], conversacion: [{ rol: 'usuario', texto: 'Descríbeme esto.' }, { rol: 'ia', texto: 'Propuesta final.' }] });
   });
 
   it('7. Conversación que alcanza el límite de contexto: recortarConversacion se queda solo con los últimos N mensajes', () => {
@@ -117,14 +117,14 @@ describe('reducirPanelIA — conversación multi-turno (23/08/2026)', () => {
     // El único conjunto de claves posible en cualquier estado es este — `elementoId` identifica
     // el elemento seleccionado al pedir (para poder comparar contra la selección actual antes de
     // aplicar), nunca el contenido del documento en sí.
-    const clavesPermitidas = new Set(['fase', 'conversacion', 'peticion', 'texto', 'editando', 'mensaje', 'imagenActiva', 'imagenIncluida', 'elementoId']);
+    const clavesPermitidas = new Set(['fase', 'conversacion', 'peticion', 'texto', 'editando', 'mensaje', 'imagenesActivas', 'imagenIncluida', 'elementoId']);
     for (const e of estados) {
       for (const clave of Object.keys(e)) expect(clavesPermitidas.has(clave)).toBe(true);
     }
   });
 
   it('9. La conversación no es memoria permanente: cada sesión empieza vacía y estadoInicialPanelIA nunca se muta', () => {
-    expect(estadoInicialPanelIA).toEqual({ fase: 'inactivo', conversacion: [], imagenActiva: null });
+    expect(estadoInicialPanelIA).toEqual({ fase: 'inactivo', conversacion: [], imagenesActivas: [] });
 
     // Una sesión completa de conversación...
     let sesionA = estadoInicialPanelIA;
@@ -132,10 +132,10 @@ describe('reducirPanelIA — conversación multi-turno (23/08/2026)', () => {
     sesionA = reducirPanelIA(sesionA, { tipo: 'aceptado' });
 
     // ...no debe alterar la constante de partida ni "filtrarse" a una sesión nueva.
-    expect(estadoInicialPanelIA).toEqual({ fase: 'inactivo', conversacion: [], imagenActiva: null });
+    expect(estadoInicialPanelIA).toEqual({ fase: 'inactivo', conversacion: [], imagenesActivas: [] });
     const sesionB = estadoInicialPanelIA;
     expect(sesionB.conversacion).toHaveLength(0);
-    expect(sesionB.imagenActiva).toBeNull();
+    expect(sesionB.imagenesActivas).toEqual([]);
   });
 });
 
@@ -180,40 +180,62 @@ describe('reducirPanelIA — elemento de destino (corrección 24/08/2026, bug re
   });
 });
 
-describe('reducirPanelIA — imagen activa (Fase 3, IA Visual, 23/08/2026)', () => {
-  it('1. Estado inicial: sin imagen activa', () => {
-    expect(estadoInicialPanelIA.imagenActiva).toBeNull();
+describe('reducirPanelIA — imágenes activas (Fase 3, IA Visual, 23/08/2026; ampliado a varias el 30/08/2026)', () => {
+  it('1. Estado inicial: sin imágenes activas', () => {
+    expect(estadoInicialPanelIA.imagenesActivas).toEqual([]);
   });
 
-  it('2. Añadir imagen: queda como imagenActiva, visible en cualquier fase', () => {
-    const conImagen = reducirPanelIA(estadoInicialPanelIA, { tipo: 'imagenSeleccionada', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' });
-    expect(conImagen.imagenActiva).toEqual({ dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' });
+  it('2. Añadir una imagen: queda como única entrada de imagenesActivas, visible en cualquier fase', () => {
+    const conImagen = reducirPanelIA(estadoInicialPanelIA, { tipo: 'imagenSeleccionada', id: 'img-1', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' });
+    expect(conImagen.imagenesActivas).toEqual([{ id: 'img-1', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' }]);
     // No afecta a nada más del estado.
     expect(conImagen.fase).toBe('inactivo');
     expect(conImagen.conversacion).toEqual([]);
   });
 
-  it('3. Eliminar imagen: vuelve a null, sin tocar el resto del estado', () => {
-    const conImagen = reducirPanelIA(estadoInicialPanelIA, { tipo: 'imagenSeleccionada', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' });
-    const sinImagen = reducirPanelIA(conImagen, { tipo: 'imagenEliminada' });
-    expect(sinImagen.imagenActiva).toBeNull();
+  it('3. Eliminar la única imagen (por su id): vuelve a array vacío, sin tocar el resto del estado', () => {
+    const conImagen = reducirPanelIA(estadoInicialPanelIA, { tipo: 'imagenSeleccionada', id: 'img-1', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' });
+    const sinImagen = reducirPanelIA(conImagen, { tipo: 'imagenEliminada', id: 'img-1' });
+    expect(sinImagen.imagenesActivas).toEqual([]);
   });
 
-  it('4. Sustituir imagen: la segunda selección reemplaza a la primera, nunca se acumulan', () => {
-    const primera = reducirPanelIA(estadoInicialPanelIA, { tipo: 'imagenSeleccionada', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'a.jpg' });
-    const segunda = reducirPanelIA(primera, { tipo: 'imagenSeleccionada', dataUrl: 'data:image/jpeg;base64,BBB', nombre: 'b.jpg' });
-    expect(segunda.imagenActiva).toEqual({ dataUrl: 'data:image/jpeg;base64,BBB', nombre: 'b.jpg' });
+  it('4. Añadir una segunda imagen SE ACUMULA junto a la primera — ya no se sustituyen (petición explícita, 30/08/2026)', () => {
+    const primera = reducirPanelIA(estadoInicialPanelIA, { tipo: 'imagenSeleccionada', id: 'img-a', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'a.jpg' });
+    const segunda = reducirPanelIA(primera, { tipo: 'imagenSeleccionada', id: 'img-b', dataUrl: 'data:image/jpeg;base64,BBB', nombre: 'b.jpg' });
+    expect(segunda.imagenesActivas).toEqual([
+      { id: 'img-a', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'a.jpg' },
+      { id: 'img-b', dataUrl: 'data:image/jpeg;base64,BBB', nombre: 'b.jpg' },
+    ]);
   });
 
-  it('5. Petición con imagen activa: imagenIncluida se fija en true al entrar en "enviando", y el turno de conversación queda marcado con conImagen', () => {
-    const conImagen = reducirPanelIA(estadoInicialPanelIA, { tipo: 'imagenSeleccionada', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' });
+  it('4b. Eliminar una imagen del medio por id deja intactas las demás, en el mismo orden', () => {
+    let estado = reducirPanelIA(estadoInicialPanelIA, { tipo: 'imagenSeleccionada', id: 'img-a', dataUrl: 'a', nombre: 'a.jpg' });
+    estado = reducirPanelIA(estado, { tipo: 'imagenSeleccionada', id: 'img-b', dataUrl: 'b', nombre: 'b.jpg' });
+    estado = reducirPanelIA(estado, { tipo: 'imagenSeleccionada', id: 'img-c', dataUrl: 'c', nombre: 'c.jpg' });
+    const sinB = reducirPanelIA(estado, { tipo: 'imagenEliminada', id: 'img-b' });
+    expect(sinB.imagenesActivas.map((i) => i.id)).toEqual(['img-a', 'img-c']);
+  });
+
+  it('4c. Al llegar a LIMITE_IMAGENES_ACTIVAS, una selección de más se ignora (el reducer no supera el tope real del backend)', () => {
+    let estado = estadoInicialPanelIA;
+    for (let i = 0; i < LIMITE_IMAGENES_ACTIVAS; i++) {
+      estado = reducirPanelIA(estado, { tipo: 'imagenSeleccionada', id: `img-${i}`, dataUrl: `d${i}`, nombre: `${i}.jpg` });
+    }
+    expect(estado.imagenesActivas).toHaveLength(LIMITE_IMAGENES_ACTIVAS);
+    const conUnaDeMas = reducirPanelIA(estado, { tipo: 'imagenSeleccionada', id: 'img-extra', dataUrl: 'extra', nombre: 'extra.jpg' });
+    expect(conUnaDeMas.imagenesActivas).toHaveLength(LIMITE_IMAGENES_ACTIVAS);
+    expect(conUnaDeMas.imagenesActivas.some((i) => i.id === 'img-extra')).toBe(false);
+  });
+
+  it('5. Petición con imágenes activas: imagenIncluida se fija en true al entrar en "enviando", y el turno de conversación queda marcado con conImagen', () => {
+    const conImagen = reducirPanelIA(estadoInicialPanelIA, { tipo: 'imagenSeleccionada', id: 'img-1', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' });
     const enviando = reducirPanelIA(conImagen, { tipo: 'enviar', peticion: 'Descríbeme esta cocina.', elementoId: 'el-1' });
     expect(enviando).toMatchObject({ fase: 'enviando', imagenIncluida: true });
     const propuesta = reducirPanelIA(enviando, { tipo: 'respuesta', texto: 'Cocina en L, isla central visible.' });
     expect(propuesta.conversacion[0]).toEqual({ rol: 'usuario', texto: 'Descríbeme esta cocina.', conImagen: true });
   });
 
-  it('6. Petición sin imagen activa: imagenIncluida es false y el turno no lleva la marca conImagen', () => {
+  it('6. Petición sin imágenes activas: imagenIncluida es false y el turno no lleva la marca conImagen', () => {
     const enviando = reducirPanelIA(estadoInicialPanelIA, { tipo: 'enviar', peticion: 'Redacta esta partida.', elementoId: 'el-1' });
     expect(enviando).toMatchObject({ fase: 'enviando', imagenIncluida: false });
     const propuesta = reducirPanelIA(enviando, { tipo: 'respuesta', texto: 'Fabricación de mueble a medida.' });
@@ -222,53 +244,53 @@ describe('reducirPanelIA — imagen activa (Fase 3, IA Visual, 23/08/2026)', () 
   });
 
   it('7. Conversación multi-turno con imagen activa: el segundo turno de refinamiento no vuelve a necesitar la imagen para tener sentido, pero la imagen sigue activa mientras no se quite', () => {
-    const conImagen = reducirPanelIA(estadoInicialPanelIA, { tipo: 'imagenSeleccionada', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' });
+    const conImagen = reducirPanelIA(estadoInicialPanelIA, { tipo: 'imagenSeleccionada', id: 'img-1', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' });
     const primera = pedirYResponder(conImagen, 'Descríbeme esta cocina.', 'Cocina en L con isla central.');
-    expect(primera.imagenActiva).toEqual({ dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' });
+    expect(primera.imagenesActivas).toEqual([{ id: 'img-1', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' }]);
 
     const segunda = pedirYResponder(primera, 'Hazla más profesional.', 'Cocina en distribución en L con isla central, de línea profesional.');
     // La imagen sigue activa para el segundo turno también.
-    expect(segunda.imagenActiva).toEqual({ dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' });
+    expect(segunda.imagenesActivas).toEqual([{ id: 'img-1', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' }]);
     // Ambos turnos de usuario quedan marcados: la imagen siguió activa en los dos envíos.
     expect(segunda.conversacion[0]).toEqual({ rol: 'usuario', texto: 'Descríbeme esta cocina.', conImagen: true });
     expect(segunda.conversacion[2]).toEqual({ rol: 'usuario', texto: 'Hazla más profesional.', conImagen: true });
   });
 
   it('7b. Si el usuario quita la imagen entre dos turnos, el turno siguiente ya no queda marcado con conImagen', () => {
-    const conImagen = reducirPanelIA(estadoInicialPanelIA, { tipo: 'imagenSeleccionada', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' });
+    const conImagen = reducirPanelIA(estadoInicialPanelIA, { tipo: 'imagenSeleccionada', id: 'img-1', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' });
     const primera = pedirYResponder(conImagen, 'Descríbeme esta cocina.', 'Cocina en L.');
-    const sinImagen = reducirPanelIA(primera, { tipo: 'imagenEliminada' });
+    const sinImagen = reducirPanelIA(primera, { tipo: 'imagenEliminada', id: 'img-1' });
     const segunda = pedirYResponder(sinImagen, 'Resume esto en una frase.', 'Cocina en L, resumen breve.');
     expect(segunda.conversacion[0]).toEqual({ rol: 'usuario', texto: 'Descríbeme esta cocina.', conImagen: true });
     expect(segunda.conversacion[2]).toEqual({ rol: 'usuario', texto: 'Resume esto en una frase.' });
     expect('conImagen' in segunda.conversacion[2]).toBe(false);
   });
 
-  it('8. Regenerar con imagen activa: recalcula imagenIncluida a partir de la imagen ACTUAL, no de la del intento descartado', () => {
-    const conImagen = reducirPanelIA(estadoInicialPanelIA, { tipo: 'imagenSeleccionada', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' });
+  it('8. Regenerar con imagen activa: recalcula imagenIncluida a partir de las imágenes ACTUALES, no de las del intento descartado', () => {
+    const conImagen = reducirPanelIA(estadoInicialPanelIA, { tipo: 'imagenSeleccionada', id: 'img-1', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' });
     const propuesta = pedirYResponder(conImagen, 'Descríbeme esto.', 'Primer intento.');
     // El usuario quita la imagen antes de regenerar.
-    const sinImagen = reducirPanelIA(propuesta, { tipo: 'imagenEliminada' });
+    const sinImagen = reducirPanelIA(propuesta, { tipo: 'imagenEliminada', id: 'img-1' });
     const regenerando = reducirPanelIA(sinImagen, { tipo: 'regenerar' });
     expect(regenerando).toMatchObject({ fase: 'enviando', peticion: 'Descríbeme esto.', imagenIncluida: false });
   });
 
-  it('9. Cancelar no afecta a la imagen activa — solo "imagenEliminada" la quita', () => {
-    const conImagen = reducirPanelIA(estadoInicialPanelIA, { tipo: 'imagenSeleccionada', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' });
+  it('9. Cancelar no afecta a las imágenes activas — solo "imagenEliminada" quita una', () => {
+    const conImagen = reducirPanelIA(estadoInicialPanelIA, { tipo: 'imagenSeleccionada', id: 'img-1', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' });
     const propuesta = pedirYResponder(conImagen, 'Descríbeme esto.', 'Propuesta.');
     const cancelado = reducirPanelIA(propuesta, { tipo: 'cancelar' });
-    expect(cancelado.imagenActiva).toEqual({ dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' });
+    expect(cancelado.imagenesActivas).toEqual([{ id: 'img-1', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' }]);
   });
 
-  it('10. Aceptar no afecta a la imagen activa — el usuario puede seguir preguntando sobre la misma imagen', () => {
-    const conImagen = reducirPanelIA(estadoInicialPanelIA, { tipo: 'imagenSeleccionada', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' });
+  it('10. Aceptar no afecta a las imágenes activas — el usuario puede seguir preguntando sobre las mismas imágenes', () => {
+    const conImagen = reducirPanelIA(estadoInicialPanelIA, { tipo: 'imagenSeleccionada', id: 'img-1', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' });
     const propuesta = pedirYResponder(conImagen, 'Descríbeme esto.', 'Propuesta.');
     const aceptado = reducirPanelIA(propuesta, { tipo: 'aceptado' });
-    expect(aceptado.imagenActiva).toEqual({ dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' });
+    expect(aceptado.imagenesActivas).toEqual([{ id: 'img-1', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' }]);
   });
 
-  it('11. La imagen NUNCA se duplica dentro de los mensajes históricos de la conversación — solo el flag conImagen, nunca la dataUrl', () => {
-    const conImagen = reducirPanelIA(estadoInicialPanelIA, { tipo: 'imagenSeleccionada', dataUrl: 'data:image/jpeg;base64,'.padEnd(500, 'A'), nombre: 'cocina.jpg' });
+  it('11. Las imágenes NUNCA se duplican dentro de los mensajes históricos de la conversación — solo el flag conImagen, nunca la dataUrl', () => {
+    const conImagen = reducirPanelIA(estadoInicialPanelIA, { tipo: 'imagenSeleccionada', id: 'img-1', dataUrl: 'data:image/jpeg;base64,'.padEnd(500, 'A'), nombre: 'cocina.jpg' });
     let estado = pedirYResponder(conImagen, 'Descríbeme esto.', 'Cocina en L.');
     estado = pedirYResponder(estado, 'Hazla más corta.', 'Cocina en L, breve.');
     for (const turno of estado.conversacion) {
@@ -279,13 +301,13 @@ describe('reducirPanelIA — imagen activa (Fase 3, IA Visual, 23/08/2026)', () 
     }
   });
 
-  it('12. La imagen activa no se filtra entre sesiones: estadoInicialPanelIA nunca se muta al seleccionar una imagen', () => {
-    expect(estadoInicialPanelIA.imagenActiva).toBeNull();
-    const sesionA = reducirPanelIA(estadoInicialPanelIA, { tipo: 'imagenSeleccionada', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' });
-    expect(sesionA.imagenActiva).not.toBeNull();
+  it('12. Las imágenes activas no se filtran entre sesiones: estadoInicialPanelIA nunca se muta al seleccionar una imagen', () => {
+    expect(estadoInicialPanelIA.imagenesActivas).toEqual([]);
+    const sesionA = reducirPanelIA(estadoInicialPanelIA, { tipo: 'imagenSeleccionada', id: 'img-1', dataUrl: 'data:image/jpeg;base64,AAA', nombre: 'cocina.jpg' });
+    expect(sesionA.imagenesActivas).not.toEqual([]);
     // La constante de partida sigue intacta — una sesión nueva (otro presupuesto) no hereda la imagen de la anterior.
-    expect(estadoInicialPanelIA.imagenActiva).toBeNull();
+    expect(estadoInicialPanelIA.imagenesActivas).toEqual([]);
     const sesionB = estadoInicialPanelIA;
-    expect(sesionB.imagenActiva).toBeNull();
+    expect(sesionB.imagenesActivas).toEqual([]);
   });
 });
