@@ -16,7 +16,7 @@ vi.mock('./ia-proveedor-openai.js', () => ({
   extraerJsonEstructurado: (...args: unknown[]) => extraerJsonEstructuradoMock(...args),
 }));
 
-const { investigarMercado, ErrorSinUbicacionEmpresa } = await import('./investigacion-mercado.js');
+const { investigarMercado, ErrorSinUbicacionEmpresa, esDeLaZona } = await import('./investigacion-mercado.js');
 
 let mongod: MongoMemoryServer;
 
@@ -195,5 +195,82 @@ describe('investigarMercado — caché de 24h', () => {
     await investigarMercado(PARAMS_BASE);
     await investigarMercado({ ...PARAMS_BASE, tipoTrabajo: 'Armario' });
     expect(buscarEnWebMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('esDeLaZona — nunca sustituir Canarias por Madrid en silencio', () => {
+  it('la misma zona (u ocupando una a la otra) siempre coincide', () => {
+    expect(esDeLaZona('Tenerife', 'Tenerife')).toBe(true);
+    expect(esDeLaZona('Santa Cruz de Tenerife', 'Tenerife')).toBe(true);
+    expect(esDeLaZona('Tenerife', 'Santa Cruz de Tenerife')).toBe(true);
+  });
+
+  it('una isla canaria concreta cuenta como "Canarias" al nivel regional', () => {
+    expect(esDeLaZona('Gran Canaria', 'Canarias')).toBe(true);
+    expect(esDeLaZona('Las Palmas de Gran Canaria', 'Canarias')).toBe(true);
+  });
+
+  it('una ubicación de la Península NUNCA coincide con una zona canaria', () => {
+    expect(esDeLaZona('Madrid', 'Tenerife')).toBe(false);
+    expect(esDeLaZona('Madrid', 'Canarias')).toBe(false);
+    expect(esDeLaZona('Barcelona', 'Tenerife')).toBe(false);
+  });
+
+  it('sin ubicación conocida, nunca se descarta solo por eso (el usuario decide)', () => {
+    expect(esDeLaZona(null, 'Tenerife')).toBe(true);
+  });
+
+  it('ignora mayúsculas y acentos al comparar', () => {
+    expect(esDeLaZona('TENERIFE', 'tenerife')).toBe(true);
+  });
+});
+
+describe('investigarMercado — nunca mezcla Península con una búsqueda Local/Regional (corrección 30/08/2026)', () => {
+  beforeEach(async () => { await configurarUbicacion(USUARIO); });
+
+  it('un candidato de Madrid en una búsqueda Local (Tenerife) se descarta antes de mostrarse', async () => {
+    buscarEnWebMock.mockResolvedValue(respuestaBusquedaOk());
+    extraerJsonEstructuradoMock.mockResolvedValue({
+      datos: {
+        sinResultadosFiables: false, motivoSinResultados: null,
+        candidatos: [CANDIDATO_OK, { ...CANDIDATO_OK, ubicacion: 'Madrid', precio: 3000, url: null }],
+      },
+      tokensEntrada: 80, tokensSalida: 40, modelo: 'gpt-4o-mini',
+    });
+
+    const resultado = await investigarMercado(PARAMS_BASE); // PARAMS_BASE es nivel 'local'
+    expect(resultado.candidatos).toHaveLength(1);
+    expect(resultado.candidatos[0].ubicacion).toBe('Tenerife');
+    expect(resultado.motivoSinResultados).toMatch(/se descartaron 1 resultado/i);
+  });
+
+  it('si TODOS los candidatos son de fuera de zona, el resultado es "sin resultados fiables", nunca se cuelan igualmente', async () => {
+    buscarEnWebMock.mockResolvedValue(respuestaBusquedaOk());
+    extraerJsonEstructuradoMock.mockResolvedValue({
+      datos: {
+        sinResultadosFiables: false, motivoSinResultados: null,
+        candidatos: [{ ...CANDIDATO_OK, ubicacion: 'Madrid' }, { ...CANDIDATO_OK, ubicacion: 'Barcelona' }],
+      },
+      tokensEntrada: 80, tokensSalida: 40, modelo: 'gpt-4o-mini',
+    });
+
+    const resultado = await investigarMercado(PARAMS_BASE);
+    expect(resultado.sinResultadosFiables).toBe(true);
+    expect(resultado.candidatos).toHaveLength(0);
+  });
+
+  it('en una búsqueda Nacional, un candidato de Madrid SÍ se conserva (es el objetivo de ese nivel)', async () => {
+    buscarEnWebMock.mockResolvedValue(respuestaBusquedaOk());
+    extraerJsonEstructuradoMock.mockResolvedValue({
+      datos: {
+        sinResultadosFiables: false, motivoSinResultados: null,
+        candidatos: [{ ...CANDIDATO_OK, ubicacion: 'Madrid', url: null }],
+      },
+      tokensEntrada: 80, tokensSalida: 40, modelo: 'gpt-4o-mini',
+    });
+
+    const resultado = await investigarMercado({ ...PARAMS_BASE, nivelGeografico: 'nacional' });
+    expect(resultado.candidatos).toHaveLength(1);
+    expect(resultado.candidatos[0].ubicacion).toBe('Madrid');
   });
 });

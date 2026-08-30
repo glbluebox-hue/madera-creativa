@@ -200,6 +200,10 @@ export function CandidatosMercadoVista({ tipoTrabajo, alcanceInicial, nivelCalid
           {resultado.desdeCache && (
             <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--topo-claro)' }}>Resultado de una investigación reciente (menos de 24h) — reutilizado para no repetir la búsqueda.</p>
           )}
+          {/* Se muestra siempre que haya un motivo (incluso con candidatos válidos restantes) — p. ej. "se descartaron 2 resultados por no ser de Tenerife": nunca se oculta que algo se filtró por zona, aunque no afecte al resultado final. */}
+          {resultado.motivoSinResultados && resultado.candidatos.length > 0 && (
+            <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--ocre)' }}>{resultado.motivoSinResultados}</p>
+          )}
           {resultado.sinResultadosFiables || resultado.candidatos.length === 0 ? (
             <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--topo-claro)' }}>
               No hemos encontrado referencias de mercado suficientemente fiables para este trabajo y esta zona{resultado.motivoSinResultados ? ` — ${resultado.motivoSinResultados}` : '.'}

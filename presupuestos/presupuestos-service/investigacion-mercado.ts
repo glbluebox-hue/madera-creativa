@@ -76,6 +76,38 @@ function hashContexto(texto: string): string {
   return texto ? createHash('sha256').update(texto.trim().toLowerCase()).digest('hex').slice(0, 24) : '';
 }
 
+// Rango Unicode de marcas diacríticas combinantes (U+0300–U+036F), construido
+// con fromCodePoint (en vez de escribir el rango directamente en el código
+// fuente) para que ningún editor/herramienta lo normalice o lo corrompa.
+const RANGO_DIACRITICOS = `${String.fromCodePoint(0x300)}-${String.fromCodePoint(0x36f)}`;
+const DIACRITICOS = new RegExp(`[${RANGO_DIACRITICOS}]`, 'g');
+
+function normalizarTexto(s: string): string {
+  return s.normalize('NFD').replace(DIACRITICOS, '').toLowerCase().trim();
+}
+
+/** Islas de Canarias — un candidato que menciona cualquiera de ellas SÍ cuenta como "de Canarias" aunque no escriba literalmente "Canarias" (nivel regional). */
+const ISLAS_CANARIAS = ['tenerife', 'gran canaria', 'fuerteventura', 'lanzarote', 'la palma', 'la gomera', 'el hierro', 'las palmas', 'santa cruz de tenerife'];
+
+/**
+ * Defensa en profundidad (encargo, "nunca sustituir Canarias por Madrid en
+ * silencio", ver "Brújula de Mercado"): aunque el prompt de búsqueda ya
+ * prohíbe salirse de la zona pedida en Local/Regional, un modelo puede no
+ * respetarlo — este filtro es la última barrera antes de que el candidato
+ * llegue siquiera a mostrarse, y por tanto antes de que pueda guardarse
+ * etiquetado con una zona que no le corresponde. `ubicacion: null`
+ * (desconocida) nunca se descarta solo por eso — el usuario decide si se
+ * fía o no de un candidato sin ubicación explícita.
+ */
+export function esDeLaZona(ubicacion: string | null, zona: string): boolean {
+  if (!ubicacion) return true;
+  const u = normalizarTexto(ubicacion);
+  const z = normalizarTexto(zona);
+  if (u.includes(z) || z.includes(u)) return true;
+  if (z === 'canarias' && ISLAS_CANARIAS.some((isla) => u.includes(isla))) return true;
+  return false;
+}
+
 /**
  * Orquesta una investigación de mercado con IA: resuelve la zona real de la
  * empresa, comprueba la caché de 24h, y si no hay acierto, ejecuta los dos
@@ -158,13 +190,28 @@ export async function investigarMercado(params: ParametrosInvestigarMercado): Pr
     // certificada se descarta a `null` en vez de propagar una posible
     // alucinación (encargo, punto 3: "nunca inventar un dato").
     const urlsValidas = new Set(busqueda.urlsCitadas);
+    const candidatosConUrlValidada = (extraccion.datos.candidatos ?? []).map((c) => ({
+      ...c,
+      url: c.url && urlsValidas.has(c.url) ? c.url : null,
+    }));
+
+    // Defensa en profundidad #2 (encargo: "nunca sustituir Canarias por
+    // Madrid en silencio"): en Local/Regional, un candidato cuya ubicación
+    // no coincide con la zona pedida se descarta ANTES de llegar al
+    // usuario — nunca se guarda (ni se muestra) etiquetado con una zona
+    // que no le corresponde. En Nacional no aplica: cualquier parte de
+    // España es válida por definición.
+    const candidatosEnZona = params.nivelGeografico === 'nacional'
+      ? candidatosConUrlValidada
+      : candidatosConUrlValidada.filter((c) => esDeLaZona(c.ubicacion, zona));
+    const excluidosPorZona = candidatosConUrlValidada.length - candidatosEnZona.length;
+
     forma = {
-      sinResultadosFiables: extraccion.datos.sinResultadosFiables,
-      motivoSinResultados: extraccion.datos.motivoSinResultados,
-      candidatos: (extraccion.datos.candidatos ?? []).map((c) => ({
-        ...c,
-        url: c.url && urlsValidas.has(c.url) ? c.url : null,
-      })),
+      sinResultadosFiables: extraccion.datos.sinResultadosFiables || candidatosEnZona.length === 0,
+      motivoSinResultados: excluidosPorZona > 0
+        ? `${extraccion.datos.motivoSinResultados ? extraccion.datos.motivoSinResultados + ' ' : ''}Se descartaron ${excluidosPorZona} resultado${excluidosPorZona === 1 ? '' : 's'} por no ser realmente de "${zona}".`.trim()
+        : extraccion.datos.motivoSinResultados,
+      candidatos: candidatosEnZona,
     };
     exito = true;
   } catch (err) {

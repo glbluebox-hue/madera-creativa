@@ -22,21 +22,40 @@ const ETIQUETA_ALCANCE: Record<ContextoBusquedaMercado['alcance'], string> = {
 };
 
 /** Paso 1 — instrucción para la herramienta `web_search_preview` (ver `buscarEnWeb`). */
+/**
+ * Instrucción geográfica — el "nivel" (Local/Regional/Nacional, elegido por
+ * el usuario en la interfaz) es el ÚNICO que decide el alcance de la
+ * búsqueda, nunca un criterio de conveniencia de la IA. En Local/Regional
+ * la búsqueda debe quedarse estrictamente en `ctx.zona`: si no encuentra
+ * suficiente ahí, debe decir "no encontrado", nunca ampliar en silencio a
+ * otra región de España (sería sustituir Canarias por Madrid sin avisar,
+ * justo lo que "Brújula de Mercado" prohíbe). Nacional sí es, por
+ * definición, buscar en toda España — no hace falta restringirlo.
+ */
+function instruccionGeografica(ctx: ContextoBusquedaMercado): string {
+  if (ctx.nivelGeografico === 'nacional') {
+    return `- Zona: cualquier parte de España (búsqueda nacional a propósito) — indica siempre en qué ciudad/región concreta se publicó cada precio.`;
+  }
+  return [
+    `- Zona: ESTRICTAMENTE "${ctx.zona}" (nivel ${ctx.nivelGeografico === 'local' ? 'local' : 'regional'}) — NUNCA amplíes a otra provincia, comunidad o "toda España" aunque encuentres pocos resultados.`,
+    `  Si tras buscar no encuentras precios claramente de "${ctx.zona}" (o de la misma comunidad/islas si aplica), dilo explícitamente como "no he encontrado suficientes referencias fiables EN ESTA ZONA" — un precio de otra parte de España NO sirve aquí, aunque sea real y esté bien documentado.`,
+  ].join('\n');
+}
+
 export function construirPromptBusqueda(ctx: ContextoBusquedaMercado): string {
   const partes = [
     `Eres un investigador de precios de mercado para un carpintero autónomo en España (Madera Creativa) que trabaja con: ${ctx.tipoTrabajo}.`,
     `Busca precios REALES y publicados recientemente de trabajos de "${ctx.tipoTrabajo}" comparables a este:`,
-    `- Zona: ${ctx.zona} (nivel ${ctx.nivelGeografico}).`,
+    instruccionGeografica(ctx),
     `- Alcance: ${ETIQUETA_ALCANCE[ctx.alcance]}.`,
     ctx.nivelCalidad ? `- Calidad/gama: ${ctx.nivelCalidad}.` : '- Calidad/gama: no especificada, busca en cualquier gama y anótala si la fuente la indica.',
     ctx.descripcionLibre ? `- Detalles adicionales del trabajo (tal como los describió el propio presupuesto): "${ctx.descripcionLibre}".` : '',
     '',
-    'Encuentra entre 3 y 5 fuentes DISTINTAS con precios reales publicados (páginas de empresas del sector, guías de precios como Habitissimo/Cronoshare, foros o artículos con cifras concretas, anuncios con precio visible). Para cada una, indica en tu respuesta: el precio o rango exacto, la moneda, la ubicación geográfica de esa referencia, qué incluye y qué NO incluye el precio si se puede saber, la calidad/gama si se menciona, si el precio incluye IVA/IGIC (o se puede deducir), si incluye instalación, la fecha o antigüedad de la publicación, el nombre de la fuente, y cita la URL exacta de cada una.',
+    'Encuentra entre 3 y 5 fuentes DISTINTAS con precios reales publicados (páginas de empresas del sector, guías de precios como Habitissimo/Cronoshare, foros o artículos con cifras concretas, anuncios con precio visible). Para cada una, indica en tu respuesta: el precio o rango exacto, la moneda, la ubicación geográfica EXACTA de esa referencia (ciudad/provincia/isla, nunca solo "España"), qué incluye y qué NO incluye el precio si se puede saber, la calidad/gama si se menciona, si el precio incluye IVA/IGIC (o se puede deducir), si incluye instalación, la fecha o antigüedad de la publicación, el nombre de la fuente, y cita la URL exacta de cada una.',
     '',
     'REGLAS ESTRICTAS:',
     '- Nunca inventes un precio ni una fuente. Si para un dato concreto (IVA, instalación, calidad, fecha) la fuente no lo dice, dilo explícitamente como "no indicado" — no lo deduzcas ni lo supongas.',
-    '- Prioriza fuentes de España y, si es posible, de Canarias/la zona indicada — pero si no encuentras suficientes ahí, dilo y amplía a otras zonas de España, dejando claro de dónde es cada precio.',
-    '- Si tras buscar no encuentras al menos 2 fuentes con un precio real y verificable para este tipo de trabajo, dilo explícitamente ("no he encontrado suficientes referencias fiables") en vez de rellenar con precios genéricos o poco fiables.',
+    '- Si tras buscar no encuentras al menos 2 fuentes con un precio real y verificable dentro de la zona pedida, dilo explícitamente ("no he encontrado suficientes referencias fiables en esta zona") en vez de rellenar con precios de otra zona o poco fiables.',
     '- Responde en prosa clara, en español, citando cada fuente. No hace falta JSON en este paso.',
   ];
   return partes.filter(Boolean).join('\n');
