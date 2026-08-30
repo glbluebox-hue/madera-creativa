@@ -424,6 +424,131 @@ Siguiendo el encargo ("esta fase debe ser incremental. Primero audita y document
 
 ---
 
+## 16. Revisión técnica adicional (30/08/2026) — solo hechos verificables, ninguna decisión legal
+
+Encargo del usuario: avanzar SOLO en lo técnicamente comprobable sin tomar
+ninguna decisión jurídica (bases jurídicas, plazos, borrado definitivo,
+alcance de exportación, etc. quedan todos en §14, sin resolver). No se ha
+modificado ninguna funcionalidad de producción para esta revisión — todo
+lo de abajo es lectura de código + una comprobación en vivo (cabeceras
+HTTP + cliente de navegador), sin escribir nada nuevo.
+
+### 16.1 Inventario técnico de datos y proveedores (confirmado, actualiza §2-§6)
+
+Sin cambios respecto a §2-§10 de este documento — se mantiene como referencia. Los proveedores confirmados por código siguen siendo: **OpenAI** (IA), **Resend** (email transaccional), **Cloudflare R2** (archivos, dos buckets: público y privado de facturas), **MongoDB Atlas** (base de datos), **Render.com** (hosting backend), servicios push nativos del navegador (Google/Mozilla/Apple, sin proveedor propio contratado). Trimble/SketchUp: aparcado, sin cuenta conectada, sin datos reales — no tocado.
+
+### 16.2 Configuración real de OpenAI — plan/API y retención
+
+**No se ha podido comprobar desde este entorno.** No hay ninguna clave de OpenAI disponible localmente en el repositorio (`presupuestos-service/.env` no existe con contenido en este equipo — las credenciales viven solo como variable de entorno en Render, fuera del alcance de este agente). Lo que SÍ se confirma por código:
+
+- Se usa el SDK oficial `openai` (paquete npm), apuntando a la API pública estándar (`ia-proveedor-openai.ts`) — no hay ningún endpoint de Azure OpenAI ni de una instancia dedicada/on-premise.
+- Dos modos de uso: Chat Completions (capacidades de texto/herramientas) y Responses API con `web_search_preview` (Investigación de Mercado) — ambos contra la API pública de openai.com.
+- `maxRetries: 0`, timeout configurable — no afecta a retención, solo a comportamiento de red.
+
+**PENDIENTE — solo el titular de la cuenta OpenAI puede confirmarlo** (Dashboard de OpenAI → Settings → Data controls / Organization): tipo de cuenta (API estándar de pago por uso vs. acuerdo Enterprise/Team), si "Zero Data Retention" o exclusión de entrenamiento está activado para esta organización/proyecto, y el plazo de retención por defecto que aplique. Es una comprobación de panel, no requiere abogado — pero tampoco la puede hacer este agente sin acceso a esa cuenta.
+
+### 16.3 Regiones/configuración de cada proveedor
+
+| Proveedor | ¿Determinable por código? | Resultado | Dónde comprobarlo (el usuario) |
+|---|---|---|---|
+| OpenAI | No | — | Cuenta OpenAI → Settings → Data controls (región de procesamiento no es configurable por el cliente en el plan estándar, es fija según OpenAI) |
+| Resend | No | Solo se ve la URL de API (`api.resend.com`), sin indicar región de infraestructura | Dashboard de Resend → Settings, o su documentación de infraestructura |
+| Cloudflare R2 | Parcial | El código NO fija ninguna región/"location hint" al subir objetos (`almacenamiento-r2.ts` no pasa ningún parámetro de localización) — la región real depende de cómo se creó cada bucket en el dashboard, no del código | Cloudflare Dashboard → R2 → cada bucket → Settings → Location (si se fijó alguna al crearlo; por defecto R2 es "automático", sin residencia garantizada salvo que se haya configurado `jurisdiction` al crear el bucket) |
+| MongoDB Atlas | No | La cadena de conexión (`MONGO_URL`) no está disponible en este entorno para inspeccionar el nombre del clúster | Atlas Dashboard → Cluster → Overview, muestra la región (p. ej. "AWS / eu-west-1") |
+| Render.com | No | Sin acceso a la configuración del servicio desde aquí | Render Dashboard → el servicio → Settings → Region |
+
+**Ninguna de estas cinco comprobaciones requiere abogado — son consultas de panel que solo el titular de cada cuenta puede hacer.** Quedan como tarea técnica pendiente del usuario, no como pregunta jurídica.
+
+### 16.4 Logs de aplicación — datos personales encontrados
+
+Revisado `logger.service.ts` (config global) y los puntos de registro de peticiones/errores:
+
+- **Configuración global correcta**: `redact` ya oculta `password`, `token`, `accessToken`, `refreshToken` y las cabeceras `authorization`/`cookie` en cualquier log, en cualquier sitio del código (defensa de fondo, no solo por sitio).
+- **El logger de cada petición HTTP** (`middlewareLogPeticion`) solo registra `requestId`, `metodo`, `ruta` (URL), `status`, `duracionMs` y `usuarioId` (un identificador interno, no el nombre/email) — no vuelca el cuerpo (`body`) de ninguna petición.
+- **Hallazgo real — dato personal SÍ viaja a los logs por la propia URL**: dos endpoints `GET` reciben datos personales como **query string**, que queda registrado tal cual en el campo `ruta` de cada log de petición:
+  - `GET /facturas/duplicado?numeroFactura=...&cifNif=...&proveedor=...&fecha=...&importe=...` (`presupuestos-service.app-root.ts:1621-1633`) — **el CIF/NIF y el nombre del proveedor** (pueden ser datos de un tercero) quedan en el log de cada comprobación de factura duplicada.
+  - `GET /admin/usuarios?q=<texto de búsqueda>` (`presupuestos-service.app-root.ts:934-944`) — el texto de búsqueda del admin (que suele ser un nombre/email de usuario) también queda en el log. Riesgo menor (solo lo usa el admin, sobre sus propios usuarios), pero es el mismo patrón.
+  - No se ha encontrado ningún otro endpoint que reciba datos personales por query string (el resto de rutas que leen `req.query` usan filtros técnicos: `anio`, `trimestre`, `tipo`, `clienteId`/`proyectoId` — identificadores opacos, no el propio dato personal).
+- **No se ha auditado el contenido de los logs YA generados en Render** (no hay acceso al panel de logs de Render desde este entorno) — solo se ha revisado qué es CAPAZ de llegar a un log a partir del código fuente.
+
+**Nota**: corregir estos dos endpoints (mover esos datos del query string al cuerpo de la petición, o excluir esos campos del log de `ruta`) es un cambio puramente técnico, sin ninguna decisión jurídica de por medio — se deja documentado aquí como hallazgo, sin tocarlo todavía porque no estaba en el alcance explícito de esta ronda (el encargo pedía "revisar e identificar", no "corregir").
+
+### 16.5 Cookies — confirmación técnica definitiva
+
+Confirmado por código (no solo por lectura de la Política de Privacidad):
+
+- **Una única cookie en todo el sistema**: `mc_refresh` (`presupuestos-service.app-root.ts:230-238`), con `httpOnly: true`, `secure: true` en producción, `SameSite=Lax`, `path=/`, duración 30 días por defecto (configurable vía `REFRESH_TOKEN_TTL_DIAS`). Es una cookie técnica de sesión, no de rastreo.
+- Confirmado en vivo que la home (`https://estudio.maderacreativa.com/`) no fija ninguna cookie por sí sola (comprobado con cabeceras HTTP reales).
+- **Repetida la búsqueda de trackers** en todo `presupuestos-prototype/`: sin resultados para `gtag`, `google-analytics`, `googletagmanager`, `facebook.net`, `hotjar`, `clarity.ms`, `mixpanel`, `segment.com`. Las únicas coincidencias de la palabra "cookie" en el código son comentarios/lógica sobre la propia cookie de sesión, no sobre tracking.
+- **Conclusión técnica (sin decidir si hace falta banner — eso es Q7 del §14.4)**: solo existe una cookie estrictamente técnica/necesaria para el funcionamiento de la sesión. No hay ninguna cookie de terceros ni de analítica que auditar.
+
+### 16.6 Punto preparado para un futuro aviso antes de enviar imágenes a IA (sin implementarlo)
+
+Dos puntos de entrada reales, identificados con precisión para no tener que volver a buscarlos en la Fase 2:
+
+1. **Escáner de facturas** (`escaner-factura.tsx`): el botón "Extraer datos con IA" (línea ~534-543) es el único disparador de `capacidadExtraerFactura` (envía la imagen de la factura a OpenAI). Está controlado por la constante `IA_FACTURA_DISPONIBLE` (línea 65) — **confirmado que hoy vale `true`, la función está activa en producción** (un comentario cercano, desactualizado, sugiere que estaría desactivada — no es así: se comprobó el valor real). El futuro aviso iría justo antes de esa llamada, o como aviso único mostrado la primera vez que se pulsa el botón.
+2. **Investigación de Mercado con foto** (`candidatos-mercado-vista.tsx`): el botón "Añadir foto" (líneas ~287-298, dispara el input de archivo de las líneas ~300-309) alimenta `capacidadDescribirTrabajoMercado` (también envía imagen a OpenAI). Mismo criterio: el aviso iría antes de este control.
+
+No se ha tocado ninguno de los dos archivos — es solo la localización exacta para cuando se implemente el aviso real (contenido y mecanismo de aceptación, ambos pendientes de las decisiones del §14).
+
+### 16.7 Punto preparado para un futuro aviso de privacidad en el Portal público
+
+`portal-presupuesto.tsx` es el componente completo de la página pública `/portal/:token` (sin sidebar, sin sesión, propio y aislado del resto de la app — no reutiliza `use-auth.ts`). Su backend es `portal-rutas.ts`, ya con cabeceras de privacidad básicas (`Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex`, `Cache-Control: no-store`, `portal-rutas.ts:30-35`) pero **sin ningún aviso de privacidad visible al cliente que firma**.
+
+Punto de inserción identificado: dentro del propio `PortalPresupuesto()`, dentro del bloque de firma (`FirmaCanvas`, importado en la línea 7, usado más abajo en el JSX no reproducido aquí) sería donde iría un aviso corto ("al firmar, tus datos se tratan según…") con enlace a un documento — pendiente de qué documento exacto corresponde (¿la Política de Privacidad general, o una específica del Portal? — ver Q5 y Q20 del §14). No se ha añadido nada todavía.
+
+### 16.8 Estructura de datos actual — mapa completo para diseñar exportación y borrado futuros
+
+Tabla de TODAS las colecciones que llevan `usuarioId` (por tanto, "propiedad" de una cuenta y candidatas a exportación/borrado por cuenta) y sus referencias cruzadas. Colecciones SIN `usuarioId` (`CosteInfraestructura`, `CodigoPromocional`, `BorradoPendiente`) quedan fuera del alcance de "mis datos" porque son de administración de la plataforma, no de una cuenta de usuario — confirmado leyendo cada esquema, no asumido.
+
+| Colección (modelo) | Aislada por `usuarioId` | Referencia a otra entidad | Contenido en R2 a limpiar si se borra | Notas para exportación |
+|---|---|---|---|---|
+| `Usuario` | Es la propia cuenta | — | `foto` de perfil: **base64 embebido en Mongo, no en R2** | Incluye historial de accesos, preferencias, recordatorios |
+| `CredencialWebAuthn` | Sí | — | Ninguno | Sin dato biométrico real (ver §3.1) |
+| `RefreshToken` | Sí | — | Ninguno | Solo hashes, técnico puro |
+| `Empresa` | Sí (1:1) | — | `logo`, `firmaEmpresa`, `imagenResena`: **base64 embebido en Mongo, no en R2** | Datos de la propia empresa del usuario, no de terceros |
+| `Cliente` | Sí | Referenciado por `Proyecto.clienteId`, `Nota.clienteId`, `Presupuesto.clienteId`, `Contrato.clienteId`, `Dibujo.clienteId`, `Carpeta.clienteId`, `Factura.clienteId`, `EnlaceResena.clienteId` | Ninguno directo (la identidad en sí no guarda archivos) | **Datos de un tercero** — ver §8 sobre responsable/encargado |
+| `Proyecto` | Sí | `clienteId` | `fotos[].claveAlmacenamiento`, `adjuntos[].claveAlmacenamiento`, `modelo3D.claveAlmacenamiento` (bucket público) | Contiene el grueso de datos de la obra: mediciones, tareas, acceso (WhatsApp, código de puerta…) |
+| `Presupuesto` | Sí | `clienteId`, `proyectoId` | `firmaClienteUrl` (bucket público, subida desde el Portal por un tercero) | `EnlacePresupuesto` (aparte) guarda la IP/UA de quien firmó — ver fila propia abajo |
+| `Contrato` | Sí | `clienteId`, `proyectoId` | Ninguno directo (contenido en `Mixed`, puede referenciar recursos de la Biblioteca) | — |
+| `Factura` | Sí | `clienteId`, `proyectoId`, `proveedorId` | `imagenClave`, `imagenesClaves[]`, `pdfOriginalClave` (bucket **privado** si existe `imagenClave`; bucket público si es una factura anterior a esa migración), `paginas[].clave` | **Datos fiscales de terceros** (proveedor o cliente según tipo) — candidata a conservación legal obligatoria (§14.9/§14.15, sin decidir) |
+| `Nota` | Sí | `clienteId`, `proyectoId` (ambos opcionales) | Ninguno (texto libre) | Puede contener cualquier dato que el usuario escriba a mano |
+| `ReferenciaMercado` | Sí | — | Ninguno | Dato de mercado del propio usuario, no de un cliente |
+| `CodigoQR` | Sí | — | `imagenUrl` vía Biblioteca de recursos (bucket público) | — |
+| `Plantilla` | Sí | — | Ninguno directo | Puede referenciar Recursos/Componentes |
+| `Recurso` | Sí | — | `claveAlmacenamiento` (bucket público) | Deduplicado por `hashContenido` — dos usuarios nunca comparten el mismo objeto físico, confirmar antes de borrar en cascada |
+| `Componente` | Sí | — | Ninguno directo | — |
+| `Automatizacion` | Sí | — | Ninguno | Reglas de negocio del usuario, no datos de terceros |
+| `Producto` | Sí | `proveedorId` | Ninguno | Catálogo propio del usuario |
+| `Proveedor` | Sí | — | Ninguno | Datos de un tercero (proveedor del propio negocio, no cliente) |
+| `GastoPeriodico` | Sí | — | Ninguno | — |
+| `Dibujo` | Sí | `clienteId`, `carpetaId`, `proyectoId` | `miniatura` (URL de bucket público) | — |
+| `Carpeta` | Sí | `clienteId`, `proyectoId` | Ninguno | Solo organiza `Dibujo` |
+| `IaUso` | Sí | — | Ninguno | Append-only, telemetría sin contenido real enviado a IA |
+| `InvestigacionMercado` | Sí | — | Ninguno directo (`candidatos` es JSON de resultado, no un archivo) | Append-only — nunca se borra hoy (decisión de conservación pendiente, §14.9) |
+| `SoporteHilo` | Sí | — | Ninguno | Incluye `usuarioNombre` desnormalizado (copia del nombre en el momento de abrir el hilo) |
+| `TrimbleConexion` | Sí (único, 1:1) | — | Ninguno (el archivo real vive en Trimble, no aquí) | Hoy vacía en la práctica — sin conexiones activas |
+| `EnlacePresupuesto` | Sí | `presupuestoId` | `firmaUrl` (bucket público) | **Contiene IP/User-Agent de un tercero sin cuenta** — ver Q19 del §14, la fila más sensible de exportación/borrado |
+| `EnlaceResena` | Sí | `clienteId` | Ninguno | Solo contador de usos y fecha, sin dato nuevo del cliente |
+
+**Fuera del alcance de "borrar/exportar mi cuenta"** (no llevan `usuarioId`, son de administración de la plataforma, no de una cuenta): `CosteInfraestructura`, `CodigoPromocional`, `BorradoPendiente`.
+
+**Dependencia técnica clave para el futuro borrado**: cualquier colección con claves de R2 (`claveAlmacenamiento`, `imagenClave`, `firmaUrl`, etc.) necesitará borrar también el objeto físico en el bucket correspondiente (público o privado de facturas, según el prefijo de la clave — ver `destinoParaClave()` en `almacenamiento-r2.ts`) — un borrado que solo toque MongoDB dejaría archivos huérfanos. El mecanismo de reintento ya existe (`borrado-pendiente.service.ts`) y podría reutilizarse tal cual para esta futura funcionalidad, sin inventar uno nuevo.
+
+**Dependencia técnica clave para la futura exportación**: distinguir en el propio diseño qué colecciones son "datos de la cuenta" (`Usuario`, `Empresa`, `Proveedor`, `Producto`, `ReferenciaMercado`, `Plantilla`, `Componente`, `Automatizacion`, `GastoPeriodico`, `IaUso`) frente a "datos de terceros que la cuenta gestiona" (`Cliente`, `Proyecto`, `Presupuesto`, `Contrato`, `Factura`, `Nota`, `Dibujo`, `Carpeta`, `EnlacePresupuesto`, `EnlaceResena`, `CodigoQR`, `Recurso`) — la pregunta de si la exportación debe incluir ambos bloques es la Q23 del §14, sin decidir.
+
+### 16.9 Resumen de dependencias técnicas detectadas que afectarán a la Fase 2
+
+- El futuro endpoint de borrado necesitará recorrer **21 colecciones** listadas en §16.8, más el borrado de objetos R2 asociados (reutilizando el patrón de `borrado-pendiente.service.ts`).
+- El futuro endpoint de exportación necesitará decidir el alcance (Q23) antes de poder diseñarse — la estructura de datos ya está mapeada arriba para cuando se decida.
+- Los dos endpoints con datos personales en el query string (§16.4) son un hallazgo independiente de la Fase 2 — se puede corregir en cualquier momento sin depender de ninguna decisión legal, si se decide priorizarlo.
+- Los dos puntos de inserción de aviso de IA (§16.6) y el del Portal (§16.7) ya están localizados con precisión de archivo/línea — no hará falta volver a buscarlos.
+- Las comprobaciones de región de proveedor (§16.3) son tareas de panel para el usuario, no bloquean nada del código mientras tanto.
+
+**Sin cambios en producción realizados en esta revisión.**
+
+---
+
 ## 15. Entregable de esta fase — resumen
 
 - **Archivos inspeccionados**: todos los modelos de datos (`*.model.ts`), rutas de auth/portal/webauthn, todas las capacidades de IA, servicios de terceros (Resend, R2, push), frontend (`politica-privacidad.tsx`, `use-registro.ts`, `use-auth.ts`, búsqueda de trackers).
