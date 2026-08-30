@@ -20,8 +20,12 @@ export function CalendarioSemana({ desde, hoy, elementos, onAbrirElemento, onCre
   });
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
-      {dias.map((fechaIso, i) => {
+    // Mismo criterio que la vista mensual (ver comentario en calendario-mes.tsx):
+    // ancho mínimo por columna + scroll horizontal propio del contenedor en
+    // vez de encoger las columnas hasta ilegibles en móvil.
+    <div style={{ overflowX: 'auto' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6, minWidth: 800 }}>
+        {dias.map((fechaIso, i) => {
         const esHoy = fechaIso === hoy;
         const dia = Number(fechaIso.split('-')[2]);
         const items = porDia.get(fechaIso) ?? [];
@@ -48,6 +52,7 @@ export function CalendarioSemana({ desde, hoy, elementos, onAbrirElemento, onCre
           </div>
         );
       })}
+      </div>
     </div>
   );
 }

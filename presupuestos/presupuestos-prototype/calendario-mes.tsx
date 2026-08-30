@@ -29,16 +29,24 @@ export function CalendarioMes({ desde, hasta, hoy, mesActual, elementos, onAbrir
   }
 
   return (
-    <div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: '0.4rem' }}>
-        {DIAS_SEMANA_CORTOS.map((d) => (
-          <div key={d} style={{ textAlign: 'center', fontSize: '0.72rem', fontWeight: 700, color: 'var(--topo-muy-claro)', textTransform: 'uppercase', letterSpacing: '0.03em', padding: '0.3rem 0' }}>
-            {d}
-          </div>
-        ))}
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
-        {dias.map((fechaIso) => {
+    // En móvil, 7 columnas no caben legibles en el ancho de pantalla —
+    // en vez de encogerlas hasta ilegibles (reporte real del usuario, "hay
+    // que redimensionarlo"), la rejilla mantiene un ancho mínimo por
+    // columna y este contenedor scrollea en horizontal cuando hace falta.
+    // En escritorio nunca se nota: ya hay sitio de sobra, no aparece barra
+    // de scroll. Cabecera de días y celdas van DENTRO del mismo contenedor
+    // para desplazarse siempre juntas, nunca por separado.
+    <div style={{ overflowX: 'auto' }}>
+      <div style={{ minWidth: 630 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: '0.4rem' }}>
+          {DIAS_SEMANA_CORTOS.map((d) => (
+            <div key={d} style={{ textAlign: 'center', fontSize: '0.72rem', fontWeight: 700, color: 'var(--topo-muy-claro)', textTransform: 'uppercase', letterSpacing: '0.03em', padding: '0.3rem 0' }}>
+              {d}
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+          {dias.map((fechaIso) => {
           const [, m, d] = fechaIso.split('-').map(Number);
           const delMesActual = (m - 1) === mesActual;
           const esHoy = fechaIso === hoy;
@@ -79,6 +87,7 @@ export function CalendarioMes({ desde, hasta, hoy, mesActual, elementos, onAbrir
             </div>
           );
         })}
+        </div>
       </div>
     </div>
   );
