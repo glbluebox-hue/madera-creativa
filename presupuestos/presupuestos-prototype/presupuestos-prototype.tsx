@@ -402,7 +402,7 @@ export function PresupuestosPrototype() {
               </button>
               {estadoPush !== 'no-soportado' && (
                 <button
-                  className={`${styles.sidebarAccionBtn} ${estadoPush === 'concedido' ? styles.sidebarAccionBtnActivo : ''}`}
+                  className={styles.sidebarAccionBtn}
                   onClick={() => { setPanelNotificaciones(true); setMenuMovilAbierto(false); }}
                   title="Notificaciones"
                 >
