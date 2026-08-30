@@ -1,17 +1,22 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { AnalisisPrecioPresupuesto } from './analisis-precio-presupuesto.js';
+import { AnalisisPrecioPresupuesto, AnalisisPrecioCompleto } from './analisis-precio-presupuesto.js';
 import type { AnalisisPrecio } from './inteligencia-precios.js';
 
 /**
- * Corrección 30/08/2026: sin coste/margen todavía (presupuesto recién
- * creado, sin gastos/ingresos), "¿Cómo estoy respecto al mercado?" y
- * "Buscar con IA" quedaban inalcanzables — el componente se paraba en un
- * simple mensaje de "datos insuficientes" sin ningún botón. Ninguna de las
- * dos secciones necesita coste/margen (`mercadoLocal` se calcula solo a
- * partir de `tipoTrabajo`/ubicación). Smoke test con `renderToStaticMarkup`
- * (mismo patrón que `metricas-por-tipo-vista.spec.tsx` — sin infraestructura
- * de tests de interacción, solo confirma que el botón para llegar a esa
- * sección SIGUE existiendo).
+ * Corrección 30/08/2026 (dos capas):
+ * 1. Sin coste/margen todavía (presupuesto recién creado, sin gastos/
+ *    ingresos), "¿Cómo estoy respecto al mercado?"/"Buscar con IA"
+ *    quedaban inalcanzables — el componente se paraba en un simple
+ *    mensaje de "datos insuficientes" sin ningún botón.
+ * 2. Un proyecto EN CURSO (el caso normal mientras se presupuesta) nunca
+ *    tiene `tipoTrabajo` todavía — solo se pregunta al marcar "Finalizado"
+ *    (`pregunta-tipo-trabajo.tsx`) — así que el botón tampoco podía
+ *    depender de tenerlo ya puesto: el modal completo ahora ofrece
+ *    definirlo ahí mismo (`PreguntaTipoTrabajo` reutilizado).
+ * Smoke test con `renderToStaticMarkup` (mismo patrón que
+ * `metricas-por-tipo-vista.spec.tsx` — sin infraestructura de tests de
+ * interacción, solo confirma que el botón para llegar a esa sección
+ * SIEMPRE existe, nunca un callejón sin salida).
  */
 const SIN_ANALISIS: AnalisisPrecio = { disponible: false, motivo: 'sin_costes' };
 const CON_ANALISIS: AnalisisPrecio = {
@@ -20,15 +25,15 @@ const CON_ANALISIS: AnalisisPrecio = {
 };
 
 describe('AnalisisPrecioPresupuesto — sin datos de coste/margen todavía', () => {
-  it('con tipoTrabajo, sigue ofreciendo un botón para llegar a Mercado Local / Buscar con IA (no es un callejón sin salida)', () => {
+  it('con tipoTrabajo, ofrece un botón para llegar a Mercado Local / Buscar con IA', () => {
     const html = renderToStaticMarkup(<AnalisisPrecioPresupuesto analisis={SIN_ANALISIS} tipoTrabajo="Cocina" />);
     expect(html).toContain('Ver mercado');
     expect(html).toContain('Buscar con IA');
   });
 
-  it('sin tipoTrabajo (sin proyecto vinculado), no ofrece el botón — no hay mercado que consultar sin saber el tipo de trabajo', () => {
-    const html = renderToStaticMarkup(<AnalisisPrecioPresupuesto analisis={SIN_ANALISIS} tipoTrabajo={null} />);
-    expect(html).not.toContain('Ver mercado');
+  it('sin tipoTrabajo (proyecto todavía en curso, lo normal mientras se presupuesta), el botón SIGUE existiendo — nunca un callejón sin salida', () => {
+    const html = renderToStaticMarkup(<AnalisisPrecioPresupuesto analisis={SIN_ANALISIS} tipoTrabajo={null} proyectoId="p1" />);
+    expect(html).toContain('Ver mercado');
   });
 });
 
@@ -37,5 +42,34 @@ describe('AnalisisPrecioPresupuesto — con datos de coste/margen (sin regresió
     const html = renderToStaticMarkup(<AnalisisPrecioPresupuesto analisis={CON_ANALISIS} tipoTrabajo="Cocina" />);
     expect(html).toContain('Ver análisis completo');
     expect(html).toContain('40.0%');
+  });
+});
+
+describe('AnalisisPrecioCompleto — sin tipoTrabajo todavía (proyecto en curso)', () => {
+  it('con proyecto vinculado, ofrece definir el tipo de trabajo ahí mismo en vez de ocultar la sección', () => {
+    const html = renderToStaticMarkup(
+      <AnalisisPrecioCompleto analisis={SIN_ANALISIS} tipoTrabajo={null} proyectoId="p1" onCerrar={() => {}} />
+    );
+    expect(html).toContain('Indicar tipo de trabajo');
+    expect(html).not.toContain('Sin proyecto vinculado');
+  });
+
+  it('sin proyecto vinculado en absoluto, explica por qué en vez de ofrecer un botón que no puede funcionar', () => {
+    const html = renderToStaticMarkup(
+      <AnalisisPrecioCompleto analisis={SIN_ANALISIS} tipoTrabajo={null} proyectoId={null} onCerrar={() => {}} />
+    );
+    expect(html).toContain('Sin proyecto vinculado');
+    expect(html).not.toContain('Indicar tipo de trabajo');
+  });
+
+  it('con tipoTrabajo ya conocido, la sección de mercado se muestra con normalidad (sin regresión)', () => {
+    const html = renderToStaticMarkup(
+      <AnalisisPrecioCompleto
+        analisis={SIN_ANALISIS} tipoTrabajo="Cocina" proyectoId="p1" onCerrar={() => {}}
+        ubicacionEmpresa={{ comunidadAutonoma: 'Canarias', provincia: 'Santa Cruz de Tenerife', isla: 'Tenerife' }}
+      />
+    );
+    expect(html).not.toContain('Indicar tipo de trabajo');
+    expect(html).toContain('Todavía no tienes ninguna referencia de mercado guardada');
   });
 });

@@ -115,6 +115,7 @@ export function TabPresupuestosProyecto({ cliente, proyecto, empresa, onActualiz
                     proyectoEstado={proyecto.estado}
                     ubicacionEmpresa={{ comunidadAutonoma: empresa.comunidadAutonoma, provincia: empresa.provincia, isla: empresa.isla }}
                     estancias={proyecto.estancias}
+                    proyectoId={proyecto.id}
                   />
                 </div>
               </div>

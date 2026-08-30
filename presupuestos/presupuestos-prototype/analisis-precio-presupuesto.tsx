@@ -9,6 +9,7 @@ import type { ReferenciaMercado, UbicacionEmpresa } from './mercado-local.js';
 import { ReferenciasMercadoVista, ETIQUETA_ALCANCE } from './referencias-mercado-vista.js';
 import { formatoEuro } from './calculos.js';
 import { TrabajosComparables } from './trabajos-comparables.js';
+import { PreguntaTipoTrabajo } from './pregunta-tipo-trabajo.js';
 import * as api from './api.js';
 import type { Estancia } from './types.js';
 import styles from './styles.module.css';
@@ -49,6 +50,8 @@ export type AnalisisPrecioPresupuestoProps = {
   ubicacionEmpresa?: UbicacionEmpresa;
   /** Estancias YA medidas del `Proyecto` (Pizarra de medición) — se pasan hasta `CandidatosMercadoVista` para dar contexto real a "Buscar con IA" (30/08/2026). `undefined` en vistas sin proyecto cargado. */
   estancias?: Estancia[];
+  /** Ver `AnalisisPrecioCompletoProps.proyectoId`. */
+  proyectoId?: string | null;
 };
 
 /**
@@ -58,7 +61,7 @@ export type AnalisisPrecioPresupuestoProps = {
  * calculado por `analizarPrecioPresupuesto` (en vivo) o el snapshot
  * guardado (`PresupuestoMC.analisisPrecio`, tras aceptar).
  */
-export function AnalisisPrecioPresupuesto({ analisis, esSnapshot, tipoTrabajo, excluirId, proyectoEstado, ubicacionEmpresa, estancias }: AnalisisPrecioPresupuestoProps) {
+export function AnalisisPrecioPresupuesto({ analisis, esSnapshot, tipoTrabajo, excluirId, proyectoEstado, ubicacionEmpresa, estancias, proyectoId }: AnalisisPrecioPresupuestoProps) {
   const [completoAbierto, setCompletoAbierto] = useState(false);
 
   if (!analisis) {
@@ -81,15 +84,13 @@ export function AnalisisPrecioPresupuesto({ analisis, esSnapshot, tipoTrabajo, e
       <div style={{ marginTop: '0.75rem', padding: '0.6rem 0.8rem', borderRadius: 8, background: 'var(--fondo-panel)', border: '1px solid var(--borde)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
           <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--topo-claro)' }}>🧠 {interpretarAnalisis(analisis)}</p>
-          {tipoTrabajo && (
-            <button
-              className={`${styles.btn} ${styles.btnSecundario}`}
-              style={{ fontSize: '0.72rem', padding: '0.3rem 0.7rem' }}
-              onClick={() => setCompletoAbierto(true)}
-            >
-              Ver mercado / Buscar con IA
-            </button>
-          )}
+          <button
+            className={`${styles.btn} ${styles.btnSecundario}`}
+            style={{ fontSize: '0.72rem', padding: '0.3rem 0.7rem' }}
+            onClick={() => setCompletoAbierto(true)}
+          >
+            Ver mercado / Buscar con IA
+          </button>
         </div>
         {completoAbierto && (
           <AnalisisPrecioCompleto
@@ -100,6 +101,7 @@ export function AnalisisPrecioPresupuesto({ analisis, esSnapshot, tipoTrabajo, e
             esSnapshot={!!esSnapshot}
             ubicacionEmpresa={ubicacionEmpresa ?? UBICACION_VACIA}
             estancias={estancias}
+            proyectoId={proyectoId}
             onCerrar={() => setCompletoAbierto(false)}
           />
         )}
@@ -146,6 +148,7 @@ export function AnalisisPrecioPresupuesto({ analisis, esSnapshot, tipoTrabajo, e
           esSnapshot={!!esSnapshot}
           ubicacionEmpresa={ubicacionEmpresa ?? UBICACION_VACIA}
           estancias={estancias}
+          proyectoId={proyectoId}
           onCerrar={() => setCompletoAbierto(false)}
         />
       )}
@@ -165,6 +168,14 @@ export type AnalisisPrecioCompletoProps = {
   ubicacionEmpresa?: UbicacionEmpresa;
   /** Ver `AnalisisPrecioPresupuestoProps.estancias`. */
   estancias?: Estancia[];
+  /**
+   * Id real del `Proyecto` vinculado (30/08/2026) — DISTINTO de `excluirId`
+   * (que puede ser el id del propio documento cuando no hay proyecto
+   * vinculado, ver `editor-documento.tsx`): solo se usa para poder guardar
+   * la característica `tipoTrabajo` si todavía no existe (ver más abajo).
+   * `null`/`undefined` cuando no hay proyecto real al que guardarla.
+   */
+  proyectoId?: string | null;
   onCerrar: () => void;
 };
 
@@ -188,21 +199,42 @@ export type AnalisisPrecioCompletoProps = {
  * son funciones puras que solo ENSAMBLAN lo que 2A-2D ya calculan — cero
  * fórmula nueva, cero llamada a IA.
  */
-export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proyectoEstado, esSnapshot, ubicacionEmpresa, estancias, onCerrar }: AnalisisPrecioCompletoProps) {
+export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proyectoEstado, esSnapshot, ubicacionEmpresa, estancias, proyectoId, onCerrar }: AnalisisPrecioCompletoProps) {
   const [resultadoComparables, setResultadoComparables] = useState<ResultadoComparables | null>(null);
   const [verMasComparables, setVerMasComparables] = useState(false);
   const [historico, setHistorico] = useState<TrabajoAnalizado[] | null>(null);
   const [referenciasMercado, setReferenciasMercado] = useState<ReferenciaMercado[] | null>(null);
   const ubicacion = ubicacionEmpresa ?? UBICACION_VACIA;
 
+  // Corrección 30/08/2026: `Proyecto.tipoTrabajo` hoy solo se pregunta al
+  // marcar el proyecto "Finalizado" (`pregunta-tipo-trabajo.tsx`) — un
+  // proyecto todavía en curso (el caso normal mientras se presupuesta)
+  // nunca lo tiene, y sin él Mercado Local/"Buscar con IA" quedaban
+  // inalcanzables aunque no dependan de nada más. `tipoTrabajoEfectivo`
+  // usa el ya guardado si existe, o el que el usuario elija aquí mismo
+  // (ver `PreguntaTipoTrabajo` más abajo) sin esperar a que el proyecto
+  // termine.
+  const [tipoTrabajoElegido, setTipoTrabajoElegido] = useState<string | null>(null);
+  const [pidiendoTipoTrabajo, setPidiendoTipoTrabajo] = useState(false);
+  const tipoTrabajoEfectivo = tipoTrabajo ?? tipoTrabajoElegido;
+
+  const definirTipoTrabajo = (valor: string) => {
+    setPidiendoTipoTrabajo(false);
+    setTipoTrabajoElegido(valor); // optimista: se nota al instante, aunque el guardado real tarde un poco
+    if (!proyectoId) return;
+    // Dato de bajo riesgo (mismo criterio que `ficha-cliente.tsx`, `guardarTipoTrabajo`):
+    // si falla el guardado, en el peor caso se vuelve a preguntar la próxima vez.
+    api.guardarCaracteristicaProyecto(proyectoId, 'tipoTrabajo', valor).catch(() => {});
+  };
+
   useEffect(() => {
     if (analisis.disponible === false) return; // sin precio, no hay nada que comparar
     setResultadoComparables(null);
-    api.obtenerComparables(analisis.precio, tipoTrabajo, excluirId, verMasComparables ? 10 : 5)
+    api.obtenerComparables(analisis.precio, tipoTrabajoEfectivo, excluirId, verMasComparables ? 10 : 5)
       .then(setResultadoComparables)
       .catch(() => setResultadoComparables({ disponible: false, motivo: 'sin_historico' }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [analisis.disponible, analisis.disponible ? analisis.precio : null, tipoTrabajo, excluirId, verMasComparables]);
+  }, [analisis.disponible, analisis.disponible ? analisis.precio : null, tipoTrabajoEfectivo, excluirId, verMasComparables]);
 
   useEffect(() => {
     api.analizarInteligenciaPrecios().then(setHistorico).catch(() => setHistorico([]));
@@ -214,13 +246,13 @@ export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proye
   useEffect(() => { cargarReferenciasMercado(); }, [cargarReferenciasMercado]);
 
   const metricasGrupo = useMemo(() => {
-    if (!historico || !tipoTrabajo) return null;
-    return calcularMetricasPorTipo(historico).find((m) => m.tipoTrabajo === tipoTrabajo) ?? null;
-  }, [historico, tipoTrabajo]);
+    if (!historico || !tipoTrabajoEfectivo) return null;
+    return calcularMetricasPorTipo(historico).find((m) => m.tipoTrabajo === tipoTrabajoEfectivo) ?? null;
+  }, [historico, tipoTrabajoEfectivo]);
 
   const mercadoLocal = useMemo(
-    () => resolverMercadoLocal(ubicacion, referenciasMercado ?? [], tipoTrabajo),
-    [ubicacion, referenciasMercado, tipoTrabajo]
+    () => resolverMercadoLocal(ubicacion, referenciasMercado ?? [], tipoTrabajoEfectivo),
+    [ubicacion, referenciasMercado, tipoTrabajoEfectivo]
   );
 
   const consejo = useMemo(() => {
@@ -259,7 +291,18 @@ export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proye
             <p style={{ margin: '0 0 0.35rem', fontSize: '0.72rem', fontWeight: 700, color: 'var(--topo-claro)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
               ¿Cómo estoy respecto al mercado?
             </p>
-            {mercadoLocal.disponible ? (
+            {!tipoTrabajoEfectivo ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                <p style={{ margin: 0, fontSize: '0.88rem', color: 'var(--topo-claro)', fontStyle: 'italic' }}>
+                  {proyectoId ? 'Este proyecto todavía no tiene un tipo de trabajo asignado.' : 'Sin proyecto vinculado no se puede consultar el mercado.'}
+                </p>
+                {proyectoId && (
+                  <button type="button" className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => setPidiendoTipoTrabajo(true)}>
+                    Indicar tipo de trabajo
+                  </button>
+                )}
+              </div>
+            ) : mercadoLocal.disponible ? (
               <p style={{ margin: '0 0 0.5rem', fontSize: '0.88rem' }}>
                 Mercado {mercadoLocal.nivelUsado === 'local' ? 'local' : mercadoLocal.nivelUsado === 'regional' ? 'regional' : 'nacional'} ({mercadoLocal.zona}), {ETIQUETA_ALCANCE[mercadoLocal.alcance].toLowerCase()}: {formatoEuro(mercadoLocal.precioMin)} – {formatoEuro(mercadoLocal.precioMax)}
               </p>
@@ -268,11 +311,11 @@ export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proye
                 {ubicacion.comunidadAutonoma ? 'Todavía no tienes ninguna referencia de mercado guardada para este tipo de trabajo.' : 'Configura la ubicación de tu empresa en Ajustes de empresa para activar esta sección.'}
               </p>
             )}
-            {tipoTrabajo && (
+            {tipoTrabajoEfectivo && (
               <ReferenciasMercadoVista
-                tipoTrabajo={tipoTrabajo}
+                tipoTrabajo={tipoTrabajoEfectivo}
                 ubicacion={ubicacion}
-                referencias={(referenciasMercado ?? []).filter((r) => r.tipoTrabajo === tipoTrabajo)}
+                referencias={(referenciasMercado ?? []).filter((r) => r.tipoTrabajo === tipoTrabajoEfectivo)}
                 idsNoComparables={mercadoLocal.disponible ? mercadoLocal.referenciasNoComparables.map((r) => r.id) : []}
                 estancias={estancias}
                 onCambio={cargarReferenciasMercado}
@@ -305,6 +348,15 @@ export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proye
 
         <button className={styles.btn} style={{ marginTop: '1.25rem', width: '100%' }} onClick={onCerrar}>Cerrar</button>
       </div>
+
+      {pidiendoTipoTrabajo && (
+        // Envuelto con stopPropagation: sin esto, elegir una opción (o
+        // cerrar este sub-modal) burbujea hasta el overlay de ESTE
+        // componente y cierra también "Inteligencia de precios" entero.
+        <div onClick={(e) => e.stopPropagation()}>
+          <PreguntaTipoTrabajo onConfirmar={definirTipoTrabajo} onSaltar={() => setPidiendoTipoTrabajo(false)} />
+        </div>
+      )}
     </div>
   );
 }
