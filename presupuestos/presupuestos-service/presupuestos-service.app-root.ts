@@ -23,6 +23,7 @@ import { iniciarRecordatorioHorasDiario } from './recordatorio-horas.service.js'
 import { iniciarNotificacionesProgramadas } from './notificaciones-programadas.service.js';
 import { iniciarReintentoBorrados } from './borrado-pendiente.service.js';
 import type { PushSub } from './push.service.js';
+import type { TipoElementoCalendario } from './calendario-tipos.js';
 import { limitadorGeneral, limitadorAuth } from './rate-limit.middleware.js';
 import { crearRouterIA } from './ia-rutas.js';
 import { crearRouterWebAuthn } from './webauthn-rutas.js';
@@ -59,6 +60,7 @@ import {
   esquemaProveedor,
   esquemaProducto,
   esquemaNotaMC,
+  esquemaEventoCalendarioMC,
   esquemaReferenciaMercado,
   esquemaCodigoQRMC,
   esquemaPresupuestoMC,
@@ -1828,6 +1830,39 @@ export function run() {
 
   app.delete('/notas/:id', requireAuth, async (req: AuthRequest, res) => {
     try { await svc.borrarNota(req.params.id, req.usuarioId!); res.json({ ok: true }); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  // ── Calendario (Fase "Calendario", 30/08/2026) — capa temporal
+  // transversal, vista agregadora de solo lectura: nunca crea copias de
+  // notas/tareas/facturas/proyectos/clientes, solo las reúne por fecha. Los
+  // parámetros de rango van en la query (no en el cuerpo) porque es un GET
+  // — se validan a mano en vez de con `validar()` (mismo criterio que el
+  // resto de rutas GET con query string de este archivo, p. ej.
+  // `/facturas/duplicado`).
+  app.get('/calendario', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const desde = typeof req.query.desde === 'string' ? req.query.desde : '';
+      const hasta = typeof req.query.hasta === 'string' ? req.query.hasta : '';
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(desde) || !/^\d{4}-\d{2}-\d{2}$/.test(hasta)) {
+        res.status(400).json({ error: 'Indica "desde" y "hasta" en formato AAAA-MM-DD.' });
+        return;
+      }
+      const tipos = typeof req.query.tipos === 'string' && req.query.tipos.trim()
+        ? (req.query.tipos.split(',').filter(Boolean) as TipoElementoCalendario[])
+        : undefined;
+      res.json(await svc.obtenerCalendario(req.usuarioId!, desde, hasta, tipos));
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /** Evento/recordatorio puntual — el único tipo de elemento del Calendario que se crea/edita directamente (el resto se edita desde su propia sección: Notas, Tareas del proyecto, Facturas). */
+  app.put('/calendario/eventos/:id', requireAuth, validar(esquemaEventoCalendarioMC), async (req: AuthRequest, res) => {
+    try { res.json(await svc.guardarEventoCalendario({ ...req.body, id: req.params.id }, req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.delete('/calendario/eventos/:id', requireAuth, async (req: AuthRequest, res) => {
+    try { await svc.borrarEventoCalendario(req.params.id, req.usuarioId!); res.json({ ok: true }); }
     catch (err) { responderError(req, res, err); }
   });
 

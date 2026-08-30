@@ -39,6 +39,8 @@ export type NotaMC = {
   /** Reservado — sin interfaz de gestión todavía. */
   etiquetas: string[];
   origen: OrigenNota;
+  /** Fecha ISO (AAAA-MM-DD) opcional a la que se "clava" la nota (Calendario, 30/08/2026) — ausente en la inmensa mayoría de notas; solo si se rellena, la nota aparece también en el Calendario. */
+  fecha?: string;
   creado: string;
   actualizado: string;
 };

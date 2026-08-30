@@ -97,7 +97,13 @@ export type Proveedor = {
 };
 
 /** Una tarea del checklist del proyecto. */
-export type Tarea = { id: string; texto: string; hecha: boolean };
+export type Tarea = {
+  id: string;
+  texto: string;
+  hecha: boolean;
+  /** Fecha ISO (AAAA-MM-DD) opcional (Calendario, 30/08/2026) — solo una tarea con fecha aparece en el Calendario. */
+  fecha?: string;
+};
 
 /** Tipo de movimiento económico dentro de una ficha de cliente. */
 export type TipoMovimiento = 'gasto' | 'ingreso';
@@ -158,6 +164,8 @@ export type Factura = {
   tipo: 'ingreso' | 'gasto';
   /** Fecha de la factura en formato ISO (YYYY-MM-DD). */
   fecha: string;
+  /** Fecha de vencimiento ISO opcional (Calendario, 30/08/2026) — distinta de `fecha` (fecha del propio documento); vacía/ausente si no aplica. */
+  fechaVencimiento?: string;
   /** Descripción o concepto. */
   concepto: string;
   /** Importe total en euros. */

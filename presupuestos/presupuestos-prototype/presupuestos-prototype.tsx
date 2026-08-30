@@ -10,6 +10,8 @@ import { Facturas } from './facturas.js';
 import { SeccionPresupuestosContenedor } from './seccion-presupuestos-contenedor.js';
 import { InteligenciaPreciosVista } from './inteligencia-precios-vista.js';
 import { NotasVista } from './notas-vista.js';
+import { CalendarioVista } from './calendario-vista.js';
+import type { ElementoCalendario } from './calendario-modelo.js';
 import { CodigosQRVista } from './codigos-qr-vista.js';
 import { SeccionDibujos } from './seccion-dibujos.js';
 import { SeccionProveedores } from './seccion-proveedores.js';
@@ -41,7 +43,7 @@ import logoMadera from './assets/logo.png';
 import styles from './styles.module.css';
 
 /** Secciones principales de la app. */
-type Seccion = 'inicio' | 'clientes' | 'presupuestos' | 'inteligenciaPrecios' | 'facturas' | 'notas' | 'proveedores' | 'dibujos' | 'codigosQR';
+type Seccion = 'inicio' | 'clientes' | 'presupuestos' | 'inteligenciaPrecios' | 'facturas' | 'notas' | 'calendario' | 'proveedores' | 'dibujos' | 'codigosQR';
 
 /**
  * App de presupuestos de cliente para Madera Creativa.
@@ -208,6 +210,23 @@ export function PresupuestosPrototype() {
     setClienteActualIdentidad(null);
   };
 
+  /**
+   * "Acceder al elemento de origen" desde el Calendario (30/08/2026) — cada
+   * tipo navega a donde de verdad vive ese dato; evento/recordatorio no
+   * llega aquí (el propio `CalendarioVista` los abre en su modal, al no
+   * tener otra sección propia). Proyecto/tarea/factura con `proyectoId`
+   * abren directamente esa ficha (mismo camino que `abrirProyecto`); una
+   * nota o factura sin proyecto asociado, o un cliente recién añadido, solo
+   * cambian de sección — profundizar más ahí exigiría que Notas/Facturas
+   * supieran abrir directamente un elemento concreto, que hoy no hacen.
+   */
+  const abrirElementoCalendario = (elemento: ElementoCalendario) => {
+    if (elemento.proyectoId) { cambiarSeccion('clientes'); abrirProyecto(elemento.proyectoId); return; }
+    if (elemento.tipo === 'nota') { cambiarSeccion('notas'); return; }
+    if (elemento.tipo === 'factura') { cambiarSeccion('facturas'); return; }
+    if (elemento.tipo === 'cliente') { cambiarSeccion('clientes'); return; }
+  };
+
   /** Refresca la lista ligera de nombres de cliente (selectores/autocompletados) tras crear uno nuevo. */
   const refrescarNombresClientes = () => {
     api.obtenerNombresClientes().then(setNombresClientes).catch(() => {});
@@ -355,6 +374,14 @@ export function PresupuestosPrototype() {
               Notas
             </button>
             <button
+              className={`${styles.sidebarNavItem} ${seccion === 'calendario' ? styles.sidebarNavItemActivo : ''}`}
+              onClick={() => { cambiarSeccion('calendario'); volverALista(); }}
+              data-tutorial-id="nav-calendario"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
+              Calendario
+            </button>
+            <button
               className={`${styles.sidebarNavItem} ${seccion === 'codigosQR' ? styles.sidebarNavItemActivo : ''}`}
               onClick={() => { cambiarSeccion('codigosQR'); volverALista(); }}
               data-tutorial-id="nav-codigos-qr"
@@ -494,7 +521,7 @@ export function PresupuestosPrototype() {
 
         <div className={styles.contenidoPrincipal}>
       {/* ===== BARRA ATRÁS MÓVIL — aparece en presupuestos, facturas, notas, proveedores, dibujos y códigos QR ===== */}
-      {(['presupuestos', 'facturas', 'notas', 'proveedores', 'dibujos', 'codigosQR'] as string[]).includes(seccion) && !(seccion === 'dibujos' && dibujoEditorAbierto) && (
+      {(['presupuestos', 'facturas', 'notas', 'calendario', 'proveedores', 'dibujos', 'codigosQR'] as string[]).includes(seccion) && !(seccion === 'dibujos' && dibujoEditorAbierto) && (
         <div className={styles.barraVolver}>
           <button
             className={styles.barraVolverBtn}
@@ -504,7 +531,7 @@ export function PresupuestosPrototype() {
             Inicio
           </button>
           <p className={styles.barraVolverTitulo}>
-            {seccion === 'presupuestos' ? 'Presupuestos' : seccion === 'inteligenciaPrecios' ? 'Inteligencia de precios' : seccion === 'facturas' ? 'Facturas' : seccion === 'notas' ? 'Notas' : seccion === 'dibujos' ? 'Pizarra de medición' : seccion === 'codigosQR' ? 'Código QR' : 'Proveedores'}
+            {seccion === 'presupuestos' ? 'Presupuestos' : seccion === 'inteligenciaPrecios' ? 'Inteligencia de precios' : seccion === 'facturas' ? 'Facturas' : seccion === 'notas' ? 'Notas' : seccion === 'calendario' ? 'Calendario' : seccion === 'dibujos' ? 'Pizarra de medición' : seccion === 'codigosQR' ? 'Código QR' : 'Proveedores'}
           </p>
           <div style={{ width: 56, flexShrink: 0 }} />
         </div>
@@ -528,6 +555,9 @@ export function PresupuestosPrototype() {
 
         {/* ── SECCIÓN NOTAS ── */}
         {seccion === 'notas' && <NotasVista clientes={nombresClientes} />}
+
+        {/* ── SECCIÓN CALENDARIO (30/08/2026) ── */}
+        {seccion === 'calendario' && <CalendarioVista proyectos={proyectos} onAbrirElemento={abrirElementoCalendario} />}
 
         {/* ── SECCIÓN CÓDIGOS QR ── */}
         {seccion === 'codigosQR' && <CodigosQRVista />}

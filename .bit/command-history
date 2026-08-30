@@ -1312,3 +1312,16 @@
 2026-08-25T00:34:32.608Z 48480 test presupuestos/presupuestos-prototype, succeeded
 2026-08-25T00:34:42.751Z 14676 build presupuestos/presupuestos-prototype, started
 2026-08-25T00:35:54.963Z 14676 build presupuestos/presupuestos-prototype, failed
+2026-08-30T23:02:05.440Z 24872 test --help, started
+2026-08-30T23:02:17.232Z 26628 test presupuestos/presupuestos-service/calendario.spec.ts, started
+2026-08-30T23:04:46.356Z 26628 test presupuestos/presupuestos-service/calendario.spec.ts, failed
+2026-08-30T23:05:13.843Z 5732 test presupuestos/presupuestos-service/calendario.spec.ts, started
+2026-08-30T23:05:24.707Z 5732 test presupuestos/presupuestos-service/calendario.spec.ts, succeeded
+2026-08-30T23:05:47.464Z 11784 test presupuestos/presupuestos-service/facturas-archivo-privado.spec.ts presupuestos/presupuestos-service/factura-seguridad.spec.ts presupuestos/presupuestos-service/modelo3d-proyecto.spec.ts presupuestos/presupuestos-service/modelo3d-archivo.spec.ts, started
+2026-08-30T23:06:03.184Z 11784 test presupuestos/presupuestos-service/facturas-archivo-privado.spec.ts presupuestos/presupuestos-service/factura-seguridad.spec.ts presupuestos/presupuestos-service/modelo3d-proyecto.spec.ts presupuestos/presupuestos-service/modelo3d-archivo.spec.ts, succeeded
+2026-08-30T23:19:34.647Z 25324 test presupuestos/presupuestos-prototype/calendario-modelo.spec.ts, started
+2026-08-30T23:19:56.047Z 25324 test presupuestos/presupuestos-prototype/calendario-modelo.spec.ts, succeeded
+2026-08-30T23:20:10.770Z 25892 test presupuestos/presupuestos-service, started
+2026-08-30T23:20:29.024Z 25892 test presupuestos/presupuestos-service, failed
+2026-08-30T23:20:49.164Z 27344 test presupuestos/presupuestos-prototype, started
+2026-08-30T23:21:01.928Z 27344 test presupuestos/presupuestos-prototype, succeeded

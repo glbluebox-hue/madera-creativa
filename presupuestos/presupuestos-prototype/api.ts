@@ -1,5 +1,6 @@
 import type { Cliente, Proyecto, Factura, Proveedor, Producto, Dibujo, Carpeta, GastoPeriodico, Movimiento, Tarea, Adjunto } from './types.js';
 import type { NotaMC } from './notas-modelo.js';
+import type { ElementoCalendario, EventoCalendarioMC } from './calendario-modelo.js';
 import type { CodigoQRMC } from './codigos-qr-modelo.js';
 import type { PresupuestoMC, PresupuestoPublico } from './presupuestos-modelo.js';
 import type { TrabajoAnalizado, ResultadoComparables } from './inteligencia-precios.js';
@@ -906,6 +907,38 @@ export async function guardarNota(nota: NotaMC): Promise<NotaMC> {
 export async function borrarNota(id: string): Promise<void> {
   const res = await fetchConAuth(`/notas/${id}`, { method: 'DELETE' });
   await comprobarRespuesta(res, 'No se pudo borrar la nota');
+}
+
+/* ===== CALENDARIO (30/08/2026) — capa temporal transversal ===== */
+
+/**
+ * Recupera los elementos del Calendario dentro de [desde, hasta] (ambos
+ * AAAA-MM-DD, inclusive) — vista agregadora de solo lectura, nunca crea ni
+ * modifica nada. `tipos`, si se indica, filtra qué categorías pedir.
+ */
+export async function obtenerCalendario(desde: string, hasta: string, tipos?: string[]): Promise<ElementoCalendario[]> {
+  const params = new URLSearchParams({ desde, hasta });
+  if (tipos && tipos.length) params.set('tipos', tipos.join(','));
+  const res = await fetchConAuth(`/calendario?${params.toString()}`);
+  await comprobarRespuesta(res, 'No se pudo cargar el calendario');
+  return res.json();
+}
+
+/** Crea o actualiza un evento/recordatorio puntual del Calendario. */
+export async function guardarEventoCalendario(evento: EventoCalendarioMC): Promise<EventoCalendarioMC> {
+  const res = await fetchConAuth(`/calendario/eventos/${evento.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(evento),
+  });
+  await comprobarRespuesta(res, 'No se pudo guardar el evento');
+  return res.json();
+}
+
+/** Borra un evento/recordatorio del Calendario por su id. */
+export async function borrarEventoCalendario(id: string): Promise<void> {
+  const res = await fetchConAuth(`/calendario/eventos/${id}`, { method: 'DELETE' });
+  await comprobarRespuesta(res, 'No se pudo borrar el evento');
 }
 
 /* ===== CÓDIGOS QR (sección propia del menú, 19/08/2026) ===== */

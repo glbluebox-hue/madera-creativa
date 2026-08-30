@@ -380,6 +380,8 @@ export const esquemaTarea = z.object({
   id: z.string().min(1).max(64),
   texto: z.string().max(500),
   hecha: z.boolean(),
+  /** Fecha ISO opcional (Fase "Calendario", 30/08/2026) — solo una tarea con fecha aparece en el Calendario. */
+  fecha: z.string().max(32).optional().default(''),
 });
 
 /** Cuerpo de PUT /clientes/:id/tareas — Hardening (Fase 2). */
@@ -571,6 +573,8 @@ export const esquemaFactura = z.object({
   pdfUrl: z.string().optional().default(''),
   pdfOriginalUrl: z.string().optional().default(''),
   paginas: z.array(z.object({ tipo: z.enum(['imagen', 'pdf']), url: z.string() })).optional(),
+  /** Fecha de vencimiento ISO opcional (Fase "Calendario", 30/08/2026) — distinta de `fecha` (fecha del propio documento). */
+  fechaVencimiento: z.string().max(32).optional().default(''),
 });
 
 // ── Gastos periódicos/estimados (Fase Facturas Profesional) ────────────────────
@@ -635,12 +639,36 @@ export const esquemaNotaMC = z.object({
   proyectoId: z.string().max(64).optional().default(''),
   etiquetas: z.array(z.string().max(50)).max(20).optional().default([]),
   origen: z.enum(['texto', 'voz']).optional().default('texto'),
+  /** Fecha ISO opcional a la que se "clava" la nota (Fase "Calendario", 30/08/2026) — vacía si no aplica. */
+  fecha: z.string().max(32).optional().default(''),
   creado: z.string().min(1).max(64),
   actualizado: z.string().min(1).max(64),
 }).refine(
   (n) => (n.tipo === 'lista' ? n.items.length > 0 : n.contenido.length > 0),
   { message: 'La nota no puede estar vacía.' }
 );
+
+/**
+ * Evento/recordatorio del Calendario (Fase "Calendario", 30/08/2026) — lo
+ * único genuinamente nuevo que introduce el Calendario (el resto de tipos
+ * que puede mostrar ya existían: proyectos, tareas, notas, facturas,
+ * clientes). Distinto de `Usuario.recordatoriosPersonalizados` (se repite
+ * cada día a una hora fija): esto es una fecha concreta, sin repetición.
+ */
+export const esquemaEventoCalendarioMC = z.object({
+  id: z.string().min(1).max(64),
+  tipo: z.enum(['evento', 'recordatorio']),
+  titulo: z.string().trim().min(1, 'Ponle un título.').max(200),
+  descripcion: z.string().max(2000).optional().default(''),
+  fecha: z.string().min(1).max(32),
+  hora: z.string().max(8).optional().default(''),
+  todoElDia: z.boolean().optional().default(true),
+  duracionMin: z.number().finite().min(0).max(1440).optional().default(0),
+  clienteId: z.string().max(64).optional().default(''),
+  proyectoId: z.string().max(64).optional().default(''),
+  creado: z.string().min(1).max(64),
+  actualizado: z.string().min(1).max(64),
+});
 
 /**
  * Referencia de Mercado (Fase 2F, "Consenso de Precio", 29/08/2026) —

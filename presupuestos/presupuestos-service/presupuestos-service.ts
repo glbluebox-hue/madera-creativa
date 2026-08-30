@@ -1,6 +1,8 @@
 import { randomUUID, createHash } from 'node:crypto';
 import type { PipelineStage } from 'mongoose';
 import { ClienteModel, ProyectoModel, EmpresaModel, FacturaModel, ProveedorModel, ProductoModel, DibujoModel, CarpetaModel, NotaModel, PresupuestoModel, PlantillaModel, RecursoModel, ComponenteModel, CodigoQRModel, AutomatizacionModel, ContratoModel, GastoPeriodicoModel, ReferenciaMercadoModel, conectar } from './cliente.model.js';
+import { EventoCalendarioModel } from './evento-calendario.model.js';
+import type { ElementoCalendario, TipoElementoCalendario } from './calendario-tipos.js';
 import { UsuarioModel, conectarUsuarios } from './usuario.model.js';
 import { crearEnlacePresupuesto, buscarEnlacePorToken, reclamarEnlaceAceptado, guardarFirmaEnlace, formatoTokenValido, enlacesActivosDeUsuario } from './enlace-presupuesto.model.js';
 import { crearEnlaceResena, buscarEnlaceResenaPorToken, registrarUsoEnlaceResena, formatoTokenValidoResena } from './enlace-resena.model.js';
@@ -1937,6 +1939,114 @@ export class PresupuestosService {
   async borrarNota(id: string, usuarioId: string): Promise<void> {
     await conectar();
     await NotaModel.deleteOne({ id, usuarioId }).exec();
+  }
+
+  // ── Calendario (Fase "Calendario", 30/08/2026) — capa temporal transversal ──
+  // Vista agregadora de SOLO LECTURA sobre entidades ya existentes
+  // (proyectos, tareas, notas, facturas, clientes) + una colección propia
+  // pequeña para lo que no vivía en ningún otro sitio (evento/recordatorio
+  // puntual). Nunca duplica datos: cada `ElementoCalendario` solo lleva la
+  // referencia a su origen real (`origenId`/`proyectoId`/`clienteId`).
+
+  /**
+   * Agrega, dentro de [desde, hasta] (ambos AAAA-MM-DD, inclusive), todos
+   * los elementos con fecha relevante del usuario. `tipos`, si se indica,
+   * filtra qué categorías incluir (mismo criterio que los filtros del
+   * frontend) — sin él, se agregan todas.
+   */
+  async obtenerCalendario(usuarioId: string, desde: string, hasta: string, tipos?: TipoElementoCalendario[]): Promise<ElementoCalendario[]> {
+    await conectar();
+    const incluye = (t: TipoElementoCalendario): boolean => !tipos || tipos.includes(t);
+    const enRango = (f: unknown): f is string => typeof f === 'string' && f.length > 0 && f >= desde && f <= hasta;
+    const elementos: ElementoCalendario[] = [];
+
+    if (incluye('proyecto') || incluye('tarea')) {
+      const proyectos = await ProyectoModel.find({ usuarioId })
+        .select('id proyecto clienteId fechaMedicion fechaMontaje tareas').lean().exec();
+      for (const p of proyectos as any[]) {
+        const titulo = p.proyecto || 'Proyecto';
+        if (incluye('proyecto')) {
+          if (enRango(p.fechaMedicion)) {
+            elementos.push({ id: `proyecto-medicion-${p.id}`, tipo: 'proyecto', titulo, subtitulo: 'Medición', fecha: p.fechaMedicion, todoElDia: true, origenId: p.id, proyectoId: p.id, clienteId: p.clienteId });
+          }
+          if (enRango(p.fechaMontaje)) {
+            elementos.push({ id: `proyecto-montaje-${p.id}`, tipo: 'proyecto', titulo, subtitulo: 'Montaje', fecha: p.fechaMontaje, todoElDia: true, origenId: p.id, proyectoId: p.id, clienteId: p.clienteId });
+          }
+        }
+        if (incluye('tarea')) {
+          for (const t of (p.tareas ?? []) as any[]) {
+            if (enRango(t.fecha)) {
+              elementos.push({ id: `tarea-${p.id}-${t.id}`, tipo: 'tarea', titulo: t.texto, subtitulo: titulo, fecha: t.fecha, todoElDia: true, origenId: t.id, proyectoId: p.id, clienteId: p.clienteId, hecha: !!t.hecha });
+            }
+          }
+        }
+      }
+    }
+
+    if (incluye('nota')) {
+      const notas = await NotaModel.find({ usuarioId, fecha: { $gte: desde, $lte: hasta } })
+        .select('id titulo contenido fecha clienteId proyectoId').lean().exec();
+      for (const n of notas as any[]) {
+        elementos.push({ id: `nota-${n.id}`, tipo: 'nota', titulo: n.titulo || (n.contenido || '').slice(0, 60) || 'Nota', fecha: n.fecha, todoElDia: true, origenId: n.id, proyectoId: n.proyectoId || undefined, clienteId: n.clienteId || undefined });
+      }
+    }
+
+    if (incluye('factura')) {
+      const facturas = await FacturaModel.find({
+        usuarioId,
+        $or: [{ fecha: { $gte: desde, $lte: hasta } }, { fechaVencimiento: { $gte: desde, $lte: hasta } }],
+      }).select('id tipo fecha fechaVencimiento numeroFactura concepto proveedor clienteId proyectoId').lean().exec();
+      for (const f of facturas as any[]) {
+        const titulo = f.numeroFactura ? `Factura ${f.numeroFactura}` : (f.concepto || f.proveedor || 'Factura');
+        if (enRango(f.fecha)) {
+          elementos.push({ id: `factura-fecha-${f.id}`, tipo: 'factura', titulo, subtitulo: f.tipo === 'ingreso' ? 'Ingreso' : 'Gasto', fecha: f.fecha, todoElDia: true, origenId: f.id, proyectoId: f.proyectoId || undefined, clienteId: f.clienteId || undefined });
+        }
+        // Solo se añade un segundo elemento si el vencimiento es una fecha DISTINTA de la del documento — evitar el mismo día duplicado dos veces.
+        if (enRango(f.fechaVencimiento) && f.fechaVencimiento !== f.fecha) {
+          elementos.push({ id: `factura-venc-${f.id}`, tipo: 'factura', titulo, subtitulo: 'Vencimiento', fecha: f.fechaVencimiento, todoElDia: true, origenId: f.id, proyectoId: f.proyectoId || undefined, clienteId: f.clienteId || undefined });
+        }
+      }
+    }
+
+    if (incluye('cliente')) {
+      const clientes = await ClienteModel.find({ usuarioId, creado: { $gte: desde, $lte: hasta } })
+        .select('id nombre creado').lean().exec();
+      for (const c of clientes as any[]) {
+        elementos.push({ id: `cliente-${c.id}`, tipo: 'cliente', titulo: c.nombre, subtitulo: 'Cliente añadido', fecha: String(c.creado).slice(0, 10), todoElDia: true, origenId: c.id, clienteId: c.id });
+      }
+    }
+
+    if (incluye('evento') || incluye('recordatorio')) {
+      const eventos = await EventoCalendarioModel.find({ usuarioId, fecha: { $gte: desde, $lte: hasta } }).lean().exec();
+      for (const e of eventos as any[]) {
+        if (!incluye(e.tipo)) continue;
+        elementos.push({
+          id: `${e.tipo}-${e.id}`, tipo: e.tipo, titulo: e.titulo, subtitulo: e.descripcion || undefined,
+          fecha: e.fecha, hora: e.hora || undefined, todoElDia: !!e.todoElDia, duracionMin: e.duracionMin || undefined,
+          origenId: e.id, proyectoId: e.proyectoId || undefined, clienteId: e.clienteId || undefined, creado: e.creado,
+        });
+      }
+    }
+
+    elementos.sort((a, b) => a.fecha === b.fecha ? (a.hora || '').localeCompare(b.hora || '') : a.fecha.localeCompare(b.fecha));
+    return elementos;
+  }
+
+  /** Crea o actualiza un evento/recordatorio puntual del Calendario — el único tipo de elemento que vive en su propia colección (ver `evento-calendario.model.ts`). */
+  async guardarEventoCalendario(evento: Record<string, unknown>, usuarioId: string): Promise<Record<string, unknown>> {
+    await conectar();
+    const doc = await EventoCalendarioModel.findOneAndUpdate(
+      { id: evento.id, usuarioId },
+      { ...evento, usuarioId },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).lean().exec();
+    return this.limpiar(doc as Record<string, unknown>);
+  }
+
+  /** Borra un evento/recordatorio del Calendario. */
+  async borrarEventoCalendario(id: string, usuarioId: string): Promise<void> {
+    await conectar();
+    await EventoCalendarioModel.deleteOne({ id, usuarioId }).exec();
   }
 
   // ── Referencias de Mercado (Fase 2F, "Consenso de Precio", 29/08/2026) ──────

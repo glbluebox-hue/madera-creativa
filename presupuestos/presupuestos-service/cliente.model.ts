@@ -80,6 +80,15 @@ const TareaSchema = new Schema(
     id: { type: String, required: true },
     texto: { type: String, required: true },
     hecha: { type: Boolean, required: true },
+    /**
+     * Fecha ISO (AAAA-MM-DD) opcional (Fase "Calendario", 30/08/2026) — una
+     * tarea sin fecha sigue funcionando exactamente igual que siempre (el
+     * checklist de `tab-tareas.tsx` no la exige); solo si se rellena, la
+     * tarea pasa a aparecer también en el Calendario (capa agregadora de
+     * solo lectura, ver `calendario-tipos.ts` — nunca se copia esta tarea a
+     * ningún otro sitio, el Calendario solo referencia `proyectoId`+`id`).
+     */
+    fecha: { type: String, default: '' },
   },
   { _id: false }
 );
@@ -466,12 +475,22 @@ const NotaSchema = new Schema({
   proyectoId: { type: String, default: '' },
   etiquetas: { type: [String], default: [] },
   origen: { type: String, enum: ['texto', 'voz'], default: 'texto' },
+  /**
+   * Fecha ISO (AAAA-MM-DD) opcional a la que se "clava" la nota (Fase
+   * "Calendario", 30/08/2026) — vacía en la inmensa mayoría de notas
+   * (nunca migrada ni inferida); solo una nota con `fecha` rellena aparece
+   * en el Calendario. No sustituye a `creado`/`actualizado`, que siguen
+   * siendo metadatos de auditoría, no la fecha "relevante" de la nota.
+   */
+  fecha: { type: String, default: '' },
   creado: { type: String, required: true },
   actualizado: { type: String, required: true },
 });
 NotaSchema.index({ usuarioId: 1, clienteId: 1 });
 NotaSchema.index({ usuarioId: 1, proyectoId: 1 });
 NotaSchema.index({ usuarioId: 1, creado: -1 });
+/** Consulta del Calendario (Fase "Calendario", 30/08/2026): notas con fecha dentro de un rango. */
+NotaSchema.index({ usuarioId: 1, fecha: 1 });
 
 /**
  * Referencia de Mercado (Fase 2F, "Consenso de Precio", 29/08/2026) —
@@ -879,6 +898,15 @@ const FacturaSchema = new Schema({
   // guardadas con el esquema anterior. ──
   numeroFactura: { type: String, default: '' },
   cifNif: { type: String, default: '' },
+  /**
+   * Fecha de vencimiento ISO (AAAA-MM-DD), opcional (Fase "Calendario",
+   * 30/08/2026) — distinta de `fecha` (fecha DEL documento/emisión):
+   * `fecha` ya aparece en el Calendario tal cual desde siempre para
+   * cualquier factura, este campo es solo para cuando el vencimiento real
+   * de pago/cobro es una fecha DISTINTA a la del propio documento. Vacía
+   * en toda factura existente, nunca inferida.
+   */
+  fechaVencimiento: { type: String, default: '' },
   baseImponible: { type: Number },
   /** Impuesto indirecto — depende de la región fiscal de la empresa (Canarias→IGIC, Península→IVA). */
   tipoImpuesto: { type: String, enum: ['igic', 'iva', ''], default: '' },
@@ -910,6 +938,9 @@ const FacturaSchema = new Schema({
  * los resultados en memoria tras el filtrado.
  */
 FacturaSchema.index({ usuarioId: 1, creado: -1 });
+/** Consultas del Calendario (Fase "Calendario", 30/08/2026): facturas por fecha o por vencimiento dentro de un rango. */
+FacturaSchema.index({ usuarioId: 1, fecha: 1 });
+FacturaSchema.index({ usuarioId: 1, fechaVencimiento: 1 });
 
 /** Modelo Mongoose de Factura. */
 export const FacturaModel: Model<any> = models.Factura || model('Factura', FacturaSchema);
