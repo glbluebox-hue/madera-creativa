@@ -3,6 +3,7 @@ import type { NivelGeografico, AlcanceTrabajo, NivelCalidad, ReferenciaMercado, 
 import { formatoEuro } from './calculos.js';
 import { CandidatosMercadoVista } from './candidatos-mercado-vista.js';
 import * as api from './api.js';
+import type { Estancia } from './types.js';
 import styles from './styles.module.css';
 
 export type ReferenciasMercadoVistaProps = {
@@ -12,6 +13,8 @@ export type ReferenciasMercadoVistaProps = {
   referencias: ReferenciaMercado[];
   /** Ids de las referencias que, aunque coinciden en tipo/zona, NO se han usado en el cálculo del mercado por no compartir alcance/unidad con el resto (autorización "Ficha Comparable", punto 10) — nunca desaparecen, se marcan. */
   idsNoComparables: string[];
+  /** Estancias YA medidas del proyecto (Pizarra de medición) — pasadas tal cual a `CandidatosMercadoVista` para dar contexto real a "Buscar con IA" (30/08/2026). `undefined` en vistas sin proyecto cargado. */
+  estancias?: Estancia[];
   onCambio: () => void;
 };
 
@@ -47,7 +50,7 @@ export function Chip({ activo, onClick, children }: { activo: boolean; onClick: 
  * ubicación ya configurada en Ajustes de empresa. Nunca scraping, nunca
  * IA — el usuario anota lo que él mismo conoce.
  */
-export function ReferenciasMercadoVista({ tipoTrabajo, ubicacion, referencias, idsNoComparables, onCambio }: ReferenciasMercadoVistaProps) {
+export function ReferenciasMercadoVista({ tipoTrabajo, ubicacion, referencias, idsNoComparables, estancias, onCambio }: ReferenciasMercadoVistaProps) {
   const [abierto, setAbierto] = useState(false);
   const [iaAbierto, setIaAbierto] = useState(false);
   const [nivel, setNivel] = useState<NivelGeografico>('local');
@@ -135,6 +138,7 @@ export function ReferenciasMercadoVista({ tipoTrabajo, ubicacion, referencias, i
           tipoTrabajo={tipoTrabajo}
           alcanceInicial={alcance}
           nivelCalidadInicial={nivelCalidad}
+          estancias={estancias}
           onGuardado={onCambio}
           onCerrar={() => setIaAbierto(false)}
         />

@@ -10,6 +10,7 @@ import { ReferenciasMercadoVista, ETIQUETA_ALCANCE } from './referencias-mercado
 import { formatoEuro } from './calculos.js';
 import { TrabajosComparables } from './trabajos-comparables.js';
 import * as api from './api.js';
+import type { Estancia } from './types.js';
 import styles from './styles.module.css';
 
 /** Ubicación "sin configurar" — el bloque de mercado simplemente no se activa, nunca se asume una zona por defecto (Fase 2F). */
@@ -46,6 +47,8 @@ export type AnalisisPrecioPresupuestoProps = {
   proyectoEstado?: string | null;
   /** Ubicación estructurada de la Empresa (Fase 2F, "Consenso de Precio") — determina qué mercado local investigar. `undefined` en vistas sin ese dato a mano; el bloque de mercado simplemente no se activa. */
   ubicacionEmpresa?: UbicacionEmpresa;
+  /** Estancias YA medidas del `Proyecto` (Pizarra de medición) — se pasan hasta `CandidatosMercadoVista` para dar contexto real a "Buscar con IA" (30/08/2026). `undefined` en vistas sin proyecto cargado. */
+  estancias?: Estancia[];
 };
 
 /**
@@ -55,7 +58,7 @@ export type AnalisisPrecioPresupuestoProps = {
  * calculado por `analizarPrecioPresupuesto` (en vivo) o el snapshot
  * guardado (`PresupuestoMC.analisisPrecio`, tras aceptar).
  */
-export function AnalisisPrecioPresupuesto({ analisis, esSnapshot, tipoTrabajo, excluirId, proyectoEstado, ubicacionEmpresa }: AnalisisPrecioPresupuestoProps) {
+export function AnalisisPrecioPresupuesto({ analisis, esSnapshot, tipoTrabajo, excluirId, proyectoEstado, ubicacionEmpresa, estancias }: AnalisisPrecioPresupuestoProps) {
   const [completoAbierto, setCompletoAbierto] = useState(false);
 
   if (!analisis) {
@@ -112,6 +115,7 @@ export function AnalisisPrecioPresupuesto({ analisis, esSnapshot, tipoTrabajo, e
           proyectoEstado={proyectoEstado ?? null}
           esSnapshot={!!esSnapshot}
           ubicacionEmpresa={ubicacionEmpresa ?? UBICACION_VACIA}
+          estancias={estancias}
           onCerrar={() => setCompletoAbierto(false)}
         />
       )}
@@ -129,6 +133,8 @@ export type AnalisisPrecioCompletoProps = {
   esSnapshot?: boolean;
   /** Ver `AnalisisPrecioPresupuestoProps.ubicacionEmpresa`. */
   ubicacionEmpresa?: UbicacionEmpresa;
+  /** Ver `AnalisisPrecioPresupuestoProps.estancias`. */
+  estancias?: Estancia[];
   onCerrar: () => void;
 };
 
@@ -152,7 +158,7 @@ export type AnalisisPrecioCompletoProps = {
  * son funciones puras que solo ENSAMBLAN lo que 2A-2D ya calculan — cero
  * fórmula nueva, cero llamada a IA.
  */
-export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proyectoEstado, esSnapshot, ubicacionEmpresa, onCerrar }: AnalisisPrecioCompletoProps) {
+export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proyectoEstado, esSnapshot, ubicacionEmpresa, estancias, onCerrar }: AnalisisPrecioCompletoProps) {
   const [resultadoComparables, setResultadoComparables] = useState<ResultadoComparables | null>(null);
   const [verMasComparables, setVerMasComparables] = useState(false);
   const [historico, setHistorico] = useState<TrabajoAnalizado[] | null>(null);
@@ -234,6 +240,7 @@ export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proye
                 ubicacion={ubicacion}
                 referencias={(referenciasMercado ?? []).filter((r) => r.tipoTrabajo === tipoTrabajo)}
                 idsNoComparables={mercadoLocal.disponible ? mercadoLocal.referenciasNoComparables.map((r) => r.id) : []}
+                estancias={estancias}
                 onCambio={cargarReferenciasMercado}
               />
             )}

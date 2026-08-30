@@ -1,5 +1,6 @@
-import { candidatoAReferenciaMercado } from './candidatos-mercado.js';
+import { candidatoAReferenciaMercado, detectarEstanciaMedida, formatearEstancia } from './candidatos-mercado.js';
 import type { CandidatoMercado } from './api.js';
+import type { Estancia } from './types.js';
 
 /**
  * Guardado de un candidato de IA (encargo "Investigación de Mercado con
@@ -57,5 +58,49 @@ describe('candidatoAReferenciaMercado', () => {
     expect(r.zona).toBe('Canarias');
     expect(r.nivelGeografico).toBe('regional');
     expect(r.alcance).toBe('reforma_completa');
+  });
+});
+
+function estancia(extra: Partial<Estancia> = {}): Estancia {
+  return { id: 'e1', nombre: 'Cocina', ...extra };
+}
+
+describe('detectarEstanciaMedida — reutiliza la Pizarra de medición, nunca adivina entre varias', () => {
+  it('una única estancia cuyo nombre coincide con el tipo de trabajo se detecta automáticamente', () => {
+    const r = detectarEstanciaMedida([estancia({ nombre: 'Cocina', ancho: 3.7, alto: 2.5 })], 'Cocina');
+    expect(r?.id).toBe('e1');
+  });
+
+  it('coincide aunque el nombre tenga mayúsculas/acentos distintos', () => {
+    const r = detectarEstanciaMedida([estancia({ nombre: 'cocina principal' })], 'Cocina');
+    expect(r).not.toBeNull();
+  });
+
+  it('varias estancias, ninguna coincide por nombre -> null (nunca adivina)', () => {
+    const r = detectarEstanciaMedida([estancia({ id: 'a', nombre: 'Salón' }), estancia({ id: 'b', nombre: 'Baño' })], 'Cocina');
+    expect(r).toBeNull();
+  });
+
+  it('sin estancias -> null', () => {
+    expect(detectarEstanciaMedida(undefined, 'Cocina')).toBeNull();
+    expect(detectarEstanciaMedida([], 'Cocina')).toBeNull();
+  });
+
+  it('dos estancias que coinciden igualmente por nombre -> null (ambiguo, que elija el usuario)', () => {
+    const r = detectarEstanciaMedida([estancia({ id: 'a', nombre: 'Cocina' }), estancia({ id: 'b', nombre: 'Cocina office' })], 'Cocina');
+    expect(r).toBeNull();
+  });
+});
+
+describe('formatearEstancia — nunca inventa una medida que no está', () => {
+  it('incluye solo los campos de medida realmente presentes', () => {
+    const texto = formatearEstancia(estancia({ nombre: 'Cocina', ancho: 3.7, alto: 2.5 }));
+    expect(texto).toContain('ancho 3.7 m');
+    expect(texto).toContain('alto 2.5 m');
+    expect(texto).not.toContain('fondo');
+  });
+
+  it('sin ninguna medida numérica, devuelve cadena vacía en vez de un texto vacío engañoso', () => {
+    expect(formatearEstancia(estancia({ nombre: 'Cocina' }))).toBe('');
   });
 });

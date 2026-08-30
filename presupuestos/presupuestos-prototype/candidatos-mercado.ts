@@ -1,7 +1,47 @@
 import type { ReferenciaMercado, NivelGeografico, AlcanceTrabajo } from './mercado-local.js';
 import type { CandidatoMercado } from './api.js';
+import type { Estancia } from './types.js';
 
 export type { CandidatoMercado };
+
+function normalizar(s: string): string {
+  return s.normalize('NFD').replace(new RegExp(`[${String.fromCodePoint(0x300)}-${String.fromCodePoint(0x36f)}]`, 'g'), '').toLowerCase().trim();
+}
+
+/**
+ * Contexto real para "Buscar con IA" (30/08/2026) — busca, entre las
+ * estancias YA MEDIDAS del proyecto (Pizarra de medición,
+ * `Proyecto.estancias`), una cuyo nombre coincida con el tipo de trabajo
+ * (p. ej. una estancia "Cocina" para un presupuesto de tipo "Cocina").
+ * Nunca adivina entre varias que no coinciden por nombre — en ese caso
+ * (o si hay más de una coincidencia) se deja `null` para que el usuario
+ * elija en la interfaz, en vez de asumir la primera.
+ */
+export function detectarEstanciaMedida(estancias: Estancia[] | undefined, tipoTrabajo: string): Estancia | null {
+  if (!estancias?.length) return null;
+  const tipo = normalizar(tipoTrabajo);
+  const coincidencias = estancias.filter((e) => {
+    const nombre = normalizar(e.nombre);
+    return nombre.includes(tipo) || tipo.includes(nombre);
+  });
+  return coincidencias.length === 1 ? coincidencias[0] : null;
+}
+
+const ETIQUETA_MEDIDA: Record<string, string> = {
+  ancho: 'ancho', alto: 'alto', fondo: 'fondo', altura: 'altura', anchura: 'anchura', profundidad: 'profundidad',
+};
+
+/** Convierte una `Estancia` (medidas reales, nunca inventadas) en una línea de texto para el prompt de IA. */
+export function formatearEstancia(estancia: Estancia): string {
+  const medidas = (Object.keys(ETIQUETA_MEDIDA) as (keyof typeof ETIQUETA_MEDIDA)[])
+    .map((campo) => {
+      const valor = estancia[campo as keyof Estancia];
+      return typeof valor === 'number' ? `${ETIQUETA_MEDIDA[campo]} ${valor} m` : null;
+    })
+    .filter((s): s is string => !!s);
+  if (medidas.length === 0) return '';
+  return `Estancia "${estancia.nombre}" — medidas reales: ${medidas.join(', ')}.`;
+}
 
 /**
  * Convierte un candidato de IA ya confirmado por el usuario en el mismo

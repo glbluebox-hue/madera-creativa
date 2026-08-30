@@ -1966,6 +1966,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
             proyectoEstado={proyectoParaAnalisis?.estado ?? null}
             esSnapshot={!!analisisPrecio}
             ubicacionEmpresa={{ comunidadAutonoma: empresa.comunidadAutonoma, provincia: empresa.provincia, isla: empresa.isla }}
+            estancias={proyectoParaAnalisis?.estancias}
             onCerrar={() => setInteligenciaAbierta(false)}
           />
         ),

@@ -1,10 +1,14 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { NivelGeografico, AlcanceTrabajo, NivelCalidad } from './mercado-local.js';
 import { Chip, ETIQUETA_NIVEL, ETIQUETA_ALCANCE, ETIQUETA_CALIDAD } from './referencias-mercado-vista.js';
 import * as api from './api.js';
 import type { CandidatoMercado, ResultadoBuscarMercado } from './api.js';
-import { candidatoAReferenciaMercado } from './candidatos-mercado.js';
+import { candidatoAReferenciaMercado, detectarEstanciaMedida, formatearEstancia } from './candidatos-mercado.js';
 import { formatoEuro } from './calculos.js';
+import { validarImagenParaIA, comprimirImagen, MIME_IMAGEN_PERMITIDOS } from './procesamiento-imagenes.js';
+import { leerArchivoComoBase64 } from './archivos.js';
+import { generarId } from './mock.js';
+import type { Estancia } from './types.js';
 import styles from './styles.module.css';
 
 export type CandidatosMercadoVistaProps = {
@@ -14,10 +18,17 @@ export type CandidatosMercadoVistaProps = {
   nivelCalidadInicial: NivelCalidad | null;
   /** Texto libre best-effort ya extraído del presupuesto, si lo hay — nunca obligatorio. */
   descripcionLibre?: string;
+  /** Estancias YA medidas del proyecto (Pizarra de medición) — si alguna coincide con `tipoTrabajo`, sus medidas reales se ofrecen para dar más contexto a la búsqueda (30/08/2026). */
+  estancias?: Estancia[];
   /** Se llama tras guardar CADA candidato aceptado — mismo `onCambio` que ya usa el formulario manual, para refrescar la lista de referencias. */
   onGuardado: () => void;
   onCerrar: () => void;
 };
+
+type ImagenAdjunta = { id: string; dataUrl: string; nombre: string };
+
+/** Solo da contexto de materiales/estilo — no es una galería, así que un tope bajo es suficiente. */
+const LIMITE_IMAGENES_MERCADO = 3;
 
 const ETIQUETA_SI_NO: Record<'si' | 'no' | 'desconocido', string> = { si: 'Sí', no: 'No', desconocido: 'No indicado' };
 
@@ -96,21 +107,77 @@ function TarjetaCandidato({ candidato, onGuardar, onDescartar, guardando }: {
  * — un candidato guardado pasa por el MISMO filtro de comparabilidad que
  * cualquier referencia manual, sin ningún camino paralelo.
  */
-export function CandidatosMercadoVista({ tipoTrabajo, alcanceInicial, nivelCalidadInicial, descripcionLibre, onGuardado, onCerrar }: CandidatosMercadoVistaProps) {
+export function CandidatosMercadoVista({ tipoTrabajo, alcanceInicial, nivelCalidadInicial, descripcionLibre, estancias, onGuardado, onCerrar }: CandidatosMercadoVistaProps) {
   const [nivel, setNivel] = useState<NivelGeografico>('local');
   const [alcance, setAlcance] = useState<AlcanceTrabajo>(alcanceInicial);
   const [nivelCalidad, setNivelCalidad] = useState<NivelCalidad | null>(nivelCalidadInicial);
-  const [estado, setEstado] = useState<'eligiendo' | 'buscando' | 'listo' | 'error'>('eligiendo');
+  const [estado, setEstado] = useState<'eligiendo' | 'describiendo' | 'buscando' | 'listo' | 'error'>('eligiendo');
   const [resultado, setResultado] = useState<ResultadoBuscarMercado | null>(null);
+  const [descripcionGenerada, setDescripcionGenerada] = useState('');
   const [error, setError] = useState('');
   const [resueltos, setResueltos] = useState<Set<number>>(new Set()); // índices ya guardados o descartados
   const [guardandoIndice, setGuardandoIndice] = useState<number | null>(null);
 
-  const buscar = async () => {
-    setEstado('buscando');
-    setError('');
+  // Contexto real opcional (30/08/2026) — fotos adjuntadas a mano y medidas
+  // reales (detectadas de la Pizarra de medición, o elegidas/escritas por el
+  // usuario si hay más de una estancia o ninguna) para que la búsqueda sea
+  // específica en vez de "Cocina, Tenerife" genérico.
+  const inputImagenRef = useRef<HTMLInputElement>(null);
+  const [imagenes, setImagenes] = useState<ImagenAdjunta[]>([]);
+  const [procesandoImagen, setProcesandoImagen] = useState(false);
+  const [errorImagen, setErrorImagen] = useState('');
+
+  const estanciaAuto = detectarEstanciaMedida(estancias, tipoTrabajo);
+  const [estanciaElegidaId, setEstanciaElegidaId] = useState<string | null>(null);
+  const [usarMedidasManual, setUsarMedidasManual] = useState(false);
+  const [medidaAncho, setMedidaAncho] = useState('');
+  const [medidaAlto, setMedidaAlto] = useState('');
+
+  const estanciaElegida = estanciaAuto ?? estancias?.find((e) => e.id === estanciaElegidaId) ?? null;
+  const medidasTexto = estanciaElegida
+    ? formatearEstancia(estanciaElegida)
+    : (usarMedidasManual && medidaAncho && medidaAlto ? `Medidas dadas a mano: ancho ${medidaAncho} m, alto ${medidaAlto} m.` : '');
+
+  const seleccionarImagen = async (file: File) => {
+    setErrorImagen('');
+    const validacion = validarImagenParaIA(file);
+    if (validacion.valido === false) { setErrorImagen(validacion.motivo); return; }
+    setProcesandoImagen(true);
     try {
-      const r = await api.buscarPreciosMercado({ tipoTrabajo, nivelGeografico: nivel, alcance, nivelCalidad, descripcionLibre });
+      const { blob } = await comprimirImagen(file, { forzarJpeg: true });
+      const dataUrl = await leerArchivoComoBase64(blob);
+      setImagenes((prev) => [...prev, { id: generarId(), dataUrl, nombre: file.name }]);
+    } catch {
+      setErrorImagen('No se pudo procesar la imagen. Prueba con otra.');
+    } finally {
+      setProcesandoImagen(false);
+    }
+  };
+
+  const quitarImagen = (id: string) => setImagenes((prev) => prev.filter((img) => img.id !== id));
+
+  const buscar = async () => {
+    setError('');
+    let descripcionParaBusqueda = descripcionLibre ?? '';
+
+    if (imagenes.length > 0 || medidasTexto) {
+      setEstado('describiendo');
+      try {
+        const respuesta = await api.generarRespuestaIA({
+          capacidad: 'describir-trabajo-mercado',
+          mensajes: [{ role: 'user', content: medidasTexto || '(sin medidas dadas)', imagenes: imagenes.map((i) => i.dataUrl) }],
+        });
+        setDescripcionGenerada(respuesta.respuesta);
+        descripcionParaBusqueda = [descripcionParaBusqueda, respuesta.respuesta].filter(Boolean).join(' ');
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'No se pudo describir el trabajo — se busca igualmente con los datos generales.');
+        // No es un fallo bloqueante: se sigue a la búsqueda con lo que ya había (encargo: nunca dejar de buscar por un paso opcional).
+      }
+    }
+
+    setEstado('buscando');
+    try {
+      const r = await api.buscarPreciosMercado({ tipoTrabajo, nivelGeografico: nivel, alcance, nivelCalidad, descripcionLibre: descripcionParaBusqueda });
       setResultado(r);
       setResueltos(new Set());
       setEstado('listo');
@@ -174,6 +241,77 @@ export function CandidatosMercadoVista({ tipoTrabajo, alcanceInicial, nivelCalid
               ))}
             </div>
           </div>
+
+          <div>
+            <p style={{ margin: '0 0 0.3rem', fontSize: '0.7rem', fontWeight: 700, color: 'var(--topo-claro)', textTransform: 'uppercase' }}>Medidas reales (opcional, mejora mucho la búsqueda)</p>
+            {estanciaAuto ? (
+              <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--verde)' }}>✓ Medidas detectadas automáticamente de "{estanciaAuto.nombre}" (Pizarra de medición).</p>
+            ) : estancias?.length ? (
+              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                {estancias.map((e) => (
+                  <Chip key={e.id} activo={estanciaElegidaId === e.id} onClick={() => setEstanciaElegidaId(estanciaElegidaId === e.id ? null : e.id)}>{e.nombre}</Chip>
+                ))}
+              </div>
+            ) : !usarMedidasManual ? (
+              <button type="button" className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => setUsarMedidasManual(true)}>
+                + Añadir medidas a mano
+              </button>
+            ) : (
+              <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                <input className={styles.input} type="number" min={0} step="0.01" placeholder="Ancho (m)" value={medidaAncho} onChange={(e) => setMedidaAncho(e.target.value)} style={{ maxWidth: 110 }} />
+                <input className={styles.input} type="number" min={0} step="0.01" placeholder="Alto (m)" value={medidaAlto} onChange={(e) => setMedidaAlto(e.target.value)} style={{ maxWidth: 110 }} />
+              </div>
+            )}
+            {estanciaElegida && !estanciaAuto && (
+              <p style={{ margin: '0.3rem 0 0', fontSize: '0.74rem', color: 'var(--topo-claro)' }}>{formatearEstancia(estanciaElegida) || 'Esta estancia no tiene medidas numéricas guardadas.'}</p>
+            )}
+          </div>
+
+          <div>
+            <p style={{ margin: '0 0 0.3rem', fontSize: '0.7rem', fontWeight: 700, color: 'var(--topo-claro)', textTransform: 'uppercase' }}>Foto (opcional, hasta {LIMITE_IMAGENES_MERCADO})</p>
+            {errorImagen && <p style={{ margin: '0 0 0.4rem', fontSize: '0.72rem', color: 'var(--rojo)' }}>{errorImagen}</p>}
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.4rem' }}>
+              {imagenes.map((img) => (
+                <div key={img.id} style={{ position: 'relative', width: 40, height: 40, flexShrink: 0 }}>
+                  <img src={img.dataUrl} alt={img.nombre} title={img.nombre} style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--borde)' }} />
+                  <button
+                    className={styles.btnIcono}
+                    onClick={() => quitarImagen(img.id)}
+                    aria-label={`Quitar ${img.nombre}`}
+                    style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, minWidth: 18, padding: 0, borderRadius: '50%', background: 'var(--blanco)', border: '1px solid var(--borde)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                  </button>
+                </div>
+              ))}
+              {imagenes.length < LIMITE_IMAGENES_MERCADO && (
+                <button
+                  className={styles.btnIcono}
+                  onClick={() => inputImagenRef.current?.click()}
+                  disabled={procesandoImagen}
+                  aria-label="Añadir foto"
+                  title="Añadir foto"
+                  style={{ width: 40, height: 40, borderRadius: 6, border: '1px dashed var(--borde)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                </button>
+              )}
+            </div>
+            <input
+              ref={inputImagenRef}
+              type="file"
+              accept={MIME_IMAGEN_PERMITIDOS.join(',')}
+              multiple
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const files = Array.from(e.target.files ?? []);
+                e.target.value = '';
+                const hueco = LIMITE_IMAGENES_MERCADO - imagenes.length;
+                files.slice(0, hueco).forEach((file) => { void seleccionarImagen(file); });
+              }}
+            />
+          </div>
+
           <div style={{ display: 'flex', gap: '0.4rem' }}>
             <button type="button" className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.76rem' }} onClick={onCerrar}>Cancelar</button>
             <button type="button" className={`${styles.btn} ${styles.btnPrimario}`} style={{ fontSize: '0.76rem' }} onClick={buscar}>🔍 Buscar con IA</button>
@@ -181,8 +319,17 @@ export function CandidatosMercadoVista({ tipoTrabajo, alcanceInicial, nivelCalid
         </>
       )}
 
+      {estado === 'describiendo' && (
+        <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--topo-claro)' }}>🧠 Describiendo tu trabajo a partir de la foto/medidas…</p>
+      )}
+
       {estado === 'buscando' && (
-        <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--topo-claro)' }}>🔎 Buscando precios reales en la web… puede tardar hasta un minuto.</p>
+        <>
+          {descripcionGenerada && (
+            <p style={{ margin: 0, fontSize: '0.78rem', fontStyle: 'italic', color: 'var(--topo-claro)' }}>{descripcionGenerada}</p>
+          )}
+          <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--topo-claro)' }}>🔎 Buscando precios reales en la web… puede tardar hasta un minuto.</p>
+        </>
       )}
 
       {estado === 'error' && (
@@ -197,6 +344,9 @@ export function CandidatosMercadoVista({ tipoTrabajo, alcanceInicial, nivelCalid
 
       {estado === 'listo' && resultado && (
         <>
+          {descripcionGenerada && (
+            <p style={{ margin: 0, fontSize: '0.78rem', fontStyle: 'italic', color: 'var(--topo-claro)' }}>{descripcionGenerada}</p>
+          )}
           {resultado.desdeCache && (
             <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--topo-claro)' }}>Resultado de una investigación reciente (menos de 24h) — reutilizado para no repetir la búsqueda.</p>
           )}
