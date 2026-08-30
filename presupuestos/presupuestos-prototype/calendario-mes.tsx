@@ -5,7 +5,18 @@ import styles from './styles.module.css';
 
 const MAX_VISIBLES_POR_DIA = 3;
 
-/** Vista mensual — rejilla de 6 semanas × 7 días (siempre 6 filas, para que la altura no "salte" entre meses de 4 o 5 semanas). */
+/**
+ * Vista mensual — rejilla de 6 semanas × 7 días (siempre 6 filas, para que
+ * la altura no "salte" entre meses de 4 o 5 semanas). Nunca desplaza en
+ * horizontal (reporte real del usuario: "se ve muy grande y hay que
+ * desplazarse, los recuadros son muy grandes") — un primer intento con
+ * scroll horizontal + ancho mínimo por columna quedó peor, no mejor: en
+ * vez de eso, `.calendarioDiaCelda`/`.calendarioChipTexto`
+ * (`styles.module.css`, `@media (max-width: 640px)`) encogen la celda y
+ * ocultan el texto de cada elemento por debajo de ese ancho, dejando solo
+ * el punto de color — así las 7 columnas siempre caben sin desplazarse,
+ * y tocar un punto sigue abriendo su elemento igual que en escritorio.
+ */
 export function CalendarioMes({ desde, hasta, hoy, mesActual, elementos, onAbrirElemento, onVerDia, onCrearEnFecha }: {
   desde: string;
   hasta: string;
@@ -29,24 +40,16 @@ export function CalendarioMes({ desde, hasta, hoy, mesActual, elementos, onAbrir
   }
 
   return (
-    // En móvil, 7 columnas no caben legibles en el ancho de pantalla —
-    // en vez de encogerlas hasta ilegibles (reporte real del usuario, "hay
-    // que redimensionarlo"), la rejilla mantiene un ancho mínimo por
-    // columna y este contenedor scrollea en horizontal cuando hace falta.
-    // En escritorio nunca se nota: ya hay sitio de sobra, no aparece barra
-    // de scroll. Cabecera de días y celdas van DENTRO del mismo contenedor
-    // para desplazarse siempre juntas, nunca por separado.
-    <div style={{ overflowX: 'auto' }}>
-      <div style={{ minWidth: 630 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: '0.4rem' }}>
-          {DIAS_SEMANA_CORTOS.map((d) => (
-            <div key={d} style={{ textAlign: 'center', fontSize: '0.72rem', fontWeight: 700, color: 'var(--topo-muy-claro)', textTransform: 'uppercase', letterSpacing: '0.03em', padding: '0.3rem 0' }}>
-              {d}
-            </div>
-          ))}
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
-          {dias.map((fechaIso) => {
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: '0.4rem' }}>
+        {DIAS_SEMANA_CORTOS.map((d) => (
+          <div key={d} style={{ textAlign: 'center', fontSize: '0.72rem', fontWeight: 700, color: 'var(--topo-muy-claro)', textTransform: 'uppercase', letterSpacing: '0.03em', padding: '0.3rem 0' }}>
+            {d}
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+        {dias.map((fechaIso) => {
           const [, m, d] = fechaIso.split('-').map(Number);
           const delMesActual = (m - 1) === mesActual;
           const esHoy = fechaIso === hoy;
@@ -60,6 +63,7 @@ export function CalendarioMes({ desde, hasta, hoy, mesActual, elementos, onAbrir
               role="button"
               tabIndex={0}
               onKeyDown={(e) => { if (e.key === 'Enter') onCrearEnFecha(fechaIso); }}
+              className={styles.calendarioDiaCelda}
               style={{
                 minHeight: 92, borderRadius: 8, padding: '0.35rem',
                 background: delMesActual ? 'var(--fondo-panel)' : 'var(--fondo)',
@@ -71,9 +75,11 @@ export function CalendarioMes({ desde, hasta, hoy, mesActual, elementos, onAbrir
               <span style={{ fontSize: '0.78rem', fontWeight: esHoy ? 800 : 600, color: esHoy ? 'var(--topo)' : 'var(--negro)', marginBottom: 2 }}>
                 {d}
               </span>
-              {visibles.map((el) => (
-                <CalendarioElementoChip key={el.id} elemento={el} compacto onAbrir={onAbrirElemento} />
-              ))}
+              <div className={styles.calendarioDiaChips}>
+                {visibles.map((el) => (
+                  <CalendarioElementoChip key={el.id} elemento={el} compacto onAbrir={onAbrirElemento} />
+                ))}
+              </div>
               {restantes > 0 && (
                 <button
                   type="button"
@@ -87,7 +93,6 @@ export function CalendarioMes({ desde, hasta, hoy, mesActual, elementos, onAbrir
             </div>
           );
         })}
-        </div>
       </div>
     </div>
   );

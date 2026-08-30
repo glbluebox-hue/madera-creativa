@@ -1,8 +1,15 @@
 import { aFechaISO, agruparPorFecha, DIAS_SEMANA_CORTOS } from './calendario-modelo.js';
 import type { ElementoCalendario } from './calendario-modelo.js';
 import { CalendarioElementoChip } from './calendario-elemento-chip.js';
+import styles from './styles.module.css';
 
-/** Vista semanal — 7 columnas, una por día, con todos sus elementos (sin límite de visibles, a diferencia de la vista mensual: hay más alto disponible por columna). */
+/**
+ * Vista semanal — 7 columnas, una por día. Mismo criterio anti-desplazamiento
+ * que la vista mensual (ver comentario en calendario-mes.tsx): nunca scroll
+ * horizontal — por debajo de 640px, `.calendarioSemanaCelda`/
+ * `.calendarioChipTexto` (`styles.module.css`) encogen la columna y ocultan
+ * el texto de cada elemento, dejando solo el punto de color.
+ */
 export function CalendarioSemana({ desde, hoy, elementos, onAbrirElemento, onCrearEnFecha }: {
   desde: string;
   hoy: string;
@@ -20,12 +27,8 @@ export function CalendarioSemana({ desde, hoy, elementos, onAbrirElemento, onCre
   });
 
   return (
-    // Mismo criterio que la vista mensual (ver comentario en calendario-mes.tsx):
-    // ancho mínimo por columna + scroll horizontal propio del contenedor en
-    // vez de encoger las columnas hasta ilegibles en móvil.
-    <div style={{ overflowX: 'auto' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6, minWidth: 800 }}>
-        {dias.map((fechaIso, i) => {
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
+      {dias.map((fechaIso, i) => {
         const esHoy = fechaIso === hoy;
         const dia = Number(fechaIso.split('-')[2]);
         const items = porDia.get(fechaIso) ?? [];
@@ -36,6 +39,7 @@ export function CalendarioSemana({ desde, hoy, elementos, onAbrirElemento, onCre
             role="button"
             tabIndex={0}
             onKeyDown={(e) => { if (e.key === 'Enter') onCrearEnFecha(fechaIso); }}
+            className={styles.calendarioSemanaCelda}
             style={{
               minHeight: 220, borderRadius: 8, padding: '0.5rem',
               background: 'var(--fondo-panel)', border: esHoy ? '1.5px solid var(--topo)' : '1px solid var(--borde)',
@@ -46,13 +50,14 @@ export function CalendarioSemana({ desde, hoy, elementos, onAbrirElemento, onCre
               <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--topo-muy-claro)', textTransform: 'uppercase' }}>{DIAS_SEMANA_CORTOS[i]}</div>
               <div style={{ fontSize: '1rem', fontWeight: esHoy ? 800 : 600, color: esHoy ? 'var(--topo)' : 'var(--negro)' }}>{dia}</div>
             </div>
-            {items.map((el) => (
-              <CalendarioElementoChip key={el.id} elemento={el} onAbrir={onAbrirElemento} />
-            ))}
+            <div className={styles.calendarioDiaChips}>
+              {items.map((el) => (
+                <CalendarioElementoChip key={el.id} elemento={el} onAbrir={onAbrirElemento} />
+              ))}
+            </div>
           </div>
         );
       })}
-      </div>
     </div>
   );
 }

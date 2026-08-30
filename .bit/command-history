@@ -1327,3 +1327,11 @@
 2026-08-30T23:21:01.928Z 27344 test presupuestos/presupuestos-prototype, succeeded
 2026-08-30T23:42:27.790Z 28740 test presupuestos/presupuestos-prototype/calendario-modelo.spec.ts, started
 2026-08-30T23:42:43.992Z 28740 test presupuestos/presupuestos-prototype/calendario-modelo.spec.ts, succeeded
+2026-08-30T23:54:47.720Z 29072 test presupuestos/presupuestos-service/calendario.spec.ts, started
+2026-08-30T23:55:05.238Z 29072 test presupuestos/presupuestos-service/calendario.spec.ts, succeeded
+2026-08-30T23:55:17.576Z 26916 test presupuestos/presupuestos-prototype, started
+2026-08-30T23:55:42.760Z 26916 test presupuestos/presupuestos-prototype, succeeded
+2026-08-30T23:55:55.523Z 6960 test presupuestos/presupuestos-service, started
+2026-08-30T23:56:19.405Z 6960 test presupuestos/presupuestos-service, failed
+2026-08-30T23:56:44.240Z 29200 test presupuestos/presupuestos-service/presupuestos-precio.spec.ts, started
+2026-08-30T23:56:58.168Z 29200 test presupuestos/presupuestos-service/presupuestos-precio.spec.ts, succeeded

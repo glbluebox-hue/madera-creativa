@@ -45,6 +45,11 @@ export type NotaMC = {
   actualizado: string;
 };
 
+/** Color de cada prioridad — un único sitio para toda la app (Notas y, desde el Calendario, 30/08/2026, el punto de color de cada nota). */
+export const COLOR_PRIORIDAD: Record<PrioridadNota, string> = { alta: 'var(--rojo)', media: 'var(--ocre)', baja: 'var(--topo-claro)' };
+export const COLOR_PRIORIDAD_BG: Record<PrioridadNota, string> = { alta: 'var(--rojo-bg)', media: 'var(--ocre-bg)', baja: 'var(--topo-tinte)' };
+export const ETIQUETA_PRIORIDAD: Record<PrioridadNota, string> = { alta: 'Alta', media: 'Media', baja: 'Baja' };
+
 export const PRIORIDADES: { id: PrioridadNota; orden: number }[] = [
   { id: 'alta', orden: 0 },
   { id: 'media', orden: 1 },

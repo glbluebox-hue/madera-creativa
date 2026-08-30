@@ -4,12 +4,11 @@ import { generarId } from './mock.js';
 import { formatoFecha } from './calculos.js';
 import { useDictado, BtnMicrofono } from './use-dictado.js';
 import * as api from './api.js';
-import { PRIORIDADES, ordenarPorDefecto, ordenarItemsLista, type NotaMC, type PrioridadNota, type TipoNota, type ItemLista } from './notas-modelo.js';
+import {
+  PRIORIDADES, ordenarPorDefecto, ordenarItemsLista, COLOR_PRIORIDAD, COLOR_PRIORIDAD_BG, ETIQUETA_PRIORIDAD,
+  type NotaMC, type PrioridadNota, type TipoNota, type ItemLista,
+} from './notas-modelo.js';
 import styles from './styles.module.css';
-
-const COLOR_PRIORIDAD: Record<PrioridadNota, string> = { alta: 'var(--rojo)', media: 'var(--ocre)', baja: 'var(--topo-claro)' };
-const COLOR_PRIORIDAD_BG: Record<PrioridadNota, string> = { alta: 'var(--rojo-bg)', media: 'var(--ocre-bg)', baja: 'var(--topo-tinte)' };
-const ETIQUETA_PRIORIDAD: Record<PrioridadNota, string> = { alta: 'Alta', media: 'Media', baja: 'Baja' };
 
 const CLAVE_MIGRACION_GLOBAL = 'mc_notas_globales';
 

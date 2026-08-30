@@ -1985,9 +1985,9 @@ export class PresupuestosService {
 
     if (incluye('nota')) {
       const notas = await NotaModel.find({ usuarioId, fecha: { $gte: desde, $lte: hasta } })
-        .select('id titulo contenido fecha clienteId proyectoId').lean().exec();
+        .select('id titulo contenido fecha clienteId proyectoId prioridad').lean().exec();
       for (const n of notas as any[]) {
-        elementos.push({ id: `nota-${n.id}`, tipo: 'nota', titulo: n.titulo || (n.contenido || '').slice(0, 60) || 'Nota', fecha: n.fecha, todoElDia: true, origenId: n.id, proyectoId: n.proyectoId || undefined, clienteId: n.clienteId || undefined });
+        elementos.push({ id: `nota-${n.id}`, tipo: 'nota', titulo: n.titulo || (n.contenido || '').slice(0, 60) || 'Nota', fecha: n.fecha, todoElDia: true, origenId: n.id, proyectoId: n.proyectoId || undefined, clienteId: n.clienteId || undefined, prioridad: n.prioridad || undefined });
       }
     }
 

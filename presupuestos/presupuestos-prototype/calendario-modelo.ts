@@ -29,6 +29,8 @@ export type ElementoCalendario = {
   hecha?: boolean;
   /** Solo presente en 'evento'/'recordatorio' — se conserva al editar desde el Calendario. */
   creado?: string;
+  /** Solo relevante para 'nota' — el punto de color en el Calendario refleja su prioridad. */
+  prioridad?: 'alta' | 'media' | 'baja';
 };
 
 /** Evento/recordatorio puntual — el único tipo con colección propia (ver `evento-calendario.model.ts` en el backend). */

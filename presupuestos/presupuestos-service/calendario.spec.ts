@@ -84,6 +84,12 @@ describe('obtenerCalendario — agregación por tipo', () => {
     expect(elementos).toEqual([expect.objectContaining({ tipo: 'nota', titulo: 'Llamar a Juan', fecha: '2026-09-15', origenId: 'n1' })]);
   });
 
+  it('la nota lleva su prioridad — el punto de color en el Calendario la usa (30/08/2026)', async () => {
+    await NotaModel.create({ id: 'n1', usuarioId: USUARIO_A, contenido: 'x', fecha: '2026-09-15', prioridad: 'alta', creado: new Date().toISOString(), actualizado: new Date().toISOString() });
+    const elementos = await svc.obtenerCalendario(USUARIO_A, '2026-09-01', '2026-09-30');
+    expect(elementos[0].prioridad).toBe('alta');
+  });
+
   it('una nota sin fecha (la inmensa mayoría) nunca aparece', async () => {
     await NotaModel.create({ id: 'n1', usuarioId: USUARIO_A, contenido: 'x', creado: new Date().toISOString(), actualizado: new Date().toISOString() });
     const elementos = await svc.obtenerCalendario(USUARIO_A, '2026-01-01', '2026-12-31');

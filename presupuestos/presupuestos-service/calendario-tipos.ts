@@ -48,6 +48,8 @@ export type ElementoCalendario = {
   hecha?: boolean;
   /** Solo presente en 'evento'/'recordatorio' (fecha de creación del propio EventoCalendario) — se conserva al editar desde el Calendario, para no perder ese metadato en el PUT de reemplazo. */
   creado?: string;
+  /** Solo relevante para 'nota' (30/08/2026) — el punto de color de la nota en el Calendario refleja su prioridad, igual que en la propia sección Notas. */
+  prioridad?: 'alta' | 'media' | 'baja';
 };
 
 /**

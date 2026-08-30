@@ -11,6 +11,7 @@ import { CalendarioSemana } from './calendario-semana.js';
 import { CalendarioDia } from './calendario-dia.js';
 import { CalendarioCrearModal } from './calendario-crear-modal.js';
 import { CalendarioDetalleEventoModal } from './calendario-detalle-evento-modal.js';
+import { CalendarioDetalleNotaModal } from './calendario-detalle-nota-modal.js';
 import { generarId } from './mock.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
@@ -42,12 +43,21 @@ export function CalendarioVista({ proyectos, onAbrirElemento }: {
   const cal = useCalendario();
   const [fechaCreacion, setFechaCreacion] = useState<string | null>(null);
   const [elementoDetalle, setElementoDetalle] = useState<ElementoCalendario | null>(null);
+  const [notaDetalleId, setNotaDetalleId] = useState<string | null>(null);
   const hoy = hoyISO();
   const rango = useMemo(() => rangoParaVista(cal.vista, cal.fechaRef), [cal.vista, cal.fechaRef]);
 
-  /** Un evento/recordatorio no tiene otra sección donde "acceder al origen" — se abre aquí mismo; el resto navega (delegado al contenedor de la app). */
+  /**
+   * Un evento/recordatorio no tiene otra sección donde "acceder al
+   * origen" — se abre aquí mismo. Una nota sí tiene su propia sección
+   * (Notas), pero el usuario pidió explícitamente poder editar/borrar/
+   * cambiar la prioridad sin salir del Calendario, así que también se
+   * abre aquí (30/08/2026). El resto (proyecto/tarea/factura/cliente)
+   * navega, delegado al contenedor de la app.
+   */
   const abrirElemento = (elemento: ElementoCalendario) => {
     if (elemento.tipo === 'evento' || elemento.tipo === 'recordatorio') { setElementoDetalle(elemento); return; }
+    if (elemento.tipo === 'nota') { setNotaDetalleId(elemento.origenId); return; }
     onAbrirElemento(elemento);
   };
 
@@ -181,6 +191,14 @@ export function CalendarioVista({ proyectos, onAbrirElemento }: {
           onGuardar={cal.guardarEventoExistente}
           onBorrar={cal.borrarEventoCalendario}
           onCerrar={() => setElementoDetalle(null)}
+        />
+      )}
+
+      {notaDetalleId && (
+        <CalendarioDetalleNotaModal
+          notaId={notaDetalleId}
+          onCambio={cal.recargar}
+          onCerrar={() => setNotaDetalleId(null)}
         />
       )}
     </div>
