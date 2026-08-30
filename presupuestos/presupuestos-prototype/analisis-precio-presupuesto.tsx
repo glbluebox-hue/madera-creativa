@@ -70,9 +70,39 @@ export function AnalisisPrecioPresupuesto({ analisis, esSnapshot, tipoTrabajo, e
   }
 
   if (!analisis.disponible) {
+    // Corrección 30/08/2026: antes esto era un callejón sin salida — sin
+    // coste/margen todavía (p. ej. un presupuesto recién creado, sin
+    // gastos/ingresos), no había forma de llegar a "¿Cómo estoy respecto
+    // al mercado?"/"Buscar con IA", que no necesitan ese dato en absoluto.
+    // Ahora sigue mostrando el aviso, pero deja abrir igualmente el
+    // análisis completo (`AnalisisPrecioCompleto` ya sabe mostrar solo la
+    // parte de mercado cuando no hay coste/margen disponible).
     return (
-      <div style={{ marginTop: '0.75rem', padding: '0.6rem 0.8rem', borderRadius: 8, background: 'var(--fondo-panel)', border: '1px solid var(--borde)', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>
-        🧠 Datos insuficientes — {interpretarAnalisis(analisis)}
+      <div style={{ marginTop: '0.75rem', padding: '0.6rem 0.8rem', borderRadius: 8, background: 'var(--fondo-panel)', border: '1px solid var(--borde)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+          <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--topo-claro)' }}>🧠 {interpretarAnalisis(analisis)}</p>
+          {tipoTrabajo && (
+            <button
+              className={`${styles.btn} ${styles.btnSecundario}`}
+              style={{ fontSize: '0.72rem', padding: '0.3rem 0.7rem' }}
+              onClick={() => setCompletoAbierto(true)}
+            >
+              Ver mercado / Buscar con IA
+            </button>
+          )}
+        </div>
+        {completoAbierto && (
+          <AnalisisPrecioCompleto
+            analisis={analisis}
+            tipoTrabajo={tipoTrabajo ?? null}
+            excluirId={excluirId}
+            proyectoEstado={proyectoEstado ?? null}
+            esSnapshot={!!esSnapshot}
+            ubicacionEmpresa={ubicacionEmpresa ?? UBICACION_VACIA}
+            estancias={estancias}
+            onCerrar={() => setCompletoAbierto(false)}
+          />
+        )}
       </div>
     );
   }
@@ -199,28 +229,32 @@ export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proye
     return evaluarPrecio(analisis, metricasGrupo, comparables, mercadoLocal, { proyectoEstado: proyectoEstado ?? null, esSnapshot: !!esSnapshot });
   }, [analisis, metricasGrupo, resultadoComparables, historico, referenciasMercado, mercadoLocal, proyectoEstado, esSnapshot]);
 
-  if (analisis.disponible === false) {
-    return (
-      <div className={styles.overlay} onClick={onCerrar}>
-        <div className={styles.modal} style={{ maxWidth: 420, padding: '1.5rem' }} onClick={(e) => e.stopPropagation()}>
-          <h2 className={styles.modalTitulo}>🧠 Inteligencia de precios</h2>
-          <p style={{ margin: '0.5rem 0 0', fontSize: '0.88rem', color: 'var(--topo-claro)' }}>{interpretarAnalisis(analisis)}</p>
-          <button className={styles.btn} style={{ marginTop: '1.25rem', width: '100%' }} onClick={onCerrar}>Cerrar</button>
-        </div>
-      </div>
-    );
-  }
-
-  const cfg = COLOR_ESTADO[analisis.estado];
+  // "¿Cómo estoy respecto al mercado?" (Mercado Local, ReferenciasMercadoVista/"Buscar
+  // con IA") NO depende de tener coste/margen del proyecto — solo de `tipoTrabajo` y la
+  // ubicación de la Empresa (`mercadoLocal` se calcula arriba sin usar `analisis` en
+  // absoluto). Corrección 30/08/2026: antes, sin gastos/ingresos todavía en el proyecto,
+  // TODO el modal desaparecía tras un simple "Datos insuficientes" y esta sección quedaba
+  // inalcanzable — impidiendo usar "Buscar con IA" precisamente cuando más falta hace
+  // (un presupuesto recién creado, sin nada más que investigar todavía). Ahora solo las
+  // partes que sí necesitan coste/margen real (las 3 preguntas de arriba, comparables con
+  // trabajos propios, Consenso de Precio y el estado final) se ocultan sin ese dato; el
+  // resto se muestra siempre.
+  const cfg = analisis.disponible ? COLOR_ESTADO[analisis.estado] : null;
   return (
     <div className={styles.overlay} onClick={onCerrar}>
       <div className={styles.modal} style={{ maxWidth: 460, padding: '1.5rem' }} onClick={(e) => e.stopPropagation()}>
-        <h2 className={styles.modalTitulo}>🧠 Análisis de precio</h2>
+        <h2 className={styles.modalTitulo}>🧠 {analisis.disponible ? 'Análisis de precio' : 'Inteligencia de precios'}</h2>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem', marginTop: '0.5rem' }}>
-          <Pregunta titulo="¿Cuánto me cuesta?" respuesta={formatoEuro(analisis.costeEstimado)} nota="Coste registrado del proyecto vinculado (gastos + horas × tarifa)." />
-          <Pregunta titulo="¿Qué margen tengo?" respuesta={`${analisis.margenPorcentaje.toFixed(1)}%`} />
-          <Pregunta titulo="¿Cuál es mi margen objetivo?" respuesta={`${analisis.margenObjetivoPorcentaje.toFixed(1)}%`} />
+          {analisis.disponible ? (
+            <>
+              <Pregunta titulo="¿Cuánto me cuesta?" respuesta={formatoEuro(analisis.costeEstimado)} nota="Coste registrado del proyecto vinculado (gastos + horas × tarifa)." />
+              <Pregunta titulo="¿Qué margen tengo?" respuesta={`${analisis.margenPorcentaje.toFixed(1)}%`} />
+              <Pregunta titulo="¿Cuál es mi margen objetivo?" respuesta={`${analisis.margenObjetivoPorcentaje.toFixed(1)}%`} />
+            </>
+          ) : (
+            <p style={{ margin: 0, fontSize: '0.88rem', color: 'var(--topo-claro)' }}>{interpretarAnalisis(analisis)}</p>
+          )}
           <div>
             <p style={{ margin: '0 0 0.35rem', fontSize: '0.72rem', fontWeight: 700, color: 'var(--topo-claro)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
               ¿Cómo estoy respecto al mercado?
@@ -245,24 +279,28 @@ export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proye
               />
             )}
           </div>
-          <div>
-            <p style={{ margin: '0 0 0.35rem', fontSize: '0.72rem', fontWeight: 700, color: 'var(--topo-claro)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-              ¿Cómo estoy respecto a mis propios trabajos?
-            </p>
-            <TrabajosComparables resultado={resultadoComparables} verMas={verMasComparables} onVerMas={() => setVerMasComparables(true)} />
-          </div>
-          <div>
-            <p style={{ margin: '0 0 0.35rem', fontSize: '0.72rem', fontWeight: 700, color: 'var(--topo-claro)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-              🧭 Consenso de precio
-            </p>
-            <ConsejoPrecio resultado={consejo} />
-          </div>
-          <div>
-            <p style={{ margin: '0 0 0.2rem', fontSize: '0.72rem', fontWeight: 700, color: 'var(--topo-claro)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-              Estado
-            </p>
-            <p style={{ margin: 0, fontWeight: 700, color: cfg.color }}>{cfg.icono} {cfg.etiqueta}</p>
-          </div>
+          {analisis.disponible && (
+            <>
+              <div>
+                <p style={{ margin: '0 0 0.35rem', fontSize: '0.72rem', fontWeight: 700, color: 'var(--topo-claro)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                  ¿Cómo estoy respecto a mis propios trabajos?
+                </p>
+                <TrabajosComparables resultado={resultadoComparables} verMas={verMasComparables} onVerMas={() => setVerMasComparables(true)} />
+              </div>
+              <div>
+                <p style={{ margin: '0 0 0.35rem', fontSize: '0.72rem', fontWeight: 700, color: 'var(--topo-claro)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                  🧭 Consenso de precio
+                </p>
+                <ConsejoPrecio resultado={consejo} />
+              </div>
+              <div>
+                <p style={{ margin: '0 0 0.2rem', fontSize: '0.72rem', fontWeight: 700, color: 'var(--topo-claro)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                  Estado
+                </p>
+                <p style={{ margin: 0, fontWeight: 700, color: cfg!.color }}>{cfg!.icono} {cfg!.etiqueta}</p>
+              </div>
+            </>
+          )}
         </div>
 
         <button className={styles.btn} style={{ marginTop: '1.25rem', width: '100%' }} onClick={onCerrar}>Cerrar</button>
