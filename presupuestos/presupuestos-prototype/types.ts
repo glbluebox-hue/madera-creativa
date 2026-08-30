@@ -19,17 +19,29 @@ export type Estancia = {
   observaciones?: string;
 };
 
-/** Modelo 3D de SketchUp asociado a un proyecto (Fase "Diseño 3D", 30/08/2026) — el archivo `.skp` vive en Trimble Connect, esto es solo la asociación. */
+/**
+ * Modelo 3D asociado a un proyecto (Fase "Diseño 3D", 30/08/2026) — dos
+ * orígenes: `'manual'` (subida propia, funcional) o `'trimble_connect'`
+ * (integración con SketchUp/Trimble Connect, APARCADA en espera de
+ * credenciales OAuth oficiales — el tipo se mantiene por compatibilidad
+ * con lo ya construido, pero ningún componente activo la usa hoy).
+ */
 export type Modelo3D = {
-  proveedor: 'trimble_connect';
-  trimbleProjectId: string;
-  trimbleFolderId: string;
-  trimbleFileId: string;
+  proveedor: 'manual' | 'trimble_connect';
   nombreArchivo: string;
-  version: number;
+  formato: string;
   actualizado: string;
-  thumbnailUrl: string;
   asociadoPor: string;
+  // Solo si proveedor === 'manual':
+  url?: string;
+  claveAlmacenamiento?: string;
+  tamano?: number;
+  // Solo si proveedor === 'trimble_connect' (aparcado):
+  trimbleProjectId?: string;
+  trimbleFolderId?: string;
+  trimbleFileId?: string;
+  version?: number;
+  thumbnailUrl?: string;
 };
 
 /** Una nota libre del proyecto. */

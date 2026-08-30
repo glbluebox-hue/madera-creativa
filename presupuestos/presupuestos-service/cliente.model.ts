@@ -104,27 +104,41 @@ const EstanciaSchema = new Schema(
 );
 
 /**
- * Modelo 3D de SketchUp asociado a un proyecto (Fase "Diseño 3D",
- * 30/08/2026) — el archivo `.skp` en sí NUNCA se guarda aquí ni en
- * ningún almacenamiento propio: vive en Trimble Connect (única forma
- * oficial de abrirlo después en SketchUp), esto es solo la asociación.
- * Relación 1:1 con el proyecto — un único objeto, no un array, igual que
- * "cada proyecto tiene como mucho un modelo 3D" pide el encargo.
+ * Modelo 3D asociado a un proyecto (Fase "Diseño 3D", 30/08/2026) —
+ * relación 1:1, un único objeto, no un array. Dos orígenes posibles
+ * (`proveedor`), pensados para no tener que rehacer este esquema el día
+ * que se combinen:
+ * - `'manual'`: el usuario sube un archivo `.glb` a mano — el binario SÍ
+ *   vive en el almacenamiento propio (`url`/`claveAlmacenamiento`,
+ *   mismo patrón que fotos/adjuntos).
+ * - `'trimble_connect'`: integración con SketchUp/Trimble Connect
+ *   (aparcada el 30/08/2026 en espera de credenciales OAuth oficiales,
+ *   ver `trimble-rutas.ts`) — el archivo NUNCA se guarda aquí, solo la
+ *   referencia al archivo real en Trimble Connect.
+ * Los campos de cada origen son opcionales entre sí: un modelo `'manual'`
+ * nunca rellena `trimbleFileId`, uno `'trimble_connect'` nunca rellena
+ * `claveAlmacenamiento`.
  */
 const Modelo3DSchema = new Schema(
   {
-    /** Único valor posible hoy — declarado explícito, mismo criterio que `ReferenciaMercadoSchema.origen`, para no tener que migrar el día que exista otro proveedor. */
-    proveedor: { type: String, enum: ['trimble_connect'], default: 'trimble_connect' },
-    trimbleProjectId: { type: String, required: true },
-    /** No siempre disponible desde el explorador embebido — no hace falta para volver a abrir el modelo (solo `trimbleProjectId`+`trimbleFileId`). */
-    trimbleFolderId: { type: String, default: '' },
-    trimbleFileId: { type: String, required: true },
+    proveedor: { type: String, enum: ['manual', 'trimble_connect'], required: true },
     nombreArchivo: { type: String, required: true },
-    version: { type: Number, default: 1 },
+    /** Extensión del archivo, en minúsculas y sin punto (p. ej. `'glb'`) — informativo, para mostrar el formato sin volver a parsear el nombre. */
+    formato: { type: String, default: '' },
     actualizado: { type: String, required: true },
-    thumbnailUrl: { type: String, default: '' },
     /** `usuarioId` de quien hizo la asociación — informativo (aislamiento real ya lo da `Proyecto.usuarioId`, el mismo para todo su contenido). */
     asociadoPor: { type: String, required: true },
+    // Solo si proveedor === 'manual' — el binario vive en almacenamiento propio.
+    url: { type: String, default: '' },
+    claveAlmacenamiento: { type: String, default: '' },
+    tamano: { type: Number, default: 0 },
+    // Solo si proveedor === 'trimble_connect' — el archivo vive en Trimble Connect, nunca aquí.
+    trimbleProjectId: { type: String, default: '' },
+    /** No siempre disponible desde el explorador embebido — no hace falta para volver a abrir el modelo (solo `trimbleProjectId`+`trimbleFileId`). */
+    trimbleFolderId: { type: String, default: '' },
+    trimbleFileId: { type: String, default: '' },
+    version: { type: Number, default: 1 },
+    thumbnailUrl: { type: String, default: '' },
   },
   { _id: false }
 );

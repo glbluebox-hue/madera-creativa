@@ -80,6 +80,7 @@ import {
   esquemaTrabajoExtraEntrada,
   esquemaAdjuntoNuevoEntrada,
   esquemaModelo3DEntrada,
+  esquemaModelo3DArchivoEntrada,
   esquemaActualizarCobros,
   esquemaNotifPrefs,
   esquemaActualizarRecordatorios,
@@ -1269,6 +1270,12 @@ export function run() {
 
   app.delete('/proyectos/:id/modelo3d', requireAuth, async (req: AuthRequest, res) => {
     try { res.json(await svc.quitarModelo3DProyecto(req.params.id, req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  /** Diseño 3D — subida manual (30/08/2026, independiente de Trimble) — ver `svc.asociarModelo3DArchivoProyecto`. Comparte el mismo `DELETE /proyectos/:id/modelo3d` de arriba para desasociar/borrar. */
+  app.post('/proyectos/:id/modelo3d/archivo', requireAuth, validar(esquemaModelo3DArchivoEntrada), async (req: AuthRequest, res) => {
+    try { res.json(await svc.asociarModelo3DArchivoProyecto(req.params.id, req.usuarioId!, req.body)); }
     catch (err) { responderError(req, res, err); }
   });
 

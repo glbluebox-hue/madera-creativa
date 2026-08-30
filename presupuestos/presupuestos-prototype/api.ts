@@ -734,6 +734,10 @@ export async function trimbleTokenEmbed(): Promise<string> {
   return accessToken;
 }
 
+// Integración SketchUp/Trimble Connect — APARCADA el 30/08/2026 en espera de
+// credenciales OAuth oficiales (ver `trimble-rutas.ts`, backend intacto).
+// Ningún componente activo llama a estas dos funciones hoy; se mantienen
+// tal cual para retomarlas sin rehacer nada cuando haya credenciales.
 export type DatosModelo3D = {
   trimbleProjectId: string;
   trimbleFolderId?: string;
@@ -754,10 +758,26 @@ export async function asociarModelo3D(proyectoId: string, datos: DatosModelo3D):
   return res.json();
 }
 
-/** Desasocia el modelo 3D de un proyecto — nunca borra el archivo real de Trimble Connect. */
+/** Desasocia el modelo 3D de un proyecto — nunca borra el archivo real de Trimble Connect. Reutilizada también por la subida manual (`quitarModelo3D`, más abajo): el mismo endpoint sirve para los dos orígenes. */
 export async function quitarModelo3D(proyectoId: string): Promise<Proyecto> {
   const res = await fetchConAuth(`/proyectos/${proyectoId}/modelo3d`, { method: 'DELETE' });
   await comprobarRespuesta(res, 'No se pudo desasociar el modelo 3D');
+  return res.json();
+}
+
+/**
+ * Diseño 3D — subida manual (30/08/2026, independiente de Trimble): sube
+ * un `.glb` como `data:` URL en base64, mismo patrón que
+ * `anadirAdjuntoProyecto`. `quitarModelo3D` (arriba) sirve también para
+ * desasociar/borrar un modelo subido así.
+ */
+export async function subirModelo3DArchivo(proyectoId: string, datos: { nombreArchivo: string; url: string }): Promise<Proyecto> {
+  const res = await fetchConAuth(`/proyectos/${proyectoId}/modelo3d/archivo`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(datos),
+  });
+  await comprobarRespuestaConMotivo(res, 'No se pudo subir el modelo 3D');
   return res.json();
 }
 

@@ -3,33 +3,51 @@ import { Diseno3DVista } from './diseno-3d-vista.js';
 import type { Modelo3D } from './types.js';
 
 /**
- * Smoke test de render estático (mismo patrón que
- * `metricas-por-tipo-vista.spec.tsx`/`candidatos-mercado-vista.spec.tsx`
- * — sin infraestructura de tests de interacción de React, y este
- * componente además depende de un iframe real y una llamada de red en
- * `useEffect`, que no se ejecutan en SSR). Solo cubre el estado inicial;
- * la lógica real de selección de archivo está en `diseno-3d.spec.ts`,
- * sin red ni renderizado.
+ * Diseño 3D — subida manual + enlace externo (30/08/2026, independiente
+ * de Trimble). Smoke test con `renderToStaticMarkup` (mismo patrón que
+ * `metricas-por-tipo-vista.spec.tsx` — sin infraestructura de tests de
+ * interacción de React); la validación real del archivo está en
+ * `modelo-3d-archivo.spec.ts`, sin red ni renderizado.
  */
 const MODELO: Modelo3D = {
-  proveedor: 'trimble_connect', trimbleProjectId: 'p1', trimbleFolderId: '', trimbleFileId: 'f1',
-  nombreArchivo: 'Cocina_Garcia_v01.skp', version: 2, actualizado: '2026-08-30T10:00:00.000Z',
-  thumbnailUrl: '', asociadoPor: 'usuario-1',
+  proveedor: 'manual', nombreArchivo: 'Cocina_Garcia.glb', formato: 'glb',
+  actualizado: '2026-08-30T10:00:00.000Z', asociadoPor: 'usuario-1',
+  url: '/api/presupuestos-service/almacenamiento/modelos3d/abc.glb',
+  claveAlmacenamiento: 'modelos3d/abc.glb', tamano: 2_500_000,
 };
 
-describe('Diseno3DVista — estado inicial (antes de que useEffect resuelva la conexión)', () => {
-  it('renderiza el título y el estado "comprobando" sin lanzar, con o sin modelo asociado', () => {
-    const html1 = renderToStaticMarkup(<Diseno3DVista proyectoId="p1" modelo3D={null} onActualizarProyecto={() => {}} />);
-    expect(html1).toContain('Diseño 3D');
-    expect(html1).toContain('Comprobando tu conexión con SketchUp');
-
-    const html2 = renderToStaticMarkup(<Diseno3DVista proyectoId="p1" modelo3D={MODELO} onActualizarProyecto={() => {}} />);
-    expect(html2).toContain('Diseño 3D');
+describe('Diseno3DVista — sin modelo asociado', () => {
+  it('ofrece subir un modelo 3D y siempre muestra el enlace externo a SketchUp', () => {
+    const html = renderToStaticMarkup(<Diseno3DVista proyectoId="p1" modelo3D={null} onActualizarProyecto={() => {}} />);
+    expect(html).toContain('Subir modelo 3D');
+    expect(html).toContain('Visualizar en SketchUp');
+    expect(html).toContain('https://app.sketchup.com');
   });
 
-  it('nunca muestra el nombre del modelo ni botones de acción antes de saber si hay conexión', () => {
+  it('nunca menciona conectar cuentas ni iniciar sesión propia — es un enlace externo simple', () => {
+    const html = renderToStaticMarkup(<Diseno3DVista proyectoId="p1" modelo3D={null} onActualizarProyecto={() => {}} />);
+    expect(html).not.toContain('Conectar con SketchUp');
+    expect(html).not.toContain('Conectar con Trimble');
+  });
+});
+
+describe('Diseno3DVista — con modelo asociado', () => {
+  it('muestra nombre, formato y fecha, con los botones de visualizar/descargar/reemplazar/eliminar', () => {
     const html = renderToStaticMarkup(<Diseno3DVista proyectoId="p1" modelo3D={MODELO} onActualizarProyecto={() => {}} />);
-    expect(html).not.toContain('Cocina_Garcia_v01.skp');
-    expect(html).not.toContain('Visualizar en SketchUp');
+    expect(html).toContain('Cocina_Garcia.glb');
+    expect(html).toContain('Visualizar en 3D');
+    expect(html).toContain('Descargar modelo');
+    expect(html).toContain('Reemplazar');
+    expect(html).toContain('Eliminar');
+  });
+
+  it('el enlace a SketchUp sigue presente aunque ya haya un modelo propio', () => {
+    const html = renderToStaticMarkup(<Diseno3DVista proyectoId="p1" modelo3D={MODELO} onActualizarProyecto={() => {}} />);
+    expect(html).toContain('https://app.sketchup.com');
+  });
+
+  it('el enlace de descarga apunta a la URL real del archivo', () => {
+    const html = renderToStaticMarkup(<Diseno3DVista proyectoId="p1" modelo3D={MODELO} onActualizarProyecto={() => {}} />);
+    expect(html).toContain(MODELO.url!);
   });
 });

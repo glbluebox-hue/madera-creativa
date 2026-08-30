@@ -293,6 +293,19 @@ export const esquemaModelo3DEntrada = z.object({
   thumbnailUrl: z.string().trim().max(2000).optional().default(''),
 });
 
+/**
+ * Subir un modelo 3D a mano (Fase "Diseño 3D", 30/08/2026 — vía
+ * independiente de Trimble, mientras esa integración está aparcada): el
+ * binario viaja como `data:` URL en base64, mismo patrón que
+ * `esquemaFotoProyecto`/`esquemaAdjuntoNuevoEntrada` — la extensión y el
+ * tamaño real se validan en el servicio (`asociarModelo3DArchivoProyecto`),
+ * no aquí, porque dependen de decodificar el propio base64.
+ */
+export const esquemaModelo3DArchivoEntrada = z.object({
+  nombreArchivo: z.string().trim().min(1, 'Falta el nombre del archivo.').max(255),
+  url: z.string().min(1, 'Falta el archivo.'),
+});
+
 const esquemaFotoProyecto = z.object({
   id: z.string().min(1).max(64),
   url: z.string(),

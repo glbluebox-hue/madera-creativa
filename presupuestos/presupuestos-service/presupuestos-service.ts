@@ -103,6 +103,16 @@ async function subirSiEsBase64(valor: unknown, carpeta: string) {
   return almacenamiento.subir(buffer, { contentType: tipoMime, carpeta });
 }
 
+/** Diseño 3D — subida manual (30/08/2026): solo `.glb` por ahora (archivo único autocontenido, ver `asociarModelo3DArchivoProyecto`). */
+const EXTENSIONES_MODELO_3D_PERMITIDAS = ['glb'];
+/** Margen bajo el límite de 25MB del body JSON (`express.json({limit:'25mb'})`) — el base64 añade ~33% sobre el tamaño real del archivo. */
+const TAMANO_MAXIMO_MODELO_3D_BYTES = 15 * 1024 * 1024;
+
+function extensionDeArchivo(nombreArchivo: string): string {
+  const punto = nombreArchivo.lastIndexOf('.');
+  return punto === -1 ? '' : nombreArchivo.slice(punto + 1).toLowerCase();
+}
+
 /**
  * Sustituye, en un documento de Factura ya leído de Mongo, cada URL
  * respaldada por una clave del bucket privado de facturas
@@ -669,15 +679,83 @@ export class PresupuestosService {
     return this.limpiarProyecto(doc);
   }
 
-  /** Desasocia el modelo 3D de un proyecto — nunca borra el archivo real de Trimble Connect, solo la referencia guardada aquí. */
+  /**
+   * Desasocia el modelo 3D de un proyecto. Para `'trimble_connect'` nunca
+   * borra el archivo real de Trimble Connect, solo la referencia guardada
+   * aquí. Para `'manual'` (Fase "Diseño 3D — subida manual", 30/08/2026)
+   * SÍ borra el blob propio del almacenamiento — a diferencia de Trimble,
+   * ese archivo es nuestro, así que "quitar" y "eliminar" son lo mismo
+   * (mismo criterio que `borrarAdjuntoProyecto`).
+   */
   async quitarModelo3DProyecto(proyectoId: string, usuarioId: string): Promise<ProyectoDoc> {
     await conectar();
+    const proyecto = await ProyectoModel.findOne({ id: proyectoId, usuarioId }).select('modelo3D').lean().exec();
+    if (!proyecto) throw new ErrorDeNegocio('Proyecto no encontrado', 400);
+    const modeloAnterior = (proyecto as any).modelo3D;
+
     const doc = await ProyectoModel.findOneAndUpdate(
       { id: proyectoId, usuarioId },
       { $set: { modelo3D: null } },
       { new: true }
     ).lean().exec();
     if (!doc) throw new ErrorDeNegocio('Proyecto no encontrado', 400);
+
+    if (modeloAnterior?.proveedor === 'manual' && modeloAnterior.claveAlmacenamiento) {
+      await almacenamiento.borrar(modeloAnterior.claveAlmacenamiento).catch(() => {});
+    }
+    return this.limpiarProyecto(doc);
+  }
+
+  /**
+   * Sube y asocia (o reemplaza) un modelo 3D subido a mano (Fase "Diseño
+   * 3D — subida manual", 30/08/2026) — independiente de Trimble Connect,
+   * mientras esa integración está aparcada (ver `trimble-rutas.ts`).
+   * Mismo patrón de almacenamiento que fotos/adjuntos
+   * (`subirSiEsBase64`), solo se admite `.glb` por ahora (archivo único
+   * autocontenido, sin las referencias externas de un `.gltf` suelto).
+   */
+  async asociarModelo3DArchivoProyecto(proyectoId: string, usuarioId: string, datos: { nombreArchivo: string; url: string }): Promise<ProyectoDoc> {
+    await conectar();
+    const proyecto = await ProyectoModel.findOne({ id: proyectoId, usuarioId }).select('modelo3D').lean().exec();
+    if (!proyecto) throw new ErrorDeNegocio('Proyecto no encontrado', 400);
+
+    const formato = extensionDeArchivo(datos.nombreArchivo);
+    if (!EXTENSIONES_MODELO_3D_PERMITIDAS.includes(formato)) {
+      throw new ErrorDeNegocio(`Formato no admitido — de momento solo se admiten archivos .${EXTENSIONES_MODELO_3D_PERMITIDAS.join(', .')}.`, 400);
+    }
+
+    const resultado = await subirSiEsBase64(datos.url, 'modelos3d');
+    if (!resultado) throw new ErrorDeNegocio('No se pudo leer el archivo.', 400);
+    if (resultado.metadatos.tamano > TAMANO_MAXIMO_MODELO_3D_BYTES) {
+      await almacenamiento.borrar(resultado.clave).catch(() => {});
+      throw new ErrorDeNegocio(`El archivo es demasiado grande (máximo ${Math.round(TAMANO_MAXIMO_MODELO_3D_BYTES / (1024 * 1024))} MB).`, 400);
+    }
+
+    // Reemplazar nunca acumula basura: si ya había un modelo SUBIDO A MANO, se borra su blob
+    // al confirmar el nuevo guardado (nunca antes: si algo falla arriba, el modelo anterior sigue intacto).
+    const anteriorManual = (proyecto as any).modelo3D?.proveedor === 'manual' ? (proyecto as any).modelo3D : null;
+
+    const modelo3D = {
+      proveedor: 'manual' as const,
+      nombreArchivo: datos.nombreArchivo,
+      formato,
+      url: resultado.url,
+      claveAlmacenamiento: resultado.clave,
+      tamano: resultado.metadatos.tamano,
+      actualizado: new Date().toISOString(),
+      asociadoPor: usuarioId,
+    };
+    const doc = await ProyectoModel.findOneAndUpdate(
+      { id: proyectoId, usuarioId },
+      { $set: { modelo3D } },
+      { new: true }
+    ).lean().exec();
+    if (!doc) {
+      await almacenamiento.borrar(resultado.clave).catch(() => {});
+      throw new ErrorDeNegocio('Proyecto no encontrado', 400);
+    }
+
+    if (anteriorManual?.claveAlmacenamiento) await almacenamiento.borrar(anteriorManual.claveAlmacenamiento).catch(() => {});
     return this.limpiarProyecto(doc);
   }
 
