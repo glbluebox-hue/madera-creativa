@@ -231,3 +231,45 @@ describe('resolverMercadoLocal — confianza (Ficha Comparable, punto 8)', () =>
     expect(r.confianza).toBe('baja');
   });
 });
+
+describe('resolverMercadoLocal — origen "ia_web" (Investigación de Mercado con IA, encargo punto 8)', () => {
+  it('una única referencia ia_web nunca sube de "baja", igual que una manual', () => {
+    const r = resolverMercadoLocal(tenerife, [ref({ origen: 'ia_web', impuestosConocidos: true })], 'Cocina');
+    if (!r.disponible) throw new Error('debería estar disponible');
+    expect(r.confianza).toBe('baja');
+  });
+
+  it('3+ referencias ia_web, impuestos conocidos y dispersión baja -> igualmente tope "baja" (techo inferior al manual)', () => {
+    const referencias = [
+      ref({ id: 'a', origen: 'ia_web', precioMin: 5000, precioMax: 5200, impuestosConocidos: true }),
+      ref({ id: 'b', origen: 'ia_web', precioMin: 5100, precioMax: 5300, impuestosConocidos: true }),
+      ref({ id: 'c', origen: 'ia_web', precioMin: 5200, precioMax: 5400, impuestosConocidos: true }),
+    ];
+    const r = resolverMercadoLocal(tenerife, referencias, 'Cocina');
+    if (!r.disponible) throw new Error('debería estar disponible');
+    // Con solo referencias 'manual' este mismo grupo da 'media' (ver test de arriba) —
+    // con 'ia_web' el techo del origen menos fiable presente acota el resultado a 'baja'.
+    expect(r.confianza).toBe('baja');
+  });
+
+  it('mezclar manual + ia_web comparables queda acotado por el techo más bajo presente (ia_web)', () => {
+    const referencias = [
+      ref({ id: 'a', origen: 'manual', precioMin: 5000, precioMax: 5200, impuestosConocidos: true }),
+      ref({ id: 'b', origen: 'manual', precioMin: 5100, precioMax: 5300, impuestosConocidos: true }),
+      ref({ id: 'c', origen: 'ia_web', precioMin: 5200, precioMax: 5400, impuestosConocidos: true }),
+    ];
+    const r = resolverMercadoLocal(tenerife, referencias, 'Cocina');
+    if (!r.disponible) throw new Error('debería estar disponible');
+    expect(r.confianza).toBe('baja');
+  });
+
+  it('una referencia ia_web sigue participando en el filtro de comparabilidad exactamente igual que una manual', () => {
+    const referencias = [
+      ref({ id: 'a', origen: 'ia_web', alcance: 'mobiliario_encimera', fecha: '2026-06-01' }),
+      ref({ id: 'b', origen: 'ia_web', alcance: 'reforma_completa', fecha: '2026-05-01' }),
+    ];
+    const r = resolverMercadoLocal(tenerife, referencias, 'Cocina');
+    if (!r.disponible) throw new Error('debería estar disponible');
+    expect(r.referenciasNoComparables.map((x) => x.id)).toEqual(['b']);
+  });
+});

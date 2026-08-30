@@ -639,8 +639,28 @@ export const esquemaReferenciaMercado = z.object({
   unidad: z.enum(['total', 'm2', 'metro_lineal', 'unidad']).optional().default('total'),
   impuestosConocidos: z.boolean().optional().default(false),
   tipoPrecio: z.enum(['publicado', 'medio', 'desde', 'indice_oficial']).optional().default('publicado'),
-  origen: z.enum(['manual']).optional().default('manual'),
+  /** `'ia_web'` — Fase "Investigación de Mercado con IA" (30/08/2026): el usuario confirmó un candidato encontrado por búsqueda web, nunca se guarda solo. */
+  origen: z.enum(['manual', 'ia_web']).optional().default('manual'),
+  /** Trazabilidad de una referencia `ia_web` (encargo, punto 7) — opcionales, nunca los rellena el formulario manual. */
+  fuenteUrl: z.string().trim().max(2000).optional().default(''),
+  extracto: z.string().trim().max(1000).optional().default(''),
+  fechaInvestigacion: z.string().max(64).optional().default(''),
 }).refine((r) => r.precioMax >= r.precioMin, { message: 'El precio máximo no puede ser menor que el mínimo.' });
+
+/**
+ * Body de `POST /ia/mercado/buscar` (Fase "Investigación de Mercado con
+ * IA", 30/08/2026) — la zona NUNCA viaja en el body: se resuelve en el
+ * servidor a partir de la ubicación ya configurada de la Empresa
+ * (`investigacion-mercado.ts`), igual que exige el formulario manual.
+ */
+export const esquemaBuscarMercado = z.object({
+  tipoTrabajo: z.string().trim().min(1, 'Indica a qué tipo de trabajo corresponde.').max(100),
+  nivelGeografico: z.enum(['local', 'regional', 'nacional']),
+  alcance: z.enum(['solo_mobiliario', 'mobiliario_encimera', 'reforma_completa']),
+  nivelCalidad: z.enum(['economico', 'estandar', 'alto']).nullable().optional().default(null),
+  /** Texto libre best-effort ya existente en el presupuesto (encargo, punto 2) — nunca obligatorio. */
+  descripcionLibre: z.string().trim().max(600).optional().default(''),
+});
 
 /** Código QR guardado (sección propia del menú, 19/08/2026) — imagen ya subida a la biblioteca de recursos, aquí solo el nombre y a qué url apunta. */
 export const esquemaCodigoQRMC = z.object({

@@ -112,3 +112,32 @@ describe('compatibilidad con datos antiguos (ampliación "Ficha Comparable")', (
     expect(doc.nivelCalidad).toBeNull();
   });
 });
+
+describe('origen "ia_web" (Investigación de Mercado con IA, 30/08/2026)', () => {
+  it('guarda una referencia con origen ia_web y su trazabilidad (URL, extracto, fecha de investigación)', async () => {
+    await svc.crearReferenciaMercado(referenciaBase('ia-1', {
+      origen: 'ia_web',
+      fuenteUrl: 'https://www.habitissimo.es/precio-cocina-tenerife',
+      extracto: 'Cocina a medida por 5500€ en Tenerife.',
+      fechaInvestigacion: '2026-08-30T10:00:00.000Z',
+    }), USUARIO_A);
+
+    const lista = await svc.listarReferenciasMercado(USUARIO_A);
+    expect(lista).toHaveLength(1);
+    const doc = lista[0] as Record<string, unknown>;
+    expect(doc.origen).toBe('ia_web');
+    expect(doc.fuenteUrl).toBe('https://www.habitissimo.es/precio-cocina-tenerife');
+    expect(doc.extracto).toBe('Cocina a medida por 5500€ en Tenerife.');
+    expect(doc.fechaInvestigacion).toBe('2026-08-30T10:00:00.000Z');
+  });
+
+  it('el flujo manual sigue guardando exactamente igual que antes de esta ampliación (no-regresión)', async () => {
+    await svc.crearReferenciaMercado(referenciaBase('manual-1'), USUARIO_A);
+    const lista = await svc.listarReferenciasMercado(USUARIO_A);
+    const doc = lista[0] as Record<string, unknown>;
+    expect(doc.origen).toBe('manual');
+    expect(doc.fuenteUrl).toBe('');
+    expect(doc.extracto).toBe('');
+    expect(doc.fechaInvestigacion).toBe('');
+  });
+});

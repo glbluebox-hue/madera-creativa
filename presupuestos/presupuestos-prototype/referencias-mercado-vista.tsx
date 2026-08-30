@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { NivelGeografico, AlcanceTrabajo, NivelCalidad, ReferenciaMercado, UbicacionEmpresa } from './mercado-local.js';
 import { formatoEuro } from './calculos.js';
+import { CandidatosMercadoVista } from './candidatos-mercado-vista.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
 
@@ -20,11 +21,12 @@ function zonaParaNivel(nivel: NivelGeografico, ubicacion: UbicacionEmpresa): str
   return ubicacion.isla || ubicacion.provincia || null;
 }
 
-const ETIQUETA_NIVEL: Record<NivelGeografico, string> = { local: 'Local', regional: 'Regional', nacional: 'Nacional' };
+export const ETIQUETA_NIVEL: Record<NivelGeografico, string> = { local: 'Local', regional: 'Regional', nacional: 'Nacional' };
 export const ETIQUETA_ALCANCE: Record<AlcanceTrabajo, string> = { solo_mobiliario: 'Solo mobiliario', mobiliario_encimera: 'Mobiliario + encimera', reforma_completa: 'Reforma completa' };
-const ETIQUETA_CALIDAD: Record<NivelCalidad, string> = { economico: 'Económico', estandar: 'Estándar', alto: 'Alto' };
+export const ETIQUETA_CALIDAD: Record<NivelCalidad, string> = { economico: 'Económico', estandar: 'Estándar', alto: 'Alto' };
 
-function Chip({ activo, onClick, children }: { activo: boolean; onClick: () => void; children: React.ReactNode }) {
+/** Exportado para que `candidatos-mercado-vista.tsx` use exactamente los mismos chips visuales — nunca un segundo estilo de selector para la misma elección (alcance/calidad). */
+export function Chip({ activo, onClick, children }: { activo: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       type="button"
@@ -47,6 +49,7 @@ function Chip({ activo, onClick, children }: { activo: boolean; onClick: () => v
  */
 export function ReferenciasMercadoVista({ tipoTrabajo, ubicacion, referencias, idsNoComparables, onCambio }: ReferenciasMercadoVistaProps) {
   const [abierto, setAbierto] = useState(false);
+  const [iaAbierto, setIaAbierto] = useState(false);
   const [nivel, setNivel] = useState<NivelGeografico>('local');
   const [alcance, setAlcance] = useState<AlcanceTrabajo>('mobiliario_encimera');
   const [obraIncluida, setObraIncluida] = useState(false);
@@ -110,23 +113,43 @@ export function ReferenciasMercadoVista({ tipoTrabajo, ubicacion, referencias, i
         return (
           <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.6rem', fontSize: '0.78rem', padding: '0.35rem 0.6rem', background: 'var(--fondo-panel)', borderRadius: 8, opacity: noComparable ? 0.6 : 1 }}>
             <span>
+              {r.origen === 'ia_web' && <span title="Encontrada por búsqueda web con IA, confirmada por ti"> 🤖 Vía IA · </span>}
               <strong>{ETIQUETA_NIVEL[r.nivelGeografico]} · {r.zona}</strong>: {r.tipoPrecio === 'desde' ? `desde ${formatoEuro(r.precioMin)}` : `${formatoEuro(r.precioMin)}–${formatoEuro(r.precioMax)}`}
               {' · '}{ETIQUETA_ALCANCE[r.alcance]}
               {r.nivelCalidad && ` · ${ETIQUETA_CALIDAD[r.nivelCalidad]}`}
               {!r.impuestosConocidos && <span style={{ color: 'var(--topo-claro)' }}> · impuestos desconocidos</span>}
               {noComparable && <span style={{ color: 'var(--ocre)' }}> · no comparable con el resto</span>}
-              {r.fuente && <span style={{ color: 'var(--topo-claro)' }}> · {r.fuente}</span>}
+              {r.origen === 'ia_web' && r.fuenteUrl ? (
+                <> · <a href={r.fuenteUrl} target="_blank" rel="noopener noreferrer">{r.fuente || 'fuente'} ↗</a></>
+              ) : (
+                r.fuente && <span style={{ color: 'var(--topo-claro)' }}> · {r.fuente}</span>
+              )}
             </span>
             <button type="button" onClick={() => borrar(r.id)} style={{ background: 'none', border: 'none', color: 'var(--topo-claro)', cursor: 'pointer', fontSize: '0.78rem', flexShrink: 0 }}>Borrar</button>
           </div>
         );
       })}
 
-      {!abierto ? (
-        <button type="button" className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.76rem', padding: '0.35rem 0.7rem', alignSelf: 'flex-start' }} onClick={() => setAbierto(true)}>
-          + Añadir referencia de mercado
-        </button>
-      ) : (
+      {iaAbierto && (
+        <CandidatosMercadoVista
+          tipoTrabajo={tipoTrabajo}
+          alcanceInicial={alcance}
+          nivelCalidadInicial={nivelCalidad}
+          onGuardado={onCambio}
+          onCerrar={() => setIaAbierto(false)}
+        />
+      )}
+
+      {!abierto && !iaAbierto ? (
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <button type="button" className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.76rem', padding: '0.35rem 0.7rem' }} onClick={() => setIaAbierto(true)}>
+            🔍 Buscar con IA
+          </button>
+          <button type="button" className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.76rem', padding: '0.35rem 0.7rem' }} onClick={() => setAbierto(true)}>
+            + Añadir referencia de mercado
+          </button>
+        </div>
+      ) : abierto ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', padding: '0.7rem', border: '1px dashed var(--borde)', borderRadius: 8 }}>
           {sinUbicacion && <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--topo-claro)' }}>Configura primero la ubicación de tu empresa en Ajustes de empresa.</p>}
 
@@ -189,7 +212,7 @@ export function ReferenciasMercadoVista({ tipoTrabajo, ubicacion, referencias, i
             <button type="button" className={`${styles.btn} ${styles.btnPrimario}`} style={{ fontSize: '0.76rem' }} onClick={guardar} disabled={guardando}>{guardando ? 'Guardando…' : 'Guardar'}</button>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

@@ -32,8 +32,13 @@ export type UnidadPrecio = 'total' | 'm2' | 'metro_lineal' | 'unidad';
 /** Un precio "desde" nunca se trata como rango completo ni como techo de mercado (autorización, punto 5). */
 export type TipoPrecioReferencia = 'publicado' | 'medio' | 'desde' | 'indice_oficial';
 
-/** Único valor posible hoy — declarado explícito para no tener que migrar de nuevo el día que exista un origen distinto de "manual" (ver "Ficha Comparable", sección B). */
-export type OrigenReferencia = 'manual';
+/**
+ * `'ia_web'` — Fase "Investigación de Mercado con IA" (30/08/2026): el
+ * usuario confirmó un candidato encontrado por búsqueda web (nunca se
+ * guarda sin esa confirmación, ver `candidatos-mercado-vista.tsx`). Su
+ * techo de confianza es más bajo que `'manual'` — ver `techoParaOrigen()`.
+ */
+export type OrigenReferencia = 'manual' | 'ia_web';
 
 /** Solo hay un nivel de confianza 'alta' reservado para un origen distinto de 'manual' (fuente oficial con metodología pública) — no implementado todavía. Mientras el origen sea 'manual', el techo real es 'media'. */
 export type NivelConfianzaMercado = 'alta' | 'media' | 'baja';
@@ -61,6 +66,10 @@ export type ReferenciaMercado = {
   impuestosConocidos: boolean;
   tipoPrecio: TipoPrecioReferencia;
   origen: OrigenReferencia;
+  /** Trazabilidad de una referencia `'ia_web'` (encargo, punto 7) — vacíos/`undefined` en toda referencia `'manual'`. */
+  fuenteUrl?: string;
+  extracto?: string;
+  fechaInvestigacion?: string;
 };
 
 export type UbicacionEmpresa = {
@@ -139,9 +148,17 @@ function combinar(refs: ReferenciaMercado[]): { precioMin: number; precioMax: nu
 
 const RANGO_CONFIANZA_MERCADO: Record<NivelConfianzaMercado, number> = { baja: 0, media: 1, alta: 2 };
 
-/** Techo alcanzable por origen — mientras solo exista 'manual', el techo real es 'media' (autorización, punto 8), declarado explícito para no romperse el día que exista otro origen. */
+/**
+ * Techo alcanzable por origen (autorización, punto 8; encargo "Investigación
+ * de Mercado con IA", punto 8: "techo inferior al de una referencia manual
+ * verificada"). `'ia_web'` nunca alcanza `'alta'` ni `'media'` por sí
+ * sola — el hecho de que la IA haya encontrado una página no la hace tan
+ * fiable como algo que el propio usuario vio y anotó a mano.
+ */
 function techoParaOrigen(origen: OrigenReferencia): NivelConfianzaMercado {
-  return origen === 'manual' ? 'media' : 'alta';
+  if (origen === 'manual') return 'media';
+  if (origen === 'ia_web') return 'baja';
+  return 'alta';
 }
 
 /**

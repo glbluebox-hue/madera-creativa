@@ -867,11 +867,11 @@ type RespuestaTrabajoIA<T> = { estado: EstadoTrabajoIA; resultado?: T; error?: s
  * bloqueante: el backend responde al instante con un `trabajoId` y este
  * helper pregunta por su estado cada poco hasta que termina.
  */
-async function sondearTrabajoIA<T>(trabajoId: string): Promise<T> {
+async function sondearTrabajoIA<T>(trabajoId: string, ruta = '/ia/generar'): Promise<T> {
   const INTERVALO_MS = 1200;
   const MAX_INTENTOS = 150; // ~3 minutos de margen
   for (let intento = 0; intento < MAX_INTENTOS; intento++) {
-    const res = await fetchConAuth(`/ia/generar/${trabajoId}`);
+    const res = await fetchConAuth(`${ruta}/${trabajoId}`);
     await comprobarRespuesta(res, 'No se pudo consultar el estado de la IA');
     const datos: RespuestaTrabajoIA<T> = await res.json();
     if (datos.estado === 'completado') return datos.resultado as T;
@@ -1022,6 +1022,58 @@ export async function crearReferenciaMercado(referencia: Omit<ReferenciaMercado,
 export async function borrarReferenciaMercado(id: string): Promise<void> {
   const res = await fetchConAuth(`/referencias-mercado/${id}`, { method: 'DELETE' });
   await comprobarRespuesta(res, 'No se pudo borrar la referencia de mercado');
+}
+
+export type CandidatoMercado = {
+  precio: number | null;
+  moneda: string | null;
+  ubicacion: string | null;
+  tipoTrabajoDetectado: string | null;
+  queIncluye: string | null;
+  queNoIncluye: string | null;
+  calidad: 'economico' | 'estandar' | 'alto' | null;
+  ivaIncluido: 'si' | 'no' | 'desconocido';
+  instalacionIncluida: 'si' | 'no' | 'desconocido';
+  fechaReferencia: string | null;
+  fuente: string | null;
+  url: string | null;
+  extracto: string | null;
+  confianza: 'alta' | 'media' | 'baja';
+  explicacionComparabilidad: string | null;
+};
+
+export type ResultadoBuscarMercado = {
+  disponible: true;
+  zona: string;
+  sinResultadosFiables: boolean;
+  motivoSinResultados: string | null;
+  candidatos: CandidatoMercado[];
+  desdeCache: boolean;
+  creado: string;
+};
+
+/**
+ * Investigación de Mercado con IA (30/08/2026) — mismo patrón asíncrono que
+ * `generarRespuestaIA` (trabajo + sondeo), reutilizando `sondearTrabajoIA`
+ * con la ruta de sondeo propia de esta pieza. Nunca guarda nada: solo
+ * devuelve candidatos para que el usuario confirme cuáles guardar con
+ * `crearReferenciaMercado` (mismo endpoint que el formulario manual).
+ */
+export async function buscarPreciosMercado(params: {
+  tipoTrabajo: string;
+  nivelGeografico: 'local' | 'regional' | 'nacional';
+  alcance: 'solo_mobiliario' | 'mobiliario_encimera' | 'reforma_completa';
+  nivelCalidad: 'economico' | 'estandar' | 'alto' | null;
+  descripcionLibre?: string;
+}): Promise<ResultadoBuscarMercado> {
+  const res = await fetchConAuth('/ia/mercado/buscar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  await comprobarRespuestaConMotivo(res, 'No se pudo iniciar la búsqueda de mercado');
+  const { trabajoId } = await res.json();
+  return sondearTrabajoIA<ResultadoBuscarMercado>(trabajoId, '/ia/mercado/buscar');
 }
 
 /** Crea o actualiza un presupuesto. */

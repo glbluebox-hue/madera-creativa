@@ -2,7 +2,8 @@ import express from 'express';
 import { responderError } from './presupuestos-service.app-root.js';
 import type { AuthRequest } from './presupuestos-service.app-root.js';
 import { validar } from './validacion.middleware.js';
-import { esquemaGenerarIA, esquemaEjecutarHerramientaIA } from './esquemas-validacion.js';
+import { esquemaGenerarIA, esquemaEjecutarHerramientaIA, esquemaBuscarMercado } from './esquemas-validacion.js';
+import { investigarMercado } from './investigacion-mercado.js';
 import { ServicioCentralIA } from './ia-servicio-central.js';
 import { obtenerCapacidad, ErrorCapacidadDesconocida } from './ia-registro-capacidades.js';
 import { ErrorPerfilNoDisponible } from './ia-selector-modelo.js';
@@ -71,6 +72,30 @@ export function crearRouterIA(): express.Router {
   });
 
   router.get('/generar/:trabajoId', limitadorSondeoIA, (req: AuthRequest, res) => {
+    const trabajo = obtenerTrabajo(req.params.trabajoId, req.usuarioId!);
+    if (!trabajo) { res.status(404).json({ error: 'Trabajo no encontrado.' }); return; }
+    res.json({ estado: trabajo.estado, resultado: trabajo.resultado, error: trabajo.error });
+  });
+
+  /**
+   * Investigación de Mercado con IA (30/08/2026) — mismo patrón asíncrono
+   * que `/generar` (job + sondeo), reutilizando `ia-trabajos.ts` tal cual.
+   * Nunca guarda nada por su cuenta: solo devuelve candidatos para que el
+   * usuario confirme cuáles guardar vía el `POST /referencias-mercado` ya
+   * existente (encargo, punto 4).
+   */
+  router.post('/mercado/buscar', limitadorIA, validar(esquemaBuscarMercado), (req: AuthRequest, res) => {
+    const usuarioId = req.usuarioId!;
+    const trabajoId = crearTrabajo(usuarioId);
+
+    investigarMercado({ usuarioId, ...req.body })
+      .then((resultado) => completarTrabajo(trabajoId, resultado))
+      .catch((err) => fallarTrabajo(trabajoId, err instanceof Error ? err.message : String(err)));
+
+    res.status(202).json({ trabajoId });
+  });
+
+  router.get('/mercado/buscar/:trabajoId', limitadorSondeoIA, (req: AuthRequest, res) => {
     const trabajo = obtenerTrabajo(req.params.trabajoId, req.usuarioId!);
     if (!trabajo) { res.status(404).json({ error: 'Trabajo no encontrado.' }); return; }
     res.json({ estado: trabajo.estado, resultado: trabajo.resultado, error: trabajo.error });

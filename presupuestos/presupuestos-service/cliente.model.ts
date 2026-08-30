@@ -477,8 +477,12 @@ const ReferenciaMercadoSchema = new Schema({
   impuestosConocidos: { type: Boolean, default: false },
   /** Un precio 'desde' nunca se trata como rango completo ni como techo de mercado — ver `mercado-local.ts`. */
   tipoPrecio: { type: String, enum: ['publicado', 'medio', 'desde', 'indice_oficial'], default: 'publicado' },
-  /** Único valor posible hoy — declarado explícito para no migrar de nuevo el día que exista una fuente oficial/comercial verificada. */
-  origen: { type: String, enum: ['manual'], default: 'manual' },
+  /** `'ia_web'` — Fase "Investigación de Mercado con IA" (30/08/2026): el usuario confirmó un candidato encontrado por búsqueda web (nunca se guarda sin confirmación). Su techo de confianza es más bajo que `'manual'` — ver `techoParaOrigen()` en `mercado-local.ts`. */
+  origen: { type: String, enum: ['manual', 'ia_web'], default: 'manual' },
+  /** Trazabilidad de una referencia `ia_web` — de dónde salió el precio (encargo, punto 7). Vacíos en toda referencia `'manual'`. */
+  fuenteUrl: { type: String, default: '' },
+  extracto: { type: String, default: '' },
+  fechaInvestigacion: { type: String, default: '' },
 });
 ReferenciaMercadoSchema.index({ usuarioId: 1, tipoTrabajo: 1 });
 
