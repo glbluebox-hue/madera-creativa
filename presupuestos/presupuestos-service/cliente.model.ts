@@ -104,6 +104,32 @@ const EstanciaSchema = new Schema(
 );
 
 /**
+ * Modelo 3D de SketchUp asociado a un proyecto (Fase "Diseño 3D",
+ * 30/08/2026) — el archivo `.skp` en sí NUNCA se guarda aquí ni en
+ * ningún almacenamiento propio: vive en Trimble Connect (única forma
+ * oficial de abrirlo después en SketchUp), esto es solo la asociación.
+ * Relación 1:1 con el proyecto — un único objeto, no un array, igual que
+ * "cada proyecto tiene como mucho un modelo 3D" pide el encargo.
+ */
+const Modelo3DSchema = new Schema(
+  {
+    /** Único valor posible hoy — declarado explícito, mismo criterio que `ReferenciaMercadoSchema.origen`, para no tener que migrar el día que exista otro proveedor. */
+    proveedor: { type: String, enum: ['trimble_connect'], default: 'trimble_connect' },
+    trimbleProjectId: { type: String, required: true },
+    /** No siempre disponible desde el explorador embebido — no hace falta para volver a abrir el modelo (solo `trimbleProjectId`+`trimbleFileId`). */
+    trimbleFolderId: { type: String, default: '' },
+    trimbleFileId: { type: String, required: true },
+    nombreArchivo: { type: String, required: true },
+    version: { type: Number, default: 1 },
+    actualizado: { type: String, required: true },
+    thumbnailUrl: { type: String, default: '' },
+    /** `usuarioId` de quien hizo la asociación — informativo (aislamiento real ya lo da `Proyecto.usuarioId`, el mismo para todo su contenido). */
+    asociadoPor: { type: String, required: true },
+  },
+  { _id: false }
+);
+
+/**
  * Ficha de identidad de un cliente — SOLO datos de contacto. Hasta el
  * incremento "Cliente ≠ Proyecto" (especificación del usuario, 20/08/2026),
  * este mismo esquema tenía además todos los campos de un trabajo concreto
@@ -241,6 +267,8 @@ const ProyectoSchema = new Schema({
   margenAvisado: { type: Boolean, default: false },
   /** Características estructuradas del trabajo (Histórico Inteligente, Fase 2A) — ver `CaracteristicaTrabajoSchema` arriba. Vacío en todo proyecto existente, nunca migrado ni inferido. */
   caracteristicas: { type: [CaracteristicaTrabajoSchema], default: [] },
+  /** Modelo 3D de SketchUp asociado (Fase "Diseño 3D", 30/08/2026) — `null`/ausente hasta que el usuario asocia uno. Ver `Modelo3DSchema` arriba. */
+  modelo3D: { type: Modelo3DSchema, default: null },
 });
 ProyectoSchema.index({ usuarioId: 1, clienteId: 1, creado: -1 });
 

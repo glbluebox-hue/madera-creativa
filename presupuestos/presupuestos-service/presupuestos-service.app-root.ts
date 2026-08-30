@@ -28,6 +28,7 @@ import { crearRouterIA } from './ia-rutas.js';
 import { crearRouterWebAuthn } from './webauthn-rutas.js';
 import { crearRouterPortal } from './portal-rutas.js';
 import { crearRouterResena } from './resena-rutas.js';
+import { crearRouterTrimble, crearRouterTrimbleCallback } from './trimble-rutas.js';
 import { validar } from './validacion.middleware.js';
 import { hashPassword, verificarPassword, verificarPasswordLegado } from './password.service.js';
 import { firmarAccessToken, verificarAccessToken, verificarTokenArchivo } from './token.service.js';
@@ -78,6 +79,7 @@ import {
   esquemaCaracteristicaEntrada,
   esquemaTrabajoExtraEntrada,
   esquemaAdjuntoNuevoEntrada,
+  esquemaModelo3DEntrada,
   esquemaActualizarCobros,
   esquemaNotifPrefs,
   esquemaActualizarRecordatorios,
@@ -849,6 +851,17 @@ export function run() {
   app.use('/resena', crearRouterResena());
 
   /**
+   * Integración SketchUp/Trimble Connect (Fase "Diseño 3D", 30/08/2026) —
+   * `/trimble/callback` va SIN `requireAuth` (lo alcanza una navegación de
+   * navegador normal desde `id.trimble.com`, sin el header `Authorization`
+   * que usa el resto de la API; su seguridad es el `state` de un solo uso,
+   * ver `trimble-oauth.ts`). El resto de rutas de `/trimble` sí lo exige,
+   * igual que `/ia`. Ver `trimble-rutas.ts`.
+   */
+  app.use('/trimble', crearRouterTrimbleCallback());
+  app.use('/trimble', requireAuth, crearRouterTrimble());
+
+  /**
    * Verifica si una sesión sigue activa. El id sale siempre de la sesión ya
    * autenticada (`requireAuth`), nunca de un campo que mande el cliente —
    * antes se aceptaba `usuarioId` en el body sin exigir sesión, así que
@@ -1245,6 +1258,17 @@ export function run() {
 
   app.delete('/proyectos/:id/adjuntos/:adjuntoId', requireAuth, async (req: AuthRequest, res) => {
     try { res.json(await svc.borrarAdjuntoProyecto(req.params.id, req.usuarioId!, req.params.adjuntoId)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  /** Diseño 3D (Fase SketchUp/Trimble Connect, 30/08/2026) — ver `svc.asociarModelo3DProyecto`/`svc.quitarModelo3DProyecto`. */
+  app.post('/proyectos/:id/modelo3d', requireAuth, validar(esquemaModelo3DEntrada), async (req: AuthRequest, res) => {
+    try { res.json(await svc.asociarModelo3DProyecto(req.params.id, req.usuarioId!, req.body)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.delete('/proyectos/:id/modelo3d', requireAuth, async (req: AuthRequest, res) => {
+    try { res.json(await svc.quitarModelo3DProyecto(req.params.id, req.usuarioId!)); }
     catch (err) { responderError(req, res, err); }
   });
 

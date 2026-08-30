@@ -19,6 +19,19 @@ export type Estancia = {
   observaciones?: string;
 };
 
+/** Modelo 3D de SketchUp asociado a un proyecto (Fase "Diseño 3D", 30/08/2026) — el archivo `.skp` vive en Trimble Connect, esto es solo la asociación. */
+export type Modelo3D = {
+  proveedor: 'trimble_connect';
+  trimbleProjectId: string;
+  trimbleFolderId: string;
+  trimbleFileId: string;
+  nombreArchivo: string;
+  version: number;
+  actualizado: string;
+  thumbnailUrl: string;
+  asociadoPor: string;
+};
+
 /** Una nota libre del proyecto. */
 export type Nota = { id: string; fecha: string; texto: string };
 
@@ -341,6 +354,8 @@ export type Proyecto = {
   caracteristicas?: CaracteristicaTrabajo[];
   /** Trabajos extra acordados con el cliente durante la obra (pedido real, 28/08/2026) — cada uno suma su `precio` al `presupuesto` acordado en el momento de añadirlo. */
   trabajosExtra?: TrabajoExtra[];
+  /** Modelo 3D de SketchUp asociado (Fase "Diseño 3D", 30/08/2026) — `undefined`/`null` hasta que el usuario asocia uno. */
+  modelo3D?: Modelo3D | null;
 };
 
 /** Un trabajo extra acordado con el cliente después del presupuesto inicial, ya en obra. */

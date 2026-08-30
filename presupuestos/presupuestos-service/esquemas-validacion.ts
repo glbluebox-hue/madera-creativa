@@ -276,6 +276,23 @@ export const esquemaAdjuntoNuevoEntrada = z.object({
   url: z.string().min(1),
 });
 
+/**
+ * Asociar un modelo de SketchUp a un proyecto (Fase "Diseño 3D",
+ * 30/08/2026) — los ids vienen del explorador de archivos de Trimble
+ * Connect ya embebido en el frontend (`trimble-connect-workspace-api`),
+ * nunca escritos a mano; `version`/`thumbnailUrl` son opcionales porque el
+ * explorador embebido no siempre los expone en la propia selección.
+ */
+export const esquemaModelo3DEntrada = z.object({
+  trimbleProjectId: z.string().trim().min(1).max(200),
+  /** Solo hace falta `projectId`+`fileId` para volver a abrir el modelo (`init3DViewer`) — el explorador embebido no siempre expone en qué carpeta vive el archivo seleccionado. */
+  trimbleFolderId: z.string().trim().max(200).optional().default(''),
+  trimbleFileId: z.string().trim().min(1).max(200),
+  nombreArchivo: z.string().trim().min(1, 'Falta el nombre del archivo.').max(255),
+  version: z.number().int().positive().optional().default(1),
+  thumbnailUrl: z.string().trim().max(2000).optional().default(''),
+});
+
 const esquemaFotoProyecto = z.object({
   id: z.string().min(1).max(64),
   url: z.string(),

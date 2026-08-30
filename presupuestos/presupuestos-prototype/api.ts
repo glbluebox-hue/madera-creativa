@@ -688,6 +688,79 @@ export async function borrarAdjuntoProyecto(proyectoId: string, adjuntoId: strin
   return res.json();
 }
 
+// ── Diseño 3D / SketchUp (Trimble Connect, 30/08/2026) ──────────────────────
+
+/** Se lanza cuando el backend responde `codigo: 'conexion_caducada'` (refresh token de Trimble revocado o caducado a los 9 días) — distinta de un fallo de red genérico: el llamante debe ofrecer "Conectar con SketchUp" de nuevo, no solo un mensaje de error. */
+export class ErrorConexionTrimbleCaducada extends Error {}
+/** Se lanza cuando el backend responde `codigo: 'sin_conexion'` — el usuario nunca conectó su cuenta. */
+export class ErrorSinConexionTrimble extends Error {}
+
+async function comprobarRespuestaTrimble(res: Response, mensaje: string): Promise<Response> {
+  if (res.ok) return res;
+  if (res.status === 401 || res.status === 403) throw new Error(String(res.status));
+  if (res.status === 409) {
+    const cuerpo = await res.json().catch(() => null) as { error?: string; codigo?: string } | null;
+    if (cuerpo?.codigo === 'conexion_caducada') throw new ErrorConexionTrimbleCaducada(cuerpo.error || mensaje);
+    if (cuerpo?.codigo === 'sin_conexion') throw new ErrorSinConexionTrimble(cuerpo.error || mensaje);
+    if (cuerpo?.error) throw new Error(cuerpo.error);
+  }
+  throw new Error(mensaje);
+}
+
+export async function trimbleEstado(): Promise<{ conectado: boolean; trimbleEmail: string }> {
+  const res = await fetchConAuth('/trimble/estado');
+  await comprobarRespuesta(res, 'No se pudo comprobar la conexión con SketchUp');
+  return res.json();
+}
+
+/** Devuelve la URL de `id.trimble.com` a la que navegar (`window.location.href = url`) para "Conectar con SketchUp" — nunca se navega por su cuenta, deja que quien llama decida el momento (p. ej. tras confirmar un clic del usuario). */
+export async function trimbleUrlConectar(): Promise<string> {
+  const res = await fetchConAuth('/trimble/url-conectar');
+  await comprobarRespuestaConMotivo(res, 'No se pudo iniciar la conexión con SketchUp');
+  const { url } = await res.json();
+  return url;
+}
+
+export async function trimbleDesconectar(): Promise<void> {
+  const res = await fetchConAuth('/trimble/conexion', { method: 'DELETE' });
+  await comprobarRespuesta(res, 'No se pudo desconectar SketchUp');
+}
+
+/** Access token de corta duración (60 min) para pasar a `embed.setTokens()` del Workspace API de Trimble Connect — nunca se guarda, se pide cada vez que se abre el panel embebido. */
+export async function trimbleTokenEmbed(): Promise<string> {
+  const res = await fetchConAuth('/trimble/token-embed');
+  await comprobarRespuestaTrimble(res, 'No se pudo preparar la conexión con SketchUp');
+  const { accessToken } = await res.json();
+  return accessToken;
+}
+
+export type DatosModelo3D = {
+  trimbleProjectId: string;
+  trimbleFolderId?: string;
+  trimbleFileId: string;
+  nombreArchivo: string;
+  version?: number;
+  thumbnailUrl?: string;
+};
+
+/** Asocia (o reemplaza) el modelo 3D de un proyecto — los ids vienen del explorador de Trimble Connect ya embebido, nunca escritos a mano. */
+export async function asociarModelo3D(proyectoId: string, datos: DatosModelo3D): Promise<Proyecto> {
+  const res = await fetchConAuth(`/proyectos/${proyectoId}/modelo3d`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(datos),
+  });
+  await comprobarRespuestaConMotivo(res, 'No se pudo asociar el modelo 3D');
+  return res.json();
+}
+
+/** Desasocia el modelo 3D de un proyecto — nunca borra el archivo real de Trimble Connect. */
+export async function quitarModelo3D(proyectoId: string): Promise<Proyecto> {
+  const res = await fetchConAuth(`/proyectos/${proyectoId}/modelo3d`, { method: 'DELETE' });
+  await comprobarRespuesta(res, 'No se pudo desasociar el modelo 3D');
+  return res.json();
+}
+
 export async function guardarTareasProyecto(proyectoId: string, tareas: Tarea[]): Promise<Proyecto> {
   const res = await fetchConAuth(`/proyectos/${proyectoId}/tareas`, {
     method: 'PUT',

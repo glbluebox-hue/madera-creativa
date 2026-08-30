@@ -638,6 +638,50 @@ export class PresupuestosService {
   }
 
   /**
+   * Asocia (o reemplaza) el modelo 3D de SketchUp de un proyecto (Fase
+   * "Diseño 3D", 30/08/2026) — el archivo en sí no se toca ni se sube
+   * aquí, solo se guarda a qué archivo de Trimble Connect corresponde
+   * este proyecto. Mismo criterio de aislamiento que cualquier otra ruta
+   * de proyecto: filtra por `{id, usuarioId}`, nunca por `id` solo.
+   */
+  async asociarModelo3DProyecto(proyectoId: string, usuarioId: string, datos: {
+    trimbleProjectId: string; trimbleFolderId: string; trimbleFileId: string;
+    nombreArchivo: string; version: number; thumbnailUrl: string;
+  }): Promise<ProyectoDoc> {
+    await conectar();
+    const modelo3D = {
+      proveedor: 'trimble_connect' as const,
+      trimbleProjectId: datos.trimbleProjectId,
+      trimbleFolderId: datos.trimbleFolderId,
+      trimbleFileId: datos.trimbleFileId,
+      nombreArchivo: datos.nombreArchivo,
+      version: datos.version,
+      thumbnailUrl: datos.thumbnailUrl,
+      actualizado: new Date().toISOString(),
+      asociadoPor: usuarioId,
+    };
+    const doc = await ProyectoModel.findOneAndUpdate(
+      { id: proyectoId, usuarioId },
+      { $set: { modelo3D } },
+      { new: true }
+    ).lean().exec();
+    if (!doc) throw new ErrorDeNegocio('Proyecto no encontrado', 400);
+    return this.limpiarProyecto(doc);
+  }
+
+  /** Desasocia el modelo 3D de un proyecto — nunca borra el archivo real de Trimble Connect, solo la referencia guardada aquí. */
+  async quitarModelo3DProyecto(proyectoId: string, usuarioId: string): Promise<ProyectoDoc> {
+    await conectar();
+    const doc = await ProyectoModel.findOneAndUpdate(
+      { id: proyectoId, usuarioId },
+      { $set: { modelo3D: null } },
+      { new: true }
+    ).lean().exec();
+    if (!doc) throw new ErrorDeNegocio('Proyecto no encontrado', 400);
+    return this.limpiarProyecto(doc);
+  }
+
+  /**
    * Añade un movimiento manual a un proyecto — ruta quirúrgica dedicada;
    * `guardarProyecto` ya no acepta cambios en `movimientos`. Nunca lleva
    * `facturaId`: los movimientos vinculados a una factura solo los crea

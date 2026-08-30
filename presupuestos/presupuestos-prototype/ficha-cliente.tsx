@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { Cliente, Proyecto, Movimiento, RegistroHoras, Adjunto, Factura, Proveedor } from './types.js';
 import * as api from './api.js';
 import { GaleriaFotos } from './galeria-fotos.js';
+import { Diseno3DVista } from './diseno-3d-vista.js';
 import type { FotoProyecto } from './galeria-fotos.js';
 import { EscanerFactura } from './escaner-factura.js';
 import { formatoEuroPrivado, formatoFecha } from './calculos.js';
@@ -353,6 +354,7 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
             onBorrar={borrarAdjunto}
           />
           <TabMediciones proyecto={proyecto} onActualizar={onActualizarProyecto} />
+          <Diseno3DVista proyectoId={proyecto.id} modelo3D={proyecto.modelo3D} onActualizarProyecto={onActualizarProyecto} />
           <TabDatos cliente={cliente} proyecto={proyecto} onActualizarCliente={onActualizarCliente} onActualizarProyecto={onActualizarProyecto} abrirEdicion={abrirEdicionDatos} />
         </div>
       )}
