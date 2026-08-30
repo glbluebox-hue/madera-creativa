@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import type { Adjunto } from './types.js';
 import { generarId } from './mock.js';
 import { formatoTamano } from './calculos.js';
@@ -14,13 +15,17 @@ export type PanelAdjuntosProps = {
   onAnadir: (a: Adjunto) => void;
   /** Se llama al borrar un adjunto por id. */
   onBorrar: (id: string) => void;
+  /** Botón adicional en la cabecera, junto a "Subir PDF o imágenes" — usado por "Subir dibujo 3D" (Fase "Diseño 3D", 30/08/2026), sin acoplar este panel genérico a esa función concreta. */
+  botonExtra?: ReactNode;
+  /** Contenido adicional debajo de la rejilla de adjuntos — usado por la tarjeta del modelo 3D ya subido. */
+  contenidoExtra?: ReactNode;
 };
 
 /**
  * Panel para subir y visualizar archivos del proyecto: diseños técnicos,
  * medidas y fotos del lugar de trabajo.
  */
-export function PanelAdjuntos({ adjuntos, onAnadir, onBorrar }: PanelAdjuntosProps) {
+export function PanelAdjuntos({ adjuntos, onAnadir, onBorrar, botonExtra, contenidoExtra }: PanelAdjuntosProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   // Confirmación de borrado (Incremento 1.8): la insignia circular no tiene
   // espacio para un par Sí/No, así que el primer clic solo la "arma" (2
@@ -65,13 +70,16 @@ export function PanelAdjuntos({ adjuntos, onAnadir, onBorrar }: PanelAdjuntosPro
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
           Archivos del proyecto
         </h3>
-        <button
-          className={`${styles.btn} ${styles.btnPrimario}`}
-          onClick={() => inputRef.current?.click()}
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
-          Subir PDF o imágenes
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <button
+            className={`${styles.btn} ${styles.btnPrimario}`}
+            onClick={() => inputRef.current?.click()}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+            Subir PDF o imágenes
+          </button>
+          {botonExtra}
+        </div>
       </div>
 
       <div
@@ -129,6 +137,8 @@ export function PanelAdjuntos({ adjuntos, onAnadir, onBorrar }: PanelAdjuntosPro
           ))}
         </div>
       )}
+
+      {contenidoExtra}
     </div>
   );
 }

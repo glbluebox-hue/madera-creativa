@@ -1,8 +1,10 @@
-import { validarModelo3D, formatoTamano, TAMANO_MAXIMO_MODELO_3D_BYTES } from './modelo-3d-archivo.js';
+import { validarModelo3D, formatoTamano, nombreParaAlmacenar, TAMANO_MAXIMO_MODELO_3D_BYTES } from './modelo-3d-archivo.js';
 
 /**
  * Validación de la subida manual de un modelo 3D (30/08/2026) — sin red,
- * sin renderizado.
+ * sin renderizado. Admite `.glb` y `.stl` en la entrada (SketchUp Free
+ * solo exporta SKP/PNG/STL) — el STL se convierte a GLB antes de subir,
+ * ver `stl-a-glb.ts`.
  */
 
 describe('validarModelo3D', () => {
@@ -10,14 +12,19 @@ describe('validarModelo3D', () => {
     expect(validarModelo3D({ name: 'Cocina.glb', size: 1024 })).toEqual({ valido: true });
   });
 
-  it('mayúsculas en la extensión también son válidas', () => {
-    expect(validarModelo3D({ name: 'Cocina.GLB', size: 1024 })).toEqual({ valido: true });
+  it('un .stl dentro del límite de tamaño también es válido (se convierte antes de subir)', () => {
+    expect(validarModelo3D({ name: 'Cocina.stl', size: 1024 })).toEqual({ valido: true });
   });
 
-  it('rechaza cualquier formato distinto de .glb, con un motivo claro', () => {
+  it('mayúsculas en la extensión también son válidas', () => {
+    expect(validarModelo3D({ name: 'Cocina.GLB', size: 1024 })).toEqual({ valido: true });
+    expect(validarModelo3D({ name: 'Cocina.STL', size: 1024 })).toEqual({ valido: true });
+  });
+
+  it('rechaza un formato que no sea .glb ni .stl, con un motivo claro', () => {
     const r = validarModelo3D({ name: 'Cocina.skp', size: 1024 });
     expect(r.valido).toBe(false);
-    if (r.valido === false) expect(r.motivo).toMatch(/solo se admiten archivos \.glb/);
+    if (r.valido === false) expect(r.motivo).toMatch(/solo se admiten archivos \.glb o \.stl/);
   });
 
   it('rechaza un archivo sin extensión', () => {
@@ -32,6 +39,20 @@ describe('validarModelo3D', () => {
 
   it('acepta un archivo justo en el límite', () => {
     expect(validarModelo3D({ name: 'Cocina.glb', size: TAMANO_MAXIMO_MODELO_3D_BYTES }).valido).toBe(true);
+  });
+});
+
+describe('nombreParaAlmacenar — un .stl de entrada siempre se guarda como .glb', () => {
+  it('cambia la extensión .stl por .glb, conservando el nombre base', () => {
+    expect(nombreParaAlmacenar('Cocina_Garcia.stl')).toBe('Cocina_Garcia.glb');
+  });
+
+  it('un .glb de entrada se queda tal cual', () => {
+    expect(nombreParaAlmacenar('Cocina_Garcia.glb')).toBe('Cocina_Garcia.glb');
+  });
+
+  it('conserva puntos adicionales en el nombre base', () => {
+    expect(nombreParaAlmacenar('Cocina.v2.final.stl')).toBe('Cocina.v2.final.glb');
   });
 });
 

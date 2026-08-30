@@ -2,7 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import type { Cliente, Proyecto, Movimiento, RegistroHoras, Adjunto, Factura, Proveedor } from './types.js';
 import * as api from './api.js';
 import { GaleriaFotos } from './galeria-fotos.js';
-import { Diseno3DVista } from './diseno-3d-vista.js';
+import { useModelo3D } from './use-modelo-3d.js';
+import { BotonSubirModelo3D } from './boton-subir-modelo-3d.js';
+import { TarjetaModelo3D } from './tarjeta-modelo-3d.js';
 import type { FotoProyecto } from './galeria-fotos.js';
 import { EscanerFactura } from './escaner-factura.js';
 import { formatoEuroPrivado, formatoFecha } from './calculos.js';
@@ -99,6 +101,8 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
   /** Contador-disparador: cada incremento fuerza `TabDatos` a abrirse en modo edición (botón "Editar" de la cabecera, ver más abajo). */
   const [abrirEdicionDatos, setAbrirEdicionDatos] = useState(0);
   const editarDatos = () => { setPestana('proyectos'); setAbrirEdicionDatos((n) => n + 1); };
+  /** Diseño 3D (30/08/2026) — botón en la cabecera de "Archivos del proyecto" + tarjeta del modelo, ver `PanelAdjuntos` más abajo. */
+  const modelo3D = useModelo3D(proyecto.id, onActualizarProyecto);
   const [escanerAbierto, setEscanerAbierto] = useState(false);
   const [facturasProyecto, setFacturasProyecto] = useState<Factura[]>([]);
   /** Factura abierta en el visor de imagen/PDF (petición del usuario, 20/08/2026 — antes esta tabla no tenía forma de ver el documento adjunto, solo sus datos). */
@@ -352,9 +356,19 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
             adjuntos={adjuntosProyecto}
             onAnadir={anadirAdjunto}
             onBorrar={borrarAdjunto}
+            botonExtra={<BotonSubirModelo3D subiendo={modelo3D.subiendo} onArchivo={modelo3D.subirArchivo} />}
+            contenidoExtra={proyecto.modelo3D ? (
+              <TarjetaModelo3D
+                modelo3D={proyecto.modelo3D}
+                subiendo={modelo3D.subiendo}
+                desasociando={modelo3D.desasociando}
+                onReemplazar={modelo3D.subirArchivo}
+                onEliminar={modelo3D.eliminar}
+              />
+            ) : null}
           />
+          {modelo3D.error && <p style={{ margin: '-0.5rem 0 0.75rem', fontSize: '0.78rem', color: 'var(--rojo)' }}>{modelo3D.error}</p>}
           <TabMediciones proyecto={proyecto} onActualizar={onActualizarProyecto} />
-          <Diseno3DVista proyectoId={proyecto.id} modelo3D={proyecto.modelo3D} onActualizarProyecto={onActualizarProyecto} />
           <TabDatos cliente={cliente} proyecto={proyecto} onActualizarCliente={onActualizarCliente} onActualizarProyecto={onActualizarProyecto} abrirEdicion={abrirEdicionDatos} />
         </div>
       )}
