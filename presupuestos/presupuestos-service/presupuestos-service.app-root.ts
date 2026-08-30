@@ -407,6 +407,12 @@ export function run() {
     .then(migrarNombresNormalizados)
     .then(asegurarIndiceNombreNormalizado)
     .catch((err) => logger.error({ err }, 'Error inicializando admin / migrando nombres normalizados'));
+  // Visor 3D ("Diseño 3D", 30/08/2026): asegura que el bucket público de R2
+  // acepta lectura por fetch() desde nuestros propios orígenes — ver
+  // comentario largo en AlmacenamientoArchivos.asegurarCorsPublico.
+  // Idempotente y no crítico: si falla, solo se avisa en los logs.
+  almacenamiento.asegurarCorsPublico(ORIGENES_PERMITIDOS)
+    .catch((err) => logger.warn({ err }, 'No se pudo asegurar CORS en el bucket público de R2 al arrancar'));
   // `migrarDatosAdmin()` (backfill de usuarioId en documentos históricos de
   // antes del multiusuario) se ha retirado (19/08/2026): hacía un escaneo
   // COMPLETO sin índice de Clientes/Empresa/Facturas en cada arranque del

@@ -80,4 +80,5 @@ export const almacenamiento: AlmacenamientoArchivos = {
   obtener: (clave: string): Promise<{ datos: Buffer; contentType: string } | null> => obtenerInstancia().obtener(clave),
   generarUrlTemporal: (clave: string, ttlSegundos?: number): Promise<string> =>
     obtenerInstancia().generarUrlTemporal(clave, ttlSegundos),
+  asegurarCorsPublico: (origenes: string[]): Promise<void> => obtenerInstancia().asegurarCorsPublico(origenes),
 };

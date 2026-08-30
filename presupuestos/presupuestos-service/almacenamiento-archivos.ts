@@ -75,4 +75,24 @@ export interface AlmacenamientoArchivos {
    * relativa de siempre, ya que en desarrollo no hay nada real que firmar.
    */
   generarUrlTemporal(clave: string, ttlSegundos?: number): Promise<string>;
+
+  /**
+   * Asegura que el bucket PÚBLICO tiene una política CORS que permite leer
+   * sus archivos vía `fetch()` desde el navegador, solo para los orígenes
+   * indicados (Incremento "Diseño 3D", 30/08/2026). Hasta ahora nunca hacía
+   * falta: fotos/adjuntos/logos se consumen con `<img src=...>` o
+   * `<a href=...>`, que no necesitan CORS. El visor 3D
+   * (`@google/model-viewer`) es la primera pieza que necesita leer el
+   * archivo con JavaScript (para subirlo a la GPU vía WebGL), y eso SÍ
+   * exige que el bucket responda con cabeceras
+   * `Access-Control-Allow-Origin` — sin ellas, `fetch()` falla en el
+   * navegador con `TypeError: Failed to fetch` aunque la URL cargue bien si
+   * se abre directamente (confirmado en vivo 30/08/2026: cabeceras de la
+   * respuesta sin ningún `Access-Control-*`). Idempotente — se puede llamar
+   * en cada arranque sin efecto secundario. No hace nada en
+   * `AlmacenamientoMemoria` (no hay bucket real que configurar).
+   * @param origenes Lista de orígenes exactos a autorizar (nunca `'*'` — los
+   *   mismos que ya aceptan CORS/CSP para la API, ver `ALLOWED_ORIGINS`).
+   */
+  asegurarCorsPublico(origenes: string[]): Promise<void>;
 }

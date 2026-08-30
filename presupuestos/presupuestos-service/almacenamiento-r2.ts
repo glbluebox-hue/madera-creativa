@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, PutBucketCorsCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { AlmacenamientoArchivos, ResultadoSubida } from './almacenamiento-archivos.js';
+import { logger } from './logger.service.js';
 
 /**
  * Implementación real de `AlmacenamientoArchivos` contra Cloudflare R2
@@ -175,6 +176,39 @@ export class AlmacenamientoR2 implements AlmacenamientoArchivos {
       return { datos: Buffer.concat(trozos), contentType: respuesta.ContentType ?? 'application/octet-stream' };
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Ver contrato en `AlmacenamientoArchivos.asegurarCorsPublico`. Solo toca
+   * el bucket PÚBLICO (fotos/adjuntos/logos/dibujos/modelos3d) — nunca el
+   * privado de facturas, que no se lee nunca por `fetch()` desde el
+   * navegador (siempre URLs firmadas de un solo uso, nunca cacheadas por
+   * WebGL). Restringido a los orígenes recibidos (nunca `'*'`) — los mismos
+   * que ya autoriza CORS/CSP para la propia API (`ALLOWED_ORIGINS`), para no
+   * abrir la lectura del bucket a cualquier sitio web. Solo `GET`/`HEAD`;
+   * nunca se necesita escribir desde el navegador.
+   */
+  async asegurarCorsPublico(origenes: string[]): Promise<void> {
+    if (origenes.length === 0) return;
+    try {
+      await this.cliente.send(new PutBucketCorsCommand({
+        Bucket: this.bucket,
+        CORSConfiguration: {
+          CORSRules: [{
+            AllowedOrigins: origenes,
+            AllowedMethods: ['GET', 'HEAD'],
+            AllowedHeaders: ['*'],
+            MaxAgeSeconds: 3600,
+          }],
+        },
+      }));
+    } catch (err) {
+      // No debe tumbar el arranque del servidor: si el token de R2 no tiene
+      // permiso de administración del bucket (solo lectura/escritura de
+      // objetos), esto fallará siempre — se avisa alto y claro en los logs
+      // en vez de reintentar en bucle o crashear.
+      logger.warn({ err, bucket: this.bucket }, 'No se pudo configurar CORS en el bucket público de R2 — el visor 3D (y cualquier otra lectura por fetch()) puede fallar hasta configurarlo a mano en el dashboard de Cloudflare (R2 → bucket → Settings → CORS Policy).');
     }
   }
 }

@@ -56,6 +56,11 @@ export class AlmacenamientoMemoria implements AlmacenamientoArchivos {
     return `/api/presupuestos-service/almacenamiento/${clave}`;
   }
 
+  /** No hay bucket real en memoria — nada que configurar. */
+  async asegurarCorsPublico(): Promise<void> {
+    // Sin parámetro: no hay ningún bucket real al que aplicar orígenes.
+  }
+
   /** Solo para pruebas: comprueba si una clave sigue almacenada. */
   existe(clave: string): boolean {
     return this.archivos.has(clave);
