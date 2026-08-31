@@ -2725,3 +2725,15 @@
   .calendarioChipTexto { display: none !important; }
   .calendarioChipPunto { width: 8px !important; height: 8px !important; }
 }
+
+/* ===== VISOR DE PRESUPUESTO FIRMADO (31/08/2026) ===== */
+/* Sin `.overlay` (position:fixed) durante la impresión — ver comentario
+   en visor-presupuesto-firmado.tsx. `@page{margin:0}` evita que el
+   margen por defecto del navegador se sume al propio margen en blanco
+   de la página A4 del documento (mismo ajuste que ya usa el editor,
+   editor-documento.module.css, repetido aquí para que este visor no
+   dependa de que ese otro módulo esté cargado). */
+.visorPresupuestoImpresion { background: #fff; }
+@media print {
+  @page { margin: 0; }
+}

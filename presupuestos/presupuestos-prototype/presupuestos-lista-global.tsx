@@ -6,6 +6,7 @@ import type { PlantillaMC } from './documento-modelo.js';
 import { crearDocumentoVacio } from './documento-modelo.js';
 import type { Proyecto } from './types.js';
 import { AbrirDocumento } from './abrir-documento.js';
+import { VisorPresupuestoFirmado } from './visor-presupuesto-firmado.js';
 import { generarId } from './mock.js';
 import { resolverVariables } from './documento-registro-variables.js';
 import './documento-variables-iniciales.js'; // registro de variables por efecto secundario (Incremento 4).
@@ -49,6 +50,8 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
   const [error, setError] = useState<string | null>(null);
   const [creandoBorrador, setCreandoBorrador] = useState(false);
   const [editor, setEditor] = useState<{ presupuesto: PresupuestoMC; clienteId: string; clienteNombre: string } | null>(null);
+  /** Un presupuesto ya aceptado abre primero el visor de solo lectura ("el contrato"), no el editor — petición explícita del usuario, 31/08/2026. */
+  const [firmadoAVer, setFirmadoAVer] = useState<PresupuestoMC | null>(null);
   const [selectorAbierto, setSelectorAbierto] = useState(false);
   const [clienteElegidoId, setClienteElegidoId] = useState<string | null>(null);
   const [plantillas, setPlantillas] = useState<PlantillaMC[]>([]);
@@ -164,6 +167,31 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
     if (p.formato === 'lienzo') return null;
     const url = enlaces[p.id];
     if (!url) {
+      // Hallazgo real del usuario, 31/08/2026: si edita el presupuesto
+      // DESPUÉS de mandar el enlace, ese enlace deja de servir para firmar
+      // (el cliente ve "el presupuesto ha cambiado, pide uno nuevo") pero
+      // hasta ahora la app seguía diciendo "ya hay un enlace activo" sin
+      // avisar de que ESE en concreto ya no vale — se enteró porque se lo
+      // dijo el cliente. A diferencia del caso de abajo, aquí regenerar no
+      // arriesga romper nada que siguiera funcionando, así que no hace
+      // falta el paso de "¿seguro?".
+      if (p.enlaceRotoPorEdicion) {
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--rojo)', fontWeight: 600 }}>
+              ⚠ El enlace que enviaste ya no es válido — editaste el presupuesto después de mandarlo.
+            </span>
+            <button
+              className={`${styles.btn} ${styles.btnPrimario}`}
+              style={{ fontSize: '0.75rem' }}
+              onClick={() => generarEnlace(p.id)}
+              disabled={generandoEnlaceId === p.id}
+            >
+              {generandoEnlaceId === p.id ? 'Generando…' : 'Generar enlace nuevo'}
+            </button>
+          </div>
+        );
+      }
       // Ya existe un enlace activo en el servidor (sobrevive a un refresco,
       // a diferencia de `enlaces`/`url` de arriba) pero no tenemos el token
       // en claro para mostrarlo — generar uno nuevo lo revocaría. Avisar
@@ -232,7 +260,9 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
   };
 
   const abrir = (p: PresupuestoMC) => {
-    if (p.formato === 'lienzo' || p.formato === 'documento') {
+    if (p.estado === 'aceptado' && p.formato === 'documento') {
+      setFirmadoAVer(p);
+    } else if (p.formato === 'lienzo' || p.formato === 'documento') {
       setEditor({ presupuesto: p, clienteId: p.clienteId, clienteNombre: nombreDe(p.clienteId) });
     } else {
       onAbrirCliente(p.clienteId);
@@ -416,6 +446,17 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
     }
   };
 
+  if (firmadoAVer) {
+    return (
+      <VisorPresupuestoFirmado
+        presupuesto={firmadoAVer}
+        empresa={empresa}
+        onCerrar={() => setFirmadoAVer(null)}
+        onEditar={() => { setEditor({ presupuesto: firmadoAVer, clienteId: firmadoAVer.clienteId, clienteNombre: nombreDe(firmadoAVer.clienteId) }); setFirmadoAVer(null); }}
+      />
+    );
+  }
+
   if (editor) {
     return (
       <AbrirDocumento
@@ -591,7 +632,12 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
                 onClick={() => abrir(p)}
               >
                 <div style={{ minWidth: 0, flex: '1 1 160px' }}>
-                  <p style={{ margin: 0, fontWeight: 700, fontSize: '0.95rem' }}>{p.titulo}</p>
+                  <p style={{ margin: 0, fontWeight: 700, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    {p.titulo}
+                    {p.estado === 'aceptado' && (
+                      <span style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--verde)', background: 'var(--verde-bg)', padding: '0.1rem 0.4rem', borderRadius: 'var(--radio-full, 999px)', whiteSpace: 'nowrap' }}>✓ Aceptado</span>
+                    )}
+                  </p>
                   <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>
                     {nombreDe(p.clienteId)} · {p.formato === 'lienzo' ? 'Plantilla libre (legado)' : p.formato === 'documento' ? 'Documento' : 'Narrativo'} · {formatoFecha(p.creado)}
                   </p>

@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as api from './api.js';
 import type { ContratoMC } from './contratos-modelo.js';
+import type { PresupuestoMC } from './presupuestos-modelo.js';
 import type { Empresa } from './use-empresa.js';
 import { EditorDocumento } from './editor-documento.js';
+import { VisorPresupuestoFirmado } from './visor-presupuesto-firmado.js';
 import { generarId } from './mock.js';
-import { formatoFecha } from './calculos.js';
+import { formatoFecha, formatoEuroPrivado } from './calculos.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
 import styles from './styles.module.css';
 
@@ -12,6 +14,7 @@ export type ContratosVistaProps = {
   clienteId: string;
   clienteNombre: string;
   empresa: Empresa;
+  privado: boolean;
   onActualizarEmpresa: (cambios: Partial<Empresa>) => void;
 };
 
@@ -25,18 +28,37 @@ export type ContratosVistaProps = {
  * núcleo del Motor Documental se reutiliza sin cambios para un tipo de
  * documento de negocio distinto (Regla de Oro 4).
  */
-export function ContratosVista({ clienteId, clienteNombre, empresa, onActualizarEmpresa }: ContratosVistaProps) {
+export function ContratosVista({ clienteId, clienteNombre, empresa, privado, onActualizarEmpresa }: ContratosVistaProps) {
   const [contratos, setContratos] = useState<ContratoMC[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [documentoAbierto, setDocumentoAbierto] = useState<ContratoMC | null>(null);
   const [tituloNuevo, setTituloNuevo] = useState('');
   const [creando, setCreando] = useState(false);
+  /**
+   * Presupuestos ya aceptados de este proyecto — se muestran también aquí,
+   * en Contratos, porque para el usuario un presupuesto firmado por el
+   * cliente ES un contrato cerrado (petición explícita, 31/08/2026).
+   * Nunca se copian: se piden con la misma llamada que ya usa la pestaña
+   * "Presupuestos" (`obtenerPresupuestosDeProyecto`) y se abren con el
+   * mismo visor de solo lectura (`VisorPresupuestoFirmado`) — un Contrato
+   * de verdad y un Presupuesto aceptado siguen siendo dos cosas distintas
+   * por debajo, esto solo los junta en la misma pantalla para que el
+   * carpintero no tenga que ir a buscar el segundo a otra sección.
+   */
+  const [presupuestosFirmados, setPresupuestosFirmados] = useState<PresupuestoMC[]>([]);
+  const [firmadoAVer, setFirmadoAVer] = useState<PresupuestoMC | null>(null);
 
   const cargar = useCallback(() => {
     setCargando(true);
-    api.obtenerContratos(clienteId)
-      .then(setContratos)
+    Promise.all([
+      api.obtenerContratos(clienteId),
+      api.obtenerPresupuestosDeProyecto(clienteId).catch(() => []),
+    ])
+      .then(([listaContratos, listaPresupuestos]) => {
+        setContratos(listaContratos);
+        setPresupuestosFirmados(listaPresupuestos.filter((p) => p.estado === 'aceptado'));
+      })
       .catch((e) => setError(String(e).replace(/^Error:\s*/, '')))
       .finally(() => setCargando(false));
   }, [clienteId]);
@@ -83,6 +105,21 @@ export function ContratosVista({ clienteId, clienteNombre, empresa, onActualizar
 
   if (cargando) return <p style={{ color: 'var(--topo-claro)', fontSize: '0.85rem' }}>Cargando contratos…</p>;
 
+  if (firmadoAVer) {
+    // Sin `onEditar` a propósito: petición explícita del usuario, 31/08/2026
+    // ("con el editor si quieres, no le veo la utilidad realmente") — desde
+    // Contratos, un presupuesto aceptado se ve solo como el contrato
+    // cerrado que es. Corregirlo de verdad sigue disponible desde la
+    // pestaña "Presupuestos" de esta misma ficha.
+    return (
+      <VisorPresupuestoFirmado
+        presupuesto={firmadoAVer}
+        empresa={empresa}
+        onCerrar={() => setFirmadoAVer(null)}
+      />
+    );
+  }
+
   if (documentoAbierto) {
     return (
       <EditorDocumento
@@ -100,6 +137,38 @@ export function ContratosVista({ clienteId, clienteNombre, empresa, onActualizar
   return (
     <div>
       {error && <p style={{ color: 'var(--rojo)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>{error}</p>}
+
+      {presupuestosFirmados.length > 0 && (
+        <div style={{ marginBottom: '1.75rem' }}>
+          <p style={{ margin: '0 0 0.6rem', fontSize: '0.82rem', color: 'var(--topo-claro)' }}>
+            {presupuestosFirmados.length} presupuesto{presupuestosFirmados.length !== 1 ? 's' : ''} firmado{presupuestosFirmados.length !== 1 ? 's' : ''} por el cliente.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {presupuestosFirmados.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => setFirmadoAVer(p)}
+                className={styles.filaLista}
+                style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '1rem',
+                  width: '100%', textAlign: 'left', cursor: 'pointer', border: 'none', font: 'inherit', color: 'inherit',
+                }}
+              >
+                <div>
+                  <p style={{ margin: 0, fontWeight: 700, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    {p.titulo}
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--verde)', background: 'var(--verde-bg)', padding: '0.15rem 0.5rem', borderRadius: 'var(--radio-full, 999px)' }}>✓ Firmado</span>
+                  </p>
+                  <p style={{ margin: '0.2rem 0 0', fontSize: '0.72rem', color: 'var(--topo-muy-claro)' }}>
+                    Aceptado {p.firmaClienteFecha ? formatoFecha(p.firmaClienteFecha) : formatoFecha(p.actualizado)}
+                  </p>
+                </div>
+                <strong style={{ fontSize: '0.95rem', flexShrink: 0 }}>{formatoEuroPrivado(p.precioTotal, privado)}</strong>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
         <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--topo-claro)' }}>

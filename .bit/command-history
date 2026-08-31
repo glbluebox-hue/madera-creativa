@@ -1337,3 +1337,4 @@
 2026-08-30T23:56:58.168Z 29200 test presupuestos/presupuestos-service/presupuestos-precio.spec.ts, succeeded
 2026-08-31T06:36:46.979Z 5152 test presupuestos/presupuestos-prototype/calendario-modelo.spec.ts, started
 2026-08-31T06:36:57.226Z 5152 test presupuestos/presupuestos-prototype/calendario-modelo.spec.ts, succeeded
+2026-08-31T17:24:20.560Z 13480 test presupuestos/presupuestos-service/enlace-presupuesto-vigencia.spec.ts, started

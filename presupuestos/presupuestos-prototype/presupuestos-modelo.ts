@@ -64,6 +64,16 @@ export type PresupuestoMC = {
    */
   enlaceActivoExpiraEn?: string | null;
   /**
+   * `true` cuando existe un enlace generado y todavía sin revocar/caducar,
+   * pero el presupuesto se editó DESPUÉS de generarlo — ese enlace ya no
+   * deja firmar (el cliente vería "el presupuesto ha cambiado, pide uno
+   * nuevo"). Hallazgo real del usuario, 31/08/2026: se enteró porque se lo
+   * dijo el cliente, no la propia app — con esto en `true`,
+   * `enlaceActivoExpiraEn` viene `null` (no sirve mostrarlo como si
+   * siguiera activo) y la lista avisa de que hace falta generar uno nuevo.
+   */
+  enlaceRotoPorEdicion?: boolean;
+  /**
    * Snapshot del análisis de precio (Inteligencia de Precios, Fase 1),
    * congelado por el servidor al aceptar el presupuesto — ver
    * `AnalisisPrecio` en `inteligencia-precios.ts`. Ausente en presupuestos

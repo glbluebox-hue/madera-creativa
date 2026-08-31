@@ -2104,6 +2104,38 @@ export class PresupuestosService {
   // ── Presupuestos (Fase 5 — copiloto de Presupuestos) — aislados por usuarioId ──
 
   /**
+   * A partir del mapa de `enlacesActivosDeUsuario`, decide qué le cuenta la
+   * lista de presupuestos al carpintero sobre el enlace de UNO concreto —
+   * hallazgo real del usuario, 31/08/2026: si edita el presupuesto DESPUÉS
+   * de generar y mandar el enlace, ese enlace deja de servir para firmar
+   * (integridad ya existente, revisión de seguridad 17/08/2026 —
+   * `aceptarPresupuestoPublico` lo rechaza con "el presupuesto ha
+   * cambiado"), pero hasta ahora la lista seguía diciendo alegremente "ya
+   * hay un enlace activo" — se enteraba porque se lo decía el cliente, no
+   * la propia app. Recalcula el hash del contenido ACTUAL y lo compara con
+   * el que quedó grabado en el enlace al generarlo:
+   * - Sin enlace → nada que avisar.
+   * - Presupuesto ya aceptado → el estado del enlace ya no importa (no se
+   *   puede volver a firmar), se muestra activo sin más para no confundir.
+   * - Enlace activo y el contenido coincide → activo de verdad.
+   * - Enlace activo pero el contenido NO coincide → roto por una edición
+   *   posterior; el frontend lo muestra como "ya no vale, genera uno
+   *   nuevo" en vez de como si todo siguiera bien.
+   */
+  private estadoEnlacePresupuesto(
+    d: Record<string, unknown>,
+    enlacesActivos: Record<string, { expiraEn: string; contenidoHash: string }>
+  ): { enlaceActivoExpiraEn: string | null; enlaceRotoPorEdicion: boolean } {
+    const enlace = enlacesActivos[d.id as string];
+    if (!enlace) return { enlaceActivoExpiraEn: null, enlaceRotoPorEdicion: false };
+    if (d.estado === 'aceptado') return { enlaceActivoExpiraEn: enlace.expiraEn, enlaceRotoPorEdicion: false };
+    const valido = hashContenidoPublico(d) === enlace.contenidoHash;
+    return valido
+      ? { enlaceActivoExpiraEn: enlace.expiraEn, enlaceRotoPorEdicion: false }
+      : { enlaceActivoExpiraEn: null, enlaceRotoPorEdicion: true };
+  }
+
+  /**
    * Lista los presupuestos de un cliente concreto, más recientes primero —
    * mismo criterio que `listarFacturasDeCliente`: el historial de un único
    * cliente está acotado por diseño.
@@ -2116,7 +2148,7 @@ export class PresupuestosService {
       PresupuestoModel.find({ usuarioId, clienteId }).sort({ creado: -1 }).lean().exec(),
       enlacesActivosDeUsuario(usuarioId),
     ]);
-    return docs.map((d) => ({ ...this.limpiar(d as Record<string, unknown>), enlaceActivoExpiraEn: enlacesActivos[(d as any).id] ?? null }));
+    return docs.map((d) => ({ ...this.limpiar(d as Record<string, unknown>), ...this.estadoEnlacePresupuesto(d as Record<string, unknown>, enlacesActivos) }));
   }
 
   /**
@@ -2133,7 +2165,7 @@ export class PresupuestosService {
       PresupuestoModel.find({ usuarioId, proyectoId }).sort({ creado: -1 }).lean().exec(),
       enlacesActivosDeUsuario(usuarioId),
     ]);
-    return docs.map((d) => ({ ...this.limpiar(d as Record<string, unknown>), enlaceActivoExpiraEn: enlacesActivos[(d as any).id] ?? null }));
+    return docs.map((d) => ({ ...this.limpiar(d as Record<string, unknown>), ...this.estadoEnlacePresupuesto(d as Record<string, unknown>, enlacesActivos) }));
   }
 
   /**
@@ -2151,12 +2183,11 @@ export class PresupuestosService {
       PresupuestoModel.find({ usuarioId }).select('-contenidoLienzo').sort({ creado: -1 }).lean().exec(),
       enlacesActivosDeUsuario(usuarioId),
     ]);
-    // `enlaceActivoExpiraEn` (nunca el token, que no se guarda en claro) —
-    // la lista lo usa para avisar antes de generar un enlace nuevo que
-    // revocaría uno ya enviado a un cliente real (ver `enlacesActivosDeUsuario`).
+    // `enlaceActivoExpiraEn`/`enlaceRotoPorEdicion` (nunca el token, que no
+    // se guarda en claro) — ver `estadoEnlacePresupuesto`.
     return docs.map((d) => ({
       ...this.limpiar(d as Record<string, unknown>),
-      enlaceActivoExpiraEn: enlacesActivos[(d as any).id] ?? null,
+      ...this.estadoEnlacePresupuesto(d as Record<string, unknown>, enlacesActivos),
     }));
   }
 

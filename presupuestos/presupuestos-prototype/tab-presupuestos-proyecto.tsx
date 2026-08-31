@@ -3,6 +3,7 @@ import type { Cliente, Proyecto } from './types.js';
 import type { PresupuestoMC } from './presupuestos-modelo.js';
 import type { Empresa } from './use-empresa.js';
 import { AbrirDocumento } from './abrir-documento.js';
+import { VisorPresupuestoFirmado } from './visor-presupuesto-firmado.js';
 import { formatoEuroPrivado, formatoFecha } from './calculos.js';
 import { analizarPrecioPresupuesto } from './inteligencia-precios.js';
 import { AnalisisPrecioPresupuesto } from './analisis-precio-presupuesto.js';
@@ -34,6 +35,8 @@ export function TabPresupuestosProyecto({ cliente, proyecto, empresa, onActualiz
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editor, setEditor] = useState<PresupuestoMC | null>(null);
+  /** Un presupuesto ya aceptado abre primero el visor de solo lectura ("el contrato"), no el editor — petición explícita del usuario, 31/08/2026. "Editar" desde ahí sigue llevando al editor de siempre. */
+  const [firmadoAVer, setFirmadoAVer] = useState<PresupuestoMC | null>(null);
 
   const cargar = useCallback(() => {
     setCargando(true);
@@ -54,6 +57,17 @@ export function TabPresupuestosProyecto({ cliente, proyecto, empresa, onActualiz
     setPresupuestos((prev) => prev.map((x) => (x.id === guardado.id ? guardado : x)));
     setEditor(guardado);
   };
+
+  if (firmadoAVer) {
+    return (
+      <VisorPresupuestoFirmado
+        presupuesto={firmadoAVer}
+        empresa={empresa}
+        onCerrar={() => setFirmadoAVer(null)}
+        onEditar={() => { setEditor(firmadoAVer); setFirmadoAVer(null); }}
+      />
+    );
+  }
 
   if (editor) {
     return (
@@ -93,7 +107,7 @@ export function TabPresupuestosProyecto({ cliente, proyecto, empresa, onActualiz
             return (
               <div key={p.id} className={styles.filaLista} style={{ padding: '1rem' }}>
                 <button
-                  onClick={() => setEditor(p)}
+                  onClick={() => (p.estado === 'aceptado' ? setFirmadoAVer(p) : setEditor(p))}
                   style={{
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap',
                     width: '100%', textAlign: 'left', cursor: 'pointer',
@@ -101,7 +115,12 @@ export function TabPresupuestosProyecto({ cliente, proyecto, empresa, onActualiz
                   }}
                 >
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                    <strong style={{ fontSize: '0.9rem' }}>{p.titulo}</strong>
+                    <strong style={{ fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      {p.titulo}
+                      {p.estado === 'aceptado' && (
+                        <span style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--verde)', background: 'var(--verde-bg)', padding: '0.1rem 0.4rem', borderRadius: 'var(--radio-full, 999px)' }}>✓ Aceptado</span>
+                      )}
+                    </strong>
                     <span style={{ fontSize: '0.72rem', color: 'var(--topo-muy-claro)' }}>{formatoFecha(p.creado)}</span>
                   </div>
                   <strong style={{ fontSize: '0.95rem' }}>{formatoEuroPrivado(p.precioTotal, false)}</strong>

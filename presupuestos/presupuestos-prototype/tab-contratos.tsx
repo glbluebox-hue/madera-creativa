@@ -7,6 +7,7 @@ export type TabContratosProps = {
   cliente: Cliente;
   proyecto: Proyecto;
   empresa: Empresa;
+  privado: boolean;
   onActualizarEmpresa: (cambios: Partial<Empresa>) => void;
 };
 
@@ -19,12 +20,13 @@ export type TabContratosProps = {
  * PROYECTO — es la clave real de aislamiento entre los distintos trabajos
  * de un mismo cliente.
  */
-export function TabContratos({ cliente, proyecto, empresa, onActualizarEmpresa }: TabContratosProps) {
+export function TabContratos({ cliente, proyecto, empresa, privado, onActualizarEmpresa }: TabContratosProps) {
   return (
     <ContratosVista
       clienteId={proyecto.id}
       clienteNombre={proyecto.proyecto || cliente.nombre}
       empresa={empresa}
+      privado={privado}
       onActualizarEmpresa={onActualizarEmpresa}
     />
   );

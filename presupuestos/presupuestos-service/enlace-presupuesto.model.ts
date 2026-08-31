@@ -96,7 +96,7 @@ export async function buscarEnlacePorToken(tokenPlano: string): Promise<any | nu
 }
 
 /**
- * `presupuestoId -> fecha de caducidad` de los enlaces activos (ni
+ * `presupuestoId -> {expiraEn, contenidoHash}` de los enlaces activos (ni
  * revocados ni caducados) de un usuario — para que la lista de
  * presupuestos sepa, SIN el token en claro (nunca se guarda), si ya
  * existe uno vigente y avisar antes de generar otro que lo revocaría.
@@ -104,13 +104,24 @@ export async function buscarEnlacePorToken(tokenPlano: string): Promise<any | nu
  * local de "ya generé un enlace para este" y volvía a mostrar "Generar
  * enlace" — un segundo clic revocaba en silencio el que ya se le había
  * mandado a un cliente real, sin ningún aviso.
+ *
+ * `contenidoHash` se incluye desde el 31/08/2026 por un segundo hallazgo
+ * real del usuario: si edita el presupuesto DESPUÉS de mandar el enlace,
+ * el enlace deja de servir para firmar (el cliente ve "el presupuesto ha
+ * cambiado, pide uno nuevo" — integridad ya existente, revisión de
+ * seguridad 17/08/2026) pero la propia app seguía diciéndole "ya hay un
+ * enlace activo" sin avisar de que ESE enlace concreto ya no vale — se
+ * enteró porque se lo dijo el cliente, no la aplicación. El llamador
+ * (`listarPresupuestos` y afines, `presupuestos-service.ts`) recalcula el
+ * hash del contenido actual y lo compara con este para distinguir "enlace
+ * activo y válido" de "enlace activo pero roto por una edición posterior".
  */
-export async function enlacesActivosDeUsuario(usuarioId: string): Promise<Record<string, string>> {
+export async function enlacesActivosDeUsuario(usuarioId: string): Promise<Record<string, { expiraEn: string; contenidoHash: string }>> {
   const activos = await EnlacePresupuestoModel.find({
     usuarioId, revocadoEn: null, expiraEn: { $gt: new Date() },
-  }).select('presupuestoId expiraEn').lean().exec();
-  const mapa: Record<string, string> = {};
-  for (const e of activos as any[]) mapa[e.presupuestoId] = e.expiraEn.toISOString();
+  }).select('presupuestoId expiraEn contenidoHash').lean().exec();
+  const mapa: Record<string, { expiraEn: string; contenidoHash: string }> = {};
+  for (const e of activos as any[]) mapa[e.presupuestoId] = { expiraEn: e.expiraEn.toISOString(), contenidoHash: e.contenidoHash };
   return mapa;
 }
 

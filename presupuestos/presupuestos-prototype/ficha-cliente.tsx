@@ -508,7 +508,7 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
       {/* ── CONTRATOS: segundo tipo de documento del Motor Documental (Incremento 12) — mismo editor, mismo núcleo ── */}
       {pestana === 'contratos' && (
         <div className={styles.tabPanel}>
-          <TabContratos cliente={cliente} proyecto={proyecto} empresa={empresa} onActualizarEmpresa={onActualizarEmpresa} />
+          <TabContratos cliente={cliente} proyecto={proyecto} empresa={empresa} privado={privado} onActualizarEmpresa={onActualizarEmpresa} />
         </div>
       )}
 
