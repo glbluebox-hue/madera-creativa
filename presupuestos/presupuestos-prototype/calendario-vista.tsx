@@ -163,6 +163,7 @@ export function CalendarioVista({ proyectos, onAbrirElemento }: {
           hoy={hoy}
           elementos={cal.elementos}
           onAbrirElemento={abrirElemento}
+          onVerDia={(fechaIso) => { cal.irA(desdeFechaISO(fechaIso)); cal.establecerVista('dia'); }}
           onCrearEnFecha={setFechaCreacion}
         />
       )}

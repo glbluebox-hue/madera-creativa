@@ -1,9 +1,23 @@
+import { useEffect, useState } from 'react';
 import { aFechaISO, agruparPorFecha, DIAS_SEMANA_CORTOS } from './calendario-modelo.js';
 import type { ElementoCalendario } from './calendario-modelo.js';
 import { CalendarioElementoChip } from './calendario-elemento-chip.js';
 import styles from './styles.module.css';
 
 const MAX_VISIBLES_POR_DIA = 3;
+const CONSULTA_MOVIL = '(max-width: 640px)';
+
+/** Mismo punto de corte que el CSS (`@media (max-width: 640px)`, `styles.module.css`) — hace falta también en JS porque en móvil tocar un día debe MOSTRAR su contenido (vista Día), no crear directamente (petición del usuario, 31/08/2026). */
+function useEsMovil(): boolean {
+  const [esMovil, setEsMovil] = useState(() => typeof window !== 'undefined' && window.matchMedia(CONSULTA_MOVIL).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(CONSULTA_MOVIL);
+    const escuchar = () => setEsMovil(mq.matches);
+    mq.addEventListener('change', escuchar);
+    return () => mq.removeEventListener('change', escuchar);
+  }, []);
+  return esMovil;
+}
 
 /**
  * Vista mensual — rejilla de 6 semanas × 7 días (siempre 6 filas, para que
@@ -16,6 +30,19 @@ const MAX_VISIBLES_POR_DIA = 3;
  * ocultan el texto de cada elemento por debajo de ese ancho, dejando solo
  * el punto de color — así las 7 columnas siempre caben sin desplazarse,
  * y tocar un punto sigue abriendo su elemento igual que en escritorio.
+ *
+ * Las columnas usan `minmax(0, 1fr)`, no `1fr` a secas: con `1fr` (que
+ * equivale a `minmax(auto, 1fr)`) una rejilla CSS Grid nunca encoge una
+ * columna por debajo del ancho mínimo de SU CONTENIDO — y un chip con
+ * texto largo y `white-space: nowrap` (p. ej. "Factura E327-60050705…")
+ * tiene un ancho mínimo igual a todo el texto sin cortar. El resultado
+ * (reporte real, captura de tablet, 31/08/2026): la rejilla entera se
+ * ensancha más que la pantalla y las últimas columnas quedan cortadas.
+ * Por debajo de 640px no se notaba porque el texto ya está oculto (solo
+ * el punto), pero en tablets/ventanas medianas (con texto visible) sí.
+ * `minmax(0, 1fr)` permite encoger la columna por debajo de ese mínimo,
+ * dejando que `overflow:hidden`+`text-overflow:ellipsis` del propio chip
+ * (`calendario-elemento-chip.tsx`) corte el texto en vez de la rejilla.
  */
 export function CalendarioMes({ desde, hasta, hoy, mesActual, elementos, onAbrirElemento, onVerDia, onCrearEnFecha }: {
   desde: string;
@@ -28,6 +55,7 @@ export function CalendarioMes({ desde, hasta, hoy, mesActual, elementos, onAbrir
   onVerDia: (fechaIso: string) => void;
   onCrearEnFecha: (fechaIso: string) => void;
 }) {
+  const esMovil = useEsMovil();
   const porDia = agruparPorFecha(elementos);
   const dias: string[] = [];
   const [ay, am, ad] = desde.split('-').map(Number);
@@ -41,14 +69,14 @@ export function CalendarioMes({ desde, hasta, hoy, mesActual, elementos, onAbrir
 
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: '0.4rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', marginBottom: '0.4rem' }}>
         {DIAS_SEMANA_CORTOS.map((d) => (
           <div key={d} style={{ textAlign: 'center', fontSize: '0.72rem', fontWeight: 700, color: 'var(--topo-muy-claro)', textTransform: 'uppercase', letterSpacing: '0.03em', padding: '0.3rem 0' }}>
             {d}
           </div>
         ))}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 4 }}>
         {dias.map((fechaIso) => {
           const [, m, d] = fechaIso.split('-').map(Number);
           const delMesActual = (m - 1) === mesActual;
@@ -59,10 +87,10 @@ export function CalendarioMes({ desde, hasta, hoy, mesActual, elementos, onAbrir
           return (
             <div
               key={fechaIso}
-              onClick={() => onCrearEnFecha(fechaIso)}
+              onClick={() => (esMovil ? onVerDia(fechaIso) : onCrearEnFecha(fechaIso))}
               role="button"
               tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter') onCrearEnFecha(fechaIso); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') (esMovil ? onVerDia(fechaIso) : onCrearEnFecha(fechaIso)); }}
               className={styles.calendarioDiaCelda}
               style={{
                 minHeight: 92, borderRadius: 8, padding: '0.35rem',
