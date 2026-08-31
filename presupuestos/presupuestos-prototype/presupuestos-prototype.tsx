@@ -45,6 +45,13 @@ import styles from './styles.module.css';
 /** Secciones principales de la app. */
 type Seccion = 'inicio' | 'clientes' | 'presupuestos' | 'inteligenciaPrecios' | 'facturas' | 'notas' | 'calendario' | 'proveedores' | 'dibujos' | 'codigosQR';
 
+/** Nombre corto de cada sección para el botón "volver" de la barra móvil — a diferencia del título de esa misma barra (más ancho, admite el nombre completo), este botón es solo icono+palabra en el estilo iOS, así que usa una versión abreviada cuando el nombre completo no cabría bien. */
+const ETIQUETA_SECCION_CORTA: Record<Seccion, string> = {
+  inicio: 'Inicio', clientes: 'Clientes', presupuestos: 'Presupuestos', inteligenciaPrecios: 'Precios',
+  facturas: 'Facturas', notas: 'Notas', calendario: 'Calendario', proveedores: 'Proveedores',
+  dibujos: 'Pizarra', codigosQR: 'Código QR',
+};
+
 /**
  * App de presupuestos de cliente para Madera Creativa.
  * Protegida por login — solo el propietario puede acceder.
@@ -90,9 +97,30 @@ export function PresupuestosPrototype() {
     const abrirEn = new URLSearchParams(window.location.search).get('accion');
     return abrirEn === 'clientes' ? 'clientes' : 'inicio';
   });
+  /**
+   * Historial de secciones visitadas en ESTA sesión (en memoria, se
+   * pierde al recargar — no contradice "siempre se entra por Inicio" de
+   * arriba, que es sobre no recordar nada ENTRE sesiones). Petición
+   * explícita del usuario, 31/08/2026: "volver" debe llevar a la pestaña
+   * en la que se estaba antes, no siempre a Inicio (p. ej. entrar al
+   * Calendario desde Proveedores y que "volver" te devuelva a
+   * Proveedores). Tope de 20 para no crecer sin límite en una sesión muy
+   * larga.
+   */
+  const [historialSecciones, setHistorialSecciones] = useState<Seccion[]>([]);
   const cambiarSeccion = (s: Seccion) => {
+    if (s !== seccion) setHistorialSecciones((h) => [...h, seccion].slice(-20));
     setSeccion(s);
     setMenuMovilAbierto(false);
+  };
+  /** Vuelve a la sección anterior del historial (ver comentario arriba); si no hay ninguna, cae a Inicio. Además de cambiar de sección, restaura el estado de "lista" (igual que ya hace cada botón del menú lateral) para no dejar una ficha/detalle a medias de la sección de la que se sale. */
+  const volverSeccionAnterior = () => {
+    if (historialSecciones.length === 0) { cambiarSeccion('inicio'); volverALista(); return; }
+    const anterior = historialSecciones[historialSecciones.length - 1];
+    setHistorialSecciones((h) => h.slice(0, -1));
+    setSeccion(anterior);
+    setMenuMovilAbierto(false);
+    volverALista();
   };
   useEffect(() => {
     // El parámetro `?accion=clientes` es de un solo uso — se limpia de la
@@ -534,10 +562,10 @@ export function PresupuestosPrototype() {
         <div className={styles.barraVolver}>
           <button
             className={styles.barraVolverBtn}
-            onClick={() => { cambiarSeccion('inicio'); volverALista(); }}
+            onClick={volverSeccionAnterior}
           >
             <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6" /></svg>
-            Inicio
+            {ETIQUETA_SECCION_CORTA[historialSecciones[historialSecciones.length - 1] ?? 'inicio']}
           </button>
           <p className={styles.barraVolverTitulo}>
             {seccion === 'presupuestos' ? 'Presupuestos' : seccion === 'inteligenciaPrecios' ? 'Inteligencia de precios' : seccion === 'facturas' ? 'Facturas' : seccion === 'notas' ? 'Notas' : seccion === 'calendario' ? 'Calendario' : seccion === 'dibujos' ? 'Pizarra de medición' : seccion === 'codigosQR' ? 'Código QR' : seccion === 'clientes' ? 'Clientes' : 'Proveedores'}
@@ -547,6 +575,25 @@ export function PresupuestosPrototype() {
       )}
 
       <main className={`${styles.main} ${styles.mainConBottomNav}`}>
+        {/*
+          ===== "VOLVER" EN ESCRITORIO =====
+          La barra de arriba solo se ve en móvil (`.barraVolver`, oculta
+          por CSS en escritorio). En una pantalla ancha el sidebar siempre
+          está visible, así que hasta ahora "volver a la pestaña anterior"
+          no existía ahí (el usuario probó esto en una tablet que renderiza
+          el layout de escritorio — el sidebar completo, sin barra móvil —
+          y pidió explícitamente poder volver a la pestaña anterior desde
+          cualquier pestaña, 31/08/2026). Mismo `.volver` que ya usan
+          FichaCliente y la ficha de Proveedor para su "volver" local.
+        */}
+        {(['presupuestos', 'facturas', 'notas', 'calendario', 'proveedores', 'dibujos', 'codigosQR', 'clientes', 'inteligenciaPrecios'] as string[]).includes(seccion)
+          && !(seccion === 'dibujos' && dibujoEditorAbierto)
+          && !(seccion === 'clientes' && proyectoActual && clienteActualIdentidad) && (
+          <button className={styles.volver} onClick={volverSeccionAnterior}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: -2, marginRight: 4 }}><polyline points="15 18 9 12 15 6" /></svg>
+            Volver a {ETIQUETA_SECCION_CORTA[historialSecciones[historialSecciones.length - 1] ?? 'inicio']}
+          </button>
+        )}
         {/* ── SECCIÓN INICIO ── */}
         {seccion === 'inicio' && (
           <Dashboard
