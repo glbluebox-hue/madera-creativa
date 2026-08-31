@@ -520,8 +520,17 @@ export function PresupuestosPrototype() {
         </aside>
 
         <div className={styles.contenidoPrincipal}>
-      {/* ===== BARRA ATRÁS MÓVIL — aparece en presupuestos, facturas, notas, proveedores, dibujos y códigos QR ===== */}
-      {(['presupuestos', 'facturas', 'notas', 'calendario', 'proveedores', 'dibujos', 'codigosQR'] as string[]).includes(seccion) && !(seccion === 'dibujos' && dibujoEditorAbierto) && (
+      {/*
+        ===== BARRA ATRÁS MÓVIL — todas las secciones de primer nivel =====
+        Auditoría 31/08/2026: faltaban 'clientes' e 'inteligenciaPrecios'
+        (esta última incluso tenía ya su caso preparado en el título de
+        abajo, pero nunca se mostraba). 'clientes' se excluye cuando hay
+        una ficha abierta porque FichaCliente ya pone su propia barra
+        ("← Clientes") — mostrar las dos a la vez sería redundante.
+      */}
+      {(['presupuestos', 'facturas', 'notas', 'calendario', 'proveedores', 'dibujos', 'codigosQR', 'clientes', 'inteligenciaPrecios'] as string[]).includes(seccion)
+        && !(seccion === 'dibujos' && dibujoEditorAbierto)
+        && !(seccion === 'clientes' && proyectoActual && clienteActualIdentidad) && (
         <div className={styles.barraVolver}>
           <button
             className={styles.barraVolverBtn}
@@ -531,7 +540,7 @@ export function PresupuestosPrototype() {
             Inicio
           </button>
           <p className={styles.barraVolverTitulo}>
-            {seccion === 'presupuestos' ? 'Presupuestos' : seccion === 'inteligenciaPrecios' ? 'Inteligencia de precios' : seccion === 'facturas' ? 'Facturas' : seccion === 'notas' ? 'Notas' : seccion === 'calendario' ? 'Calendario' : seccion === 'dibujos' ? 'Pizarra de medición' : seccion === 'codigosQR' ? 'Código QR' : 'Proveedores'}
+            {seccion === 'presupuestos' ? 'Presupuestos' : seccion === 'inteligenciaPrecios' ? 'Inteligencia de precios' : seccion === 'facturas' ? 'Facturas' : seccion === 'notas' ? 'Notas' : seccion === 'calendario' ? 'Calendario' : seccion === 'dibujos' ? 'Pizarra de medición' : seccion === 'codigosQR' ? 'Código QR' : seccion === 'clientes' ? 'Clientes' : 'Proveedores'}
           </p>
           <div style={{ width: 56, flexShrink: 0 }} />
         </div>
