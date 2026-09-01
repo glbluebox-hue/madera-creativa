@@ -2033,16 +2033,18 @@
 .kpiIconoChipAzul { background: var(--azul-bg); color: var(--azul); }
 .kpiIconoChipOcre { background: var(--ocre-bg); color: var(--ocre); }
 
-.dashboardCols { display: grid; grid-template-columns: 1.3fr 1fr; gap: 0.9rem; }
-/* Antes 900px: coincidía justo con el punto en el que el sidebar pasa a
-   menú deslizante (`.sidebar`, `@media (max-width: 900px)` más abajo), así
-   que una tablet apenas un poco más ancha que ese límite (con el sidebar
-   de escritorio completo, como la del usuario) se quedaba en las DOS
-   columnas y "Próximos montajes y mediciones" salía demasiado estrecho
-   para verse bien — reporte real, 01/09/2026: "no lo puedo visualizar".
-   1200px da margen de sobra por encima de ese punto, cubriendo tablets en
-   horizontal también, no solo en vertical. */
-@media (max-width: 1200px) { .dashboardCols { grid-template-columns: 1fr; } }
+/*
+ * Petición explícita del usuario, 01/09/2026: "Próximos montajes y
+ * mediciones" tiene que quedar SIEMPRE debajo de "Actividad reciente",
+ * nunca al lado. Un primer intento con un punto de corte más ancho
+ * (900px, luego 1200px) no le resolvió el problema en su tablet incluso
+ * después de borrar datos del sitio — sin saber el ancho exacto de su
+ * pantalla, adivinar otro número no es fiable. Una sola columna siempre,
+ * sin `@media`, deja cero margen de duda: no depende de en qué ancho
+ * exacto esté su dispositivo. En escritorio se ve un poco más ancho que
+ * antes, no roto.
+ */
+.dashboardCols { display: flex; flex-direction: column; gap: 0.9rem; }
 .dashboardVacio { font-size: 0.82rem; color: var(--topo-muy-claro); padding: 0.5rem 0; margin: 0; }
 
 .actividadItem { display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0; border-bottom: 1px solid var(--borde-fino); }

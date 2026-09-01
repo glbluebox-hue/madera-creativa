@@ -2234,6 +2234,14 @@ export function run() {
       // práctico en el móvil, sin DevTools a mano (mismo problema de fondo
       // que ya resolvió el comentario "v6" de sw.js para la CSP, aplicado
       // aquí a la propia carcasa HTML).
+      // `res.sendFile()` (paquete `send` por debajo) calcula y sobrescribe SU
+      // PROPIA cabecera Cache-Control (`public, max-age=0` por defecto) pase
+      // lo que pase antes — un `res.setHeader('Cache-Control', 'no-cache')`
+      // puesto justo antes de llamar a sendFile se pierde en silencio,
+      // comprobado en directo (01/09/2026): el servidor seguía respondiendo
+      // `public, max-age=0` en '/' pese a este mismo cambio ya desplegado.
+      // `cacheControl: false` le dice a `send` que no toque para nada esa
+      // cabecera, dejando la que se puso a mano.
       app.get('/assets/sw.js', (req, res, next) => {
         res.setHeader('Service-Worker-Allowed', '/');
         res.setHeader('Cache-Control', 'no-cache');
@@ -2242,7 +2250,7 @@ export function run() {
       app.use(express.static(dir));
       app.get('*', (req, res) => {
         res.setHeader('Cache-Control', 'no-cache');
-        res.sendFile(indexHtml);
+        res.sendFile(indexHtml, { cacheControl: false });
       });
       logger.info({ dir }, 'Sirviendo frontend estático');
     } else {
