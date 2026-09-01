@@ -26,7 +26,16 @@
 // DevTools a mano, eso no tiene arreglo práctico para el usuario (bug
 // real, recurrente: 24/08 y 27/08/2026). Con este archivo cambiando de
 // bytes, esta vez SÍ se propaga solo a todos los dispositivos.
-const CACHE = 'madera-shell-v6';
+// v7 (01/09/2026): mismo síntoma otra vez, esta vez con index.html —
+// ningún despliegue anterior había puesto `Cache-Control: no-cache` en
+// index.html/sw.js (ver presupuestos-service.app-root.ts), así que un
+// dispositivo con el HTML de la carcasa cacheado nunca llegaba siquiera a
+// pedir este archivo con bytes nuevos, por muchas veces que se desplegara
+// el backend. Ese arreglo de cabeceras evita que vuelva a pasar; este
+// cambio de versión es el último "por la fuerza" que hace falta para
+// desatascar los dispositivos que ya se quedaron con la carcasa vieja
+// antes de que esa cabecera existiera.
+const CACHE = 'madera-shell-v7';
 const RESERVA = ['/', '/manifest.webmanifest', '/assets/icon-192.png'];
 
 // `skipWaiting` + `clients.claim()` (18/08/2026): sin esto, un service

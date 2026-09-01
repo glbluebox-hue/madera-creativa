@@ -2218,12 +2218,32 @@ export function run() {
       // registro va envuelto en un `.catch`). Sin esta cabecera, el service
       // worker nunca controla la raíz de la app y el navegador no la
       // reconoce como PWA instalable — solo ofrece un acceso directo simple.
+      //
+      // `Cache-Control: no-cache` en /assets/sw.js Y en index.html (hallazgo
+      // real, 01/09/2026 — un despliegue confirmado en el servidor, con el
+      // CSS/JS nuevos ya servibles por su URL exacta, que el usuario seguía
+      // sin ver pasado un buen rato): sin cabecera explícita, `express.static`
+      // / `res.sendFile` dejan que el navegador (o un proxy intermedio) guarde
+      // en caché estos dos archivos con revalidación laxa — el JS/CSS con
+      // hash en el nombre (`/assets/index-XXXX.js`) es seguro cachear
+      // agresivamente porque cada build cambia el nombre, pero index.html y
+      // sw.js son quienes DICEN qué hash cargar / qué versión de caché usar;
+      // si esos dos se quedan viejos, el dispositivo nunca se entera de que
+      // hay una versión nueva por mucho que se despliegue, y la única forma
+      // de arreglarlo era borrar los datos del sitio a mano — sin arreglo
+      // práctico en el móvil, sin DevTools a mano (mismo problema de fondo
+      // que ya resolvió el comentario "v6" de sw.js para la CSP, aplicado
+      // aquí a la propia carcasa HTML).
       app.get('/assets/sw.js', (req, res, next) => {
         res.setHeader('Service-Worker-Allowed', '/');
+        res.setHeader('Cache-Control', 'no-cache');
         next();
       });
       app.use(express.static(dir));
-      app.get('*', (req, res) => res.sendFile(indexHtml));
+      app.get('*', (req, res) => {
+        res.setHeader('Cache-Control', 'no-cache');
+        res.sendFile(indexHtml);
+      });
       logger.info({ dir }, 'Sirviendo frontend estático');
     } else {
       logger.warn({ dir }, 'FRONTEND_DIST_DIR puesta pero no contiene index.html — el frontend no se servirá');
