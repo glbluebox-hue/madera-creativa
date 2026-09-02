@@ -1338,3 +1338,6 @@
 2026-08-31T06:36:46.979Z 5152 test presupuestos/presupuestos-prototype/calendario-modelo.spec.ts, started
 2026-08-31T06:36:57.226Z 5152 test presupuestos/presupuestos-prototype/calendario-modelo.spec.ts, succeeded
 2026-08-31T17:24:20.560Z 13480 test presupuestos/presupuestos-service/enlace-presupuesto-vigencia.spec.ts, started
+2026-09-02T08:51:19.186Z 7596 test presupuestos/presupuestos-service/briefing-diario-en-curso.spec.ts, started
+2026-09-02T08:55:12.799Z 23312 test presupuestos/presupuestos-service/briefing-diario-en-curso.spec.ts, started
+2026-09-02T08:56:38.609Z 23312 test presupuestos/presupuestos-service/briefing-diario-en-curso.spec.ts, succeeded
