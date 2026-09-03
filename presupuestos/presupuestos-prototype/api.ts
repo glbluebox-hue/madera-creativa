@@ -233,9 +233,17 @@ export async function obtenerFacturasDeProyecto(proyectoId: string): Promise<Fac
   return datos.items;
 }
 
-/** Todas las facturas de un proveedor concreto (búsqueda difusa por nombre), sin paginar. */
-export async function obtenerFacturasDeProveedor(nombreProveedor: string): Promise<Factura[]> {
-  const res = await fetchConAuth(`/facturas?proveedor=${encodeURIComponent(nombreProveedor)}`);
+/**
+ * Todas las facturas de un proveedor concreto, sin paginar — une la
+ * búsqueda difusa por nombre con la relación real `proveedorId` cuando se
+ * conoce (hallazgo real del usuario, 03/09/2026: sin el id, una factura ya
+ * vinculada de verdad podía no aparecer aquí si el texto no coincidía
+ * exactamente con el nombre registrado del proveedor).
+ */
+export async function obtenerFacturasDeProveedor(nombreProveedor: string, proveedorId?: string): Promise<Factura[]> {
+  const query = new URLSearchParams({ proveedor: nombreProveedor });
+  if (proveedorId) query.set('proveedorId', proveedorId);
+  const res = await fetchConAuth(`/facturas?${query.toString()}`);
   await comprobarRespuesta(res, 'No se pudieron cargar las facturas del proveedor');
   const datos: Pagina<Factura> = await res.json();
   return datos.items;

@@ -1182,18 +1182,34 @@ export class PresupuestosService {
   }
 
   /**
-   * Todas las facturas cuyo proveedor coincide (misma búsqueda difusa que
-   * usaba el frontend: substring insensible a mayúsculas, o coincidencia
-   * exacta) con el nombre indicado, sin paginar — para la ficha de un
-   * proveedor concreto. El historial de un único proveedor está acotado.
+   * Todas las facturas de un proveedor concreto, sin paginar — para su
+   * ficha. El historial de un único proveedor está acotado.
+   *
+   * Unión de dos criterios, no solo uno: por texto (substring insensible a
+   * mayúsculas, o coincidencia exacta del nombre) Y, si se indica, por la
+   * relación real `proveedorId`. Hallazgo real del usuario, 03/09/2026: una
+   * factura con `proveedorId` guardado correctamente (el escáner de
+   * facturas ya lo vincula bien, tanto al detectarlo con IA como al
+   * elegirlo a mano de la lista) no aparecía en la ficha de su proveedor,
+   * porque esta consulta nunca miraba ese campo — solo el texto, que puede
+   * no coincidir exactamente aunque la relación real sí sea correcta
+   * (mayúsculas, "S.L." de más, un renombrado posterior del proveedor…).
+   * La unión evita perder también las facturas antiguas que solo tienen el
+   * texto, de antes de que existiera `proveedorId`.
    * @param usuarioId Propietario.
-   * @param nombreProveedor Nombre del proveedor a buscar.
+   * @param nombreProveedor Nombre del proveedor a buscar (siempre disponible).
+   * @param proveedorId Id real del proveedor, si se conoce.
    */
-  async listarFacturasDeProveedor(usuarioId: string, nombreProveedor: string): Promise<Record<string, unknown>[]> {
+  async listarFacturasDeProveedor(usuarioId: string, nombreProveedor: string, proveedorId?: string): Promise<Record<string, unknown>[]> {
     await conectar();
     const escapado = nombreProveedor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const condiciones: Record<string, unknown>[] = [
+      { proveedor: { $regex: escapado, $options: 'i' } },
+      { proveedor: nombreProveedor },
+    ];
+    if (proveedorId) condiciones.push({ proveedorId });
     const docs = await FacturaModel.aggregate([
-      { $match: { usuarioId, $or: [{ proveedor: { $regex: escapado, $options: 'i' } }, { proveedor: nombreProveedor }] } },
+      { $match: { usuarioId, $or: condiciones } },
       { $sort: { creado: -1 } },
       ...this.pipelineTieneDocumentoFactura(),
     ]).exec();

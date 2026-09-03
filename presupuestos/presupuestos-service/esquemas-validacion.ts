@@ -1058,6 +1058,15 @@ export const esquemaPaginacionFacturas = z.object({
   proyectoId: z.string().max(128).optional(),
   /** Devuelve, sin paginar, las facturas cuyo proveedor coincide (búsqueda difusa) con este nombre. */
   proveedor: z.string().max(300).optional(),
+  /**
+   * Id real del proveedor (Fase Facturas Profesional) — cuando se manda
+   * junto con `proveedor`, `listarFacturasDeProveedor` prioriza esta
+   * relación exacta sobre la búsqueda difusa por texto (hallazgo real del
+   * usuario, 03/09/2026: una factura con `proveedorId` guardado
+   * correctamente no aparecía en la ficha de su proveedor porque esta
+   * consulta nunca miraba ese campo, solo el texto).
+   */
+  proveedorId: z.string().max(128).optional(),
 });
 
 // ── Empresa ───────────────────────────────────────────────────────────────────

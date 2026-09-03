@@ -1545,9 +1545,9 @@ export function run() {
    */
   app.get('/facturas', requireAuth, validar(esquemaPaginacionFacturas, 'query'), async (req: AuthRequest, res) => {
     try {
-      const { pagina, limite, tipo, anio, trimestre, clienteId, proyectoId, proveedor } = req.query as unknown as {
+      const { pagina, limite, tipo, anio, trimestre, clienteId, proyectoId, proveedor, proveedorId } = req.query as unknown as {
         pagina: number; limite: number; tipo: 'ingreso' | 'gasto' | 'todas'; anio?: number; trimestre?: number;
-        clienteId?: string; proyectoId?: string; proveedor?: string;
+        clienteId?: string; proyectoId?: string; proveedor?: string; proveedorId?: string;
       };
       // proyectoId/clienteId/proveedor/anio devuelven un conjunto completo
       // sin paginar (acotado por diseño: las facturas de un proyecto, de un
@@ -1564,7 +1564,7 @@ export function run() {
         return;
       }
       if (proveedor !== undefined) {
-        const items = await svc.listarFacturasDeProveedor(req.usuarioId!, proveedor);
+        const items = await svc.listarFacturasDeProveedor(req.usuarioId!, proveedor, proveedorId);
         res.json({ items, pagina: 1, limite: items.length, total: items.length, totalPaginas: 1 });
         return;
       }

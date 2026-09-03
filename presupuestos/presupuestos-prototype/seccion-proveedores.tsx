@@ -215,7 +215,7 @@ export function SeccionProveedores({
   const [facturasProveedorActivo, setFacturasProveedorActivo] = useState<Factura[]>([]);
   useEffect(() => {
     if (!proveedorActivo) { setFacturasProveedorActivo([]); return; }
-    api.obtenerFacturasDeProveedor(proveedorActivo.nombre).then(setFacturasProveedorActivo);
+    api.obtenerFacturasDeProveedor(proveedorActivo.nombre, proveedorActivo.id).then(setFacturasProveedorActivo);
   }, [proveedorActivo]);
 
   /**
