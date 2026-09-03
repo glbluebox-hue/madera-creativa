@@ -6,11 +6,15 @@ export type ResumenCliente = {
   totalIngresos: number;
   /** Suma de todos los gastos de materiales/movimientos. */
   totalGastos: number;
-  /** Total de horas trabajadas. */
+  /** Total de horas trabajadas (propias). */
   totalHoras: number;
-  /** Coste de mano de obra (horas * tarifa). */
+  /** Coste de mano de obra propia (horas * tarifa del proyecto). */
   costeManoObra: number;
-  /** Coste total = gastos + mano de obra. */
+  /** Total de horas trabajadas por ayudantes (03/09/2026) — aparte de las propias. */
+  totalHorasAyudante: number;
+  /** Coste de las horas de ayudante — cada registro lleva su propia tarifa, así que es la suma de horas*tarifa de cada uno, no una tarifa única. */
+  costeAyudante: number;
+  /** Coste total = gastos + mano de obra propia + ayudante. */
   costeTotal: number;
   /** Margen de ganancia = ingresos - coste total. */
   margen: number;
@@ -20,7 +24,7 @@ export type ResumenCliente = {
 
 /**
  * Calcula el resumen económico de un proyecto a partir de sus
- * movimientos y horas registradas.
+ * movimientos y horas registradas (propias y de ayudante).
  * @param proyecto El proyecto/expediente.
  * @returns El resumen económico con totales y margen.
  */
@@ -35,7 +39,18 @@ export function calcularResumen(proyecto: Proyecto): ResumenCliente {
 
   const totalHoras = proyecto.horas.reduce((s, h) => s + h.horas, 0);
   const costeManoObra = totalHoras * proyecto.tarifaHora;
-  const costeTotal = totalGastos + costeManoObra;
+
+  // Las horas de ayudante llevan su propia tarifa en cada registro (puede
+  // variar entre ayudantes o entre días) — no hay una tarifa única del
+  // proyecto que multiplicar, hay que sumar horas*tarifa registro a registro.
+  // `?? []`: campo opcional (ver comentario en `Proyecto.horasAyudante`,
+  // types.ts) — los proyectos guardados antes de este incremento no lo
+  // tienen todavía.
+  const horasAyudante = proyecto.horasAyudante ?? [];
+  const totalHorasAyudante = horasAyudante.reduce((s, h) => s + h.horas, 0);
+  const costeAyudante = horasAyudante.reduce((s, h) => s + h.horas * h.tarifaHora, 0);
+
+  const costeTotal = totalGastos + costeManoObra + costeAyudante;
   const margen = totalIngresos - costeTotal;
   const margenPorcentaje = totalIngresos > 0 ? (margen / totalIngresos) * 100 : 0;
 
@@ -44,6 +59,8 @@ export function calcularResumen(proyecto: Proyecto): ResumenCliente {
     totalGastos,
     totalHoras,
     costeManoObra,
+    totalHorasAyudante,
+    costeAyudante,
     costeTotal,
     margen,
     margenPorcentaje,

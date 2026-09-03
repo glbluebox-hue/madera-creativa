@@ -21,6 +21,7 @@ export function TablaMargen({ resumen, presupuesto, privado }: TablaMargenProps)
     { concepto: 'Ingresos cobrados', importe: resumen.totalIngresos, tipo: 'positivo' as const },
     { concepto: 'Gastos de materiales', importe: -resumen.totalGastos, tipo: 'negativo' as const },
     { concepto: `Mano de obra (${resumen.totalHoras} h)`, importe: -resumen.costeManoObra, tipo: 'negativo' as const },
+    { concepto: `Ayudante (${resumen.totalHorasAyudante} h)`, importe: -resumen.costeAyudante, tipo: 'negativo' as const },
   ];
 
   return (

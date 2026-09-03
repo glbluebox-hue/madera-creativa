@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { Cliente, Proyecto, Movimiento, RegistroHoras, Adjunto, Factura, Proveedor } from './types.js';
+import type { Cliente, Proyecto, Movimiento, RegistroHoras, RegistroHorasAyudante, Adjunto, Factura, Proveedor } from './types.js';
 import * as api from './api.js';
 import { GaleriaFotos } from './galeria-fotos.js';
 import { useModelo3D } from './use-modelo-3d.js';
@@ -11,6 +11,7 @@ import { formatoEuroPrivado, formatoFecha } from './calculos.js';
 import { calcularResumen } from './calculos.js';
 import { TablaMovimientos } from './tabla-movimientos.js';
 import { TablaHoras } from './tabla-horas.js';
+import { TablaHorasAyudante } from './tabla-horas-ayudante.js';
 import { TablaMargen } from './tabla-margen.js';
 import { PanelAdjuntos } from './panel-adjuntos.js';
 import { autoCrearProveedorDeFactura, type DatosProveedorDetectados } from './proveedor-utils.js';
@@ -173,6 +174,12 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
 
   const borrarHoras = (id: string) =>
     onActualizarProyecto({ ...proyecto, horas: proyecto.horas.filter((x) => x.id !== id) });
+
+  const anadirHorasAyudante = (h: RegistroHorasAyudante) =>
+    onActualizarProyecto({ ...proyecto, horasAyudante: [...(proyecto.horasAyudante ?? []), h] });
+
+  const borrarHorasAyudante = (id: string) =>
+    onActualizarProyecto({ ...proyecto, horasAyudante: (proyecto.horasAyudante ?? []).filter((x) => x.id !== id) });
 
   /**
    * Bug real, 28/08/2026: "el PDF subido no se puede borrar". Causa raíz
@@ -411,6 +418,15 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
             </div>
             <div className={styles.kpiTarjeta}>
               <div className={styles.kpiCabecera}>
+                <div className={styles.kpiIconoChipAzul} style={{ width: 32, height: 32, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+                </div>
+                <span className={styles.kpiLabel} style={{ textTransform: 'none', fontSize: '0.86rem', color: 'var(--topo-claro)' }}>Ayudante ({r.totalHorasAyudante} h)</span>
+              </div>
+              <span className={`${styles.kpiValor} ${styles.valorAzul}`}>{formatoEuroPrivado(r.costeAyudante, privado)}</span>
+            </div>
+            <div className={styles.kpiTarjeta}>
+              <div className={styles.kpiCabecera}>
                 <div className={r.margen >= 0 ? styles.kpiIconoChipVerde : styles.kpiIconoChipRojo} style={{ width: 32, height: 32, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4" /></svg>
                 </div>
@@ -435,6 +451,12 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
             tarifaHora={proyecto.tarifaHora}
             onAnadir={anadirHoras}
             onBorrar={borrarHoras}
+          />
+
+          <TablaHorasAyudante
+            horasAyudante={proyecto.horasAyudante ?? []}
+            onAnadir={anadirHorasAyudante}
+            onBorrar={borrarHorasAyudante}
           />
 
           <TablaMargen resumen={r} presupuesto={proyecto.presupuesto} privado={privado} />

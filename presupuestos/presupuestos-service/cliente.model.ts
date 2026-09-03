@@ -34,6 +34,24 @@ const HorasSchema = new Schema(
 );
 
 /**
+ * Subdocumento de un registro de horas trabajadas por un AYUDANTE externo
+ * (03/09/2026) — aparte de `HorasSchema` (las horas propias), con su
+ * propio nombre y su propia tarifa/hora (a diferencia de las propias, que
+ * usan la tarifa única del proyecto).
+ */
+const HorasAyudanteSchema = new Schema(
+  {
+    id: { type: String, required: true },
+    fecha: { type: String, required: true },
+    ayudante: { type: String, required: true },
+    tarea: { type: String, required: true },
+    horas: { type: Number, required: true },
+    tarifaHora: { type: Number, required: true },
+  },
+  { _id: false }
+);
+
+/**
  * Metadatos comunes de un archivo subido a almacenamiento externo
  * (Incremento 1.7) — `claveAlmacenamiento` es interna (se usa para poder
  * borrar el archivo) y nunca se envía al frontend, ver `limpiarBlob()` en
@@ -278,6 +296,7 @@ const ProyectoSchema = new Schema({
   movimientos: { type: [MovimientoSchema], default: [] },
   trabajosExtra: { type: [TrabajoExtraSchema], default: [] },
   horas: { type: [HorasSchema], default: [] },
+  horasAyudante: { type: [HorasAyudanteSchema], default: [] },
   adjuntos: { type: [AdjuntoSchema], default: [] },
   fotos: { type: [FotoSchema], default: [] },
   /**

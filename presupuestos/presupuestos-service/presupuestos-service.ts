@@ -563,7 +563,7 @@ export class PresupuestosService {
       whatsapp: datos.whatsapp, ubicacion: datos.ubicacion, codigoPuerta: datos.codigoPuerta,
       planta: datos.planta, ascensor: datos.ascensor, zonaCarga: datos.zonaCarga,
       observacionesAcceso: datos.observacionesAcceso, fechaMedicion: datos.fechaMedicion, fechaMontaje: datos.fechaMontaje,
-      estancias: [], tareas: [], movimientos: [], horas: [], adjuntos: [], fotos: [], margenAvisado: false,
+      estancias: [], tareas: [], movimientos: [], horas: [], horasAyudante: [], adjuntos: [], fotos: [], margenAvisado: false,
     });
     busEventos.publicar({ nombre: 'proyecto.creado', usuarioId, entidadId: doc.id, datos: { clienteId: datos.clienteId, proyecto: doc.proyecto } });
     return this.limpiarProyecto(doc.toObject());

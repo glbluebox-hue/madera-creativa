@@ -156,6 +156,30 @@ export type RegistroHoras = {
   horas: number;
 };
 
+/**
+ * Una entrada de horas trabajadas por un AYUDANTE externo (petición del
+ * usuario, 03/09/2026) — deliberadamente separada de `RegistroHoras` (las
+ * horas propias), en su propio apartado de la ficha, para poder ver de un
+ * vistazo cuántas horas ha hecho cada uno sin mezclarlas. A diferencia de
+ * las horas propias (una única tarifa fija por proyecto, `Proyecto.tarifaHora`),
+ * la tarifa del ayudante se indica en cada registro — puede variar entre
+ * ayudantes o entre días, y el usuario la escribe cada vez.
+ */
+export type RegistroHorasAyudante = {
+  /** Identificador único. */
+  id: string;
+  /** Fecha en formato ISO. */
+  fecha: string;
+  /** Nombre del ayudante que hizo estas horas. */
+  ayudante: string;
+  /** Descripción de la tarea. */
+  tarea: string;
+  /** Número de horas trabajadas. */
+  horas: number;
+  /** Tarifa por hora de ESTE registro (€/h). */
+  tarifaHora: number;
+};
+
 /** Una factura escaneada o añadida manualmente. */
 export type Factura = {
   /** Identificador único. */
@@ -366,6 +390,15 @@ export type Proyecto = {
   movimientos: Movimiento[];
   /** Registros de horas trabajadas. */
   horas: RegistroHoras[];
+  /**
+   * Registros de horas trabajadas por un ayudante externo (03/09/2026),
+   * aparte de las propias. Opcional (con `?`, no `[]` por defecto) a
+   * propósito — mismo motivo que `trabajosExtra`/`caracteristicas`: los
+   * proyectos guardados antes de este incremento no tienen este campo en
+   * la base de datos, y `.lean()` no lo rellena solo. Quien lo consuma
+   * debe usar `proyecto.horasAyudante ?? []`, nunca asumir que existe.
+   */
+  horasAyudante?: RegistroHorasAyudante[];
   /** Archivos adjuntos del proyecto. */
   adjuntos: Adjunto[];
   /** Fotos del proyecto acabado. */

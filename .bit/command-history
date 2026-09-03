@@ -1348,3 +1348,9 @@
 2026-09-03T18:36:23.607Z 664 test presupuestos/presupuestos-service/fusion-proveedores.spec.ts presupuestos/presupuestos-prototype/proveedor-utils.spec.ts, succeeded
 2026-09-03T18:52:06.908Z 480 test presupuestos/presupuestos-service/fusion-proveedores.spec.ts, started
 2026-09-03T18:52:16.428Z 480 test presupuestos/presupuestos-service/fusion-proveedores.spec.ts, succeeded
+2026-09-03T20:11:18.402Z 31332 test presupuestos/presupuestos-prototype/calculos.spec.ts, started
+2026-09-03T20:11:40.536Z 31332 test presupuestos/presupuestos-prototype/calculos.spec.ts, succeeded
+2026-09-03T20:12:53.662Z 21816 test presupuestos/presupuestos-service/horas-ayudante.spec.ts, started
+2026-09-03T20:13:14.230Z 21816 test presupuestos/presupuestos-service/horas-ayudante.spec.ts, failed
+2026-09-03T20:13:44.958Z 25364 test presupuestos/presupuestos-service/horas-ayudante.spec.ts, started
+2026-09-03T20:14:01.464Z 25364 test presupuestos/presupuestos-service/horas-ayudante.spec.ts, succeeded

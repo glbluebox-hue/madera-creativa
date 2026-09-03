@@ -242,6 +242,16 @@ const esquemaRegistroHoras = z.object({
   horas: z.number().finite(),
 });
 
+/** Registro de horas de un AYUDANTE externo (03/09/2026) — aparte de `esquemaRegistroHoras`, con su propia tarifa por hora. */
+const esquemaRegistroHorasAyudante = z.object({
+  id: z.string().min(1).max(64),
+  fecha: z.string().min(1).max(32),
+  ayudante: z.string().trim().min(1).max(200),
+  tarea: z.string().max(500),
+  horas: z.number().finite(),
+  tarifaHora: z.number().finite(),
+});
+
 /**
  * Metadatos opcionales de almacenamiento (Incremento 1.7). Nunca los rellena
  * el cliente al subir un archivo nuevo (Base64) — solo viajan de vuelta al
@@ -508,6 +518,8 @@ export const esquemaProyecto = z.object({
   /** Sin esto, el PUT genérico de proyecto borraría en silencio los trabajos extra ya guardados al no reconocer el campo (mismo motivo que `caracteristicas`, arriba). */
   trabajosExtra: arrayOpcional(esquemaTrabajoExtra),
   horas: arrayOpcional(esquemaRegistroHoras),
+  /** Sin esto, el PUT genérico de proyecto borraría en silencio las horas de ayudante ya guardadas al no reconocer el campo (mismo motivo que `caracteristicas`/`trabajosExtra`, arriba). */
+  horasAyudante: arrayOpcional(esquemaRegistroHorasAyudante),
   adjuntos: arrayOpcional(esquemaAdjunto),
   fotos: arrayOpcional(esquemaFotoProyecto),
 }).refine(
