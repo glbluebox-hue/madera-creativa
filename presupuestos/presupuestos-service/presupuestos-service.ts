@@ -1922,12 +1922,22 @@ export class PresupuestosService {
    * guardar, o la IA lo leía con una variación que la coincidencia no
    * cubría, se creaba una ficha nueva en vez de reutilizar la existente.
    *
-   * Mueve TODO lo que apunta al duplicado (`Factura.proveedorId`,
-   * `Producto.proveedorId`) hacia el superviviente, rellena en el
-   * superviviente los campos que tuviera vacíos con los del duplicado (sin
-   * pisar nunca un valor que el superviviente ya tuviera guardado) y borra
-   * la ficha duplicada. Nunca toca `Factura.proveedor` (el texto original
-   * de cada factura se conserva tal cual, como referencia histórica).
+   * Mueve TODO lo que apunta al duplicado hacia el superviviente — tanto
+   * por relación real (`proveedorId`) como por texto (`Factura.proveedor`
+   * parecido al nombre del duplicado, misma unión tolerante que ya usa
+   * `listarFacturasDeProveedor`) —, rellena en el superviviente los campos
+   * que tuviera vacíos con los del duplicado (sin pisar nunca un valor que
+   * el superviviente ya tuviera guardado) y borra la ficha duplicada.
+   * Nunca toca `Factura.proveedor` (el texto original de cada factura se
+   * conserva tal cual, como referencia histórica) — solo `proveedorId`.
+   *
+   * Corregido el mismo día (03/09/2026, hallazgo real del usuario): la
+   * primera versión solo miraba `proveedorId`. Una factura vinculada
+   * SOLO por texto al duplicado (sin relación real todavía) se quedaba
+   * huérfana en cuanto la ficha duplicada se borraba — el documento
+   * seguía intacto en Facturas, pero dejaba de aparecer en cualquier
+   * proveedor, porque ya no había ninguna ficha con ese nombre para que
+   * la coincidencia por texto la encontrara.
    * @param supervivienteId Ficha que se conserva.
    * @param duplicadoId Ficha que desaparece.
    * @param usuarioId Propietario — aísla ambas fichas y todo lo que se mueve.
@@ -1942,8 +1952,16 @@ export class PresupuestosService {
     if (!superviviente) throw new ErrorDeNegocio('Proveedor no encontrado.', 400);
     if (!duplicado) throw new ErrorDeNegocio('El proveedor a fusionar no existe.', 400);
 
+    const nombreDuplicado = String((duplicado as any).nombre ?? '');
+    const escapado = nombreDuplicado.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const condicionesFactura: Record<string, unknown>[] = [{ proveedorId: duplicadoId }];
+    if (escapado) {
+      condicionesFactura.push({ proveedor: { $regex: escapado, $options: 'i' } });
+      condicionesFactura.push({ proveedor: nombreDuplicado });
+    }
+
     await Promise.all([
-      FacturaModel.updateMany({ usuarioId, proveedorId: duplicadoId }, { $set: { proveedorId: supervivienteId } }).exec(),
+      FacturaModel.updateMany({ usuarioId, $or: condicionesFactura }, { $set: { proveedorId: supervivienteId } }).exec(),
       ProductoModel.updateMany({ usuarioId, proveedorId: duplicadoId }, { $set: { proveedorId: supervivienteId } }).exec(),
     ]);
 

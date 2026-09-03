@@ -60,6 +60,18 @@ describe('fusionarProveedores', () => {
     expect(duplicadoBorrado).toBeNull();
   });
 
+  it('también mueve facturas vinculadas SOLO por texto al duplicado (sin proveedorId todavía) — nunca quedan huérfanas al borrar la ficha duplicada', async () => {
+    await ProveedorModel.create(proveedor('prov-super'));
+    await ProveedorModel.create(proveedor('prov-dup', { nombre: 'Hooba' }));
+    // Nunca tuvo proveedorId real — solo el texto coincide con el nombre del duplicado.
+    await FacturaModel.create({ id: 'f-texto', usuarioId: USUARIO, tipo: 'gasto', fecha: '2026-04-07', importe: 15, proveedor: 'Hooba', proveedorId: '', creado: new Date().toISOString() });
+
+    await svc.fusionarProveedores('prov-super', 'prov-dup', USUARIO);
+
+    const factura = await FacturaModel.findOne({ id: 'f-texto' }).lean().exec();
+    expect((factura as any).proveedorId).toBe('prov-super');
+  });
+
   it('rechaza fusionar un proveedor consigo mismo', async () => {
     await ProveedorModel.create(proveedor('prov-solo'));
     await expect(svc.fusionarProveedores('prov-solo', 'prov-solo', USUARIO)).rejects.toBeInstanceOf(ErrorDeNegocio);

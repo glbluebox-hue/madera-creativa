@@ -1346,3 +1346,5 @@
 2026-09-03T18:12:27.996Z 17152 test presupuestos/presupuestos-service/facturas-proveedor-id.spec.ts, started
 2026-09-03T18:36:04.790Z 664 test presupuestos/presupuestos-service/fusion-proveedores.spec.ts presupuestos/presupuestos-prototype/proveedor-utils.spec.ts, started
 2026-09-03T18:36:23.607Z 664 test presupuestos/presupuestos-service/fusion-proveedores.spec.ts presupuestos/presupuestos-prototype/proveedor-utils.spec.ts, succeeded
+2026-09-03T18:52:06.908Z 480 test presupuestos/presupuestos-service/fusion-proveedores.spec.ts, started
+2026-09-03T18:52:16.428Z 480 test presupuestos/presupuestos-service/fusion-proveedores.spec.ts, succeeded
