@@ -7,6 +7,7 @@ import { ConfirmarBorrado } from './confirmar-borrado.js';
 import { useAvisoGuardado, AvisoGuardado } from './aviso-guardado.js';
 import { colorAvatar } from './avatar-utils.js';
 import { VisorFactura } from './visor-factura.js';
+import { nombresCoinciden } from './identificacion-factura.js';
 import styles from './styles.module.css';
 
 /** Props de la sección de proveedores. */
@@ -18,6 +19,8 @@ export type SeccionProveedoresProps = {
   onCrearProveedor: (p: Omit<Proveedor, 'id' | 'creado'>) => void;
   onActualizarProveedor: (p: Proveedor) => void;
   onBorrarProveedor: (id: string) => void;
+  /** Fusiona `duplicadoId` dentro de `supervivienteId` — ver `fusionarProveedores` en presupuestos-service.ts (hallazgo real del usuario, 03/09/2026: un mismo proveedor terminaba con varias fichas). */
+  onFusionarProveedores: (supervivienteId: string, duplicadoId: string) => Promise<void>;
   onCrearProducto: (p: Omit<Producto, 'id'>) => void;
   onActualizarProducto: (p: Producto) => void;
   onBorrarProducto: (id: string) => void;
@@ -39,6 +42,7 @@ const IconoFactura = ({ s = 16 }: { s?: number }) => <svg width={s} height={s} v
 const IconoBuscar = ({ s = 14 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>;
 const IconoOjo = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>;
 const IconoDescargar = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>;
+const IconoFusionar = ({ s = 15 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3v4a2 2 0 0 1-2 2H2" /><path d="M2 3v18" /><path d="M16 3v4a2 2 0 0 0 2 2h4" /><path d="M22 3v18" /><path d="M12 12v9" /><path d="M8 16l4-4 4 4" /></svg>;
 
 const CATEGORIAS = ['Tableros', 'Herrajes', 'Barnices y pinturas', 'Cantos', 'Perfiles', 'Vidrio', 'Iluminación', 'Otros'];
 const UNIDADES = ['ud', 'm²', 'ml', 'm³', 'kg', 'litro', 'caja', 'rollo'];
@@ -178,19 +182,115 @@ function FormProducto({
 }
 
 /**
+ * Modal de fusión de fichas de proveedor duplicadas. `proveedorActual` es
+ * el que sobrevive (todo se mueve HACIA él); el usuario elige cuál de los
+ * demás quiere absorber. Los candidatos cuyo nombre se parece al actual
+ * (misma coincidencia tolerante que usa el escáner de facturas,
+ * `nombresCoinciden`) aparecen primero, marcados como posible duplicado —
+ * pero se puede elegir cualquiera, por si el parecido no basta para
+ * detectarlo solo.
+ */
+function ModalFusionarProveedor({
+  proveedorActual,
+  proveedores,
+  onFusionar,
+  onCerrar,
+}: {
+  proveedorActual: Proveedor;
+  proveedores: Proveedor[];
+  onFusionar: (duplicadoId: string) => Promise<void>;
+  onCerrar: () => void;
+}) {
+  const [seleccionado, setSeleccionado] = useState<string>('');
+  const [fusionando, setFusionando] = useState(false);
+  const [error, setError] = useState('');
+
+  const candidatos = proveedores
+    .filter((p) => p.id !== proveedorActual.id)
+    .map((p) => ({ p, posibleDuplicado: nombresCoinciden(p.nombre, proveedorActual.nombre) }))
+    .sort((a, b) => Number(b.posibleDuplicado) - Number(a.posibleDuplicado));
+
+  const elegido = candidatos.find((c) => c.p.id === seleccionado)?.p;
+
+  const confirmar = async () => {
+    if (!elegido) return;
+    setFusionando(true);
+    setError('');
+    try {
+      await onFusionar(elegido.id);
+      onCerrar();
+    } catch {
+      setError('No se pudo fusionar. Inténtalo de nuevo.');
+      setFusionando(false);
+    }
+  };
+
+  return (
+    <div className={styles.modalFondo} onClick={fusionando ? undefined : onCerrar}>
+      <div className={styles.modalCaja} style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
+        <div className={styles.modalCabecera}>
+          <h2 className={styles.h2} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <IconoFusionar /> Fusionar con otro proveedor
+          </h2>
+          <button className={styles.btnIcono} onClick={onCerrar} aria-label="Cerrar" disabled={fusionando}><IconoCerrar /></button>
+        </div>
+        <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--topo-claro)' }}>
+            Elige la ficha duplicada de <strong>{proveedorActual.nombre}</strong>. Sus facturas y materiales pasarán aquí, y esa ficha desaparecerá. Esta acción no se puede deshacer.
+          </p>
+          {candidatos.length === 0 ? (
+            <p style={{ fontSize: '0.82rem', color: 'var(--topo-claro)' }}>No hay otros proveedores con los que fusionar.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: 280, overflowY: 'auto' }}>
+              {candidatos.map(({ p, posibleDuplicado }) => (
+                <label key={p.id}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.6rem 0.75rem',
+                    borderRadius: 'var(--radio-md)', border: `1px solid ${seleccionado === p.id ? 'var(--topo)' : 'var(--borde)'}`,
+                    background: seleccionado === p.id ? 'var(--fondo-caja)' : 'transparent', cursor: 'pointer',
+                  }}>
+                  <input type="radio" name="proveedorDuplicado" checked={seleccionado === p.id} onChange={() => setSeleccionado(p.id)} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ margin: 0, fontWeight: 700, fontSize: '0.85rem' }}>{p.nombre}</p>
+                    {p.contacto && <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--topo-claro)' }}>{p.contacto}</p>}
+                  </div>
+                  {posibleDuplicado && (
+                    <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--rojo)', background: 'var(--rojo-suave, rgba(200,60,60,0.12))', padding: '2px 7px', borderRadius: 'var(--radio-full, 999px)', whiteSpace: 'nowrap' }}>
+                      Posible duplicado
+                    </span>
+                  )}
+                </label>
+              ))}
+            </div>
+          )}
+          {error && <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--rojo)' }}>{error}</p>}
+          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+            <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={onCerrar} disabled={fusionando}>Cancelar</button>
+            <button className={`${styles.btn} ${styles.btnPrimario}`} disabled={!elegido || fusionando} onClick={confirmar}>
+              {fusionando ? 'Fusionando…' : 'Fusionar'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Sección principal de proveedores y catálogo de materiales.
  * Permite crear fichas de proveedores, ver facturas asociadas y gestionar
  * el catálogo de productos con precios actualizados.
  */
 export function SeccionProveedores({
   proveedores, productos, privado,
-  onCrearProveedor, onActualizarProveedor, onBorrarProveedor,
+  onCrearProveedor, onActualizarProveedor, onBorrarProveedor, onFusionarProveedores,
   onCrearProducto, onActualizarProducto, onBorrarProducto,
 }: SeccionProveedoresProps) {
   const [vista, setVista] = useState<VistaProveedores>('lista');
   const [proveedorActivo, setProveedorActivo] = useState<Proveedor | null>(null);
   const [modalProveedor, setModalProveedor] = useState(false);
   const [editandoProveedor, setEditandoProveedor] = useState<Proveedor | null>(null);
+  const [modalFusion, setModalFusion] = useState(false);
   const [modalProducto, setModalProducto] = useState(false);
   const [editandoProducto, setEditandoProducto] = useState<Producto | null>(null);
   const [busqueda, setBusqueda] = useState('');
@@ -217,6 +317,24 @@ export function SeccionProveedores({
     if (!proveedorActivo) { setFacturasProveedorActivo([]); return; }
     api.obtenerFacturasDeProveedor(proveedorActivo.nombre, proveedorActivo.id).then(setFacturasProveedorActivo);
   }, [proveedorActivo]);
+
+  /**
+   * Tras fusionar dos fichas, la lista de facturas del superviviente y el
+   * resumen global (usado también en la vista de lista) cambian de
+   * verdad en el servidor — hay que volver a pedirlos, no basta con el
+   * estado optimista de `useProveedores`.
+   */
+  const fusionarConDuplicado = async (duplicadoId: string) => {
+    if (!proveedorActivo) return;
+    await onFusionarProveedores(proveedorActivo.id, duplicadoId);
+    const [resumen, facturas] = await Promise.all([
+      api.obtenerResumenPorProveedor(),
+      api.obtenerFacturasDeProveedor(proveedorActivo.nombre, proveedorActivo.id),
+    ]);
+    setResumenProveedores(resumen);
+    setFacturasProveedorActivo(facturas);
+    avisoGuardado.mostrar();
+  };
 
   /**
    * Filas del resumen que corresponden a un proveedor — prioriza la
@@ -274,7 +392,10 @@ export function SeccionProveedores({
             {proveedorActivo.direccion && <p style={{ margin: '0 0 0.1rem', fontSize: '0.82rem', color: 'var(--topo-claro)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}><IconoUbicacion /> {proveedorActivo.direccion}{proveedorActivo.codigoPostal ? ` (${proveedorActivo.codigoPostal})` : ''}</p>}
             {proveedorActivo.notas && <p style={{ margin: '0.4rem 0 0', fontSize: '0.8rem', color: 'var(--topo)', fontStyle: 'italic' }}>"{proveedorActivo.notas}"</p>}
           </div>
-          <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={() => { setEditandoProveedor(proveedorActivo); setModalProveedor(true); }}><IconoEditar /> Editar</button>
+          <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
+            <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={() => setModalFusion(true)}><IconoFusionar /> Fusionar</button>
+            <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={() => { setEditandoProveedor(proveedorActivo); setModalProveedor(true); }}><IconoEditar /> Editar</button>
+          </div>
         </div>
 
         {/* KPI total comprado */}
@@ -372,6 +493,14 @@ export function SeccionProveedores({
             inicial={editandoProveedor}
             onGuardar={datos => { onActualizarProveedor({ ...proveedorActivo, ...datos }); setProveedorActivo(prev => prev ? { ...prev, ...datos } : prev); setModalProveedor(false); setEditandoProveedor(null); avisoGuardado.mostrar(); }}
             onCerrar={() => { setModalProveedor(false); setEditandoProveedor(null); }}
+          />
+        )}
+        {modalFusion && (
+          <ModalFusionarProveedor
+            proveedorActual={proveedorActivo}
+            proveedores={proveedores}
+            onFusionar={fusionarConDuplicado}
+            onCerrar={() => setModalFusion(false)}
           />
         )}
         {modalProducto && (

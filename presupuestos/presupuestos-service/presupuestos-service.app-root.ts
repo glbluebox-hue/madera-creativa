@@ -58,6 +58,7 @@ import {
   esquemaPaginacionClientes,
   esquemaPaginacionFacturas,
   esquemaProveedor,
+  esquemaFusionProveedores,
   esquemaProducto,
   esquemaNotaMC,
   esquemaEventoCalendarioMC,
@@ -1813,6 +1814,14 @@ export function run() {
 
   app.delete('/proveedores/:id', requireAuth, async (req: AuthRequest, res) => {
     try { await svc.borrarProveedor(req.params.id, req.usuarioId!); res.json({ ok: true }); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  // Fusiona una ficha de proveedor duplicada (`duplicadoId`) en la de `:id`
+  // — hallazgo real del usuario, 03/09/2026: ver el comentario de
+  // `fusionarProveedores` en presupuestos-service.ts.
+  app.post('/proveedores/:id/fusionar', requireAuth, validar(esquemaFusionProveedores), async (req: AuthRequest, res) => {
+    try { res.json(await svc.fusionarProveedores(req.params.id, req.body.duplicadoId, req.usuarioId!)); }
     catch (err) { responderError(req, res, err); }
   });
 

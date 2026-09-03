@@ -45,6 +45,20 @@ export function useProveedores(autenticado = true) {
     api.borrarProveedor(id).catch(() => cargar());
   };
 
+  /**
+   * Fusiona dos fichas de proveedor duplicadas (hallazgo real del usuario,
+   * 03/09/2026). A diferencia del resto de acciones de este hook, NO es
+   * optimista: mueve datos reales en el servidor (facturas, materiales) y
+   * es irreversible, así que se espera la respuesta antes de tocar el
+   * estado local, y con el resultado real del servidor (no una suposición
+   * local de cómo habrá quedado la ficha fusionada).
+   */
+  const fusionarProveedores = async (supervivienteId: string, duplicadoId: string): Promise<void> => {
+    const actualizado = await api.fusionarProveedores(supervivienteId, duplicadoId);
+    setProveedores((prev) => prev.filter((p) => p.id !== duplicadoId).map((p) => (p.id === supervivienteId ? actualizado : p)));
+    setProductos((prev) => prev.map((p) => (p.proveedorId === duplicadoId ? { ...p, proveedorId: supervivienteId } : p)));
+  };
+
   const crearProducto = (datos: Omit<Producto, 'id'>): Producto => {
     const nuevo: Producto = { ...datos, id: generarId() };
     setProductos((prev) => [nuevo, ...prev]);
@@ -64,7 +78,7 @@ export function useProveedores(autenticado = true) {
 
   return {
     proveedores, productos,
-    crearProveedor, actualizarProveedor, borrarProveedor,
+    crearProveedor, actualizarProveedor, borrarProveedor, fusionarProveedores,
     crearProducto, actualizarProducto, borrarProducto,
   };
 }

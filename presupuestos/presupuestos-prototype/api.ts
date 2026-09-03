@@ -882,6 +882,22 @@ export async function borrarProveedor(id: string): Promise<void> {
   await comprobarRespuesta(res, 'No se pudo borrar el proveedor');
 }
 
+/**
+ * Fusiona la ficha `duplicadoId` en `supervivienteId`: todas sus facturas
+ * y materiales pasan al superviviente y la ficha duplicada desaparece.
+ * Hallazgo real del usuario, 03/09/2026 — ver `fusionarProveedores` en
+ * presupuestos-service.ts.
+ */
+export async function fusionarProveedores(supervivienteId: string, duplicadoId: string): Promise<Proveedor> {
+  const res = await fetchConAuth(`/proveedores/${supervivienteId}/fusionar`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ duplicadoId }),
+  });
+  await comprobarRespuesta(res, 'No se pudieron fusionar los proveedores');
+  return res.json();
+}
+
 /* ===== NOTAS ===== */
 
 /** Recupera todas las notas del usuario (sin filtrar — el filtrado es en el cliente). */

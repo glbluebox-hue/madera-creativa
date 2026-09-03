@@ -127,8 +127,12 @@ export function Facturas({
     }
     setEscaner(true);
   };
-  const guardarYCerrar = (f: Factura, datosProveedorDetectados?: DatosProveedorDetectados) => {
-    autoCrearProveedorDeFactura(f, proveedores, onCrearProveedor, onActualizarProveedor, datosProveedorDetectados);
+  const guardarYCerrar = (fSinResolver: Factura, datosProveedorDetectados?: DatosProveedorDetectados) => {
+    // El proveedorId devuelto puede no ser el que traía `fSinResolver`
+    // (recién creado, o encontrado por coincidencia tolerante de nombre) —
+    // hay que guardar la factura CON ese id, nunca con el de antes.
+    const proveedorId = autoCrearProveedorDeFactura(fSinResolver, proveedores, onCrearProveedor, onActualizarProveedor, datosProveedorDetectados);
+    const f: Factura = { ...fSinResolver, proveedorId };
     onGuardar(f);
     setEscaner(false);
     setFacturaEditar(undefined);

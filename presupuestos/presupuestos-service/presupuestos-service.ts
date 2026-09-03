@@ -1913,6 +1913,60 @@ export class PresupuestosService {
     await ProductoModel.deleteMany({ proveedorId: id, usuarioId }).exec();
   }
 
+  /**
+   * Fusiona dos fichas de proveedor duplicadas en una sola. Hallazgo real
+   * del usuario, 03/09/2026: un mismo proveedor real ("Madera Santana",
+   * "Leroy Merlin"…) terminaba con varias fichas — el escáner de facturas
+   * enlaza por nombre (`nombresCoinciden`, tolerante a mayúsculas/"S.L."/
+   * tildes), pero si el usuario retocaba el texto detectado antes de
+   * guardar, o la IA lo leía con una variación que la coincidencia no
+   * cubría, se creaba una ficha nueva en vez de reutilizar la existente.
+   *
+   * Mueve TODO lo que apunta al duplicado (`Factura.proveedorId`,
+   * `Producto.proveedorId`) hacia el superviviente, rellena en el
+   * superviviente los campos que tuviera vacíos con los del duplicado (sin
+   * pisar nunca un valor que el superviviente ya tuviera guardado) y borra
+   * la ficha duplicada. Nunca toca `Factura.proveedor` (el texto original
+   * de cada factura se conserva tal cual, como referencia histórica).
+   * @param supervivienteId Ficha que se conserva.
+   * @param duplicadoId Ficha que desaparece.
+   * @param usuarioId Propietario — aísla ambas fichas y todo lo que se mueve.
+   */
+  async fusionarProveedores(supervivienteId: string, duplicadoId: string, usuarioId: string): Promise<Record<string, unknown>> {
+    if (supervivienteId === duplicadoId) throw new ErrorDeNegocio('No se puede fusionar un proveedor consigo mismo.', 400);
+    await conectar();
+    const [superviviente, duplicado] = await Promise.all([
+      ProveedorModel.findOne({ id: supervivienteId, usuarioId }).lean().exec(),
+      ProveedorModel.findOne({ id: duplicadoId, usuarioId }).lean().exec(),
+    ]);
+    if (!superviviente) throw new ErrorDeNegocio('Proveedor no encontrado.', 400);
+    if (!duplicado) throw new ErrorDeNegocio('El proveedor a fusionar no existe.', 400);
+
+    await Promise.all([
+      FacturaModel.updateMany({ usuarioId, proveedorId: duplicadoId }, { $set: { proveedorId: supervivienteId } }).exec(),
+      ProductoModel.updateMany({ usuarioId, proveedorId: duplicadoId }, { $set: { proveedorId: supervivienteId } }).exec(),
+    ]);
+
+    const camposRellenables = ['contacto', 'cifNif', 'telefono', 'email', 'direccion', 'codigoPostal', 'notas'] as const;
+    const cambios: Record<string, unknown> = {};
+    for (const campo of camposRellenables) {
+      if (!(superviviente as any)[campo] && (duplicado as any)[campo]) cambios[campo] = (duplicado as any)[campo];
+    }
+
+    const doc = Object.keys(cambios).length > 0
+      ? await ProveedorModel.findOneAndUpdate({ id: supervivienteId, usuarioId }, { $set: cambios }, { new: true }).lean().exec()
+      : superviviente;
+    await ProveedorModel.deleteOne({ id: duplicadoId, usuarioId }).exec();
+
+    busEventos.publicar({
+      nombre: 'proveedor.actualizado',
+      usuarioId,
+      entidadId: supervivienteId,
+      datos: { nombre: (doc as any).nombre },
+    });
+    return this.limpiar(doc as Record<string, unknown>);
+  }
+
   // ── Notas — aislados por usuarioId (rediseño del módulo de Notas) ──
 
   /**

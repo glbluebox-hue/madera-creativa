@@ -132,10 +132,15 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
   const totalFacturasGasto = facturasProyecto.reduce((s, f) => s + f.importe, 0);
   const r = calcularResumen(proyecto);
 
-  /** Guarda la factura, vincula proveedor automáticamente si el nombre coincide con uno existente, y recarga la lista. */
-  const guardarFacturaConProveedor = (f: Factura, datosProveedorDetectados?: DatosProveedorDetectados) => {
-    autoCrearProveedorDeFactura(f, proveedores, onCrearProveedor, onActualizarProveedor, datosProveedorDetectados);
-    onGuardarFactura?.(f);
+  /**
+   * Guarda la factura, vincula proveedor automáticamente si el nombre
+   * coincide con uno existente (o crea la ficha si de verdad no hay
+   * ninguno), y recarga la lista. El proveedorId devuelto puede no ser el
+   * que traía `fSinResolver` — hay que guardar la factura con ese id.
+   */
+  const guardarFacturaConProveedor = (fSinResolver: Factura, datosProveedorDetectados?: DatosProveedorDetectados) => {
+    const proveedorId = autoCrearProveedorDeFactura(fSinResolver, proveedores, onCrearProveedor, onActualizarProveedor, datosProveedorDetectados);
+    onGuardarFactura?.({ ...fSinResolver, proveedorId });
     cargarFacturasProyecto();
   };
 

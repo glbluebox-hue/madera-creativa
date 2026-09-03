@@ -152,7 +152,7 @@ export function PresupuestosPrototype() {
   const [centroAyudaAbierto, setCentroAyudaAbierto] = useState(false);
   const { empresa, cargando: empresaCargando, actualizar } = useEmpresa(listo, sesion?.esAdmin ?? false);
   // Proveedores aislados por usuario — admin usa clave original, usuarios nuevos tienen espacio propio
-  const { proveedores, productos, crearProveedor, actualizarProveedor, borrarProveedor, crearProducto, actualizarProducto, borrarProducto } = useProveedores(listo);
+  const { proveedores, productos, crearProveedor, actualizarProveedor, borrarProveedor, fusionarProveedores, crearProducto, actualizarProducto, borrarProducto } = useProveedores(listo);
   const { dataTheme, tema, alternar: alternarTema } = useTema();
   const { privado, alternar: alternarPrivacidad } = usePrivacidad();
   const { perfil, actualizar: actualizarPerfil } = usePerfil(listo);
@@ -630,6 +630,7 @@ export function PresupuestosPrototype() {
             onCrearProveedor={crearProveedor}
             onActualizarProveedor={actualizarProveedor}
             onBorrarProveedor={borrarProveedor}
+            onFusionarProveedores={fusionarProveedores}
             onCrearProducto={crearProducto}
             onActualizarProducto={actualizarProducto}
             onBorrarProducto={borrarProducto}

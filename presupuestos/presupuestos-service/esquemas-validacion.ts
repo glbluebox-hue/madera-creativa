@@ -610,6 +610,18 @@ export const esquemaProveedor = z.object({
   creado: z.string().min(1).max(64),
 });
 
+/**
+ * Fusión de dos fichas de proveedor duplicadas (hallazgo del usuario,
+ * 03/09/2026: el mismo proveedor real —p. ej. "Leroy Merlin"— terminaba
+ * con varias fichas distintas porque el texto detectado por la IA no
+ * coincidía EXACTAMENTE con el nombre ya registrado). `duplicadoId` es la
+ * ficha que desaparece; sus facturas y materiales pasan a `id` (la ficha
+ * abierta, que sobrevive).
+ */
+export const esquemaFusionProveedores = z.object({
+  duplicadoId: z.string().min(1).max(64),
+});
+
 /** Un elemento de una nota de tipo "lista" — parecido a `Tarea` (`Proyecto.tareas`), embebido en la nota, pero con prioridad propia (petición explícita del usuario, 26/08/2026). */
 const esquemaItemLista = z.object({
   id: z.string().min(1).max(64),

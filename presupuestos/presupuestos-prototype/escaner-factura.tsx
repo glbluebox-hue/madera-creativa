@@ -593,7 +593,24 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
                 type="text"
                 placeholder="Nombre del proveedor"
                 value={proveedor}
-                onChange={(e) => { setProveedor(e.target.value); setProveedorId(''); setMostrarSugerencias(true); }}
+                onChange={(e) => {
+                  const texto = e.target.value;
+                  setProveedor(texto);
+                  // No basta con borrar el vínculo a la primera tecla: si el
+                  // usuario solo está retocando una mayúscula, una tilde o
+                  // un "S.L." de más, el nombre resultante puede seguir
+                  // siendo el mismo proveedor ya registrado. Hallazgo real
+                  // del usuario, 03/09/2026: borrar `proveedorId` sin más
+                  // aquí creaba una ficha de proveedor duplicada al guardar
+                  // (`autoCrearProveedorDeFactura`, que a su vez ya no
+                  // reconocía el vínculo). Recalcula con la misma
+                  // coincidencia tolerante que usa la detección por IA —
+                  // solo queda vacío si de verdad no hay ningún proveedor
+                  // conocido que se le parezca.
+                  const conocido = proveedores.find((p) => nombresCoinciden(p.nombre, texto));
+                  setProveedorId(conocido?.id ?? '');
+                  setMostrarSugerencias(true);
+                }}
                 onFocus={() => setMostrarSugerencias(true)}
                 onBlur={() => setTimeout(() => setMostrarSugerencias(false), 150)}
                 autoComplete="off"
