@@ -11,7 +11,7 @@ import { ErrorProveedorDesconocido } from './ia-registro-proveedores.js';
 import { ErrorProveedorInalcanzable } from './ia-proveedor.js';
 import { crearTrabajo, completarTrabajo, fallarTrabajo, obtenerTrabajo } from './ia-trabajos.js';
 import { limitadorIA, limitadorSondeoIA } from './rate-limit.middleware.js';
-import { requirePlan, obtenerPlanUsuario, planPermiteAcceso, planesDesde, SOLO_PREMIUM } from './planes.js';
+import { requirePlan, capacidadPermitidaParaPlan, SOLO_PREMIUM } from './planes.js';
 // Importado solo por su efecto secundario: registra las capacidades
 // `asistente-global`, `redactar-presupuesto`, `generar-bloque-documento`,
 // `extraer-datos-factura`, `copiloto-presupuesto` y
@@ -43,21 +43,16 @@ import './ia-capacidad-describir-trabajo-mercado.js';
  * `rate-limit.middleware.ts` para el porqué de separarlos.
  */
 
-/**
- * ¿Puede este usuario llamar a esta capacidad, según `capacidad.planMinimo`?
- * (Fase 2, 04/09/2026). No es un middleware de ruta como `requirePlan`
- * porque tanto `/generar` como `/herramientas/ejecutar` reciben la
- * capacidad DENTRO del cuerpo de la petición — el plan exigido no se sabe
- * hasta parsear el body, así que se comprueba aquí, no en la cadena de
- * middlewares de Express. La cuenta `admin` nunca queda bloqueada, mismo
- * criterio que `requirePlan`.
- */
-export async function capacidadPermitidaParaPlan(usuarioId: string, planMinimo: string | undefined): Promise<boolean> {
-  if (!planMinimo) return true;
-  if (usuarioId === 'admin') return true;
-  const plan = await obtenerPlanUsuario(usuarioId);
-  return planPermiteAcceso(plan, planesDesde(planMinimo as any));
-}
+// `capacidadPermitidaParaPlan` (¿puede este usuario llamar a esta
+// capacidad, según `capacidad.planMinimo`?) vive ahora en `planes.ts` —
+// movida en la Fase 3.1 (05/09/2026) para que el dispatcher de
+// `asistente-global` pueda reutilizarla sin depender de este archivo (que a
+// su vez importa, por efecto secundario, la propia capacidad
+// `asistente-global` — habría sido un import circular). Sigue haciendo
+// exactamente lo mismo: no es middleware de ruta porque tanto `/generar`
+// como `/herramientas/ejecutar` reciben la capacidad DENTRO del cuerpo de
+// la petición, así que se llama en línea, después de resolver el
+// manifiesto.
 
 function responderErrorIA(req: AuthRequest, res: express.Response, err: unknown): void {
   if (err instanceof ErrorProveedorInalcanzable) {

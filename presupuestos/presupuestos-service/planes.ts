@@ -106,6 +106,26 @@ export function limitarNotifPrefsPorPlan(notifPrefs: any): any {
   };
 }
 
+/**
+ * ¿Puede este usuario usar una capacidad/función cuyo plan mínimo es
+ * `planMinimo`? Vive aquí (no en `ia-rutas.ts`, donde nació en la Fase 2) —
+ * movida en la Fase 3.1 (05/09/2026) para que sea el único punto de verdad,
+ * reutilizable tanto por rutas de IA (`/ia/generar`,
+ * `/ia/herramientas/ejecutar`, donde la capacidad viaja en el cuerpo de la
+ * petición y por eso no puede ser un middleware de ruta como `requirePlan`)
+ * como por el dispatcher de contexto de `asistente-global` — evita crear un
+ * segundo sistema de permisos para lo mismo. `planMinimo` puede venir como
+ * `string | undefined` (tal cual llega de `CapacidadIA.planMinimo`) sin que
+ * el llamante tenga que hacer el cast. La cuenta `admin` nunca queda
+ * bloqueada, mismo criterio que `requirePlan`.
+ */
+export async function capacidadPermitidaParaPlan(usuarioId: string, planMinimo: string | undefined): Promise<boolean> {
+  if (!planMinimo) return true;
+  if (usuarioId === 'admin') return true;
+  const plan = await obtenerPlanUsuario(usuarioId);
+  return planPermiteAcceso(plan, planesDesde(planMinimo as PlanComercial));
+}
+
 export function requirePlan(permitidos: PlanComercial[]) {
   return async (req: AuthRequest, res: express.Response, next: express.NextFunction) => {
     if (req.usuarioId === 'admin') { next(); return; }

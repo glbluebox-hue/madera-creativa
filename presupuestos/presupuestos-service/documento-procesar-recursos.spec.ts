@@ -2,8 +2,23 @@ import { vi } from 'vitest';
 import { procesarRecursosDocumento, borrarRecursosDocumentoHuerfanos } from './documento-procesar-recursos.js';
 import { inicializarMotorDocumental } from './documento-motor-inicializar.js';
 import { almacenamiento } from './almacenamiento.service.js';
-import type { AlmacenamientoMemoria } from './almacenamiento-memoria.js';
 import { PAGINA_A4, type DocumentoMC } from './documento-modelo.js';
+
+/**
+ * "¿Sigue existiendo esta clave?" a través de `obtener()` — parte real de
+ * `AlmacenamientoArchivos`, la única interfaz pública que expone el
+ * singleton `almacenamiento` (Fase 3.1, 05/09/2026: antes se hacía
+ * `(almacenamiento as AlmacenamientoMemoria).existe(clave)`, pero
+ * `almacenamiento` es un objeto delegador — ver `almacenamiento.service.ts`
+ * — que reenvía solo los métodos de `AlmacenamientoArchivos`; el cast
+ * engañaba a TypeScript pero no cambiaba el objeto real en tiempo de
+ * ejecución, así que `existe` no existía ahí y el test fallaba con
+ * `TypeError`. `AlmacenamientoMemoria.existe()` en sí siempre funcionó bien
+ * — el fallo era del test, llamando al método en el objeto equivocado).
+ */
+async function existeEnAlmacenamiento(clave: string): Promise<boolean> {
+  return (await almacenamiento.obtener(clave)) !== null;
+}
 
 /**
  * Pruebas del procesado de recursos del Motor Documental contra el
@@ -78,7 +93,7 @@ describe('procesarRecursosDocumento', () => {
     const elemento = procesado.paginas[0].elementos[0] as any;
     expect(elemento.contenido.url).not.toMatch(/^data:/);
     expect(elemento.contenido.claveAlmacenamiento).toBeTruthy();
-    expect((almacenamiento as AlmacenamientoMemoria).existe(elemento.contenido.claveAlmacenamiento)).toBe(true);
+    expect(await existeEnAlmacenamiento(elemento.contenido.claveAlmacenamiento)).toBe(true);
   });
 
   it('deja intactos los elementos sin recurso (p. ej. texto)', async () => {
@@ -137,13 +152,13 @@ describe('borrarRecursosDocumentoHuerfanos', () => {
   it('borra del almacenamiento externo los recursos que ya no están en la versión nueva', async () => {
     const antes = await procesarRecursosDocumento(documentoConElementos([elementoImagen('img-1', `data:image/png;base64,${PIXEL_PNG_B64}`)]));
     const claveAntes = (antes.paginas[0].elementos[0] as any).contenido.claveAlmacenamiento;
-    expect((almacenamiento as AlmacenamientoMemoria).existe(claveAntes)).toBe(true);
+    expect(await existeEnAlmacenamiento(claveAntes)).toBe(true);
 
     const despues = documentoConElementos([elementoTexto('t-1')]); // la imagen ya no está
 
     await borrarRecursosDocumentoHuerfanos(antes, despues);
 
-    expect((almacenamiento as AlmacenamientoMemoria).existe(claveAntes)).toBe(false);
+    expect(await existeEnAlmacenamiento(claveAntes)).toBe(false);
   });
 
   it('no borra un recurso que sigue presente en la versión nueva', async () => {
@@ -152,7 +167,7 @@ describe('borrarRecursosDocumentoHuerfanos', () => {
 
     await borrarRecursosDocumentoHuerfanos(antes, antes);
 
-    expect((almacenamiento as AlmacenamientoMemoria).existe(clave)).toBe(true);
+    expect(await existeEnAlmacenamiento(clave)).toBe(true);
   });
 
   it('no falla si "antes" es null (documento recién creado)', async () => {

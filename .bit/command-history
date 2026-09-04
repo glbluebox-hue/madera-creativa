@@ -1376,3 +1376,11 @@
 2026-09-04T18:55:16.284Z 24392 test presupuestos-service, failed
 2026-09-04T18:55:51.340Z 4632 test presupuestos-service, started
 2026-09-04T18:56:14.454Z 4632 test presupuestos-service, failed
+2026-09-04T19:33:41.748Z 22728 test presupuestos-service, started
+2026-09-04T19:34:02.742Z 22728 test presupuestos-service, failed
+2026-09-04T19:38:45.469Z 23036 test presupuestos-service, started
+2026-09-04T19:39:06.128Z 23036 test presupuestos-service, failed
+2026-09-04T19:40:15.133Z 27220 test presupuestos-service, started
+2026-09-04T19:40:35.765Z 27220 test presupuestos-service, succeeded
+2026-09-04T19:40:42.218Z 24744 test presupuestos-service, started
+2026-09-04T19:41:01.518Z 24744 test presupuestos-service, succeeded

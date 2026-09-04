@@ -37,9 +37,23 @@ afterEach(async () => {
   await EventoCalendarioModel.deleteMany({});
 });
 
+// `creado` fijo y deliberadamente fuera de cualquier rango que este archivo
+// consulte (todos son de 2026) — Fase 3.1 (05/09/2026): con `new Date()`
+// (la fecha real del sistema) este helper creaba el Cliente "hoy", y el
+// propio `obtenerCalendario` agrega un elemento tipo 'cliente' cuando
+// `creado` cae dentro del rango pedido (ver el test de arriba "incluye un
+// cliente añadido dentro del rango" — comportamiento correcto e
+// intencional). Mientras la fecha real del sistema estuvo fuera de
+// septiembre de 2026 este helper no interfería con los rangos '2026-09-*'
+// de los demás tests; al entrar septiembre, "hoy" empezó a colarse como un
+// elemento de calendario extra e hizo fallar 4 tests que no tenían nada que
+// ver con clientes. No es un fallo de `obtenerCalendario` — es este helper
+// usando una fecha real donde hacía falta una fecha de dato fija.
+const CREADO_FUERA_DE_RANGO = '2020-01-01T00:00:00.000Z';
+
 async function crearClienteYProyecto(id: string, usuarioId: string, extra: Record<string, unknown> = {}) {
-  await ClienteModel.create({ id: `cliente-${id}`, usuarioId, nombre: 'Cliente test', creado: new Date().toISOString() });
-  await ProyectoModel.create({ id, usuarioId, clienteId: `cliente-${id}`, creado: new Date().toISOString(), ...extra });
+  await ClienteModel.create({ id: `cliente-${id}`, usuarioId, nombre: 'Cliente test', creado: CREADO_FUERA_DE_RANGO });
+  await ProyectoModel.create({ id, usuarioId, clienteId: `cliente-${id}`, creado: CREADO_FUERA_DE_RANGO, ...extra });
   return `cliente-${id}`;
 }
 
@@ -70,9 +84,9 @@ describe('obtenerCalendario — agregación por tipo', () => {
   });
 
   it('una tarea SIN fecha nunca aparece en el calendario', async () => {
-    // `crearClienteYProyecto` también crea un Cliente con `creado` = ahora
-    // mismo — se filtra a solo 'tarea' para no depender de en qué rango cae
-    // la fecha real del test.
+    // `crearClienteYProyecto` también crea un Cliente (con `creado` fijo,
+    // fuera de rango — ver constante de arriba) — se filtra a solo 'tarea'
+    // de todos modos, para que este test compruebe solo lo suyo.
     await crearClienteYProyecto('p1', USUARIO_A, { tareas: [{ id: 't1', texto: 'Sin fecha', hecha: false }] });
     const elementos = await svc.obtenerCalendario(USUARIO_A, '2026-01-01', '2026-12-31', ['tarea']);
     expect(elementos).toHaveLength(0);

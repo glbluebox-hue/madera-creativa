@@ -51,6 +51,38 @@ function presupuestoBase(id: string, clienteId: string, proyectoId: string, usua
  */
 const esperarConsecuencias = () => new Promise((resolve) => setTimeout(resolve, 150));
 
+/**
+ * Sondea hasta que `analisisPrecio` aparezca, en vez de esperar un
+ * `setTimeout` fijo y luego leer una sola vez — Fase 3.1 (05/09/2026).
+ * `ejecutarConsecuenciasAceptacion` se dispara sin esperarla
+ * (fire-and-forget, a propósito, ver el comentario junto a esa llamada en
+ * `presupuestos-service.ts`: "mejor esfuerzo"), y cuánto tarda en terminar
+ * de verdad no es una constante: con la suite completa ejecutando muchos
+ * archivos de test a la vez, `esperarConsecuencias()` (150ms fijos) a
+ * veces perdía la carrera bajo esa carga — fallo intermitente real,
+ * confirmado con la suite completa: `analisisPrecio` seguía `null` en la
+ * lectura. Sondear la condición real, acotada con un tiempo máximo
+ * generoso, elimina la carrera sin inventar un número mayor que
+ * "probablemente" alcance — y termina en cuanto la condición se cumple,
+ * sin ralentizar el caso normal.
+ *
+ * Los tests que esperan analisisPrecio AUSENTE (Empresa sin margen
+ * objetivo configurado) no sufren esta carrera — su resultado es el mismo
+ * si se comprueba antes o después de que termine la tarea de fondo, así
+ * que esos siguen usando `esperarConsecuencias()` tal cual.
+ */
+async function esperarAnalisisPrecio(leer: () => Promise<any>, timeoutMs = 3000): Promise<any> {
+  const inicio = Date.now();
+  for (;;) {
+    const doc = await leer();
+    if (doc?.analisisPrecio) return doc;
+    if (Date.now() - inicio >= timeoutMs) {
+      throw new Error(`Tiempo agotado (${timeoutMs}ms) esperando a que analisisPrecio se congelara.`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
 beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   process.env.MONGO_URL = mongod.getUri();
@@ -77,8 +109,7 @@ describe('aceptarPresupuesto — snapshot de análisis de precio (Fase 1)', () =
     await EmpresaModel.create({ usuarioId: USUARIO_A, margenObjetivoPorcentaje: 35 });
 
     await svc.aceptarPresupuesto('pr1', USUARIO_A);
-    await esperarConsecuencias();
-    const doc = await PresupuestoModel.findOne({ id: 'pr1' }).lean().exec() as any;
+    const doc = await esperarAnalisisPrecio(() => PresupuestoModel.findOne({ id: 'pr1' }).lean().exec());
     expect(doc.analisisPrecio).toBeTruthy();
     expect(doc.analisisPrecio.costeEstimado).toBe(700); // 500 gasto + 10h*20€/h
     expect(doc.analisisPrecio.margenPorcentaje).toBeCloseTo(30, 5);
@@ -103,9 +134,7 @@ describe('aceptarPresupuesto — snapshot de análisis de precio (Fase 1)', () =
     await PresupuestoModel.create(presupuestoBase('pr3', 'c3', 'p3', USUARIO_A, 1000));
     await EmpresaModel.create({ usuarioId: USUARIO_A, margenObjetivoPorcentaje: 35 });
     await svc.aceptarPresupuesto('pr3', USUARIO_A);
-    await esperarConsecuencias();
-
-    const aceptado = await svc.obtenerPresupuesto('pr3', USUARIO_A) as any;
+    const aceptado = await esperarAnalisisPrecio(() => svc.obtenerPresupuesto('pr3', USUARIO_A)) as any;
     expect(aceptado.analisisPrecio).toBeTruthy();
     // guardarPresupuesto pasa por esquemaPresupuestoMC (Zod), que no incluye
     // analisisPrecio — igual que ya ocurre con `estado`/`firmaClienteUrl`.
@@ -141,8 +170,7 @@ describe('aceptarPresupuesto — snapshot de análisis de precio (Fase 1)', () =
     await EmpresaModel.create({ usuarioId: USUARIO_B, margenObjetivoPorcentaje: 99 }); // objetivo disparatado de B, no debe filtrarse a A
 
     await svc.aceptarPresupuesto('pr-a', USUARIO_A);
-    await esperarConsecuencias();
-    const doc = await PresupuestoModel.findOne({ id: 'pr-a' }).lean().exec() as any;
+    const doc = await esperarAnalisisPrecio(() => PresupuestoModel.findOne({ id: 'pr-a' }).lean().exec());
     expect(doc.analisisPrecio.costeEstimado).toBe(700); // nunca los 999999 del proyecto de B
     expect(doc.analisisPrecio.margenObjetivoPorcentaje).toBe(35); // nunca el 99 de la empresa de B
   });

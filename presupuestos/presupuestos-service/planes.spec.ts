@@ -6,10 +6,12 @@ import {
   PLANES_COMERCIALES, PRO_O_SUPERIOR, SOLO_PREMIUM,
   planesDesde, planPermiteAcceso, obtenerPlanUsuario, requirePlan,
   contenidoDibujoUsaFuncionesPro, limitarNotifPrefsPorPlan,
+  capacidadPermitidaParaPlan,
 } from './planes.js';
-import { capacidadPermitidaParaPlan } from './ia-rutas.js';
 import { PresupuestosService } from './presupuestos-service.js';
 import { contextoAsistenteGlobal } from './asistente-global.contexto-ia.js';
+import { contextoAsistenteNavegacion } from './asistente-navegacion.contexto-ia.js';
+import { contextoAsistenteCifrasReales } from './asistente-cifras-reales.contexto-ia.js';
 import './ia-capacidad-asistente-global.js';
 import './ia-capacidad-extraer-factura.js';
 import './ia-capacidad-copiloto-presupuesto.js';
@@ -301,5 +303,38 @@ describe('contextoAsistenteGlobal — cifras reales del negocio, PRO+ (Fase 3)',
   it('admin: siempre ve cifras reales, sin importar su acceso', async () => {
     const { resumenParaPrompt } = await contextoAsistenteGlobal.construir({}, 'admin');
     expect(resumenParaPrompt).toContain('RESUMEN FINANCIERO');
+  });
+
+  // Fase 3.1 (05/09/2026): la separación ya no es un `if` interno de
+  // `contextoAsistenteGlobal` — son dos `ConstructorContexto` completos en
+  // sus propios archivos. Estos tests ejercitan cada módulo DIRECTAMENTE
+  // (sin pasar por el dispatcher) para dejar la separación demostrada
+  // también en el test, no solo en el código de producción.
+
+  it('contextoAsistenteNavegacion: nunca incluye cifras financieras, ni siquiera para una cuenta PRO — es plan-agnóstico por diseño', async () => {
+    const { resumenParaPrompt, datosParaHerramientas } = await contextoAsistenteNavegacion.construir({}, USUARIO_PRO);
+    expect(resumenParaPrompt).not.toContain('RESUMEN FINANCIERO');
+    expect(resumenParaPrompt).not.toContain('1000.00');
+    expect(resumenParaPrompt).toContain('plan BASIC');
+    expect(resumenParaPrompt).toContain('Cocina de prueba');
+    const clientes = (datosParaHerramientas as any).clientes;
+    expect(clientes[0]).not.toHaveProperty('presupuesto');
+  });
+
+  it('contextoAsistenteCifrasReales: siempre incluye cifras financieras, incluso para una cuenta BASIC — el gate de plan es responsabilidad del dispatcher, no de este módulo', async () => {
+    const { resumenParaPrompt, datosParaHerramientas } = await contextoAsistenteCifrasReales.construir({}, USUARIO_BASIC);
+    expect(resumenParaPrompt).toContain('RESUMEN FINANCIERO DE TODA LA HISTORIA');
+    expect(resumenParaPrompt).toContain('1000.00');
+    const clientes = (datosParaHerramientas as any).clientes;
+    expect(clientes[0]).toHaveProperty('presupuesto', 3000);
+  });
+
+  it('el dispatcher delega en el módulo correcto según capacidadPermitidaParaPlan — no reimplementa la comprobación de plan', async () => {
+    expect(await capacidadPermitidaParaPlan(USUARIO_BASIC, 'PRO')).toBe(false);
+    expect(await capacidadPermitidaParaPlan(USUARIO_PRO, 'PRO')).toBe(true);
+    const basico = await contextoAsistenteGlobal.construir({}, USUARIO_BASIC);
+    const pro = await contextoAsistenteGlobal.construir({}, USUARIO_PRO);
+    expect(basico.resumenParaPrompt).toEqual((await contextoAsistenteNavegacion.construir({}, USUARIO_BASIC)).resumenParaPrompt);
+    expect(pro.resumenParaPrompt).toEqual((await contextoAsistenteCifrasReales.construir({}, USUARIO_PRO)).resumenParaPrompt);
   });
 });
