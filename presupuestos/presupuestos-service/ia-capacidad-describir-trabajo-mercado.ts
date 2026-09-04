@@ -38,6 +38,7 @@ export const capacidadDescribirTrabajoMercado: CapacidadIA = {
   herramientas: [],
   permisosRequeridos: [],
   perfilModelo: 'vision',
+  planMinimo: 'PREMIUM', // Fase 2, 04/09/2026 — parte de Investigación de Mercado, Estrategia V3 sección 9.
   activa: true,
 };
 

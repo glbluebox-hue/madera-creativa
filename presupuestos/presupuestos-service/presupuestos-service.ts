@@ -3245,14 +3245,17 @@ export class PresupuestosService {
    * @param usuarioId Propietario.
    * @param opciones Filtro opcional por cliente.
    */
-  async listarDibujos(usuarioId: string, opciones?: { clienteId?: string; carpetaId?: string }): Promise<Record<string, unknown>[]> {
+  async listarDibujos(usuarioId: string, opciones?: { clienteId?: string; carpetaId?: string; proyectoId?: string }): Promise<Record<string, unknown>[]> {
     await conectar();
     const filtro: Record<string, unknown> = { usuarioId };
-    // `!== undefined` (no truthy) a propósito: clienteId/carpetaId === '' es un
-    // filtro válido y distinto de "sin filtro" — así se listan por separado los
-    // dibujos temporales (clienteId '') o sueltos dentro de un cliente (carpetaId '').
+    // `!== undefined` (no truthy) a propósito: clienteId/carpetaId/proyectoId === ''
+    // es un filtro válido y distinto de "sin filtro" — así se listan por separado
+    // los dibujos temporales (clienteId '') o sueltos dentro de un cliente (carpetaId '').
     if (opciones?.clienteId !== undefined) filtro.clienteId = opciones.clienteId;
     if (opciones?.carpetaId !== undefined) filtro.carpetaId = opciones.carpetaId;
+    // Filtro por proyecto (Fase 1, 04/09/2026) — ver comentario largo en
+    // `presupuestos-service.app-root.ts`, ruta GET /dibujos.
+    if (opciones?.proyectoId !== undefined) filtro.proyectoId = opciones.proyectoId;
     const docs = await DibujoModel.find(filtro).select('-contenido').sort({ actualizadoEn: -1 }).lean().exec();
     return docs.map((d) => this.limpiarDibujo(d as Record<string, unknown>));
   }

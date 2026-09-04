@@ -54,6 +54,7 @@ export const capacidadCopilotoPresupuesto: CapacidadIA = {
   herramientas: [],
   permisosRequeridos: [],
   perfilModelo: 'vision',
+  planMinimo: 'PREMIUM', // Fase 2, 04/09/2026 — Copiloto Visual, Estrategia V3 sección 9.
   activa: true,
 };
 

@@ -10,6 +10,7 @@ import { isoBase64URL, isoUint8Array } from '@simplewebauthn/server/helpers';
 import { responderError, opcionesCookieRefresh, REFRESH_TTL_MS } from './presupuestos-service.app-root.js';
 import type { AuthRequest } from './presupuestos-service.app-root.js';
 import { requireAuth } from './presupuestos-service.app-root.js';
+import { requirePlan, obtenerPlanUsuario, PRO_O_SUPERIOR } from './planes.js';
 import { validar } from './validacion.middleware.js';
 import { limitadorWebAuthnLogin } from './rate-limit.middleware.js';
 import { esquemaWebAuthnRegistroVerificar, esquemaWebAuthnLoginVerificar } from './esquemas-validacion.js';
@@ -63,7 +64,11 @@ export function crearRouterWebAuthn(): express.Router {
    * "discoverable" (passkey) — imprescindible para el login sin pedir
    * usuario de antemano.
    */
-  router.post('/registro/opciones', requireAuth, async (req: AuthRequest, res) => {
+  // PRO+ (Fase 2, 04/09/2026) — solo REGISTRAR una credencial nueva; el
+  // login con una ya registrada (más abajo, `/login/verificar`) se mantiene
+  // abierto aunque la cuenta baje de plan después, mismo criterio que el
+  // resto de la app: los datos/accesos ya concedidos no se revocan solos.
+  router.post('/registro/opciones', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
     try {
       const origen = origenEsperado(req);
       if (!origen) { res.status(400).json({ error: 'Origen no permitido.' }); return; }
@@ -103,7 +108,7 @@ export function crearRouterWebAuthn(): express.Router {
    * (protección contra replay y contra asociar la credencial a la cuenta
    * equivocada).
    */
-  router.post('/registro/verificar', requireAuth, validar(esquemaWebAuthnRegistroVerificar), async (req: AuthRequest, res) => {
+  router.post('/registro/verificar', requireAuth, requirePlan(PRO_O_SUPERIOR), validar(esquemaWebAuthnRegistroVerificar), async (req: AuthRequest, res) => {
     try {
       const usuarioId = req.usuarioId!;
       const { respuesta, nombreDispositivo } = req.body as { respuesta: any; nombreDispositivo: string };
@@ -266,7 +271,11 @@ export function crearRouterWebAuthn(): express.Router {
 
       const { accessToken, refreshToken } = await emitirSesion(usuario.id, usuario.esAdmin);
       res.cookie('mc_refresh', refreshToken, opcionesCookieRefresh(REFRESH_TTL_MS));
-      res.json({ ok: true, id: usuario.id, nombre: usuario.nombre, esAdmin: usuario.esAdmin, estado: usuario.estado, accessToken });
+      // Mismo motivo que /auth/login (Fase 1, 04/09/2026): esta ruta emite
+      // sesión igual que el login por contraseña, así que debe devolver el
+      // mismo `plan` — mismo contrato, dos formas de entrar.
+      const plan = await obtenerPlanUsuario(usuario.id);
+      res.json({ ok: true, id: usuario.id, nombre: usuario.nombre, esAdmin: usuario.esAdmin, estado: usuario.estado, plan, accessToken });
     } catch (err) {
       logger.warn({ err, requestId: req.requestId }, '[webauthn] Fallo verificando login');
       responderError(req, res, err);

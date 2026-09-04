@@ -1,6 +1,7 @@
 import type { HerramientaIA, PermisoHerramienta } from './ia-herramienta.js';
 import type { ConstructorContexto } from './ia-contexto.js';
 import type { PerfilModeloRequerido, ConfiguracionModelo } from './ia-modelo-perfil.js';
+import type { PlanComercial } from './planes.js';
 
 /**
  * Manifiesto completo de una capacidad de IA (p. ej. `asistente-global`,
@@ -30,5 +31,18 @@ export interface CapacidadIA {
   modelosPermitidos?: ConfiguracionModelo[];
   /** Reservado para desempate entre capacidades — sin consumidor mientras exista una sola capacidad registrada. */
   prioridad?: number;
+  /**
+   * Plan comercial mínimo para poder llamar a esta capacidad (Fase 2,
+   * 04/09/2026) — comprobado en `ia-rutas.ts` antes de crear el trabajo
+   * (`POST /generar`) o de ejecutar una herramienta pendiente
+   * (`POST /herramientas/ejecutar`), nunca dentro de `ServicioCentralIA`
+   * (agnóstico a quién llama). `undefined` = sin restricción de plan
+   * (disponible desde BASIC) — es el caso de `asistente-global`, que hoy
+   * mezcla herramientas de navegación (pensadas para BASIC) con las de
+   * escritura de presupuestos/notas (pensadas para PRO): separarlas en dos
+   * capacidades es trabajo de una fase posterior, no de esta — mientras
+   * tanto se deja sin gate entero, nunca a medias.
+   */
+  planMinimo?: PlanComercial;
   activa: boolean;
 }

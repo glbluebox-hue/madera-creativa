@@ -14,6 +14,7 @@ import { inicializarMotorDocumental } from './documento-motor-inicializar.js';
 import { inicializarAutomatizaciones } from './automatizaciones-listener.js';
 import { PresupuestosService, ErrorDeNegocio } from './presupuestos-service.js';
 import { UsuarioModel, conectarUsuarios, migrarNombresNormalizados, asegurarIndiceNombreNormalizado, migrarEmailVerificadoUsuariosExistentes, ACCESO_POR_DEFECTO, leerPreferenciaNotif } from './usuario.model.js';
+import { requirePlan, obtenerPlanUsuario, PRO_O_SUPERIOR, SOLO_PREMIUM } from './planes.js';
 import type { AccesoUsuario, EstadoUsuario } from './usuario.model.js';
 import { CodigoPromocionalModel, conectarCodigos, canjearCodigo, generarIdCodigo, normalizarCodigo } from './codigo-promocional.model.js';
 import { SoporteHiloModel, conectarSoporte, generarIdHiloSoporte } from './soporte-hilo.model.js';
@@ -552,8 +553,13 @@ export function run() {
    * Comprueba si el token guardado en el cliente es válido.
    * El frontend llama a esto al arrancar para detectar sesiones con token antiguo.
    */
-  app.get('/auth/yo', requireAuth, (req: AuthRequest, res) => {
-    res.json({ ok: true, usuarioId: req.usuarioId });
+  app.get('/auth/yo', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      // Reutiliza la misma caché que `requirePlan` (60s) — ni una consulta
+      // extra a Mongo por el hecho de exponerlo aquí.
+      const plan = await obtenerPlanUsuario(req.usuarioId!);
+      res.json({ ok: true, usuarioId: req.usuarioId, plan });
+    } catch (err) { responderError(req, res, err); }
   });
 
   // ── Push ──
@@ -734,7 +740,7 @@ export function run() {
       await conectarUsuarios();
       const { nombre, password } = req.body;
       const u = await UsuarioModel.findOne({ nombreNormalizado: nombre.toLowerCase() })
-        .select('id nombre passwordHash hashAlgo estado esAdmin emailVerificado').lean().exec() as any;
+        .select('id nombre passwordHash hashAlgo estado esAdmin emailVerificado acceso').lean().exec() as any;
       if (!u) { res.status(401).json({ error: 'Usuario o contraseña incorrectos.' }); return; }
 
       let credencialesValidas: boolean;
@@ -777,7 +783,11 @@ export function run() {
       const accessToken = firmarAccessToken({ sub: u.id, esAdmin: u.esAdmin });
       const refreshToken = await crearRefreshToken(u.id);
       res.cookie('mc_refresh', refreshToken, opcionesCookieRefresh(REFRESH_TTL_MS));
-      res.json({ ok: true, id: u.id, nombre: u.nombre, esAdmin: u.esAdmin, estado: u.estado, accessToken });
+      // Plan actual (BASIC/PRO/PREMIUM, o NONE/LIFETIME_FREE) — el frontend
+      // no tiene otra forma fiable de saberlo en su propia sesión (Fase 1,
+      // 04/09/2026). Solo el plan, no el resto de `acceso` (código usado,
+      // fecha de activación...) — no hace falta exponerlo aquí.
+      res.json({ ok: true, id: u.id, nombre: u.nombre, esAdmin: u.esAdmin, estado: u.estado, plan: u.acceso?.plan ?? 'NONE', accessToken });
     } catch (err) { responderError(req, res, err); }
   });
 
@@ -1257,7 +1267,9 @@ export function run() {
    * solicitud de reseña de este cliente. Ver `crearEnlaceResena` en
    * `enlace-resena.model.ts`.
    */
-  app.post('/clientes/:id/resena-enlace', requireAuth, async (req: AuthRequest, res) => {
+  // PRO+ (Fase 2, 04/09/2026): pedir una reseña es parte de "la aplicación
+  // me ayuda a vender" — Estrategia V3, sección 4.
+  app.post('/clientes/:id/resena-enlace', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
     try { res.json(await svc.generarEnlaceResena(req.params.id, req.usuarioId!)); }
     catch (err) { responderError(req, res, err); }
   });
@@ -1600,7 +1612,11 @@ export function run() {
       const accessToken = firmarAccessToken({ sub: u.id, esAdmin: u.esAdmin });
       const refreshToken = await crearRefreshToken(u.id);
       res.cookie('mc_refresh', refreshToken, opcionesCookieRefresh(REFRESH_TTL_MS));
-      res.json({ ok: true, id: u.id, nombre: u.nombre, esAdmin: u.esAdmin, estado: u.estado, accessToken });
+      // Mismo motivo que en /auth/login (Fase 1, 04/09/2026): esta ruta
+      // también reemplaza la sesión del frontend vía `loginDirecto`, que
+      // ahora espera un plan — sin esto quedaría vacío tras cambiar el
+      // nombre/contraseña, aunque el plan en sí no haya cambiado aquí.
+      res.json({ ok: true, id: u.id, nombre: u.nombre, esAdmin: u.esAdmin, estado: u.estado, plan: u.acceso?.plan ?? 'NONE', accessToken });
     } catch (err) { responderError(req, res, err); }
   });
 
@@ -2002,7 +2018,9 @@ export function run() {
    * margen real (proyectos finalizados), fusionados en un único "trabajo"
    * por proyecto. Ver `svc.analizarTrabajos`.
    */
-  app.get('/inteligencia-precios/analisis', requireAuth, async (req: AuthRequest, res) => {
+  // PRO+ (Fase 2, 04/09/2026): "¿cuánto gano?" — rentabilidad propia, sin
+  // IA generativa detrás. Estrategia V3, sección 11.
+  app.get('/inteligencia-precios/analisis', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
     try { res.json(await svc.analizarTrabajos(req.usuarioId!)); }
     catch (err) { responderError(req, res, err); }
   });
@@ -2012,7 +2030,9 @@ export function run() {
    * obligatorio (sin un precio de referencia no hay nada que comparar);
    * `tipoTrabajo`/`excluirId`/`top` opcionales. Ver `svc.obtenerComparables`.
    */
-  app.get('/inteligencia-precios/comparables', requireAuth, async (req: AuthRequest, res) => {
+  // Solo PREMIUM (Fase 2, 04/09/2026): "¿cobro bien?" — comparación con
+  // mercado. Estrategia V3, sección 11.
+  app.get('/inteligencia-precios/comparables', requireAuth, requirePlan(SOLO_PREMIUM), async (req: AuthRequest, res) => {
     try {
       const precio = Number(req.query.precio);
       if (!Number.isFinite(precio) || precio <= 0) { res.status(400).json({ error: 'precio (mayor que 0) es obligatorio' }); return; }
@@ -2048,7 +2068,11 @@ export function run() {
    * cualquier enlace anterior todavía activo del mismo presupuesto — ver
    * `crearEnlacePresupuesto` en `enlace-presupuesto.model.ts`.
    */
-  app.post('/presupuestos/:id/enlace', requireAuth, async (req: AuthRequest, res) => {
+  // PRO+ (Fase 2, 04/09/2026): el gate va aquí, en quien GENERA el enlace —
+  // el propio Portal público (`/portal/:token/*`, más abajo) debe seguir
+  // siendo accesible sin login para cualquier cliente final, sea cual sea
+  // su plan (no tiene cuenta ni la necesita). Estrategia V3, sección 8.
+  app.post('/presupuestos/:id/enlace', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
     try {
       res.json(await svc.generarEnlacePresupuesto(req.params.id, req.usuarioId!));
     } catch (err) { responderError(req, res, err); }
@@ -2195,7 +2219,14 @@ export function run() {
       // cliente asignado) — distinto de omitir el filtro por completo.
       const clienteId = req.query.temporales === '1' ? '' : (typeof req.query.clienteId === 'string' ? req.query.clienteId : undefined);
       const carpetaId = typeof req.query.carpetaId === 'string' ? req.query.carpetaId : undefined;
-      res.json(await svc.listarDibujos(req.usuarioId!, { clienteId, carpetaId }));
+      // Filtro por proyecto (Fase 1, 04/09/2026) — independiente de
+      // `clienteId` (que hoy, por el incremento "Cliente ≠ Proyecto", ya
+      // recibe en la práctica el id del proyecto, no el del cliente real;
+      // ver comentario largo en `tab-dibujos.tsx`). `proyectoId` es el campo
+      // correctamente nombrado, reservado desde entonces y hasta ahora sin
+      // ningún filtro que lo consultara.
+      const proyectoId = typeof req.query.proyectoId === 'string' ? req.query.proyectoId : undefined;
+      res.json(await svc.listarDibujos(req.usuarioId!, { clienteId, carpetaId, proyectoId }));
     } catch (err) { responderError(req, res, err); }
   });
 

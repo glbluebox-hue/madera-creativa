@@ -43,6 +43,7 @@ export const capacidadExtraerFactura: CapacidadIA = {
   herramientas: [],
   permisosRequeridos: [],
   perfilModelo: 'vision',
+  planMinimo: 'PRO', // Fase 2, 04/09/2026 — escáner de facturas, Estrategia V3 sección 9.
   activa: true,
 };
 

@@ -11,6 +11,7 @@ import { ErrorProveedorDesconocido } from './ia-registro-proveedores.js';
 import { ErrorProveedorInalcanzable } from './ia-proveedor.js';
 import { crearTrabajo, completarTrabajo, fallarTrabajo, obtenerTrabajo } from './ia-trabajos.js';
 import { limitadorIA, limitadorSondeoIA } from './rate-limit.middleware.js';
+import { requirePlan, obtenerPlanUsuario, planPermiteAcceso, planesDesde, SOLO_PREMIUM } from './planes.js';
 // Importado solo por su efecto secundario: registra las capacidades
 // `asistente-global`, `redactar-presupuesto`, `generar-bloque-documento`,
 // `extraer-datos-factura`, `copiloto-presupuesto` y
@@ -42,6 +43,22 @@ import './ia-capacidad-describir-trabajo-mercado.js';
  * `rate-limit.middleware.ts` para el porqué de separarlos.
  */
 
+/**
+ * ¿Puede este usuario llamar a esta capacidad, según `capacidad.planMinimo`?
+ * (Fase 2, 04/09/2026). No es un middleware de ruta como `requirePlan`
+ * porque tanto `/generar` como `/herramientas/ejecutar` reciben la
+ * capacidad DENTRO del cuerpo de la petición — el plan exigido no se sabe
+ * hasta parsear el body, así que se comprueba aquí, no en la cadena de
+ * middlewares de Express. La cuenta `admin` nunca queda bloqueada, mismo
+ * criterio que `requirePlan`.
+ */
+export async function capacidadPermitidaParaPlan(usuarioId: string, planMinimo: string | undefined): Promise<boolean> {
+  if (!planMinimo) return true;
+  if (usuarioId === 'admin') return true;
+  const plan = await obtenerPlanUsuario(usuarioId);
+  return planPermiteAcceso(plan, planesDesde(planMinimo as any));
+}
+
 function responderErrorIA(req: AuthRequest, res: express.Response, err: unknown): void {
   if (err instanceof ErrorProveedorInalcanzable) {
     res.status(503).json({ error: 'El servicio de IA no está disponible en este momento.' });
@@ -58,9 +75,24 @@ export function crearRouterIA(): express.Router {
   const router = express.Router();
   const servicioCentralIA = ServicioCentralIA.from();
 
-  router.post('/generar', limitadorIA, validar(esquemaGenerarIA), (req: AuthRequest, res) => {
+  router.post('/generar', limitadorIA, validar(esquemaGenerarIA), async (req: AuthRequest, res) => {
     const { capacidad, mensajes, referencias } = req.body;
     const usuarioId = req.usuarioId!;
+
+    // Gate de plan (Fase 2, 04/09/2026) — antes de crear ningún trabajo.
+    // `obtenerCapacidad` puede lanzar `ErrorCapacidadDesconocida` para un
+    // nombre inválido; antes ese error solo se veía de forma asíncrona,
+    // como un trabajo fallido consultado por sondeo — comprobar el plan
+    // aquí, de paso, también adelanta ese caso a un 400 inmediato.
+    let manifiesto;
+    try {
+      manifiesto = obtenerCapacidad(capacidad);
+    } catch (err) { responderErrorIA(req, res, err); return; }
+    if (!(await capacidadPermitidaParaPlan(usuarioId, manifiesto.planMinimo))) {
+      res.status(403).json({ error: 'plan_insuficiente', mensaje: 'Tu plan actual no incluye esta función.' });
+      return;
+    }
+
     const trabajoId = crearTrabajo(usuarioId);
 
     // Fire-and-forget a propósito: la petición HTTP no espera a que Ollama/OpenAI
@@ -86,7 +118,8 @@ export function crearRouterIA(): express.Router {
    * usuario confirme cuáles guardar vía el `POST /referencias-mercado` ya
    * existente (encargo, punto 4).
    */
-  router.post('/mercado/buscar', limitadorIA, validar(esquemaBuscarMercado), (req: AuthRequest, res) => {
+  // Solo PREMIUM (Fase 2, 04/09/2026) — Investigación de Mercado, Estrategia V3 sección 9.
+  router.post('/mercado/buscar', limitadorIA, requirePlan(SOLO_PREMIUM), validar(esquemaBuscarMercado), (req: AuthRequest, res) => {
     const usuarioId = req.usuarioId!;
     const trabajoId = crearTrabajo(usuarioId);
 
@@ -107,6 +140,14 @@ export function crearRouterIA(): express.Router {
     try {
       const { capacidad: nombreCapacidad, nombre, argumentos, mensajesPrevios, referencias, toolCallId } = req.body;
       const capacidad = obtenerCapacidad(nombreCapacidad);
+      // Gate de plan (Fase 2, 04/09/2026) — mismo criterio que /generar.
+      // Imprescindible aquí también: sin esto, una cuenta sin plan
+      // suficiente podría saltarse el gate de /generar llamando
+      // directamente a esta ruta con el nombre de una capacidad protegida.
+      if (!(await capacidadPermitidaParaPlan(req.usuarioId!, capacidad.planMinimo))) {
+        res.status(403).json({ error: 'plan_insuficiente', mensaje: 'Tu plan actual no incluye esta función.' });
+        return;
+      }
       const herramienta = capacidad.herramientas.find((h) => h.nombre === nombre);
       if (!herramienta) { res.status(404).json({ error: 'Herramienta no encontrada en esta capacidad.' }); return; }
       if (herramienta.permiso !== 'escritura') {
