@@ -1,5 +1,6 @@
 import type { PresupuestoMC } from './presupuestos-modelo.js';
 import type { Empresa } from './use-empresa.js';
+import type { PlanAcceso } from './planes.js';
 import { EditorPresupuestoLienzo } from './editor-presupuesto-lienzo.js';
 import { EditorDocumento } from './editor-documento.js';
 
@@ -25,9 +26,11 @@ export type AbrirDocumentoProps = {
   /** Reasignar el cliente de un presupuesto en `formato:'documento'` — ver `EditorDocumentoProps.onCambiarCliente`. El editor legado (`formato:'lienzo'`) no lo ofrece. */
   clientesDisponibles?: { id: string; nombre: string }[];
   onCambiarCliente?: (nuevoClienteId: string) => Promise<void>;
+  /** Ver `EditorDocumentoProps.plan` (Fase 4, 05/09/2026) — el editor legado (`formato:'lienzo'`) no tiene Copiloto Visual ni Inteligencia de precios, así que no lo necesita. */
+  plan?: PlanAcceso;
 };
 
-export function AbrirDocumento({ presupuesto, clienteId, clienteNombre, empresa, onGuardar, onVolver, onCambiarLogoEmpresa, clientesDisponibles, onCambiarCliente }: AbrirDocumentoProps) {
+export function AbrirDocumento({ presupuesto, clienteId, clienteNombre, empresa, onGuardar, onVolver, onCambiarLogoEmpresa, clientesDisponibles, onCambiarCliente, plan }: AbrirDocumentoProps) {
   if (presupuesto.formato === 'lienzo') {
     return (
       <EditorPresupuestoLienzo
@@ -59,6 +62,7 @@ export function AbrirDocumento({ presupuesto, clienteId, clienteNombre, empresa,
         onCambiarLogoEmpresa={onCambiarLogoEmpresa}
         clientesDisponibles={clientesDisponibles}
         onCambiarCliente={onCambiarCliente}
+        plan={plan}
       />
     );
   }

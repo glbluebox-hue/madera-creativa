@@ -46,6 +46,8 @@ import type { Proyecto } from './types.js';
 import type { AnalisisPrecio } from './inteligencia-precios.js';
 import { AnalisisPrecioCompleto } from './analisis-precio-presupuesto.js';
 import { haceFaltaPedirProyecto, analisisParaEditor, tipoTrabajoParaEditor } from './editor-inteligencia-precios.js';
+import { puedeUsar, SOLO_PREMIUM, type PlanAcceso } from './planes.js';
+import { CandadoPlan } from './candado-plan.js';
 import editorStyles from './editor-documento.module.css';
 import styles from './styles.module.css';
 
@@ -119,6 +121,13 @@ export type EditorDocumentoProps = {
    */
   clientesDisponibles?: { id: string; nombre: string }[];
   onCambiarCliente?: (nuevoClienteId: string) => Promise<void>;
+  /**
+   * Plan de la sesión actual (Fase 4, 05/09/2026) — "IA del presupuesto"
+   * (Copiloto Visual) y la parte de mercado de "Inteligencia de precios"
+   * exigen PREMIUM en el backend desde la Fase 2; antes no llegaba aquí
+   * ningún plan y ninguno de los dos botones reflejaba esa restricción.
+   */
+  plan?: PlanAcceso;
 };
 
 type PreviewMover = { ids: string[]; deltaX: number; deltaY: number };
@@ -177,7 +186,13 @@ function documentoVacio(): DocumentoMC {
  * incremento posterior — con la selección actual, redimensionar/rotar
  * solo actúa cuando hay un único elemento seleccionado.
  */
-export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa, precioVinculado, proyectoId, analisisPrecio, firmaClienteUrl, firmaClienteFecha, esPlantilla, onGuardar, onVolver, onCambiarLogoEmpresa, clientesDisponibles, onCambiarCliente }: EditorDocumentoProps) {
+export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa, precioVinculado, proyectoId, analisisPrecio, firmaClienteUrl, firmaClienteFecha, esPlantilla, onGuardar, onVolver, onCambiarLogoEmpresa, clientesDisponibles, onCambiarCliente, plan }: EditorDocumentoProps) {
+  // Copiloto Visual — PREMIUM (Fase 4, 05/09/2026). El backend ya lo exigía
+  // desde la Fase 2 (`copiloto-presupuesto`, `planMinimo: 'PREMIUM'`); esto
+  // solo añade el reflejo visual que faltaba — el botón sigue sin abrir el
+  // panel si no se tiene el plan, en vez de abrirlo y dejar que el primer
+  // mensaje falle con un 403.
+  const tienePlanCopiloto = puedeUsar(plan, SOLO_PREMIUM);
   const documentoInicial = useMemo<DocumentoMC>(() => {
     const contenido = contenedor.contenidoDocumento as unknown as DocumentoMC;
     return contenido && contenido.paginas && contenido.paginas.length > 0 ? contenido : documentoVacio();
@@ -1547,10 +1562,12 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
         <button
           className={editorStyles.btnHerramienta}
           style={panelIaPresupuestoAbierto ? { background: 'var(--topo-tinte)', borderColor: 'var(--topo)' } : undefined}
-          onClick={() => setPanelIaPresupuestoAbierto((v) => !v)}
+          onClick={() => { if (tienePlanCopiloto) setPanelIaPresupuestoAbierto((v) => !v); }}
+          disabled={!tienePlanCopiloto}
+          title={tienePlanCopiloto ? undefined : 'El Copiloto Visual es una función PREMIUM'}
           data-tutorial-id="editor-ia-btn"
         >
-          ✨ IA del presupuesto
+          ✨ IA del presupuesto {!tienePlanCopiloto && <CandadoPlan planMinimo="PREMIUM" compacto />}
         </button>
         {!esPlantilla && precioVinculado !== undefined && (
           <button
@@ -1968,6 +1985,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
             ubicacionEmpresa={{ comunidadAutonoma: empresa.comunidadAutonoma, provincia: empresa.provincia, isla: empresa.isla }}
             estancias={proyectoParaAnalisis?.estancias}
             proyectoId={proyectoId ?? null}
+            plan={plan}
             onCerrar={() => setInteligenciaAbierta(false)}
           />
         ),

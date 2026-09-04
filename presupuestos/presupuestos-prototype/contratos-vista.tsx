@@ -3,6 +3,7 @@ import * as api from './api.js';
 import type { ContratoMC } from './contratos-modelo.js';
 import type { PresupuestoMC } from './presupuestos-modelo.js';
 import type { Empresa } from './use-empresa.js';
+import type { PlanAcceso } from './planes.js';
 import { EditorDocumento } from './editor-documento.js';
 import { VisorPresupuestoFirmado } from './visor-presupuesto-firmado.js';
 import { generarId } from './mock.js';
@@ -16,6 +17,8 @@ export type ContratosVistaProps = {
   empresa: Empresa;
   privado: boolean;
   onActualizarEmpresa: (cambios: Partial<Empresa>) => void;
+  /** Ver `EditorDocumentoProps.plan` (Fase 4, 05/09/2026). */
+  plan?: PlanAcceso;
 };
 
 /**
@@ -28,7 +31,7 @@ export type ContratosVistaProps = {
  * núcleo del Motor Documental se reutiliza sin cambios para un tipo de
  * documento de negocio distinto (Regla de Oro 4).
  */
-export function ContratosVista({ clienteId, clienteNombre, empresa, privado, onActualizarEmpresa }: ContratosVistaProps) {
+export function ContratosVista({ clienteId, clienteNombre, empresa, privado, onActualizarEmpresa, plan }: ContratosVistaProps) {
   const [contratos, setContratos] = useState<ContratoMC[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -130,6 +133,7 @@ export function ContratosVista({ clienteId, clienteNombre, empresa, privado, onA
         onGuardar={(c) => guardarDocumentoAbierto({ ...documentoAbierto, ...c })}
         onVolver={() => setDocumentoAbierto(null)}
         onCambiarLogoEmpresa={(logo) => onActualizarEmpresa({ logo })}
+        plan={plan}
       />
     );
   }

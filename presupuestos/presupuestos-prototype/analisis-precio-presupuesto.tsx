@@ -12,6 +12,8 @@ import { TrabajosComparables } from './trabajos-comparables.js';
 import { PreguntaTipoTrabajo } from './pregunta-tipo-trabajo.js';
 import * as api from './api.js';
 import type { Estancia } from './types.js';
+import { puedeUsar, SOLO_PREMIUM, type PlanAcceso } from './planes.js';
+import { CandadoPlan } from './candado-plan.js';
 import styles from './styles.module.css';
 
 /** Ubicación "sin configurar" — el bloque de mercado simplemente no se activa, nunca se asume una zona por defecto (Fase 2F). */
@@ -52,6 +54,8 @@ export type AnalisisPrecioPresupuestoProps = {
   estancias?: Estancia[];
   /** Ver `AnalisisPrecioCompletoProps.proyectoId`. */
   proyectoId?: string | null;
+  /** Ver `AnalisisPrecioCompletoProps.plan`. */
+  plan?: PlanAcceso;
 };
 
 /**
@@ -61,7 +65,7 @@ export type AnalisisPrecioPresupuestoProps = {
  * calculado por `analizarPrecioPresupuesto` (en vivo) o el snapshot
  * guardado (`PresupuestoMC.analisisPrecio`, tras aceptar).
  */
-export function AnalisisPrecioPresupuesto({ analisis, esSnapshot, tipoTrabajo, excluirId, proyectoEstado, ubicacionEmpresa, estancias, proyectoId }: AnalisisPrecioPresupuestoProps) {
+export function AnalisisPrecioPresupuesto({ analisis, esSnapshot, tipoTrabajo, excluirId, proyectoEstado, ubicacionEmpresa, estancias, proyectoId, plan }: AnalisisPrecioPresupuestoProps) {
   const [completoAbierto, setCompletoAbierto] = useState(false);
 
   if (!analisis) {
@@ -102,6 +106,7 @@ export function AnalisisPrecioPresupuesto({ analisis, esSnapshot, tipoTrabajo, e
             ubicacionEmpresa={ubicacionEmpresa ?? UBICACION_VACIA}
             estancias={estancias}
             proyectoId={proyectoId}
+            plan={plan}
             onCerrar={() => setCompletoAbierto(false)}
           />
         )}
@@ -176,6 +181,16 @@ export type AnalisisPrecioCompletoProps = {
    * `null`/`undefined` cuando no hay proyecto real al que guardarla.
    */
   proyectoId?: string | null;
+  /**
+   * Plan de la sesión actual (Fase 4, 05/09/2026) — "Comparables
+   * Inteligentes" (`GET /inteligencia-precios/comparables`, "¿cómo estoy
+   * respecto a mis propios trabajos?") y "Buscar con IA" en mercado
+   * (`ReferenciasMercadoVista`) exigen PREMIUM en el backend desde la Fase
+   * 2; antes ninguno de los dos reflejaba esa restricción aquí — el
+   * comparable llamaba siempre a `api.obtenerComparables`, que devolvía un
+   * 403 que este componente confundía con "sin histórico todavía".
+   */
+  plan?: PlanAcceso;
   onCerrar: () => void;
 };
 
@@ -199,7 +214,8 @@ export type AnalisisPrecioCompletoProps = {
  * son funciones puras que solo ENSAMBLAN lo que 2A-2D ya calculan — cero
  * fórmula nueva, cero llamada a IA.
  */
-export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proyectoEstado, esSnapshot, ubicacionEmpresa, estancias, proyectoId, onCerrar }: AnalisisPrecioCompletoProps) {
+export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proyectoEstado, esSnapshot, ubicacionEmpresa, estancias, proyectoId, plan, onCerrar }: AnalisisPrecioCompletoProps) {
+  const tienePlanComparables = puedeUsar(plan, SOLO_PREMIUM);
   const [resultadoComparables, setResultadoComparables] = useState<ResultadoComparables | null>(null);
   const [verMasComparables, setVerMasComparables] = useState(false);
   const [historico, setHistorico] = useState<TrabajoAnalizado[] | null>(null);
@@ -229,12 +245,16 @@ export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proye
 
   useEffect(() => {
     if (analisis.disponible === false) return; // sin precio, no hay nada que comparar
+    // Gate de plan (Fase 4, 05/09/2026) — antes esta llamada se disparaba
+    // siempre y el 403 real del backend (sin PREMIUM) se confundía con
+    // "sin histórico todavía" en el catch de abajo. Sin el plan, ni se pide.
+    if (!tienePlanComparables) { setResultadoComparables(null); return; }
     setResultadoComparables(null);
     api.obtenerComparables(analisis.precio, tipoTrabajoEfectivo, excluirId, verMasComparables ? 10 : 5)
       .then(setResultadoComparables)
       .catch(() => setResultadoComparables({ disponible: false, motivo: 'sin_historico' }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [analisis.disponible, analisis.disponible ? analisis.precio : null, tipoTrabajoEfectivo, excluirId, verMasComparables]);
+  }, [analisis.disponible, analisis.disponible ? analisis.precio : null, tipoTrabajoEfectivo, excluirId, verMasComparables, tienePlanComparables]);
 
   useEffect(() => {
     api.analizarInteligenciaPrecios().then(setHistorico).catch(() => setHistorico([]));
@@ -318,6 +338,7 @@ export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proye
                 referencias={(referenciasMercado ?? []).filter((r) => r.tipoTrabajo === tipoTrabajoEfectivo)}
                 idsNoComparables={mercadoLocal.disponible ? mercadoLocal.referenciasNoComparables.map((r) => r.id) : []}
                 estancias={estancias}
+                plan={plan}
                 onCambio={cargarReferenciasMercado}
               />
             )}
@@ -326,9 +347,13 @@ export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proye
             <>
               <div>
                 <p style={{ margin: '0 0 0.35rem', fontSize: '0.72rem', fontWeight: 700, color: 'var(--topo-claro)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-                  ¿Cómo estoy respecto a mis propios trabajos?
+                  ¿Cómo estoy respecto a mis propios trabajos? {!tienePlanComparables && <CandadoPlan planMinimo="PREMIUM" compacto />}
                 </p>
-                <TrabajosComparables resultado={resultadoComparables} verMas={verMasComparables} onVerMas={() => setVerMasComparables(true)} />
+                {tienePlanComparables ? (
+                  <TrabajosComparables resultado={resultadoComparables} verMas={verMasComparables} onVerMas={() => setVerMasComparables(true)} />
+                ) : (
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--topo-claro)' }}>Compara este precio con tus propios trabajos anteriores — disponible en el plan PREMIUM.</p>
+                )}
               </div>
               <div>
                 <p style={{ margin: '0 0 0.35rem', fontSize: '0.72rem', fontWeight: 700, color: 'var(--topo-claro)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>

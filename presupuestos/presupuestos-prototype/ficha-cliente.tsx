@@ -534,14 +534,14 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
       {/* ── PRESUPUESTOS: lista de solo lectura (+ abrir) de los presupuestos de este proyecto — crear sigue siendo solo desde la sección "Presupuestos" (25/08/2026) ── */}
       {pestana === 'presupuestosProyecto' && (
         <div className={styles.tabPanel}>
-          <TabPresupuestosProyecto cliente={cliente} proyecto={proyecto} empresa={empresa} onActualizarEmpresa={onActualizarEmpresa} />
+          <TabPresupuestosProyecto cliente={cliente} proyecto={proyecto} empresa={empresa} onActualizarEmpresa={onActualizarEmpresa} plan={plan} />
         </div>
       )}
 
       {/* ── CONTRATOS: segundo tipo de documento del Motor Documental (Incremento 12) — mismo editor, mismo núcleo ── */}
       {pestana === 'contratos' && (
         <div className={styles.tabPanel}>
-          <TabContratos cliente={cliente} proyecto={proyecto} empresa={empresa} privado={privado} onActualizarEmpresa={onActualizarEmpresa} />
+          <TabContratos cliente={cliente} proyecto={proyecto} empresa={empresa} privado={privado} onActualizarEmpresa={onActualizarEmpresa} plan={plan} />
         </div>
       )}
 

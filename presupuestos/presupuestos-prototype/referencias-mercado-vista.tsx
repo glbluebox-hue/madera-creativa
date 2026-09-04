@@ -4,6 +4,8 @@ import { formatoEuro } from './calculos.js';
 import { CandidatosMercadoVista } from './candidatos-mercado-vista.js';
 import * as api from './api.js';
 import type { Estancia } from './types.js';
+import { puedeUsar, SOLO_PREMIUM, type PlanAcceso } from './planes.js';
+import { CandadoPlan } from './candado-plan.js';
 import styles from './styles.module.css';
 
 export type ReferenciasMercadoVistaProps = {
@@ -15,6 +17,15 @@ export type ReferenciasMercadoVistaProps = {
   idsNoComparables: string[];
   /** Estancias YA medidas del proyecto (Pizarra de medición) — pasadas tal cual a `CandidatosMercadoVista` para dar contexto real a "Buscar con IA" (30/08/2026). `undefined` en vistas sin proyecto cargado. */
   estancias?: Estancia[];
+  /**
+   * Plan de la sesión actual (Fase 4, 05/09/2026) — "Buscar con IA"
+   * (Investigación de Mercado: `describir-trabajo-mercado` +
+   * `POST /ia/mercado/buscar`) exige PREMIUM en el backend desde la Fase 2;
+   * antes este botón no reflejaba esa restricción. "+ Añadir referencia de
+   * mercado" (manual, sin IA) nunca ha estado gateado y sigue sin estarlo —
+   * disponible en cualquier plan.
+   */
+  plan?: PlanAcceso;
   onCambio: () => void;
 };
 
@@ -50,7 +61,8 @@ export function Chip({ activo, onClick, children }: { activo: boolean; onClick: 
  * ubicación ya configurada en Ajustes de empresa. Nunca scraping, nunca
  * IA — el usuario anota lo que él mismo conoce.
  */
-export function ReferenciasMercadoVista({ tipoTrabajo, ubicacion, referencias, idsNoComparables, estancias, onCambio }: ReferenciasMercadoVistaProps) {
+export function ReferenciasMercadoVista({ tipoTrabajo, ubicacion, referencias, idsNoComparables, estancias, plan, onCambio }: ReferenciasMercadoVistaProps) {
+  const tienePlanBuscarIA = puedeUsar(plan, SOLO_PREMIUM);
   const [abierto, setAbierto] = useState(false);
   const [iaAbierto, setIaAbierto] = useState(false);
   const [nivel, setNivel] = useState<NivelGeografico>('local');
@@ -145,10 +157,18 @@ export function ReferenciasMercadoVista({ tipoTrabajo, ubicacion, referencias, i
       )}
 
       {!abierto && !iaAbierto ? (
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <button type="button" className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.76rem', padding: '0.35rem 0.7rem' }} onClick={() => setIaAbierto(true)}>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnSecundario}`}
+            style={{ fontSize: '0.76rem', padding: '0.35rem 0.7rem' }}
+            onClick={() => { if (tienePlanBuscarIA) setIaAbierto(true); }}
+            disabled={!tienePlanBuscarIA}
+            title={tienePlanBuscarIA ? undefined : 'Buscar con IA es una función PREMIUM'}
+          >
             🔍 Buscar con IA
           </button>
+          {!tienePlanBuscarIA && <CandadoPlan planMinimo="PREMIUM" compacto />}
           <button type="button" className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.76rem', padding: '0.35rem 0.7rem' }} onClick={() => setAbierto(true)}>
             + Añadir referencia de mercado
           </button>

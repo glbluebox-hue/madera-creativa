@@ -3,6 +3,7 @@ import * as api from './api.js';
 import type { PlantillaMC, DocumentoMC } from './documento-modelo.js';
 import { PAGINA_A4 } from './documento-modelo.js';
 import type { Empresa } from './use-empresa.js';
+import type { PlanAcceso } from './planes.js';
 import { EditorDocumento } from './editor-documento.js';
 import { generarId } from './mock.js';
 import { leerArchivoComoBase64 } from './archivos.js';
@@ -13,6 +14,8 @@ import styles from './styles.module.css';
 export type PlantillasVistaProps = {
   empresa: Empresa;
   onActualizarEmpresa: (cambios: Partial<Empresa>) => void;
+  /** Ver `EditorDocumentoProps.plan` (Fase 4, 05/09/2026). */
+  plan?: PlanAcceso;
 };
 
 /** Documento en blanco para una plantilla nueva — mismo criterio que el fallback interno de `EditorDocumento`, con la diferencia de que aquí sí se puede fijar un fondo de partida (imagen subida por el usuario) desde el momento de la creación. */
@@ -40,7 +43,7 @@ function documentoBaseVacio(fondoImagenUrl?: string): DocumentoMC {
  * directamente sobre `documentoBase` — el mismo editor que usa cualquier
  * presupuesto, adaptado con el `contenedor` genérico del Incremento 12.
  */
-export function PlantillasVista({ empresa, onActualizarEmpresa }: PlantillasVistaProps) {
+export function PlantillasVista({ empresa, onActualizarEmpresa, plan }: PlantillasVistaProps) {
   const [plantillas, setPlantillas] = useState<PlantillaMC[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -135,6 +138,7 @@ export function PlantillasVista({ empresa, onActualizarEmpresa }: PlantillasVist
         onGuardar={(c) => guardarContenidoEditor(editorAbierto, c)}
         onVolver={() => setEditorAbierto(null)}
         onCambiarLogoEmpresa={(logo) => onActualizarEmpresa({ logo })}
+        plan={plan}
       />
     );
   }

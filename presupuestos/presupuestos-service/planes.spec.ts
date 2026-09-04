@@ -12,6 +12,7 @@ import { PresupuestosService } from './presupuestos-service.js';
 import { contextoAsistenteGlobal } from './asistente-global.contexto-ia.js';
 import { contextoAsistenteNavegacion } from './asistente-navegacion.contexto-ia.js';
 import { contextoAsistenteCifrasReales } from './asistente-cifras-reales.contexto-ia.js';
+import { obtenerCapacidad } from './ia-registro-capacidades.js';
 import './ia-capacidad-asistente-global.js';
 import './ia-capacidad-extraer-factura.js';
 import './ia-capacidad-copiloto-presupuesto.js';
@@ -336,5 +337,87 @@ describe('contextoAsistenteGlobal — cifras reales del negocio, PRO+ (Fase 3)',
     const pro = await contextoAsistenteGlobal.construir({}, USUARIO_PRO);
     expect(basico.resumenParaPrompt).toEqual((await contextoAsistenteNavegacion.construir({}, USUARIO_BASIC)).resumenParaPrompt);
     expect(pro.resumenParaPrompt).toEqual((await contextoAsistenteCifrasReales.construir({}, USUARIO_PRO)).resumenParaPrompt);
+  });
+});
+
+/**
+ * Fase 4 (05/09/2026) — cierre técnico del plan PREMIUM. A diferencia de
+ * `capacidadPermitidaParaPlan — mismo motor aplicado a las capacidades de
+ * IA` (arriba, que prueba el MECANISMO con planes literales), este bloque
+ * ejercita las capacidades PREMIUM REALES tal como están registradas hoy
+ * (`obtenerCapacidad`, efecto secundario de los imports de arriba) — así
+ * un cambio accidental que borrara `planMinimo` de `copiloto-presupuesto`
+ * o `describir-trabajo-mercado` haría fallar esto, no solo una prueba
+ * abstracta con un string suelto. Cubre la sección 10 (tests de frontera
+ * BASIC/PRO/PREMIUM) y 12 (regresión: PREMIUM conserva PRO) del encargo.
+ */
+describe('Fase 4 — jerarquía PREMIUM sobre las capacidades reales', () => {
+  it('Visual Quote Copilot (copiloto-presupuesto) exige PREMIUM en el manifiesto real', () => {
+    expect(obtenerCapacidad('copiloto-presupuesto').planMinimo).toBe('PREMIUM');
+  });
+
+  it('Investigación de Mercado (describir-trabajo-mercado) exige PREMIUM en el manifiesto real', () => {
+    expect(obtenerCapacidad('describir-trabajo-mercado').planMinimo).toBe('PREMIUM');
+  });
+
+  it('BASIC y PRO no pueden usar copiloto-presupuesto; PREMIUM sí', async () => {
+    await crearUsuarioConPlan('u-copiloto-basic', 'BASIC');
+    await crearUsuarioConPlan('u-copiloto-pro', 'PRO');
+    await crearUsuarioConPlan('u-copiloto-premium', 'PREMIUM');
+    const planMinimo = obtenerCapacidad('copiloto-presupuesto').planMinimo;
+    expect(await capacidadPermitidaParaPlan('u-copiloto-basic', planMinimo)).toBe(false);
+    expect(await capacidadPermitidaParaPlan('u-copiloto-pro', planMinimo)).toBe(false);
+    expect(await capacidadPermitidaParaPlan('u-copiloto-premium', planMinimo)).toBe(true);
+  });
+
+  it('BASIC y PRO no pueden usar describir-trabajo-mercado (paso de Investigación de Mercado); PREMIUM sí', async () => {
+    await crearUsuarioConPlan('u-mercado-basic', 'BASIC');
+    await crearUsuarioConPlan('u-mercado-pro', 'PRO');
+    await crearUsuarioConPlan('u-mercado-premium', 'PREMIUM');
+    const planMinimo = obtenerCapacidad('describir-trabajo-mercado').planMinimo;
+    expect(await capacidadPermitidaParaPlan('u-mercado-basic', planMinimo)).toBe(false);
+    expect(await capacidadPermitidaParaPlan('u-mercado-pro', planMinimo)).toBe(false);
+    expect(await capacidadPermitidaParaPlan('u-mercado-premium', planMinimo)).toBe(true);
+  });
+
+  it('/mercado/buscar y /inteligencia-precios/comparables comparten el mismo requirePlan(SOLO_PREMIUM) — PRO recibe 403, PREMIUM pasa', async () => {
+    // No hay tests de nivel HTTP en este proyecto (ver cabecera del
+    // archivo) — se ejercita la misma función `requirePlan` que ambas
+    // rutas montan literalmente (`presupuestos-service.app-root.ts` /
+    // `ia-rutas.ts`), no una reimplementación paralela.
+    await crearUsuarioConPlan('u-comparables-pro', 'PRO');
+    await crearUsuarioConPlan('u-comparables-premium', 'PREMIUM');
+    const bloqueado = mockReqResNext('u-comparables-pro');
+    await requirePlan(SOLO_PREMIUM)(bloqueado.req, bloqueado.res, bloqueado.next);
+    expect(bloqueado.resultado().status).toBe(403);
+    const permitido = mockReqResNext('u-comparables-premium');
+    await requirePlan(SOLO_PREMIUM)(permitido.req, permitido.res, permitido.next);
+    expect(permitido.resultado().siguio).toBe(true);
+  });
+
+  it('regresión: PREMIUM conserva las capacidades PRO (extraer-datos-factura, redactar-presupuesto, generar-bloque-documento)', async () => {
+    await crearUsuarioConPlan('u-premium-conserva-pro', 'PREMIUM');
+    for (const nombre of ['extraer-datos-factura', 'redactar-presupuesto', 'generar-bloque-documento']) {
+      expect(await capacidadPermitidaParaPlan('u-premium-conserva-pro', obtenerCapacidad(nombre).planMinimo)).toBe(true);
+    }
+  });
+
+  it('regresión: PRO sigue SIN acceso a ninguna capacidad PREMIUM (copiloto-presupuesto, describir-trabajo-mercado)', async () => {
+    await crearUsuarioConPlan('u-pro-sin-premium', 'PRO');
+    for (const nombre of ['copiloto-presupuesto', 'describir-trabajo-mercado']) {
+      expect(await capacidadPermitidaParaPlan('u-pro-sin-premium', obtenerCapacidad(nombre).planMinimo)).toBe(false);
+    }
+  });
+
+  it('regresión: BASIC conserva la IA de navegación (asistente-global sin cifras) — no queda bloqueada por el cierre de PREMIUM', async () => {
+    await crearUsuarioConPlan('u-basic-conserva-nav', 'BASIC');
+    expect(await capacidadPermitidaParaPlan('u-basic-conserva-nav', obtenerCapacidad('asistente-global').planMinimo)).toBe(true);
+  });
+
+  it('la cuenta admin nunca queda bloqueada por ninguna capacidad PREMIUM', async () => {
+    await crearUsuarioConPlan('admin', null);
+    for (const nombre of ['copiloto-presupuesto', 'describir-trabajo-mercado']) {
+      expect(await capacidadPermitidaParaPlan('admin', obtenerCapacidad(nombre).planMinimo)).toBe(true);
+    }
   });
 });

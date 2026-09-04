@@ -73,3 +73,49 @@ describe('AnalisisPrecioCompleto — sin tipoTrabajo todavía (proyecto en curso
     expect(html).toContain('Todavía no tienes ninguna referencia de mercado guardada');
   });
 });
+
+/**
+ * Fase 4 (05/09/2026): "Comparables Inteligentes" (¿cómo estoy respecto a
+ * mis propios trabajos?) y "Buscar con IA" (Investigación de Mercado)
+ * exigen PREMIUM en el backend — este bloque confirma que el frontend
+ * ahora lo refleja (antes ninguno de los dos lo hacía: el primero llamaba
+ * siempre a `api.obtenerComparables` y confundía el 403 con "sin
+ * histórico"; el segundo abría "Buscar con IA" sin más).
+ */
+describe('AnalisisPrecioCompleto — gate PREMIUM (Fase 4)', () => {
+  it('sin plan PREMIUM, "¿Cómo estoy respecto a mis propios trabajos?" muestra el candado, no el buscador en vivo', () => {
+    const html = renderToStaticMarkup(<AnalisisPrecioCompleto analisis={CON_ANALISIS} tipoTrabajo="Cocina" proyectoId="p1" onCerrar={() => {}} plan="PRO" />);
+    expect(html).toContain('🔒 PREMIUM');
+    expect(html).toContain('disponible en el plan PREMIUM');
+    expect(html).not.toContain('Buscando trabajos parecidos');
+  });
+
+  it('con plan PREMIUM, "¿Cómo estoy respecto a mis propios trabajos?" sí busca (sin candado en esa sección)', () => {
+    const html = renderToStaticMarkup(<AnalisisPrecioCompleto analisis={CON_ANALISIS} tipoTrabajo="Cocina" proyectoId="p1" onCerrar={() => {}} plan="PREMIUM" />);
+    expect(html).toContain('Buscando trabajos parecidos');
+  });
+
+  it('sin plan PREMIUM, "Buscar con IA" (mercado) aparece deshabilitado con su candado', () => {
+    const html = renderToStaticMarkup(
+      <AnalisisPrecioCompleto
+        analisis={SIN_ANALISIS} tipoTrabajo="Cocina" proyectoId="p1" onCerrar={() => {}}
+        ubicacionEmpresa={{ comunidadAutonoma: 'Canarias', provincia: 'Santa Cruz de Tenerife', isla: 'Tenerife' }}
+        plan="PRO"
+      />
+    );
+    expect(html).toContain('Buscar con IA');
+    expect(html).toContain('disabled');
+    expect(html).toContain('🔒 PREMIUM');
+  });
+
+  it('con plan PREMIUM, "Buscar con IA" aparece habilitado', () => {
+    const html = renderToStaticMarkup(
+      <AnalisisPrecioCompleto
+        analisis={SIN_ANALISIS} tipoTrabajo="Cocina" proyectoId="p1" onCerrar={() => {}}
+        ubicacionEmpresa={{ comunidadAutonoma: 'Canarias', provincia: 'Santa Cruz de Tenerife', isla: 'Tenerife' }}
+        plan="PREMIUM"
+      />
+    );
+    expect(html).not.toContain('disabled');
+  });
+});

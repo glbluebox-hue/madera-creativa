@@ -7,6 +7,7 @@ import { VisorPresupuestoFirmado } from './visor-presupuesto-firmado.js';
 import { formatoEuroPrivado, formatoFecha } from './calculos.js';
 import { analizarPrecioPresupuesto } from './inteligencia-precios.js';
 import { AnalisisPrecioPresupuesto } from './analisis-precio-presupuesto.js';
+import type { PlanAcceso } from './planes.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
 
@@ -15,6 +16,8 @@ export type TabPresupuestosProyectoProps = {
   proyecto: Proyecto;
   empresa: Empresa;
   onActualizarEmpresa: (cambios: Partial<Empresa>) => void;
+  /** Ver `EditorDocumentoProps.plan`/`AnalisisPrecioCompletoProps.plan` (Fase 4, 05/09/2026). */
+  plan?: PlanAcceso;
 };
 
 /**
@@ -30,7 +33,7 @@ export type TabPresupuestosProyectoProps = {
  * ficha del cliente. Crear presupuestos sigue siendo solo desde la
  * sección "Presupuestos"; aquí solo se listan y se abren los que ya existen.
  */
-export function TabPresupuestosProyecto({ cliente, proyecto, empresa, onActualizarEmpresa }: TabPresupuestosProyectoProps) {
+export function TabPresupuestosProyecto({ cliente, proyecto, empresa, onActualizarEmpresa, plan }: TabPresupuestosProyectoProps) {
   const [presupuestos, setPresupuestos] = useState<PresupuestoMC[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +82,7 @@ export function TabPresupuestosProyecto({ cliente, proyecto, empresa, onActualiz
         onGuardar={guardar}
         onVolver={() => { setEditor(null); cargar(); }}
         onCambiarLogoEmpresa={(logo) => onActualizarEmpresa({ logo })}
+        plan={plan}
       />
     );
   }
@@ -135,6 +139,7 @@ export function TabPresupuestosProyecto({ cliente, proyecto, empresa, onActualiz
                     ubicacionEmpresa={{ comunidadAutonoma: empresa.comunidadAutonoma, provincia: empresa.provincia, isla: empresa.isla }}
                     estancias={proyecto.estancias}
                     proyectoId={proyecto.id}
+                    plan={plan}
                   />
                 </div>
               </div>

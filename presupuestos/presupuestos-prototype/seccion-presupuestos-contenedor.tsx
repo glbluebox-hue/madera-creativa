@@ -72,7 +72,7 @@ export function SeccionPresupuestosContenedor({ onAbrirCliente, clientes, empres
         />
       )}
       {pestana === 'plantillas' && (
-        <PlantillasVista empresa={empresa} onActualizarEmpresa={onActualizarEmpresa} />
+        <PlantillasVista empresa={empresa} onActualizarEmpresa={onActualizarEmpresa} plan={plan} />
       )}
     </div>
   );

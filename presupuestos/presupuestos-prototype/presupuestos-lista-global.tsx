@@ -485,6 +485,7 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
         onCambiarLogoEmpresa={(logo) => onActualizarEmpresa({ logo })}
         clientesDisponibles={clientes}
         onCambiarCliente={cambiarClienteDelPresupuesto}
+        plan={plan}
       />
     );
   }
@@ -672,7 +673,7 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
                   (Inteligencia de Precios, Fase 1: "no dashboard sobrecargado"). */}
               {p.analisisPrecio && (
                 <div onClick={(e) => e.stopPropagation()}>
-                  <AnalisisPrecioPresupuesto analisis={p.analisisPrecio} esSnapshot ubicacionEmpresa={{ comunidadAutonoma: empresa.comunidadAutonoma, provincia: empresa.provincia, isla: empresa.isla }} />
+                  <AnalisisPrecioPresupuesto analisis={p.analisisPrecio} esSnapshot ubicacionEmpresa={{ comunidadAutonoma: empresa.comunidadAutonoma, provincia: empresa.provincia, isla: empresa.isla }} plan={plan} />
                 </div>
               )}
             </div>
