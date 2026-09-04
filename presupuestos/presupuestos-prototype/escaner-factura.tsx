@@ -45,6 +45,8 @@ export type EscanerFacturaProps = {
   facturaEditar?: Factura;
   /** Plan de la sesión actual (Fase 2.5, 04/09/2026) — solo gatea "Extraer datos con IA"; capturar la página y rellenar los campos a mano siguen disponibles en cualquier plan. */
   plan?: PlanAcceso;
+  /** Bypass administrativo (05/09/2026) — ver `puedeUsar()` en `planes.ts`. */
+  esAdmin?: boolean;
 };
 
 /** Una página del documento escaneado — puede ser una imagen o un PDF subido directamente. */
@@ -72,8 +74,8 @@ const IA_FACTURA_DISPONIBLE = true;
  * Modal para añadir facturas manualmente o con captura de imagen.
  * Soporta múltiples hojas/páginas que se combinan como un único documento.
  */
-export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGuardar, onCerrar, facturaEditar, plan }: EscanerFacturaProps) {
-  const tienePlanIA = puedeUsar(plan, PRO_O_SUPERIOR);
+export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGuardar, onCerrar, facturaEditar, plan, esAdmin }: EscanerFacturaProps) {
+  const tienePlanIA = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
   const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
   const esEdicion = !!facturaEditar;
   const [paginas, setPaginas] = useState<Pagina[]>(() => {

@@ -34,10 +34,21 @@ export function planesDesde(minimo: PlanComercial): PlanComercial[] {
  * ¿El plan actual de la sesión permite usar una función que exige uno de
  * `permitidos`? Puramente informativo para la interfaz (mostrar/ocultar,
  * habilitar/deshabilitar) — la autorización real y obligatoria vive siempre
- * en el backend (`requirePlan`); esto nunca debe tratarse como el punto de
- * seguridad.
+ * en el backend (`requirePlan`/`capacidadPermitidaParaPlan`); esto nunca
+ * debe tratarse como el punto de seguridad.
+ *
+ * `esAdmin` (bypass administrativo, 05/09/2026) — mismo criterio exacto
+ * que el backend (`req.usuarioId === 'admin'` en `requirePlan`/
+ * `capacidadPermitidaParaPlan`, `presupuestos-service/planes.ts`): la
+ * cuenta admin nunca queda bloqueada por ningún plan, sin necesidad de que
+ * su `Usuario.acceso.plan` almacenado sea ni parezca PREMIUM. `sesion.esAdmin`
+ * ya existe (viene de `Usuario.esAdmin` en el backend, la única fuente de
+ * verdad — ver `use-auth.ts`) y ya se usa para el resto de la interfaz de
+ * administrador; esto solo reutiliza la misma señal para gatear planes,
+ * nunca una segunda definición de "admin".
  */
-export function puedeUsar(planActual: PlanAcceso | undefined, permitidos: PlanComercial[]): boolean {
+export function puedeUsar(planActual: PlanAcceso | undefined, permitidos: PlanComercial[], esAdmin?: boolean): boolean {
+  if (esAdmin) return true;
   if (!planActual) return false;
   return (permitidos as string[]).includes(planActual);
 }

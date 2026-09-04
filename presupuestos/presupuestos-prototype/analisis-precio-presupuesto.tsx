@@ -56,6 +56,8 @@ export type AnalisisPrecioPresupuestoProps = {
   proyectoId?: string | null;
   /** Ver `AnalisisPrecioCompletoProps.plan`. */
   plan?: PlanAcceso;
+  /** Ver `AnalisisPrecioCompletoProps.esAdmin`. */
+  esAdmin?: boolean;
 };
 
 /**
@@ -65,7 +67,7 @@ export type AnalisisPrecioPresupuestoProps = {
  * calculado por `analizarPrecioPresupuesto` (en vivo) o el snapshot
  * guardado (`PresupuestoMC.analisisPrecio`, tras aceptar).
  */
-export function AnalisisPrecioPresupuesto({ analisis, esSnapshot, tipoTrabajo, excluirId, proyectoEstado, ubicacionEmpresa, estancias, proyectoId, plan }: AnalisisPrecioPresupuestoProps) {
+export function AnalisisPrecioPresupuesto({ analisis, esSnapshot, tipoTrabajo, excluirId, proyectoEstado, ubicacionEmpresa, estancias, proyectoId, plan, esAdmin }: AnalisisPrecioPresupuestoProps) {
   const [completoAbierto, setCompletoAbierto] = useState(false);
 
   if (!analisis) {
@@ -107,6 +109,7 @@ export function AnalisisPrecioPresupuesto({ analisis, esSnapshot, tipoTrabajo, e
             estancias={estancias}
             proyectoId={proyectoId}
             plan={plan}
+            esAdmin={esAdmin}
             onCerrar={() => setCompletoAbierto(false)}
           />
         )}
@@ -191,6 +194,8 @@ export type AnalisisPrecioCompletoProps = {
    * 403 que este componente confundía con "sin histórico todavía".
    */
   plan?: PlanAcceso;
+  /** Bypass administrativo (05/09/2026) — ver `puedeUsar()` en `planes.ts`. */
+  esAdmin?: boolean;
   onCerrar: () => void;
 };
 
@@ -214,8 +219,8 @@ export type AnalisisPrecioCompletoProps = {
  * son funciones puras que solo ENSAMBLAN lo que 2A-2D ya calculan — cero
  * fórmula nueva, cero llamada a IA.
  */
-export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proyectoEstado, esSnapshot, ubicacionEmpresa, estancias, proyectoId, plan, onCerrar }: AnalisisPrecioCompletoProps) {
-  const tienePlanComparables = puedeUsar(plan, SOLO_PREMIUM);
+export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proyectoEstado, esSnapshot, ubicacionEmpresa, estancias, proyectoId, plan, esAdmin, onCerrar }: AnalisisPrecioCompletoProps) {
+  const tienePlanComparables = puedeUsar(plan, SOLO_PREMIUM, esAdmin);
   const [resultadoComparables, setResultadoComparables] = useState<ResultadoComparables | null>(null);
   const [verMasComparables, setVerMasComparables] = useState(false);
   const [historico, setHistorico] = useState<TrabajoAnalizado[] | null>(null);
@@ -339,6 +344,7 @@ export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proye
                 idsNoComparables={mercadoLocal.disponible ? mercadoLocal.referenciasNoComparables.map((r) => r.id) : []}
                 estancias={estancias}
                 plan={plan}
+                esAdmin={esAdmin}
                 onCambio={cargarReferenciasMercado}
               />
             )}

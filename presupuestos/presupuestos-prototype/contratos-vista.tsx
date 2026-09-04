@@ -19,6 +19,8 @@ export type ContratosVistaProps = {
   onActualizarEmpresa: (cambios: Partial<Empresa>) => void;
   /** Ver `EditorDocumentoProps.plan` (Fase 4, 05/09/2026). */
   plan?: PlanAcceso;
+  /** Bypass administrativo (05/09/2026) — ver `puedeUsar()` en `planes.ts`. */
+  esAdmin?: boolean;
 };
 
 /**
@@ -31,7 +33,7 @@ export type ContratosVistaProps = {
  * núcleo del Motor Documental se reutiliza sin cambios para un tipo de
  * documento de negocio distinto (Regla de Oro 4).
  */
-export function ContratosVista({ clienteId, clienteNombre, empresa, privado, onActualizarEmpresa, plan }: ContratosVistaProps) {
+export function ContratosVista({ clienteId, clienteNombre, empresa, privado, onActualizarEmpresa, plan, esAdmin }: ContratosVistaProps) {
   const [contratos, setContratos] = useState<ContratoMC[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -134,6 +136,7 @@ export function ContratosVista({ clienteId, clienteNombre, empresa, privado, onA
         onVolver={() => setDocumentoAbierto(null)}
         onCambiarLogoEmpresa={(logo) => onActualizarEmpresa({ logo })}
         plan={plan}
+        esAdmin={esAdmin}
       />
     );
   }

@@ -26,6 +26,8 @@ export type ReferenciasMercadoVistaProps = {
    * disponible en cualquier plan.
    */
   plan?: PlanAcceso;
+  /** Bypass administrativo (05/09/2026) — ver `puedeUsar()` en `planes.ts`. */
+  esAdmin?: boolean;
   onCambio: () => void;
 };
 
@@ -61,8 +63,8 @@ export function Chip({ activo, onClick, children }: { activo: boolean; onClick: 
  * ubicación ya configurada en Ajustes de empresa. Nunca scraping, nunca
  * IA — el usuario anota lo que él mismo conoce.
  */
-export function ReferenciasMercadoVista({ tipoTrabajo, ubicacion, referencias, idsNoComparables, estancias, plan, onCambio }: ReferenciasMercadoVistaProps) {
-  const tienePlanBuscarIA = puedeUsar(plan, SOLO_PREMIUM);
+export function ReferenciasMercadoVista({ tipoTrabajo, ubicacion, referencias, idsNoComparables, estancias, plan, esAdmin, onCambio }: ReferenciasMercadoVistaProps) {
+  const tienePlanBuscarIA = puedeUsar(plan, SOLO_PREMIUM, esAdmin);
   const [abierto, setAbierto] = useState(false);
   const [iaAbierto, setIaAbierto] = useState(false);
   const [nivel, setNivel] = useState<NivelGeografico>('local');

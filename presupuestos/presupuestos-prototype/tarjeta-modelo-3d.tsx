@@ -19,6 +19,8 @@ export type TarjetaModelo3DProps = {
   onEliminar: () => void;
   /** Plan de la sesión actual (Fase 2.5, 04/09/2026) — solo gatea el enlace "Ver en SketchUp"; subir/ver/reemplazar/eliminar el modelo propio no cambian de plan. */
   plan?: PlanAcceso;
+  /** Bypass administrativo (05/09/2026) — ver `puedeUsar()` en `planes.ts`. */
+  esAdmin?: boolean;
 };
 
 /**
@@ -27,9 +29,9 @@ export type TarjetaModelo3DProps = {
  * únicamente aquí, al lado del propio dibujo, porque sin un modelo
  * asociado no tiene sentido ofrecerlo.
  */
-export function TarjetaModelo3D({ modelo3D, subiendo, desasociando, onReemplazar, onEliminar, plan }: TarjetaModelo3DProps) {
+export function TarjetaModelo3D({ modelo3D, subiendo, desasociando, onReemplazar, onEliminar, plan, esAdmin }: TarjetaModelo3DProps) {
   const [visorAbierto, setVisorAbierto] = useState(false);
-  const tienePlanSketchUp = puedeUsar(plan, PRO_O_SUPERIOR);
+  const tienePlanSketchUp = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
 
   return (
     <div style={{ marginTop: '1rem', display: 'flex', gap: '0.8rem', alignItems: 'center', flexWrap: 'wrap', padding: '0.7rem 0.8rem', borderRadius: 8, background: 'var(--fondo-caja)' }}>

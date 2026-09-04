@@ -18,6 +18,8 @@ export type TabPresupuestosProyectoProps = {
   onActualizarEmpresa: (cambios: Partial<Empresa>) => void;
   /** Ver `EditorDocumentoProps.plan`/`AnalisisPrecioCompletoProps.plan` (Fase 4, 05/09/2026). */
   plan?: PlanAcceso;
+  /** Bypass administrativo (05/09/2026) — ver `puedeUsar()` en `planes.ts`. */
+  esAdmin?: boolean;
 };
 
 /**
@@ -33,7 +35,7 @@ export type TabPresupuestosProyectoProps = {
  * ficha del cliente. Crear presupuestos sigue siendo solo desde la
  * sección "Presupuestos"; aquí solo se listan y se abren los que ya existen.
  */
-export function TabPresupuestosProyecto({ cliente, proyecto, empresa, onActualizarEmpresa, plan }: TabPresupuestosProyectoProps) {
+export function TabPresupuestosProyecto({ cliente, proyecto, empresa, onActualizarEmpresa, plan, esAdmin }: TabPresupuestosProyectoProps) {
   const [presupuestos, setPresupuestos] = useState<PresupuestoMC[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +85,7 @@ export function TabPresupuestosProyecto({ cliente, proyecto, empresa, onActualiz
         onVolver={() => { setEditor(null); cargar(); }}
         onCambiarLogoEmpresa={(logo) => onActualizarEmpresa({ logo })}
         plan={plan}
+        esAdmin={esAdmin}
       />
     );
   }
@@ -143,6 +146,7 @@ export function TabPresupuestosProyecto({ cliente, proyecto, empresa, onActualiz
                     estancias={proyecto.estancias}
                     proyectoId={proyecto.id}
                     plan={plan}
+                    esAdmin={esAdmin}
                   />
                 </div>
               </div>

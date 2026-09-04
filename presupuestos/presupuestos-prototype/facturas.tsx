@@ -44,6 +44,8 @@ export type FacturasProps = {
   onActualizarProveedor?: (p: Proveedor) => void;
   /** Plan de la sesión actual (Fase 2.5, 04/09/2026) — se pasa al escáner para gatear "Extraer datos con IA". */
   plan?: PlanAcceso;
+  /** Bypass administrativo (05/09/2026) — ver `puedeUsar()` en `planes.ts`. */
+  esAdmin?: boolean;
 };
 
 /**
@@ -51,7 +53,7 @@ export type FacturasProps = {
  */
 export function Facturas({
   facturas, resumen, privado, filtro, onFiltroChange, hayMas, cargandoMas, onCargarMas,
-  clientes, proveedores = [], onGuardar, onBorrar, onCrearProveedor, onActualizarProveedor, plan,
+  clientes, proveedores = [], onGuardar, onBorrar, onCrearProveedor, onActualizarProveedor, plan, esAdmin,
 }: FacturasProps) {
   const [escaner, setEscaner] = useState(false);
   const [facturaEditar, setFacturaEditar] = useState<Factura | undefined>(undefined);
@@ -460,6 +462,7 @@ export function Facturas({
           onCerrar={() => { setEscaner(false); setFacturaEditar(undefined); }}
           facturaEditar={facturaEditar}
           plan={plan}
+          esAdmin={esAdmin}
         />
       )}
 

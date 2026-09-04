@@ -17,6 +17,8 @@ export type AjustesBiometriaProps = {
   onCerrar: () => void;
   /** Plan de la sesión actual (Fase 2.5, 04/09/2026) — registrar una credencial NUEVA exige PRO+ en el servidor; los dispositivos ya registrados se siguen viendo y pudiendo quitar en cualquier plan. */
   plan?: PlanAcceso;
+  /** Bypass administrativo (05/09/2026) — ver `puedeUsar()` en `planes.ts`. */
+  esAdmin?: boolean;
 };
 
 const IconoHuella = ({ s = 18 }: { s?: number }) => (
@@ -51,8 +53,8 @@ type Disponibilidad = 'comprobando' | 'si' | 'no';
  * ni guarda un dato biométrico — solo habla con `navigator.credentials` a
  * través de `use-biometria.ts`.
  */
-export function AjustesBiometria({ onCerrar, plan }: AjustesBiometriaProps) {
-  const tienePlan = puedeUsar(plan, PRO_O_SUPERIOR);
+export function AjustesBiometria({ onCerrar, plan, esAdmin }: AjustesBiometriaProps) {
+  const tienePlan = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
   const soportado = soportaWebAuthn();
   const [disponible, setDisponible] = useState<Disponibilidad>('comprobando');
   const [credenciales, setCredenciales] = useState<CredencialBiometrica[] | null>(null);

@@ -13,6 +13,8 @@ export type InteligenciaPreciosVistaProps = {
   empresa: Empresa;
   /** Plan de la sesión actual (Fase 2, 04/09/2026) — la ruta que analiza los trabajos exige PRO o superior; sin esto, ni se pide (evita un 403 previsible). */
   plan?: PlanAcceso;
+  /** Bypass administrativo (05/09/2026) — ver `puedeUsar()` en `planes.ts`. */
+  esAdmin?: boolean;
 };
 
 const COLOR_ESTADO: Record<'por_encima' | 'cerca' | 'por_debajo', string> = {
@@ -29,13 +31,13 @@ const ICONO_ESTADO: Record<'por_encima' | 'cerca' | 'por_debajo', string> = {
  * cotizado) — nunca mezclados en un único número, siempre etiquetados por
  * su origen. Ver `svc.analizarTrabajos` (backend) para la lógica de fusión.
  */
-export function InteligenciaPreciosVista({ empresa, plan }: InteligenciaPreciosVistaProps) {
+export function InteligenciaPreciosVista({ empresa, plan, esAdmin }: InteligenciaPreciosVistaProps) {
   const [trabajos, setTrabajos] = useState<TrabajoAnalizado[] | null>(null);
   const [error, setError] = useState('');
   const [detalle, setDetalle] = useState<TrabajoAnalizado | null>(null);
   const [pestana, setPestana] = useState<'resumen' | 'historico'>('resumen');
 
-  const tienePlan = puedeUsar(plan, PRO_O_SUPERIOR);
+  const tienePlan = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
 
   const cargar = useCallback(() => {
     setTrabajos(null);

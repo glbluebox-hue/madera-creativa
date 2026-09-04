@@ -93,7 +93,7 @@ function desdeHHMM(valor: string): { hora: number; minuto: number } {
  * de poner una hora y también minutos").
  */
 export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCerrar, esAdmin, plan }: PanelNotificacionesProps) {
-  const tienePlanCompleto = puedeUsar(plan, PRO_O_SUPERIOR);
+  const tienePlanCompleto = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
   const [cargando, setCargando] = useState(true);
   const [preferencias, setPreferencias] = useState<NotifPrefs>(PREFERENCIAS_POR_DEFECTO);
   const [recordatorios, setRecordatorios] = useState<RecordatorioPersonalizado[]>([]);

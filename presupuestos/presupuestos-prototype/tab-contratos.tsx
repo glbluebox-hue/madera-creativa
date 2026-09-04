@@ -12,6 +12,8 @@ export type TabContratosProps = {
   onActualizarEmpresa: (cambios: Partial<Empresa>) => void;
   /** Ver `EditorDocumentoProps.plan` (Fase 4, 05/09/2026) — Copiloto Visual también existe dentro del editor de Contratos (mismo `EditorDocumento`). */
   plan?: PlanAcceso;
+  /** Bypass administrativo (05/09/2026) — ver `puedeUsar()` en `planes.ts`. */
+  esAdmin?: boolean;
 };
 
 /**
@@ -23,7 +25,7 @@ export type TabContratosProps = {
  * PROYECTO — es la clave real de aislamiento entre los distintos trabajos
  * de un mismo cliente.
  */
-export function TabContratos({ cliente, proyecto, empresa, privado, onActualizarEmpresa, plan }: TabContratosProps) {
+export function TabContratos({ cliente, proyecto, empresa, privado, onActualizarEmpresa, plan, esAdmin }: TabContratosProps) {
   return (
     <ContratosVista
       clienteId={proyecto.id}
@@ -32,6 +34,7 @@ export function TabContratos({ cliente, proyecto, empresa, privado, onActualizar
       privado={privado}
       onActualizarEmpresa={onActualizarEmpresa}
       plan={plan}
+      esAdmin={esAdmin}
     />
   );
 }

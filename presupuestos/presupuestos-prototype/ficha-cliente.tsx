@@ -72,6 +72,8 @@ export type FichaClienteProps = {
   onActualizarProveedor?: (p: Proveedor) => void;
   /** Plan de la sesión actual (Fase 2.5, 04/09/2026) — gatea aquí dentro: pedir reseña, escáner de facturas, enlace a SketchUp. */
   plan?: PlanAcceso;
+  /** Bypass administrativo (05/09/2026) — ver `puedeUsar()` en `planes.ts`. */
+  esAdmin?: boolean;
 };
 
 type Pestana = 'resumen' | 'proyectos' | 'presupuestos' | 'presupuestosProyecto' | 'contratos' | 'facturas' | 'notas' | 'dibujos';
@@ -94,9 +96,9 @@ const PESTANAS: { id: Pestana; label: string }[] = [
  * ESTE proyecto), Facturas y Notas. Ninguna función existente se ha
  * quitado — solo se ha reorganizado (incremento "Cliente ≠ Proyecto").
  */
-export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [], empresa, privado, onActualizarEmpresa, onVolver, onActualizarCliente, onActualizarProyecto, onBorrar, onGuardarFactura, onCrearProveedor, onActualizarProveedor, plan }: FichaClienteProps) {
+export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [], empresa, privado, onActualizarEmpresa, onVolver, onActualizarCliente, onActualizarProyecto, onBorrar, onGuardarFactura, onCrearProveedor, onActualizarProveedor, plan, esAdmin }: FichaClienteProps) {
   const [pestana, setPestana] = useState<Pestana>('resumen');
-  const tienePlanEscaner = puedeUsar(plan, PRO_O_SUPERIOR);
+  const tienePlanEscaner = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
   /** Fallo real, 28/08/2026: si `api.cambiarEstadoProyecto` fallaba (red, sesión...), el desplegable de estado no avisaba de nada — el usuario creía haberlo puesto "En curso" y el cambio nunca llegaba a guardarse, con consecuencias reales (la notificación del briefing diario cuenta proyectos por este mismo campo). */
   const [errorEstado, setErrorEstado] = useState('');
   /** Histórico Inteligente (Fase 2A) — se abre solo al marcar "Finalizado" un proyecto que todavía no tiene la característica `tipoTrabajo`; nunca bloquea el cambio de estado, que ya se guardó antes de mostrarse. */
@@ -299,7 +301,7 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
               Editar
             </button>
-            <SolicitudResena clienteId={cliente.id} plan={plan} />
+            <SolicitudResena clienteId={cliente.id} plan={plan} esAdmin={esAdmin} />
             {onBorrar && (
               <ConfirmarBorrado
                 label="Eliminar"
@@ -382,6 +384,7 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
                 onReemplazar={modelo3D.subirArchivo}
                 onEliminar={modelo3D.eliminar}
                 plan={plan}
+                esAdmin={esAdmin}
               />
             ) : null}
           />
@@ -529,19 +532,19 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
       )}
 
       {/* ── DIBUJOS: repositorio de documentación gráfica del proyecto (Fase 2.2) ── */}
-      {pestana === 'dibujos' && <TabDibujos proyecto={proyecto} plan={plan} />}
+      {pestana === 'dibujos' && <TabDibujos proyecto={proyecto} plan={plan} esAdmin={esAdmin} />}
 
       {/* ── PRESUPUESTOS: lista de solo lectura (+ abrir) de los presupuestos de este proyecto — crear sigue siendo solo desde la sección "Presupuestos" (25/08/2026) ── */}
       {pestana === 'presupuestosProyecto' && (
         <div className={styles.tabPanel}>
-          <TabPresupuestosProyecto cliente={cliente} proyecto={proyecto} empresa={empresa} onActualizarEmpresa={onActualizarEmpresa} plan={plan} />
+          <TabPresupuestosProyecto cliente={cliente} proyecto={proyecto} empresa={empresa} onActualizarEmpresa={onActualizarEmpresa} plan={plan} esAdmin={esAdmin} />
         </div>
       )}
 
       {/* ── CONTRATOS: segundo tipo de documento del Motor Documental (Incremento 12) — mismo editor, mismo núcleo ── */}
       {pestana === 'contratos' && (
         <div className={styles.tabPanel}>
-          <TabContratos cliente={cliente} proyecto={proyecto} empresa={empresa} privado={privado} onActualizarEmpresa={onActualizarEmpresa} plan={plan} />
+          <TabContratos cliente={cliente} proyecto={proyecto} empresa={empresa} privado={privado} onActualizarEmpresa={onActualizarEmpresa} plan={plan} esAdmin={esAdmin} />
         </div>
       )}
 
@@ -553,6 +556,7 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
           onGuardar={(f, datosProveedorDetectados) => { guardarFacturaConProveedor({ ...f, clienteId: cliente.id, proyectoId: proyecto.id, tipo: 'gasto' }, datosProveedorDetectados); setEscanerAbierto(false); }}
           onCerrar={() => setEscanerAbierto(false)}
           plan={plan}
+          esAdmin={esAdmin}
         />
       )}
 

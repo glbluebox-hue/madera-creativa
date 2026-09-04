@@ -48,6 +48,8 @@ export type EditorDibujoProps = {
    * hoy el único punto de protección real para esta función concreta.
    */
   plan?: PlanAcceso;
+  /** Bypass administrativo (05/09/2026) — ver `puedeUsar()` en `planes.ts`. */
+  esAdmin?: boolean;
   /** Lista ligera de clientes — solo se usa si hace falta mostrar el selector de destino. */
   clientes?: { id: string; nombre: string }[];
   onGuardar: (d: Dibujo) => Promise<void>;
@@ -125,8 +127,8 @@ function atajoTeclado(key: string, opts: { ctrl?: boolean; shift?: boolean } = {
  * en styles.module.css); toda la interfaz visible es propia, con el Design
  * System de la aplicación, controlada vía la API imperativa de Excalidraw.
  */
-export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, clientes, onGuardar, onVolver }: EditorDibujoProps) {
-  const tienePlanAvanzado = puedeUsar(plan, PRO_O_SUPERIOR);
+export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, esAdmin, clientes, onGuardar, onVolver }: EditorDibujoProps) {
+  const tienePlanAvanzado = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const raizRef = useRef<HTMLDivElement | null>(null);
   const [pantallaCompleta, setPantallaCompleta] = useState(false);

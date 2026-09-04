@@ -646,12 +646,13 @@ export function PresupuestosPrototype() {
             onActualizarEmpresa={actualizar}
             onCrearProyecto={alCrearProyectoRapido}
             plan={sesion?.plan}
+            esAdmin={sesion?.esAdmin}
           />
         )}
 
         {/* ── SECCIÓN INTELIGENCIA DE PRECIOS (Fase 1) ── */}
         {seccion === 'inteligenciaPrecios' && (
-          <InteligenciaPreciosVista empresa={empresa} plan={sesion?.plan} />
+          <InteligenciaPreciosVista empresa={empresa} plan={sesion?.plan} esAdmin={sesion?.esAdmin} />
         )}
 
         {/* ── SECCIÓN FACTURAS ── */}
@@ -672,6 +673,7 @@ export function PresupuestosPrototype() {
             onCrearProveedor={crearProveedor}
             onActualizarProveedor={actualizarProveedor}
             plan={sesion?.plan}
+            esAdmin={sesion?.esAdmin}
           />
         )}
 
@@ -696,6 +698,7 @@ export function PresupuestosPrototype() {
                 onCrearProveedor={crearProveedor}
                 onActualizarProveedor={actualizarProveedor}
                 plan={sesion?.plan}
+                esAdmin={sesion?.esAdmin}
               />
             ) : cargando && proyectos.length === 0 ? (
               <div className={styles.vacio}>
@@ -740,7 +743,7 @@ export function PresupuestosPrototype() {
       )}
 
       {ajustesBiometria && (
-        <AjustesBiometria onCerrar={() => setAjustesBiometria(false)} plan={sesion?.plan} />
+        <AjustesBiometria onCerrar={() => setAjustesBiometria(false)} plan={sesion?.plan} esAdmin={sesion?.esAdmin} />
       )}
 
       {ajustesPerfil && (

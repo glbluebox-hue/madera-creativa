@@ -130,6 +130,8 @@ export type EditorDocumentoProps = {
    * ningún plan y ninguno de los dos botones reflejaba esa restricción.
    */
   plan?: PlanAcceso;
+  /** Bypass administrativo (05/09/2026) — ver `puedeUsar()` en `planes.ts`. */
+  esAdmin?: boolean;
 };
 
 type PreviewMover = { ids: string[]; deltaX: number; deltaY: number };
@@ -188,13 +190,14 @@ function documentoVacio(): DocumentoMC {
  * incremento posterior — con la selección actual, redimensionar/rotar
  * solo actúa cuando hay un único elemento seleccionado.
  */
-export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa, precioVinculado, proyectoId, analisisPrecio, firmaClienteUrl, firmaClienteFecha, esPlantilla, onGuardar, onVolver, onCambiarLogoEmpresa, clientesDisponibles, onCambiarCliente, plan, numeroPresupuesto }: EditorDocumentoProps) {
+export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa, precioVinculado, proyectoId, analisisPrecio, firmaClienteUrl, firmaClienteFecha, esPlantilla, onGuardar, onVolver, onCambiarLogoEmpresa, clientesDisponibles, onCambiarCliente, plan, esAdmin, numeroPresupuesto }: EditorDocumentoProps) {
   // Copiloto Visual — PREMIUM (Fase 4, 05/09/2026). El backend ya lo exigía
   // desde la Fase 2 (`copiloto-presupuesto`, `planMinimo: 'PREMIUM'`); esto
   // solo añade el reflejo visual que faltaba — el botón sigue sin abrir el
   // panel si no se tiene el plan, en vez de abrirlo y dejar que el primer
-  // mensaje falle con un 403.
-  const tienePlanCopiloto = puedeUsar(plan, SOLO_PREMIUM);
+  // mensaje falle con un 403. `esAdmin` (05/09/2026): la cuenta admin nunca
+  // queda bloqueada, mismo criterio que el backend.
+  const tienePlanCopiloto = puedeUsar(plan, SOLO_PREMIUM, esAdmin);
   const documentoInicial = useMemo<DocumentoMC>(() => {
     const contenido = contenedor.contenidoDocumento as unknown as DocumentoMC;
     return contenido && contenido.paginas && contenido.paginas.length > 0 ? contenido : documentoVacio();
@@ -1996,6 +1999,7 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
             estancias={proyectoParaAnalisis?.estancias}
             proyectoId={proyectoId ?? null}
             plan={plan}
+            esAdmin={esAdmin}
             onCerrar={() => setInteligenciaAbierta(false)}
           />
         ),

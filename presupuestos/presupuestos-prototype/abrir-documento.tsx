@@ -28,9 +28,11 @@ export type AbrirDocumentoProps = {
   onCambiarCliente?: (nuevoClienteId: string) => Promise<void>;
   /** Ver `EditorDocumentoProps.plan` (Fase 4, 05/09/2026) — el editor legado (`formato:'lienzo'`) no tiene Copiloto Visual ni Inteligencia de precios, así que no lo necesita. */
   plan?: PlanAcceso;
+  /** Bypass administrativo (05/09/2026) — ver `puedeUsar()` en `planes.ts`. */
+  esAdmin?: boolean;
 };
 
-export function AbrirDocumento({ presupuesto, clienteId, clienteNombre, empresa, onGuardar, onVolver, onCambiarLogoEmpresa, clientesDisponibles, onCambiarCliente, plan }: AbrirDocumentoProps) {
+export function AbrirDocumento({ presupuesto, clienteId, clienteNombre, empresa, onGuardar, onVolver, onCambiarLogoEmpresa, clientesDisponibles, onCambiarCliente, plan, esAdmin }: AbrirDocumentoProps) {
   if (presupuesto.formato === 'lienzo') {
     return (
       <EditorPresupuestoLienzo
@@ -63,6 +65,7 @@ export function AbrirDocumento({ presupuesto, clienteId, clienteNombre, empresa,
         clientesDisponibles={clientesDisponibles}
         onCambiarCliente={onCambiarCliente}
         plan={plan}
+        esAdmin={esAdmin}
         numeroPresupuesto={presupuesto.numeroPresupuesto}
       />
     );

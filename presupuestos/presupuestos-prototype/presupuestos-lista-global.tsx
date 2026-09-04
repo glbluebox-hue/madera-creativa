@@ -30,6 +30,8 @@ export type PresupuestosListaGlobalProps = {
   onCrearProyecto: (proyecto: Proyecto) => void;
   /** Plan de la sesión actual (Fase 2.5, 04/09/2026) — generar el enlace del Portal exige PRO+; crear/editar el presupuesto en sí no cambia de plan. */
   plan?: PlanAcceso;
+  /** Bypass administrativo (05/09/2026) — ver `puedeUsar()` en `planes.ts`. */
+  esAdmin?: boolean;
 };
 
 /**
@@ -48,8 +50,8 @@ export type PresupuestosListaGlobalProps = {
  * antes de abrir el editor — desde la Fase A (autoguardado, 23/08/2026) ya
  * no basta con abrirlo solo en memoria, ver el comentario de `crearBorrador`.
  */
-export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa, onAbrirCliente, onCrearProyecto, plan }: PresupuestosListaGlobalProps) {
-  const tienePlanEnlace = puedeUsar(plan, PRO_O_SUPERIOR);
+export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa, onAbrirCliente, onCrearProyecto, plan, esAdmin }: PresupuestosListaGlobalProps) {
+  const tienePlanEnlace = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
   const [presupuestos, setPresupuestos] = useState<PresupuestoMC[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -486,6 +488,7 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
         clientesDisponibles={clientes}
         onCambiarCliente={cambiarClienteDelPresupuesto}
         plan={plan}
+        esAdmin={esAdmin}
       />
     );
   }
@@ -676,7 +679,7 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
                   (Inteligencia de Precios, Fase 1: "no dashboard sobrecargado"). */}
               {p.analisisPrecio && (
                 <div onClick={(e) => e.stopPropagation()}>
-                  <AnalisisPrecioPresupuesto analisis={p.analisisPrecio} esSnapshot ubicacionEmpresa={{ comunidadAutonoma: empresa.comunidadAutonoma, provincia: empresa.provincia, isla: empresa.isla }} plan={plan} />
+                  <AnalisisPrecioPresupuesto analisis={p.analisisPrecio} esSnapshot ubicacionEmpresa={{ comunidadAutonoma: empresa.comunidadAutonoma, provincia: empresa.provincia, isla: empresa.isla }} plan={plan} esAdmin={esAdmin} />
                 </div>
               )}
             </div>

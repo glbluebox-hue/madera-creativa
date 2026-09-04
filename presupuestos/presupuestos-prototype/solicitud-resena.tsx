@@ -17,6 +17,8 @@ export type SolicitudResenaProps = {
   clienteId: string;
   /** Plan de la sesión actual (Fase 2.5, 04/09/2026) — esta función exige PRO+ en el servidor (`requirePlan`); sin plan suficiente, el botón se muestra deshabilitado con el motivo, en vez de fallar al pulsarlo. */
   plan?: PlanAcceso;
+  /** Bypass administrativo (05/09/2026) — ver `puedeUsar()` en `planes.ts`. */
+  esAdmin?: boolean;
 };
 
 /**
@@ -29,8 +31,8 @@ export type SolicitudResenaProps = {
  * Documental para el elemento "Código QR" — no hace falta pedirlo al
  * servidor.
  */
-export function SolicitudResena({ clienteId, plan }: SolicitudResenaProps) {
-  const tienePlan = puedeUsar(plan, PRO_O_SUPERIOR);
+export function SolicitudResena({ clienteId, plan, esAdmin }: SolicitudResenaProps) {
+  const tienePlan = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
   const [abierto, setAbierto] = useState(false);
   const [generando, setGenerando] = useState(false);
   const [url, setUrl] = useState<string | null>(null);

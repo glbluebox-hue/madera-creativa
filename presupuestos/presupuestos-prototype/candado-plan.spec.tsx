@@ -34,6 +34,32 @@ describe('planes.ts (frontend) — mismo criterio central en toda la UI', () => 
   });
 });
 
+/**
+ * Bypass administrativo (05/09/2026) — mismo criterio exacto que el
+ * backend (`req.usuarioId === 'admin'` en `requirePlan`/
+ * `capacidadPermitidaParaPlan`, `presupuestos-service/planes.ts`): la
+ * cuenta admin nunca queda bloqueada, sin importar su `Usuario.acceso.plan`
+ * almacenado. `esAdmin` viene siempre de `sesion.esAdmin` (`Usuario.esAdmin`
+ * en el backend, fijado al iniciar sesión) — nunca algo que el frontend
+ * pueda fabricar por su cuenta.
+ */
+describe('puedeUsar — bypass administrativo', () => {
+  it('esAdmin:true permite una capacidad BASIC, PRO o PREMIUM sin importar el plan almacenado', () => {
+    expect(puedeUsar('NONE', PRO_O_SUPERIOR, true)).toBe(true);
+    expect(puedeUsar('NONE', SOLO_PREMIUM, true)).toBe(true);
+    expect(puedeUsar(undefined, SOLO_PREMIUM, true)).toBe(true); // incluso sin ningún plan cargado todavía
+  });
+  it('esAdmin:false (o ausente) no cambia el comportamiento de siempre', () => {
+    expect(puedeUsar('BASIC', PRO_O_SUPERIOR, false)).toBe(false);
+    expect(puedeUsar('BASIC', PRO_O_SUPERIOR)).toBe(false);
+  });
+  it('un plan normal (PRO/PREMIUM) sigue funcionando exactamente igual cuando esAdmin es false', () => {
+    expect(puedeUsar('PRO', PRO_O_SUPERIOR, false)).toBe(true);
+    expect(puedeUsar('PRO', SOLO_PREMIUM, false)).toBe(false);
+    expect(puedeUsar('PREMIUM', SOLO_PREMIUM, false)).toBe(true);
+  });
+});
+
 describe('CandadoPlan / MensajeFuncionBloqueada — componente reutilizable', () => {
   it('muestra el plan mínimo exacto que se le pasa, nunca un texto suelto', () => {
     expect(renderToStaticMarkup(<CandadoPlan planMinimo="PRO" />)).toContain('PRO');
@@ -67,5 +93,10 @@ describe('SolicitudResena ("Pedir reseña") — PRO+', () => {
   it('sin plan (sesión sin cargar) se trata como bloqueado, nunca como permitido por omisión', () => {
     const html = renderToStaticMarkup(<SolicitudResena clienteId="c1" />);
     expect(html).toContain('disabled');
+  });
+  it('ADMIN: el botón funciona con normalidad, sin candado ni disabled, aunque su plan almacenado sea NONE', () => {
+    const html = renderToStaticMarkup(<SolicitudResena clienteId="c1" plan="NONE" esAdmin />);
+    expect(html).not.toContain('disabled');
+    expect(html).not.toContain('🔒');
   });
 });

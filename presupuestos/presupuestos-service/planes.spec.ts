@@ -421,3 +421,77 @@ describe('Fase 4 — jerarquía PREMIUM sobre las capacidades reales', () => {
     }
   });
 });
+
+/**
+ * Ajuste "Cuenta administrador con acceso total" (05/09/2026) — bypass
+ * administrativo explícito, mapeado 1 a 1 con los 12 casos pedidos. La
+ * fuente de verdad de "es admin" NO cambia: sigue siendo `req.usuarioId
+ * === 'admin'` (mismo criterio que `requireAdmin`,
+ * `presupuestos-service.app-root.ts`) — este bloque no introduce ninguna
+ * segunda definición, solo confirma exhaustivamente que ese criterio ya
+ * existente se aplica en TODAS las capacidades/rutas protegidas por plan.
+ */
+describe('Bypass administrativo — ADMIN tiene acceso total a BASIC/PRO/PREMIUM', () => {
+  it('1. ADMIN puede usar una capacidad BASIC (planMinimo undefined)', async () => {
+    expect(await capacidadPermitidaParaPlan('admin', undefined)).toBe(true);
+  });
+
+  it('2. ADMIN puede usar una capacidad PRO', async () => {
+    expect(await capacidadPermitidaParaPlan('admin', 'PRO')).toBe(true);
+  });
+
+  it('3. ADMIN puede usar una capacidad PREMIUM', async () => {
+    expect(await capacidadPermitidaParaPlan('admin', 'PREMIUM')).toBe(true);
+  });
+
+  it('4. ADMIN nunca recibe 403 plan_insuficiente en requirePlan, ni en PRO+ ni en solo-PREMIUM', async () => {
+    const proMasSuperior = mockReqResNext('admin');
+    await requirePlan(PRO_O_SUPERIOR)(proMasSuperior.req, proMasSuperior.res, proMasSuperior.next);
+    expect(proMasSuperior.resultado().siguio).toBe(true);
+
+    const soloPremium = mockReqResNext('admin');
+    await requirePlan(SOLO_PREMIUM)(soloPremium.req, soloPremium.res, soloPremium.next);
+    expect(soloPremium.resultado().siguio).toBe(true);
+  });
+
+  it('5. un usuario BASIC real sigue bloqueado en capacidades PRO y PREMIUM (sin regresión)', async () => {
+    await crearUsuarioConPlan('u-admin-check-basic', 'BASIC');
+    expect(await capacidadPermitidaParaPlan('u-admin-check-basic', 'PRO')).toBe(false);
+    expect(await capacidadPermitidaParaPlan('u-admin-check-basic', 'PREMIUM')).toBe(false);
+  });
+
+  it('6. un usuario PRO real sigue bloqueado en capacidades PREMIUM (sin regresión)', async () => {
+    await crearUsuarioConPlan('u-admin-check-pro', 'PRO');
+    expect(await capacidadPermitidaParaPlan('u-admin-check-pro', 'PREMIUM')).toBe(false);
+  });
+
+  it('7. un usuario PREMIUM real puede usar capacidades PREMIUM (sin regresión)', async () => {
+    await crearUsuarioConPlan('u-admin-check-premium', 'PREMIUM');
+    expect(await capacidadPermitidaParaPlan('u-admin-check-premium', 'PREMIUM')).toBe(true);
+  });
+
+  it('8. el bypass depende exclusivamente del usuarioId autenticado por el servidor — un valor cualquiera que no sea literalmente "admin" nunca lo activa', async () => {
+    // `requirePlan`/`capacidadPermitidaParaPlan` reciben `usuarioId` del
+    // `AuthRequest` que ya rellenó `requireAuth` a partir del token
+    // verificado — nunca de un campo del cuerpo/consulta que un usuario
+    // pudiera manipular. Aquí se comprueba la mitad que sí es responsabilidad
+    // de este módulo: ningún id "parecido" a admin (mayúsculas, con
+    // espacios, un usuario real que se llame "admin2"...) cuela.
+    await crearUsuarioConPlan('Admin', 'BASIC');
+    await crearUsuarioConPlan('admin2', 'BASIC');
+    expect(await capacidadPermitidaParaPlan('Admin', 'PREMIUM')).toBe(false);
+    expect(await capacidadPermitidaParaPlan('admin2', 'PREMIUM')).toBe(false);
+  });
+
+  it('11. el bypass funciona en las capacidades de IA reales, no solo en el mecanismo abstracto (copiloto-presupuesto, describir-trabajo-mercado, extraer-datos-factura)', async () => {
+    for (const nombre of ['copiloto-presupuesto', 'describir-trabajo-mercado', 'extraer-datos-factura']) {
+      expect(await capacidadPermitidaParaPlan('admin', obtenerCapacidad(nombre).planMinimo)).toBe(true);
+    }
+  });
+
+  // 12. No se modifica la lógica de facturas ni de numeración de
+  // presupuestos: este ajuste no toca `presupuestos-service.ts` ni
+  // `numeracion-presupuestos.ts` — verificado por la suite completa
+  // (`numeracion-presupuestos.spec.ts`, `factura-seguridad.spec.ts`)
+  // siguiendo en verde sin cambios, no por un test aparte aquí.
+});
