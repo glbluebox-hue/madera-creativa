@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import logoImg from './assets/logo.png';
 import loginMadera from './assets/login-madera.jpg';
 import loginHojas from './assets/login-hojas.jpg';
-import { registrarEnServidor, loginEnServidor, solicitarRecuperacion, restablecerPassword } from './use-registro.js';
+import { registrarEnServidor, loginEnServidor, solicitarRecuperacion, restablecerPassword, verificarEmail } from './use-registro.js';
 import { soportaWebAuthn, iniciarSesionBiometrica } from './use-biometria.js';
 import styles from './styles.module.css';
 
@@ -47,6 +47,11 @@ function codigoInvitacionDeLaUrl(): string {
 /** Token del enlace de recuperación de contraseña (`?recuperar=…`, enviado por email desde `/auth/solicitar-recuperacion`) — mismo patrón de un solo uso al cargar. */
 function tokenRecuperacionDeLaUrl(): string {
   return new URLSearchParams(window.location.search).get('recuperar') ?? '';
+}
+
+/** Token del enlace de verificación de email (`?verificar=…`, enviado por email desde `/auth/registrar`) — mismo patrón de un solo uso al cargar. */
+function tokenVerificacionDeLaUrl(): string {
+  return new URLSearchParams(window.location.search).get('verificar') ?? '';
 }
 
 /** Pantalla de inicio de sesión y registro de Madera Creativa. */
@@ -108,6 +113,28 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
     setRestablecido(true);
   };
 
+  // Pantalla de "verificar email" (04/09/2026) — reemplaza login/registro
+  // por completo cuando se llega con `?verificar=<token>` desde el email,
+  // mismo patrón que `tokenRecuperacion` arriba. Se verifica sola al
+  // cargar la página (no hace falta que el usuario rellene nada, a
+  // diferencia de restablecer contraseña).
+  const [tokenVerificacion] = useState(tokenVerificacionDeLaUrl);
+  const [verificando, setVerificando] = useState(true);
+  const [verificado, setVerificado] = useState(false);
+  const [verificarError, setVerificarError] = useState('');
+
+  useEffect(() => {
+    if (!tokenVerificacion) return;
+    let cancelado = false;
+    verificarEmail(tokenVerificacion).then((r) => {
+      if (cancelado) return;
+      setVerificando(false);
+      if (r.ok) setVerificado(true);
+      else setVerificarError(r.error ?? 'No se pudo verificar el email.');
+    });
+    return () => { cancelado = true; };
+  }, [tokenVerificacion]);
+
   // Registro
   const [regNombre, setRegNombre] = useState('');
   const [regPass, setRegPass] = useState('');
@@ -115,6 +142,11 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
   const [regError, setRegError] = useState('');
   const [mostrarPassReg, setMostrarPassReg] = useState(false);
   const [regCargando, setRegCargando] = useState(false);
+  // Se muestra tras un registro correcto — la cuenta ya no puede entrar sin
+  // verificar el email, así que ya no tiene sentido intentar el login
+  // automático que había antes (solo funcionaba con código promocional).
+  const [regVerificacionEnviada, setRegVerificacionEnviada] = useState(false);
+  const [regAvisoCodigo, setRegAvisoCodigo] = useState('');
 
   // "¿Tienes un código de acceso?" — colapsado por defecto, para no alargar
   // el formulario a quien no tiene uno (la mayoría de altas normales). Ya
@@ -134,6 +166,8 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
         setLoginError('Tu cuenta está pendiente de aprobación. Recibirás acceso en breve.');
       } else if (srv.codigo === 'suspendido') {
         setLoginError('Tu acceso ha sido suspendido. Contacta con Madera Creativa.');
+      } else if (srv.codigo === 'email-no-verificado') {
+        setLoginError(srv.error ?? 'Verifica tu email para poder entrar. Revisa la bandeja de entrada (y spam) del email con el que te registraste.');
       } else if (srv.codigo === 'error-red') {
         // Sin servidor — intentar login local
         const local = onLogin(loginUsuario.trim(), loginPass);
@@ -174,21 +208,14 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
     const local = onRegistrar(regNombre, regPass);
     if (!local.ok) { setRegError(local.error ?? 'Error al registrarse.'); setRegCargando(false); return; }
 
-    if (srv.ok && srv.estado === 'activo') {
-      // Un código de acceso válido activa la cuenta al instante — se entra
-      // directamente, sin el paso de "pendiente de aprobación".
-      const login = await loginEnServidor(regNombre, regPass);
-      setRegCargando(false);
-      if (login.ok) { onLoginDirecto(login.id!, login.nombre!, !!login.esAdmin); return; }
-      setRegError('Tu cuenta ya está activa — entra desde la pestaña "Entrar".');
-      return;
-    }
-
     setRegCargando(false);
     if (srv.ok) {
-      setRegError(srv.avisoCodigo
-        ? `${srv.avisoCodigo} Tu cuenta se ha creado y está pendiente de aprobación.`
-        : 'Tu cuenta está pendiente de aprobación. Recibirás acceso en breve.');
+      // La cuenta queda activa de inmediato en el servidor, pero no se
+      // puede entrar hasta verificar el email (con o sin código) — ya no
+      // tiene sentido intentar iniciar sesión aquí, siempre fallaría con
+      // 'email-no-verificado'.
+      if (srv.avisoCodigo) setRegAvisoCodigo(srv.avisoCodigo);
+      setRegVerificacionEnviada(true);
     }
   };
 
@@ -238,7 +265,7 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
           <hr className={styles.loginDivisor} />
           <p className={styles.loginSubtitulo}>Seguimiento de clientes<br />y proyectos</p>
 
-          {!tokenRecuperacion && (
+          {!tokenRecuperacion && !tokenVerificacion && (
           <>
           {/* Tabs login / registro */}
           <div className={styles.loginTabsRow}>
@@ -368,6 +395,18 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
 
           {/* ── FORMULARIO REGISTRO ── */}
           {pantalla === 'registro' && (
+            regVerificacionEnviada ? (
+              <div className={styles.loginForm}>
+                {regAvisoCodigo && (
+                  <p style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: 'var(--rojo)' }}>{regAvisoCodigo}</p>
+                )}
+                <p style={{ margin: 0, fontSize: '0.88rem', color: 'var(--topo)' }}>
+                  Cuenta creada. Te hemos enviado un email a <strong>{regNombre}</strong> para verificarla —
+                  revisa tu bandeja de entrada (y la carpeta de spam, por si acaso) y pulsa el enlace.
+                  Hasta que lo verifiques no podrás iniciar sesión.
+                </p>
+              </div>
+            ) : (
             <form className={styles.loginForm} onSubmit={registrar} noValidate>
               <div className={styles.loginInputWrap}>
                 <span className={styles.loginIconoBadge}><IconoCorreo /></span>
@@ -438,9 +477,10 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
                 className={`${styles.btn} ${styles.btnPrimario} ${styles.btnLoginSubmit}`}
                 disabled={regCargando || !regNombre.trim() || !regPass.trim() || !regPass2.trim()}
               >
-                {regCargando ? <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center' }}><span className={styles.loginSpinner} /> Creando cuenta…</span> : 'Crear cuenta y entrar'}
+                {regCargando ? <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center' }}><span className={styles.loginSpinner} /> Creando cuenta…</span> : 'Crear cuenta'}
               </button>
             </form>
+            )
           )}
           </>
           )}
@@ -498,6 +538,30 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
                 </button>
               </form>
             )
+          )}
+
+          {/* ── VERIFICAR EMAIL (llegado desde el enlace del email de registro) ── */}
+          {tokenVerificacion && (
+            <div className={styles.loginForm}>
+              {verificando ? (
+                <p style={{ margin: 0, fontSize: '0.88rem', color: 'var(--topo)' }}>Verificando tu email…</p>
+              ) : verificado ? (
+                <>
+                  <p style={{ margin: '0 0 1rem', fontSize: '0.88rem', color: 'var(--topo)' }}>
+                    Email verificado. Ya puedes entrar.
+                  </p>
+                  <button
+                    type="button"
+                    className={`${styles.btn} ${styles.btnPrimario} ${styles.btnLoginSubmit}`}
+                    onClick={() => { window.location.href = window.location.pathname; }}
+                  >
+                    Ir a entrar
+                  </button>
+                </>
+              ) : (
+                <div className={styles.loginError}>{verificarError}</div>
+              )}
+            </div>
           )}
 
           <div className={styles.loginDivisorPunto} />

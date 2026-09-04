@@ -184,6 +184,20 @@ const UsuarioSchema = new Schema({
    */
   resetTokenHash:   { type: String, default: null },
   resetTokenExpira: { type: String, default: null },
+  /**
+   * Verificación de email (04/09/2026) — pasa a ser el único requisito
+   * para poder entrar en una cuenta NUEVA, independiente de `estado`
+   * (que sigue siendo el interruptor manual del admin: suspender/
+   * reactivar). Mismo patrón de token que `resetTokenHash`: solo se
+   * guarda el hash SHA-256, nunca el token en claro. Con `default:
+   * false` los documentos ya existentes en producción lo recibirían así
+   * al leerse — para que eso no bloquee retroactivamente a nadie que ya
+   * tenía acceso, `migrarEmailVerificadoUsuariosExistentes()` los marca
+   * `true` una sola vez al arrancar (ver más abajo).
+   */
+  emailVerificado: { type: Boolean, default: false },
+  verificacionTokenHash:   { type: String, default: null },
+  verificacionTokenExpira: { type: String, default: null },
   pushSubs:     { type: [PushSubscriptionSchema], default: [] },
   /**
    * Nombre para mostrar (barra lateral, saludo de Inicio) — independiente
@@ -260,5 +274,25 @@ export async function asegurarIndiceNombreNormalizado(): Promise<void> {
     await UsuarioModel.collection.createIndex({ nombreNormalizado: 1 }, { unique: true });
   } catch (err) {
     logger.error({ err }, 'No se pudo crear el índice único de nombreNormalizado');
+  }
+}
+
+/**
+ * Verificación de email (04/09/2026): marca `emailVerificado:true` en las
+ * cuentas que YA tenían acceso concedido bajo las reglas anteriores
+ * (`estado` distinto de `pendiente`) y todavía no tienen el campo — nunca
+ * se les mandó ningún email que pudieran verificar, así que exigírselo
+ * ahora les cortaría el acceso sin aviso. Solo las cuentas registradas a
+ * partir de este cambio (que sí reciben el email) empiezan en `false` de
+ * verdad. Idempotente, mismo criterio que `migrarNombresNormalizados`.
+ */
+export async function migrarEmailVerificadoUsuariosExistentes(): Promise<void> {
+  await conectarUsuarios();
+  const resultado = await UsuarioModel.updateMany(
+    { emailVerificado: { $exists: false }, estado: { $ne: 'pendiente' } },
+    { $set: { emailVerificado: true } }
+  );
+  if (resultado.modifiedCount > 0) {
+    logger.info({ cuentasActualizadas: resultado.modifiedCount }, 'Migración emailVerificado (cuentas ya activas antes del cambio)');
   }
 }

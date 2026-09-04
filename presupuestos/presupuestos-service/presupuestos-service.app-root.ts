@@ -13,7 +13,7 @@ import { logger } from './logger.service.js';
 import { inicializarMotorDocumental } from './documento-motor-inicializar.js';
 import { inicializarAutomatizaciones } from './automatizaciones-listener.js';
 import { PresupuestosService, ErrorDeNegocio } from './presupuestos-service.js';
-import { UsuarioModel, conectarUsuarios, migrarNombresNormalizados, asegurarIndiceNombreNormalizado, ACCESO_POR_DEFECTO, leerPreferenciaNotif } from './usuario.model.js';
+import { UsuarioModel, conectarUsuarios, migrarNombresNormalizados, asegurarIndiceNombreNormalizado, migrarEmailVerificadoUsuariosExistentes, ACCESO_POR_DEFECTO, leerPreferenciaNotif } from './usuario.model.js';
 import type { AccesoUsuario, EstadoUsuario } from './usuario.model.js';
 import { CodigoPromocionalModel, conectarCodigos, canjearCodigo, generarIdCodigo, normalizarCodigo } from './codigo-promocional.model.js';
 import { SoporteHiloModel, conectarSoporte, generarIdHiloSoporte } from './soporte-hilo.model.js';
@@ -89,6 +89,7 @@ import {
   esquemaActualizarRecordatorios,
   esquemaSolicitarRecuperacion,
   esquemaRestablecerPassword,
+  esquemaVerificarEmail,
   esquemaCrearHiloSoporte,
   esquemaMensajeSoporte,
 } from './esquemas-validacion.js';
@@ -322,6 +323,13 @@ async function getPushSubsAdmin(): Promise<PushSub[]> {
  * este aviso se mandaba siempre sin más — el problema no era este código,
  * sino que dependía por completo de que el push del admin estuviera
  * activo en ese momento, sin ningún interruptor visible que lo confirmara.
+ *
+ * Verificación de email (04/09/2026): antes solo se llamaba si la cuenta
+ * quedaba `pendiente` de aprobación — con un código promocional (acceso
+ * inmediato) el admin nunca se enteraba del alta. Ahora que la aprobación
+ * manual deja de ser el filtro de entrada, se llama SIEMPRE que se
+ * registra alguien, con o sin código, para que el admin siga viendo
+ * todas las altas nuevas (solo cambia el motivo del aviso).
  */
 async function notificarAdminNuevoUsuario(nombre: string): Promise<void> {
   const admin = await getAdmin();
@@ -330,8 +338,8 @@ async function notificarAdminNuevoUsuario(nombre: string): Promise<void> {
   for (const sub of subs) {
     await enviarNotificacion(
       sub,
-      'Nuevo usuario pendiente',
-      nombre + ' quiere acceder a la app. Entra para aprobar o rechazar.',
+      'Nuevo usuario registrado',
+      nombre + ' se ha registrado. Aún no ha verificado su email.',
       { tipo: 'nuevo-usuario', nombre }
     );
   }
@@ -409,6 +417,7 @@ export function run() {
   asegurarAdmin()
     .then(migrarNombresNormalizados)
     .then(asegurarIndiceNombreNormalizado)
+    .then(migrarEmailVerificadoUsuariosExistentes)
     .catch((err) => logger.error({ err }, 'Error inicializando admin / migrando nombres normalizados'));
   // Visor 3D ("Diseño 3D", 30/08/2026): asegura que el bucket público de R2
   // acepta lectura por fetch() desde nuestros propios orígenes — ver
@@ -612,13 +621,16 @@ export function run() {
   }
 
   /**
-   * Registro de nuevo usuario. Sin código (o con uno inválido), queda en
-   * estado `pendiente` hasta que el admin lo apruebe — comportamiento sin
-   * cambios. Con un código promocional válido, el canje se resuelve de
-   * forma atómica (`canjearCodigo`) y la cuenta queda `activa` de inmediato
-   * con el `acceso` que ese código concede — el código en sí no vuelve a
-   * consultarse nunca más para decidir nada; a partir de aquí todo lo
-   * decide el propio documento del usuario (ver `usuario.model.ts`).
+   * Registro de nuevo usuario. Verificación de email (04/09/2026): la
+   * cuenta queda `activa` de inmediato SIEMPRE (con o sin código) — la
+   * aprobación manual del admin deja de ser el filtro de entrada; en su
+   * lugar, `/auth/login` exige `emailVerificado` (ver más abajo). Con un
+   * código promocional válido, el canje se resuelve de forma atómica
+   * (`canjearCodigo`) y se concede el `acceso` que ese código otorga — el
+   * código en sí no vuelve a consultarse nunca más para decidir nada; a
+   * partir de aquí todo lo decide el propio documento del usuario (ver
+   * `usuario.model.ts`). La verificación de email es independiente de
+   * esto: se exige igual, con o sin código.
    */
   app.post('/auth/registrar', limitadorAuth, validar(esquemaRegistro), async (req: AuthRequest, res) => {
     try {
@@ -628,14 +640,13 @@ export function run() {
       const existe = await UsuarioModel.findOne({ nombreNormalizado }).lean().exec();
       if (existe) { res.status(409).json({ error: 'Ese email ya está registrado.' }); return; }
 
-      let estado: EstadoUsuario = 'pendiente';
+      const estado: EstadoUsuario = 'activo';
       let acceso: AccesoUsuario = ACCESO_POR_DEFECTO;
       let avisoCodigo: string | undefined;
 
       if (codigoPromocional) {
         const resultado = await canjearCodigo(codigoPromocional);
         if (resultado.ok === true) {
-          estado = 'activo';
           acceso = {
             tipo: resultado.tipoAcceso,
             plan: resultado.plan,
@@ -650,6 +661,12 @@ export function run() {
         }
       }
 
+      // Mismo patrón que la recuperación de contraseña: el token viaja en
+      // claro solo en el email, nunca se guarda así — solo su hash.
+      const tokenPlano = randomBytes(32).toString('hex');
+      const tokenHash = createHash('sha256').update(tokenPlano).digest('hex');
+      const expira = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 horas
+
       const nuevo = await UsuarioModel.create({
         id: generarId(),
         nombre,
@@ -660,13 +677,54 @@ export function run() {
         esAdmin: false,
         creadoEn: new Date().toISOString(),
         acceso,
+        emailVerificado: false,
+        verificacionTokenHash: tokenHash,
+        verificacionTokenExpira: expira,
       });
 
-      // Si el código ya dio acceso inmediato, no hay nada que aprobar — no se molesta al admin.
-      if (estado === 'pendiente') {
-        notificarAdminNuevoUsuario(nombre).catch((err) => logger.error({ err, requestId: req.requestId }, 'Error notificando al admin de nuevo usuario'));
+      const origen = origenEsperado(req) || 'https://estudio.maderacreativa.com';
+      const enlace = `${origen}/?verificar=${tokenPlano}`;
+      try {
+        await enviarEmail(
+          nombre,
+          'Verifica tu email en Madera Creativa',
+          `<p>Gracias por registrarte en Madera Creativa.</p><p><a href="${enlace}">Pulsa aquí para verificar tu email</a> (válido durante 24 horas). Hasta que lo verifiques no podrás iniciar sesión.</p><p>Si no has sido tú, ignora este email.</p>`
+        );
+      } catch (err) {
+        // Igual que en /auth/solicitar-recuperacion: un fallo de envío es un
+        // problema de configuración (Resend caído, clave sin poner…), se
+        // registra pero no rompe el registro — la cuenta queda creada y el
+        // usuario puede pedir que se le reenvíe más adelante si hiciera falta.
+        logger.error({ err, requestId: req.requestId }, 'Error enviando email de verificación');
       }
+
+      // Se avisa SIEMPRE al admin de toda alta nueva, con o sin código — antes
+      // solo se avisaba si quedaba pendiente de aprobación manual.
+      notificarAdminNuevoUsuario(nombre).catch((err) => logger.error({ err, requestId: req.requestId }, 'Error notificando al admin de nuevo usuario'));
+
       res.json({ ok: true, id: nuevo.id, estado, avisoCodigo });
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /**
+   * Verifica el email de una cuenta recién registrada — consume el token
+   * enviado en el email y marca `emailVerificado:true`. Sin esto el
+   * usuario no puede iniciar sesión (ver `/auth/login`). Mismo patrón que
+   * `/auth/restablecer-password`: token de un solo uso, se borra al
+   * consumirse, 400 genérico si no es válido o ya caducó.
+   */
+  app.post('/auth/verificar-email', limitadorAuth, validar(esquemaVerificarEmail), async (req, res) => {
+    try {
+      await conectarUsuarios();
+      const tokenHash = createHash('sha256').update(req.body.token).digest('hex');
+      const ahora = new Date().toISOString();
+      const u = await UsuarioModel.findOneAndUpdate(
+        { verificacionTokenHash: tokenHash, verificacionTokenExpira: { $gt: ahora } },
+        { emailVerificado: true, verificacionTokenHash: null, verificacionTokenExpira: null },
+        { new: true }
+      ).lean().exec() as any;
+      if (!u) { res.status(400).json({ error: 'El enlace no es válido o ha caducado.' }); return; }
+      res.json({ ok: true });
     } catch (err) { responderError(req, res, err); }
   });
 
@@ -676,7 +734,7 @@ export function run() {
       await conectarUsuarios();
       const { nombre, password } = req.body;
       const u = await UsuarioModel.findOne({ nombreNormalizado: nombre.toLowerCase() })
-        .select('id nombre passwordHash hashAlgo estado esAdmin').lean().exec() as any;
+        .select('id nombre passwordHash hashAlgo estado esAdmin emailVerificado').lean().exec() as any;
       if (!u) { res.status(401).json({ error: 'Usuario o contraseña incorrectos.' }); return; }
 
       let credencialesValidas: boolean;
@@ -695,11 +753,17 @@ export function run() {
       if (!credencialesValidas) {
         res.status(401).json({ error: 'Usuario o contraseña incorrectos.' }); return;
       }
-      if (u.estado === 'pendiente') {
-        res.status(403).json({ error: 'pendiente', mensaje: 'Tu cuenta está pendiente de aprobación. Recibirás acceso en breve.' }); return;
-      }
       if (u.estado === 'suspendido') {
         res.status(403).json({ error: 'suspendido', mensaje: 'Tu acceso ha sido suspendido. Contacta con Madera Creativa.' }); return;
+      }
+      // Verificación de email (04/09/2026): sustituye a la aprobación manual
+      // como filtro de entrada — `estado: 'pendiente'` ya NO bloquea por sí
+      // solo (una cuenta nueva nace `activa`; solo `emailVerificado` decide
+      // si puede entrar). `!!u.emailVerificado` porque cuentas anteriores a
+      // este campo, aún no alcanzadas por la migración de arranque, lo
+      // tendrían `undefined`, no `false`.
+      if (!u.emailVerificado) {
+        res.status(403).json({ error: 'email-no-verificado', mensaje: 'Verifica tu email para poder entrar. Revisa la bandeja de entrada (y spam) del email con el que te registraste.' }); return;
       }
       const ahora = new Date().toISOString();
       // `$slice: -50` en el mismo `$push` acota el historial a los últimos
@@ -946,6 +1010,10 @@ export function run() {
         creadoEn: u.creadoEn, ultimoAcceso: u.ultimoAcceso,
         historialAccesos: u.historialAccesos ?? [],
         acceso: u.acceso ?? ACCESO_POR_DEFECTO,
+        // Verificación de email (04/09/2026): `?? false` por si acaso —
+        // la migración de arranque ya la rellena para toda cuenta ya
+        // activa/suspendida, pero nunca se debe asumir el campo presente.
+        emailVerificado: u.emailVerificado ?? false,
       })));
     } catch (err) { responderError(req, res, err); }
   });

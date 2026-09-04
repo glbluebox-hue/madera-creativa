@@ -1354,3 +1354,11 @@
 2026-09-03T20:13:14.230Z 21816 test presupuestos/presupuestos-service/horas-ayudante.spec.ts, failed
 2026-09-03T20:13:44.958Z 25364 test presupuestos/presupuestos-service/horas-ayudante.spec.ts, started
 2026-09-03T20:14:01.464Z 25364 test presupuestos/presupuestos-service/horas-ayudante.spec.ts, succeeded
+2026-09-04T12:28:18.974Z 4508 test presupuestos-service/email-verificacion.spec.ts, started
+2026-09-04T12:28:19.210Z 4508 test presupuestos-service/email-verificacion.spec.ts, failed
+2026-09-04T12:28:26.879Z 29700 test presupuestos-service, started
+2026-09-04T12:29:05.181Z 29700 test presupuestos-service, failed
+2026-09-04T12:29:42.689Z 12592 status, started
+2026-09-04T12:29:59.436Z 12592 status, succeeded
+2026-09-04T12:30:15.223Z 3648 test presupuestos-service, started
+2026-09-04T12:30:34.096Z 3648 test presupuestos-service, failed

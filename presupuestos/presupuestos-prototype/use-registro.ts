@@ -24,16 +24,16 @@ export type ResultadoAuth = {
   esAdmin?: boolean;
   estado?: string;
   error?: string;
-  codigo?: 'pendiente' | 'suspendido' | 'error-red' | 'credenciales';
+  codigo?: 'pendiente' | 'suspendido' | 'email-no-verificado' | 'error-red' | 'credenciales';
   /** Solo en registro: si se indicó un código y no era válido, explica por qué (el registro no se bloquea por esto). */
   avisoCodigo?: string;
 };
 
 /**
- * Registra un nuevo usuario en el servidor. Sin código (o con uno inválido)
- * la cuenta queda "pendiente" hasta que el admin la apruebe — el `estado`
- * devuelto lo dice explícitamente, nunca se asume. Con un código
- * promocional válido, el servidor la activa de inmediato.
+ * Registra un nuevo usuario en el servidor. Verificación de email
+ * (04/09/2026): la cuenta queda `activa` de inmediato siempre, con o sin
+ * código — pero no puede iniciar sesión hasta verificar el email que el
+ * servidor le manda (ver `loginEnServidor`, código `'email-no-verificado'`).
  */
 export async function registrarEnServidor(nombre: string, password: string, codigoPromocional?: string): Promise<ResultadoAuth> {
   try {
@@ -97,6 +97,22 @@ export async function restablecerPassword(token: string, passwordNueva: string):
   }
 }
 
+/** Consume el token del enlace de verificación de email (04/09/2026, ver `/auth/verificar-email`). */
+export async function verificarEmail(token: string): Promise<ResultadoAuth> {
+  try {
+    const res = await fetch(`${BASE}/auth/verificar-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return { ok: false, error: data.error || 'No se pudo verificar el email.', codigo: 'credenciales' };
+    return { ok: true };
+  } catch {
+    return { ok: false, error: 'Sin conexión con el servidor.', codigo: 'error-red' };
+  }
+}
+
 /**
  * Inicia sesión verificando credenciales contra el servidor.
  * Devuelve error específico si la cuenta está pendiente o suspendida.
@@ -115,6 +131,9 @@ export async function loginEnServidor(nombre: string, password: string): Promise
     }
     if (res.status === 403 && data.error === 'suspendido') {
       return { ok: false, error: data.mensaje, codigo: 'suspendido' };
+    }
+    if (res.status === 403 && data.error === 'email-no-verificado') {
+      return { ok: false, error: data.mensaje, codigo: 'email-no-verificado' };
     }
     if (!res.ok) return { ok: false, error: data.error || 'Usuario o contraseña incorrectos.', codigo: 'credenciales' };
     establecerAccessToken(data.accessToken);

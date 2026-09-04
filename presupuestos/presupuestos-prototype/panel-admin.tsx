@@ -30,6 +30,8 @@ type UsuarioAdmin = {
   /** Historial de logins con éxito (fecha ISO), más reciente al final — acotado a los últimos 50 (ver login en presupuestos-service.app-root.ts). */
   historialAccesos?: string[];
   acceso: AccesoUsuario;
+  /** Verificación de email (04/09/2026) — filtro de entrada real desde el registro; `estado` ya no bloquea por sí solo, ver `/auth/login`. */
+  emailVerificado: boolean;
 };
 
 /** Fecha + hora en formato local corto, para distinguir accesos del mismo día en el historial. */
@@ -628,6 +630,14 @@ export function PanelAdmin({ onCerrar }: PanelAdminProps) {
 
                     {/* Acceso / plan */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', fontSize: '0.76rem', color: 'var(--topo-claro)' }}>
+                      {/* Verificación de email (04/09/2026) — filtro de entrada real desde el registro, independiente de `estado`/`acceso`. */}
+                      <span style={{
+                        fontWeight: 600, padding: '2px 8px', borderRadius: 6,
+                        background: u.emailVerificado ? 'var(--verde-tinte, #e3f3e6)' : 'var(--ocre-bg)',
+                        color: u.emailVerificado ? 'var(--verde, #2e7d32)' : 'var(--ocre)',
+                      }}>
+                        {u.emailVerificado ? '✓ Email verificado' : '✗ Email sin verificar'}
+                      </span>
                       <span style={{ background: 'var(--topo-tinte)', color: 'var(--topo)', fontWeight: 600, padding: '2px 8px', borderRadius: 6 }}>
                         {ETIQUETA_TIPO[u.acceso?.tipo ?? 'free']} · {ETIQUETA_PLAN[u.acceso?.plan ?? 'NONE']}
                       </span>

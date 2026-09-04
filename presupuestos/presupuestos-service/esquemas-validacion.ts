@@ -62,6 +62,11 @@ export const esquemaRestablecerPassword = z.object({
   passwordNueva: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres.').max(256),
 });
 
+/** Verificación de email (04/09/2026) — consumir el token recibido por email. */
+export const esquemaVerificarEmail = z.object({
+  token: z.string().min(10).max(128),
+});
+
 // ── Acceso biométrico (WebAuthn/passkeys) ───────────────────────────────────────
 // Verifica solo la forma del payload (tamaños razonables, campos presentes) —
 // la seguridad real de la ceremonia (firma, challenge, origin, RP ID) la
