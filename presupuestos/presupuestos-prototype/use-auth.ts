@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { alPerderSesion, cerrarSesionServidor, refrescarSesion } from './api.js';
+import type { PlanAcceso } from './planes.js';
 
 // ── Claves de almacenamiento ──────────────────────────────────────────────────
 const KEY_SESION       = 'mc_sesion';           // usuario activo
@@ -27,6 +28,8 @@ export type SesionActiva = {
   usuarioId: string;
   nombre: string;
   esAdmin?: boolean;
+  /** Plan comercial actual de la cuenta (Fase 1, 04/09/2026) — viene de la respuesta del servidor al iniciar sesión, nunca se calcula en el cliente. */
+  plan?: PlanAcceso;
 };
 
 /** Resultado del hook de autenticación. */
@@ -47,7 +50,7 @@ export type UseAuthResult = {
   storagePrefix: string;
   login: (nombre: string, password: string) => { ok: boolean; error?: string };
   /** Establece la sesión directamente sin verificar en localStorage (para login validado por servidor). */
-  loginDirecto: (id: string, nombre: string, esAdmin: boolean) => void;
+  loginDirecto: (id: string, nombre: string, esAdmin: boolean, plan?: PlanAcceso) => void;
   registrar: (nombre: string, password: string) => { ok: boolean; error?: string };
   logout: () => void;
 };
@@ -247,8 +250,8 @@ export function useAuth(): UseAuthResult {
    * `loginEnServidor()` (ver `use-registro.ts` / `api.ts`) — esta función
    * solo fija la identidad de sesión para la interfaz.
    */
-  const loginDirecto = useCallback((id: string, nombre: string, esAdmin: boolean) => {
-    const s: SesionActiva = { usuarioId: id, nombre, esAdmin };
+  const loginDirecto = useCallback((id: string, nombre: string, esAdmin: boolean, plan?: PlanAcceso) => {
+    const s: SesionActiva = { usuarioId: id, nombre, esAdmin, plan };
     guardarSesion(s);
     setSesion(s);
   }, []);

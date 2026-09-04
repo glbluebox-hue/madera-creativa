@@ -5,12 +5,13 @@ import loginMadera from './assets/login-madera.jpg';
 import loginHojas from './assets/login-hojas.jpg';
 import { registrarEnServidor, loginEnServidor, solicitarRecuperacion, restablecerPassword, verificarEmail } from './use-registro.js';
 import { soportaWebAuthn, iniciarSesionBiometrica } from './use-biometria.js';
+import type { PlanAcceso } from './planes.js';
 import styles from './styles.module.css';
 
 /** Props de la página de login / registro. */
 export type LoginPageProps = {
   onLogin: (nombre: string, password: string) => { ok: boolean; error?: string };
-  onLoginDirecto: (id: string, nombre: string, esAdmin: boolean) => void;
+  onLoginDirecto: (id: string, nombre: string, esAdmin: boolean, plan?: PlanAcceso) => void;
   onRegistrar: (nombre: string, password: string) => { ok: boolean; error?: string };
 };
 
@@ -179,7 +180,7 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
       return;
     }
     // Login válido en servidor — establecer sesión directamente con datos del servidor
-    onLoginDirecto(srv.id!, srv.nombre!, !!srv.esAdmin);
+    onLoginDirecto(srv.id!, srv.nombre!, !!srv.esAdmin, srv.plan);
     setLoginCargando(false);
   };
 
@@ -189,7 +190,7 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
     const resultado = await iniciarSesionBiometrica();
     setBioCargando(false);
     if (resultado.ok === false) { setBioError(resultado.error); return; }
-    onLoginDirecto(resultado.id, resultado.nombre, resultado.esAdmin);
+    onLoginDirecto(resultado.id, resultado.nombre, resultado.esAdmin, resultado.plan);
   };
 
   const registrar = async (e: React.FormEvent) => {

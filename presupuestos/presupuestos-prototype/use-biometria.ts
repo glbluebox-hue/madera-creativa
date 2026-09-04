@@ -5,6 +5,7 @@ import {
   platformAuthenticatorIsAvailable,
 } from '@simplewebauthn/browser';
 import { fetchConAuth, establecerAccessToken } from './api.js';
+import type { PlanAcceso } from './planes.js';
 
 /**
  * Acceso biométrico (WebAuthn/passkeys) del lado del cliente: registra y
@@ -146,7 +147,7 @@ export async function borrarCredencialBiometrica(id: string): Promise<void> {
 // ── Login (entrar con el autenticador del dispositivo) ──────────────────────────
 
 /** Resultado de un login biométrico exitoso — mismo shape que `ResultadoAuth` de `use-registro.ts`. */
-export type SesionBiometrica = { id: string; nombre: string; esAdmin: boolean; estado: string };
+export type SesionBiometrica = { id: string; nombre: string; esAdmin: boolean; estado: string; plan?: PlanAcceso };
 
 /**
  * Ceremonia completa de login: sin sesión previa. Pide opciones (sin
@@ -184,7 +185,7 @@ export async function iniciarSesionBiometrica(): Promise<ResultadoBiometria<Sesi
       return { ok: false, error: data?.error || 'No se pudo verificar tu acceso biométrico.', codigo: 'otro' };
     }
     establecerAccessToken(data.accessToken);
-    return { ok: true, id: data.id, nombre: data.nombre, esAdmin: !!data.esAdmin, estado: data.estado };
+    return { ok: true, id: data.id, nombre: data.nombre, esAdmin: !!data.esAdmin, estado: data.estado, plan: data.plan };
   } catch {
     return { ok: false, error: 'Sin conexión con el servidor.', codigo: 'error-red' };
   }

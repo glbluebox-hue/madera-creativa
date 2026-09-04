@@ -12,6 +12,7 @@
  */
 
 import { establecerAccessToken } from './api.js';
+import type { PlanAcceso } from './planes.js';
 
 // Ver el comentario de `BASE` en api.ts — mismo criterio (Bit local vs. Render combinado).
 const BASE = (import.meta as any).env?.VITE_API_BASE ?? '/api/presupuestos-service';
@@ -23,6 +24,8 @@ export type ResultadoAuth = {
   nombre?: string;
   esAdmin?: boolean;
   estado?: string;
+  /** Plan comercial actual (Fase 1, 04/09/2026) — presente en login/verificación de acceso, no en registro/recuperación. */
+  plan?: PlanAcceso;
   error?: string;
   codigo?: 'pendiente' | 'suspendido' | 'email-no-verificado' | 'error-red' | 'credenciales';
   /** Solo en registro: si se indicó un código y no era válido, explica por qué (el registro no se bloquea por esto). */
@@ -137,7 +140,7 @@ export async function loginEnServidor(nombre: string, password: string): Promise
     }
     if (!res.ok) return { ok: false, error: data.error || 'Usuario o contraseña incorrectos.', codigo: 'credenciales' };
     establecerAccessToken(data.accessToken);
-    return { ok: true, id: data.id, nombre: data.nombre, esAdmin: data.esAdmin, estado: data.estado };
+    return { ok: true, id: data.id, nombre: data.nombre, esAdmin: data.esAdmin, estado: data.estado, plan: data.plan };
   } catch {
     return { ok: false, error: 'Sin conexión con el servidor. Inténtalo de nuevo.', codigo: 'error-red' };
   }

@@ -3,6 +3,7 @@ import type { Perfil } from './use-perfil.js';
 import { leerArchivoComoBase64 } from './archivos.js';
 import { comprimirImagen } from './procesamiento-imagenes.js';
 import { cambiarAcceso } from './api.js';
+import type { PlanAcceso } from './planes.js';
 import styles from './styles.module.css';
 
 /**
@@ -32,7 +33,7 @@ export type AjustesPerfilProps = {
    * (`loginDirecto` de `use-auth.ts`), porque el usuario de acceso puede
    * haber cambiado y el servidor ya ha emitido una sesión nueva.
    */
-  onCambioAcceso: (id: string, nombre: string, esAdmin: boolean) => void;
+  onCambioAcceso: (id: string, nombre: string, esAdmin: boolean, plan?: PlanAcceso) => void;
   /** Cierra el modal. */
   onCerrar: () => void;
 };
@@ -109,7 +110,7 @@ export function AjustesPerfil({ perfil, nombreAcceso, onGuardar, onCambioAcceso,
     });
     setGuardandoAcceso(false);
     if (!resultado.ok) { setErrorAcceso(resultado.error); return; }
-    onCambioAcceso(resultado.id, resultado.nombre, resultado.esAdmin);
+    onCambioAcceso(resultado.id, resultado.nombre, resultado.esAdmin, resultado.plan);
     setPasswordActual(''); setNombreNuevo(''); setPasswordNueva(''); setPasswordNuevaConfirmar('');
     setExitoAcceso('Acceso actualizado. Ya puedes usar los nuevos datos la próxima vez que entres.');
   };

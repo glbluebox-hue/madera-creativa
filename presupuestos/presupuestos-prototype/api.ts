@@ -9,6 +9,7 @@ import type { PlantillaMC, RecursoMC, ComponenteMC } from './documento-modelo.js
 import type { ContratoMC } from './contratos-modelo.js';
 import type { Empresa } from './use-empresa.js';
 import type { Perfil } from './use-perfil.js';
+import type { PlanAcceso } from './planes.js';
 
 // En local (Bit) el gateway solo entiende peticiones bajo `/api/presupuestos-service/...`,
 // así que ese es el valor por defecto. En un despliegue combinado fuera de
@@ -1521,7 +1522,7 @@ export async function guardarPerfil(perfil: Partial<Perfil>): Promise<void> {
 
 /** Resultado de cambiar el usuario/contraseña de acceso. */
 export type ResultadoCambioAcceso =
-  | { ok: true; id: string; nombre: string; esAdmin: boolean; estado: string; accessToken: string }
+  | { ok: true; id: string; nombre: string; esAdmin: boolean; estado: string; plan?: PlanAcceso; accessToken: string }
   | { ok: false; error: string };
 
 /**
@@ -1540,7 +1541,7 @@ export async function cambiarAcceso(datos: { passwordActual: string; nombreNuevo
     const data = await res.json() as any;
     if (!res.ok) return { ok: false, error: data.error || data.detalles?.[0]?.mensaje || 'No se pudo cambiar el acceso.' };
     establecerAccessToken(data.accessToken);
-    return { ok: true, id: data.id, nombre: data.nombre, esAdmin: !!data.esAdmin, estado: data.estado, accessToken: data.accessToken };
+    return { ok: true, id: data.id, nombre: data.nombre, esAdmin: !!data.esAdmin, estado: data.estado, plan: data.plan, accessToken: data.accessToken };
   } catch {
     return { ok: false, error: 'Sin conexión con el servidor.' };
   }

@@ -203,6 +203,7 @@ export function TabDibujos({ proyecto }: TabDibujosProps) {
       <EditorDibujo
         dibujo={editando.dibujo}
         clienteId={proyecto.id}
+        proyectoId={proyecto.id}
         carpetaId={carpetaId ?? SIN_CARPETA}
         onVolver={() => setEditando(null)}
         onGuardar={async (d) => { await guardar(d); setEditando(null); }}

@@ -30,6 +30,14 @@ export type EditorDibujoProps = {
   clienteId?: string;
   /** Carpeta del cliente en la que crear un dibujo nuevo (ficha de cliente, dentro de una carpeta ya abierta). */
   carpetaId?: string;
+  /**
+   * Proyecto al que asociar un dibujo nuevo (Fase 1, 04/09/2026) — cuando el
+   * editor se abre desde dentro de la ficha de un proyecto (`tab-dibujos.tsx`)
+   * ya se conoce y se rellena aquí, igual que `clienteId`. Ausente cuando el
+   * dibujo se crea desde la bandeja general sin proyecto — se queda vacío,
+   * tal como hoy.
+   */
+  proyectoId?: string;
   /** Lista ligera de clientes — solo se usa si hace falta mostrar el selector de destino. */
   clientes?: { id: string; nombre: string }[];
   onGuardar: (d: Dibujo) => Promise<void>;
@@ -107,7 +115,7 @@ function atajoTeclado(key: string, opts: { ctrl?: boolean; shift?: boolean } = {
  * en styles.module.css); toda la interfaz visible es propia, con el Design
  * System de la aplicación, controlada vía la API imperativa de Excalidraw.
  */
-export function EditorDibujo({ dibujo, clienteId, carpetaId, clientes, onGuardar, onVolver }: EditorDibujoProps) {
+export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, clientes, onGuardar, onVolver }: EditorDibujoProps) {
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const raizRef = useRef<HTMLDivElement | null>(null);
   const [pantallaCompleta, setPantallaCompleta] = useState(false);
@@ -811,7 +819,11 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, clientes, onGuardar
         id: dibujo?.id ?? generarId(),
         clienteId: destino?.proyectoId ?? dibujo?.clienteId ?? clienteId ?? '',
         carpetaId: destino?.carpetaId ?? dibujo?.carpetaId ?? carpetaId ?? '',
-        proyectoId: dibujo?.proyectoId ?? '',
+        // Fase 1 (04/09/2026): mismo criterio de fallback que `clienteId` de
+        // arriba — antes esta línea solo conservaba el valor de un dibujo YA
+        // existente (`dibujo?.proyectoId`), nunca lo rellenaba al crear uno
+        // nuevo, así que el campo quedaba reservado pero siempre vacío.
+        proyectoId: destino?.proyectoId ?? dibujo?.proyectoId ?? proyectoId ?? '',
         nombre: nombre.trim() || 'Dibujo sin título',
         miniatura,
         contenido: {
@@ -829,7 +841,7 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, clientes, onGuardar
     } finally {
       setGuardando(false);
     }
-  }, [dibujo, clienteId, carpetaId, nombre, onGuardar]);
+  }, [dibujo, clienteId, carpetaId, proyectoId, nombre, onGuardar]);
 
   const handleGuardarClick = useCallback(() => {
     if (necesitaPreguntarDestino) setMostrarSelectorDestino(true);

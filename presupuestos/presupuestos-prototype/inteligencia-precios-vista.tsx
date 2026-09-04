@@ -6,10 +6,13 @@ import { interpretarAnalisis, desviacionPuntos } from './inteligencia-precios.js
 import { calcularMetricasPorTipo } from './metricas-por-tipo.js';
 import { MetricasPorTipoVista } from './metricas-por-tipo-vista.js';
 import { formatoEuro, formatoFecha } from './calculos.js';
+import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
 import styles from './styles.module.css';
 
 export type InteligenciaPreciosVistaProps = {
   empresa: Empresa;
+  /** Plan de la sesión actual (Fase 2, 04/09/2026) — la ruta que analiza los trabajos exige PRO o superior; sin esto, ni se pide (evita un 403 previsible). */
+  plan?: PlanAcceso;
 };
 
 const COLOR_ESTADO: Record<'por_encima' | 'cerca' | 'por_debajo', string> = {
@@ -26,11 +29,13 @@ const ICONO_ESTADO: Record<'por_encima' | 'cerca' | 'por_debajo', string> = {
  * cotizado) — nunca mezclados en un único número, siempre etiquetados por
  * su origen. Ver `svc.analizarTrabajos` (backend) para la lógica de fusión.
  */
-export function InteligenciaPreciosVista({ empresa }: InteligenciaPreciosVistaProps) {
+export function InteligenciaPreciosVista({ empresa, plan }: InteligenciaPreciosVistaProps) {
   const [trabajos, setTrabajos] = useState<TrabajoAnalizado[] | null>(null);
   const [error, setError] = useState('');
   const [detalle, setDetalle] = useState<TrabajoAnalizado | null>(null);
   const [pestana, setPestana] = useState<'resumen' | 'historico'>('resumen');
+
+  const tienePlan = puedeUsar(plan, PRO_O_SUPERIOR);
 
   const cargar = useCallback(() => {
     setTrabajos(null);
@@ -39,7 +44,19 @@ export function InteligenciaPreciosVista({ empresa }: InteligenciaPreciosVistaPr
       .catch((e) => setError(String(e).replace(/^Error:\s*/, '')));
   }, []);
 
-  useEffect(() => { cargar(); }, [cargar]);
+  // Gate de plan (Fase 2, 04/09/2026) — la ruta ya exige PRO+ en el
+  // servidor; esto solo evita pedir algo que se sabe de antemano que va a
+  // rechazarse, y da un mensaje claro en vez de un error genérico.
+  useEffect(() => { if (tienePlan) cargar(); }, [cargar, tienePlan]);
+
+  if (!tienePlan) {
+    return (
+      <div className={styles.vacio}>
+        <p style={{ fontWeight: 700, margin: '0 0 0.4rem' }}>🧠 Inteligencia de Precios es una función PRO</p>
+        <p>Tu plan actual no la incluye — mejora a PRO o PREMIUM para ver la rentabilidad real de tus trabajos.</p>
+      </div>
+    );
+  }
 
   if (empresa.margenObjetivoPorcentaje === null) {
     return (

@@ -650,7 +650,7 @@ export function PresupuestosPrototype() {
 
         {/* ── SECCIÓN INTELIGENCIA DE PRECIOS (Fase 1) ── */}
         {seccion === 'inteligenciaPrecios' && (
-          <InteligenciaPreciosVista empresa={empresa} />
+          <InteligenciaPreciosVista empresa={empresa} plan={sesion?.plan} />
         )}
 
         {/* ── SECCIÓN FACTURAS ── */}
