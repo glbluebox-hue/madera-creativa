@@ -257,7 +257,7 @@ export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCe
                     />
                     <div style={{ flex: 1 }}>
                       <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--negro)' }}>Nuevo usuario registrado</span>
-                      <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>Aviso al momento cuando alguien se registra, para que puedas aprobarlo o rechazarlo.</span>
+                      <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>Aviso al momento cuando alguien se registra — aún no ha verificado su email, puedes revisarlo en el panel.</span>
                     </div>
                   </div>
                 )}
