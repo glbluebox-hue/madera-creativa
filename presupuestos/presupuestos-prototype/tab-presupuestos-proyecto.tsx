@@ -120,6 +120,9 @@ export function TabPresupuestosProyecto({ cliente, proyecto, empresa, onActualiz
                 >
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                     <strong style={{ fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      {p.numeroPresupuesto && (
+                        <span style={{ fontWeight: 600, fontSize: '0.78rem', color: 'var(--topo-claro)', whiteSpace: 'nowrap' }}>{p.numeroPresupuesto}</span>
+                      )}
                       {p.titulo}
                       {p.estado === 'aceptado' && (
                         <span style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--verde)', background: 'var(--verde-bg)', padding: '0.1rem 0.4rem', borderRadius: 'var(--radio-full, 999px)' }}>✓ Aceptado</span>

@@ -91,6 +91,8 @@ export type EditorDocumentoProps = {
    */
   proyectoId?: string;
   analisisPrecio?: AnalisisPrecio;
+  /** Número oficial del presupuesto (05/09/2026, `PRV-0001/26`) — `undefined` en Contratos/Plantillas (no tienen este concepto) y en presupuestos que todavía no han tenido su primer guardado real. Ver `PresupuestoMC.numeroPresupuesto`. */
+  numeroPresupuesto?: string;
   /**
    * Firma real del cliente (y fecha de aceptación) para el tipo "firma
    * cliente" del elemento — solo tiene valor si se reabre un presupuesto
@@ -186,7 +188,7 @@ function documentoVacio(): DocumentoMC {
  * incremento posterior — con la selección actual, redimensionar/rotar
  * solo actúa cuando hay un único elemento seleccionado.
  */
-export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa, precioVinculado, proyectoId, analisisPrecio, firmaClienteUrl, firmaClienteFecha, esPlantilla, onGuardar, onVolver, onCambiarLogoEmpresa, clientesDisponibles, onCambiarCliente, plan }: EditorDocumentoProps) {
+export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa, precioVinculado, proyectoId, analisisPrecio, firmaClienteUrl, firmaClienteFecha, esPlantilla, onGuardar, onVolver, onCambiarLogoEmpresa, clientesDisponibles, onCambiarCliente, plan, numeroPresupuesto }: EditorDocumentoProps) {
   // Copiloto Visual — PREMIUM (Fase 4, 05/09/2026). El backend ya lo exigía
   // desde la Fase 2 (`copiloto-presupuesto`, `planMinimo: 'PREMIUM'`); esto
   // solo añade el reflejo visual que faltaba — el botón sigue sin abrir el
@@ -1460,6 +1462,14 @@ export function EditorDocumento({ contenedor, clienteId, clienteNombre, empresa,
     <div className={`${editorStyles.raiz} ${modoImpresion ? editorStyles.modoImpresion : ''}`}>
       <div className={editorStyles.barraSuperior}>
         <button className={styles.btn} onClick={alPulsarVolver}>← Volver</button>
+        {numeroPresupuesto && (
+          <span
+            title="Número oficial del presupuesto — asignado por la aplicación, no se puede editar"
+            style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--topo-claro)', whiteSpace: 'nowrap' }}
+          >
+            {numeroPresupuesto}
+          </span>
+        )}
         <input className={editorStyles.titulo} value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Título del documento" />
         {!esPlantilla && precioVinculado !== undefined && (
           <label

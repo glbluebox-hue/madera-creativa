@@ -63,6 +63,7 @@ export function AbrirDocumento({ presupuesto, clienteId, clienteNombre, empresa,
         clientesDisponibles={clientesDisponibles}
         onCambiarCliente={onCambiarCliente}
         plan={plan}
+        numeroPresupuesto={presupuesto.numeroPresupuesto}
       />
     );
   }

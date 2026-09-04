@@ -21,6 +21,7 @@ import { analizarPrecioPresupuesto, calcularMargenRealProyecto } from './intelig
 import type { AnalisisPrecio } from './inteligencia-precios.js';
 import { calcularComparables } from './comparables.js';
 import type { ResultadoComparables } from './comparables.js';
+import { anioMadrid, formatearNumeroPresupuesto, parsearNumeroPresupuesto, reclamarNumeroPresupuesto, liberarNumeroPresupuesto } from './numeracion-presupuestos.js';
 
 /**
  * Checklist base de carpintería (Fase 1 — "presupuesto aceptado") —
@@ -2546,6 +2547,23 @@ export class PresupuestosService {
     const contenidoDocumento = presupuesto.formato === 'documento'
       ? await procesarRecursosDocumento(presupuesto.contenidoDocumento as DocumentoMC)
       : presupuesto.contenidoDocumento;
+    // Numeración oficial de presupuestos (05/09/2026) — SOLO en el primer
+    // guardado POSTERIOR a la creación (`anterior` ya existe) y solo si
+    // todavía no tiene número. La creación inicial en sí misma (`anterior`
+    // aún `null` — `crearBorrador`/"Generar con IA" insertan el presupuesto
+    // antes de que el usuario edite nada) nunca consume un número por su
+    // cuenta: decisión explícita del usuario, para que abrir una plantilla
+    // y abandonarla sin cambios reales no gaste ningún hueco de la
+    // secuencia. `numeroPresupuesto` no está en `esquemaPresupuestoMC` a
+    // propósito (mismo criterio que `estado`) — el backend es la única
+    // autoridad, un `PUT` normal nunca puede fijarlo ni pisarlo.
+    // Año = el de CREACIÓN del presupuesto (`anterior.creado`), calculado
+    // en `Europe/Madrid` — nunca en UTC, ver `anioMadrid`.
+    let numeroPresupuesto: string | undefined;
+    if (anterior && !(anterior as any).numeroPresupuesto) {
+      const anio = anioMadrid((anterior as any).creado);
+      numeroPresupuesto = formatearNumeroPresupuesto(await reclamarNumeroPresupuesto(usuarioId, anio), anio);
+    }
     const doc = await PresupuestoModel.findOneAndUpdate(
       { id: presupuesto.id, usuarioId },
       {
@@ -2560,6 +2578,7 @@ export class PresupuestosService {
         // editar uno ya existente, para no resetear un presupuesto ya
         // aceptado de vuelta a 'borrador' en una edición posterior).
         ...(anterior ? {} : { estado: 'borrador' }),
+        ...(numeroPresupuesto ? { numeroPresupuesto } : {}),
       },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     ).lean().exec();
@@ -2981,6 +3000,17 @@ export class PresupuestosService {
    */
   async borrarPresupuesto(id: string, usuarioId: string): Promise<void> {
     await conectar();
+    // Numeración oficial (05/09/2026): si el presupuesto tenía un número
+    // asignado, se libera ANTES de borrar — decisión explícita del usuario
+    // de reutilizar huecos, no dejarlos permanentemente vacíos. Los demás
+    // presupuestos nunca se renumeran (`liberarNumeroPresupuesto` solo
+    // añade este número a la lista de huecos de ESE usuario/año, no toca
+    // ningún otro documento).
+    const doc = await PresupuestoModel.findOne({ id, usuarioId }).select('numeroPresupuesto').lean().exec() as any;
+    if (doc?.numeroPresupuesto) {
+      const parseado = parsearNumeroPresupuesto(doc.numeroPresupuesto);
+      if (parseado) await liberarNumeroPresupuesto(usuarioId, parseado.anio, parseado.numero);
+    }
     await PresupuestoModel.deleteOne({ id, usuarioId }).exec();
   }
 

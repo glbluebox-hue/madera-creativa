@@ -650,6 +650,9 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
               >
                 <div style={{ minWidth: 0, flex: '1 1 160px' }}>
                   <p style={{ margin: 0, fontWeight: 700, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    {p.numeroPresupuesto && (
+                      <span style={{ fontWeight: 600, fontSize: '0.78rem', color: 'var(--topo-claro)', whiteSpace: 'nowrap' }}>{p.numeroPresupuesto}</span>
+                    )}
                     {p.titulo}
                     {p.estado === 'aceptado' && (
                       <span style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--verde)', background: 'var(--verde-bg)', padding: '0.1rem 0.4rem', borderRadius: 'var(--radio-full, 999px)', whiteSpace: 'nowrap' }}>✓ Aceptado</span>

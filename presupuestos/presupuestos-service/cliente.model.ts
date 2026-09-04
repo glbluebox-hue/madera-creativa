@@ -720,6 +720,17 @@ const PresupuestoSchema = new Schema({
    * `ejecutarConsecuenciasAceptacion`. Ver `AnalisisPrecioSchema` arriba.
    */
   analisisPrecio: { type: AnalisisPrecioSchema, default: null },
+  /**
+   * Número oficial del presupuesto (05/09/2026), p. ej. `PRV-0001/26` —
+   * EXCLUIDO de `esquemaPresupuestoMC` a propósito (mismo patrón que
+   * `estado`/`firmaClienteUrl`/`cobros`/`analisisPrecio`): solo lo asigna
+   * `guardarPresupuesto` (`presupuestos-service.ts`, vía
+   * `numeracion-presupuestos.ts`), nunca un PUT normal del editor. Vacío
+   * en presupuestos creados antes de esta función y todavía no numerados
+   * por la migración histórica — nunca tratar su ausencia como "presupuesto
+   * inválido", solo como "sin numerar todavía".
+   */
+  numeroPresupuesto: { type: String, default: '', index: true },
 });
 PresupuestoSchema.index({ usuarioId: 1, clienteId: 1, creado: -1 });
 

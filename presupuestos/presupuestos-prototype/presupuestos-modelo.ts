@@ -82,6 +82,15 @@ export type PresupuestoMC = {
    * configurado en Ajustes de empresa) — nunca tratar su ausencia como cero.
    */
   analisisPrecio?: import('./inteligencia-precios.js').AnalisisPrecio;
+  /**
+   * Número oficial del presupuesto (05/09/2026), p. ej. `PRV-0001/26` —
+   * solo lo asigna el backend (`guardarPresupuesto`), nunca este PUT desde
+   * el frontend. Vacío/ausente mientras el presupuesto no ha tenido
+   * todavía su primer guardado real tras crearse (abrir una plantilla y
+   * cerrarla sin cambios no consume número), y en presupuestos antiguos
+   * pendientes de la migración histórica.
+   */
+  numeroPresupuesto?: string;
 };
 
 /** Vista pública de un presupuesto (Portal del cliente) — lista blanca, ver `obtenerPresupuestoPublico` en el backend. */
