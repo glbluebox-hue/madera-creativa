@@ -14,7 +14,7 @@ import { inicializarMotorDocumental } from './documento-motor-inicializar.js';
 import { inicializarAutomatizaciones } from './automatizaciones-listener.js';
 import { PresupuestosService, ErrorDeNegocio } from './presupuestos-service.js';
 import { UsuarioModel, conectarUsuarios, migrarNombresNormalizados, asegurarIndiceNombreNormalizado, migrarEmailVerificadoUsuariosExistentes, ACCESO_POR_DEFECTO, leerPreferenciaNotif } from './usuario.model.js';
-import { requirePlan, obtenerPlanUsuario, PRO_O_SUPERIOR, SOLO_PREMIUM } from './planes.js';
+import { requirePlan, obtenerPlanUsuario, planPermiteAcceso, contenidoDibujoUsaFuncionesPro, limitarNotifPrefsPorPlan, PRO_O_SUPERIOR, SOLO_PREMIUM } from './planes.js';
 import type { AccesoUsuario, EstadoUsuario } from './usuario.model.js';
 import { CodigoPromocionalModel, conectarCodigos, canjearCodigo, generarIdCodigo, normalizarCodigo } from './codigo-promocional.model.js';
 import { SoporteHiloModel, conectarSoporte, generarIdHiloSoporte } from './soporte-hilo.model.js';
@@ -1466,8 +1466,13 @@ export function run() {
 
   app.put('/notificaciones/preferencias', requireAuth, validar(esquemaNotifPrefs), async (req: AuthRequest, res) => {
     try {
+      let notifPrefs = req.body;
+      if (req.usuarioId !== 'admin') {
+        const plan = await obtenerPlanUsuario(req.usuarioId!);
+        if (!planPermiteAcceso(plan, PRO_O_SUPERIOR)) notifPrefs = limitarNotifPrefsPorPlan(notifPrefs);
+      }
       await conectarUsuarios();
-      await UsuarioModel.updateOne({ id: req.usuarioId }, { $set: { notifPrefs: req.body } });
+      await UsuarioModel.updateOne({ id: req.usuarioId }, { $set: { notifPrefs } });
       res.json({ ok: true });
     } catch (err) { responderError(req, res, err); }
   });
@@ -2239,7 +2244,16 @@ export function run() {
   });
 
   app.put('/dibujos/:id', requireAuth, validar(esquemaDibujo), async (req: AuthRequest, res) => {
-    try { res.json(await svc.guardarDibujo({ ...req.body, id: req.params.id }, req.usuarioId!)); }
+    try {
+      if (contenidoDibujoUsaFuncionesPro(req.body.contenido) && req.usuarioId !== 'admin') {
+        const plan = await obtenerPlanUsuario(req.usuarioId!);
+        if (!planPermiteAcceso(plan, PRO_O_SUPERIOR)) {
+          res.status(403).json({ error: 'plan_insuficiente', mensaje: 'Las fotografías y cotas del Tablero de medición requieren el plan PRO o superior.' });
+          return;
+        }
+      }
+      res.json(await svc.guardarDibujo({ ...req.body, id: req.params.id }, req.usuarioId!));
+    }
     catch (err) { responderError(req, res, err); }
   });
 

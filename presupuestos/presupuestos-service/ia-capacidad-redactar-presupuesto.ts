@@ -36,6 +36,7 @@ export const capacidadRedactarPresupuesto: CapacidadIA = {
   herramientas: [],
   permisosRequeridos: [],
   perfilModelo: 'rapido_economico',
+  planMinimo: 'PRO', // Fase 3, 04/09/2026 — "ayuda IA para textos de presupuestos", Estrategia V3.
   activa: true,
 };
 

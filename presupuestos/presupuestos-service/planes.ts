@@ -65,6 +65,47 @@ export async function obtenerPlanUsuario(usuarioId: string): Promise<PlanAcceso>
  * una capa más encima. La cuenta `admin` nunca queda bloqueada por un gate
  * de plan comercial, igual que ya está exenta de todo lo demás.
  */
+/**
+ * ¿Usa este contenido de un Dibujo (Tablero de medición) alguna función
+ * exclusiva de PRO+ (fotos, cotas)? (Fase 3, 04/09/2026). No hay una ruta
+ * ni un campo separado para "dibujo con fotos" — todo vive junto en
+ * `Dibujo.contenido`, un blob de Excalidraw — así que se inspecciona el
+ * contenido recibido en vez de la ruta en sí, mismo criterio que el gate de
+ * capacidades de IA en `ia-rutas.ts`. Vive aquí (no en `cliente.model.ts`
+ * ni en la propia ruta) para que sea una función pura, testable sola, sin
+ * levantar Mongo ni Express — igual que el resto de este archivo.
+ */
+export function contenidoDibujoUsaFuncionesPro(contenido: unknown): boolean {
+  if (!contenido || typeof contenido !== 'object') return false;
+  const c = contenido as Record<string, unknown>;
+  if (Array.isArray(c.cotas) && c.cotas.length > 0) return true;
+  if (Array.isArray(c.elements)) {
+    return c.elements.some((el: any) => el?.type === 'image' && !el?.isDeleted);
+  }
+  return false;
+}
+
+/**
+ * Recorta `notifPrefs` a lo que permite BASIC (Fase 3, 04/09/2026,
+ * Estrategia V3): "Recordatorio de horas" es la única notificación de
+ * BASIC — cobros pendientes/margen bajo/briefing diario exigen PRO+.
+ * Fuerza `activo:false` en vez de rechazar la petición entera, para que una
+ * cuenta BASIC siga pudiendo guardar cualquier otro cambio del mismo PUT
+ * sin que un campo bloqueado tumbe todo el guardado. `nuevoUsuario`/
+ * `mensajeSoporte` no se tocan — son del admin (ver
+ * `notificarAdminNuevoUsuario`), nunca se leen de una cuenta que no sea la
+ * suya, así que no hace falta gatearlos por plan.
+ */
+export function limitarNotifPrefsPorPlan(notifPrefs: any): any {
+  const forzarInactivo = (v: unknown) => (typeof v === 'object' && v !== null ? { ...v, activo: false } : false);
+  return {
+    ...notifPrefs,
+    cobrosPendientes: forzarInactivo(notifPrefs?.cobrosPendientes),
+    margenBajo: forzarInactivo(notifPrefs?.margenBajo),
+    briefingDiario: forzarInactivo(notifPrefs?.briefingDiario),
+  };
+}
+
 export function requirePlan(permitidos: PlanComercial[]) {
   return async (req: AuthRequest, res: express.Response, next: express.NextFunction) => {
     if (req.usuarioId === 'admin') { next(); return; }

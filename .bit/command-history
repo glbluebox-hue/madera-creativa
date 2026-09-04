@@ -1372,3 +1372,7 @@
 2026-09-04T18:13:26.874Z 9560 test presupuestos-prototype, succeeded
 2026-09-04T18:13:36.809Z 27080 test presupuestos-service/planes.spec.ts, started
 2026-09-04T18:13:36.855Z 27080 test presupuestos-service/planes.spec.ts, failed
+2026-09-04T18:54:37.068Z 24392 test presupuestos-service, started
+2026-09-04T18:55:16.284Z 24392 test presupuestos-service, failed
+2026-09-04T18:55:51.340Z 4632 test presupuestos-service, started
+2026-09-04T18:56:14.454Z 4632 test presupuestos-service, failed

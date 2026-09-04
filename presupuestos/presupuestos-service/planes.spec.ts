@@ -5,13 +5,17 @@ import { ClienteModel, ProyectoModel } from './cliente.model.js';
 import {
   PLANES_COMERCIALES, PRO_O_SUPERIOR, SOLO_PREMIUM,
   planesDesde, planPermiteAcceso, obtenerPlanUsuario, requirePlan,
+  contenidoDibujoUsaFuncionesPro, limitarNotifPrefsPorPlan,
 } from './planes.js';
 import { capacidadPermitidaParaPlan } from './ia-rutas.js';
 import { PresupuestosService } from './presupuestos-service.js';
+import { contextoAsistenteGlobal } from './asistente-global.contexto-ia.js';
 import './ia-capacidad-asistente-global.js';
 import './ia-capacidad-extraer-factura.js';
 import './ia-capacidad-copiloto-presupuesto.js';
 import './ia-capacidad-describir-trabajo-mercado.js';
+import './ia-capacidad-redactar-presupuesto.js';
+import './ia-capacidad-generar-bloque-documento.js';
 
 /**
  * Motor de planes (Fase 1+2, 04/09/2026) — el backend es la autoridad: cada
@@ -190,5 +194,112 @@ describe('Dibujo.proyectoId — conexión con el proyecto (Fase 1)', () => {
 
     const lista = await svc.listarDibujos(USUARIO, { proyectoId: 'p2' });
     expect(lista.map((d: any) => d.id)).toEqual(['d3']);
+  });
+});
+
+// ── Fase 3 (04/09/2026) — cierre real del plan PRO ──────────────────────────
+
+describe('contenidoDibujoUsaFuncionesPro — Tablero de medición, fotos/cotas exigen PRO+', () => {
+  it('un dibujo básico (solo trazos, sin fotos ni cotas) nunca se considera de PRO', () => {
+    expect(contenidoDibujoUsaFuncionesPro({ elements: [{ type: 'freedraw' }, { type: 'rectangle' }], cotas: [] })).toBe(false);
+  });
+  it('una foto (elemento tipo image, no borrado) sí exige PRO', () => {
+    expect(contenidoDibujoUsaFuncionesPro({ elements: [{ type: 'image', isDeleted: false }], cotas: [] })).toBe(true);
+  });
+  it('una foto ya borrada (isDeleted:true) no cuenta — el dibujo ya no la usa de verdad', () => {
+    expect(contenidoDibujoUsaFuncionesPro({ elements: [{ type: 'image', isDeleted: true }], cotas: [] })).toBe(false);
+  });
+  it('cualquier cota exige PRO, aunque no haya ninguna foto', () => {
+    expect(contenidoDibujoUsaFuncionesPro({ elements: [], cotas: [{ id: 'c1' }] })).toBe(true);
+  });
+  it('contenido vacío o ausente nunca exige PRO', () => {
+    expect(contenidoDibujoUsaFuncionesPro(null)).toBe(false);
+    expect(contenidoDibujoUsaFuncionesPro({})).toBe(false);
+  });
+});
+
+describe('limitarNotifPrefsPorPlan — solo "horas" es BASIC', () => {
+  it('fuerza activo:false en cobrosPendientes/margenBajo/briefingDiario, conserva horas y campos de admin', () => {
+    const recortado = limitarNotifPrefsPorPlan({
+      horas: { activo: true, hora: 20, minuto: 0 },
+      cobrosPendientes: { activo: true, hora: 8, minuto: 0 },
+      margenBajo: { activo: true, hora: 9, minuto: 30 },
+      briefingDiario: { activo: true, hora: 8, minuto: 0 },
+      nuevoUsuario: true,
+      mensajeSoporte: true,
+    });
+    expect(recortado.horas).toEqual({ activo: true, hora: 20, minuto: 0 });
+    expect(recortado.cobrosPendientes.activo).toBe(false);
+    expect(recortado.margenBajo.activo).toBe(false);
+    expect(recortado.briefingDiario.activo).toBe(false);
+    // La hora se conserva aunque quede inactivo — por si el usuario sube de plan luego, no pierde su preferencia de horario.
+    expect(recortado.margenBajo.hora).toBe(9);
+    expect(recortado.nuevoUsuario).toBe(true);
+    expect(recortado.mensajeSoporte).toBe(true);
+  });
+  it('también recorta el formato booleano antiguo (compatibilidad hacia atrás)', () => {
+    const recortado = limitarNotifPrefsPorPlan({ cobrosPendientes: true, margenBajo: true, briefingDiario: true });
+    expect(recortado.cobrosPendientes).toBe(false);
+    expect(recortado.margenBajo).toBe(false);
+    expect(recortado.briefingDiario).toBe(false);
+  });
+});
+
+describe('redactar-presupuesto / generar-bloque-documento — "ayuda IA para textos de presupuestos", PRO', () => {
+  it('BASIC no puede usar redactar-presupuesto; PRO sí', async () => {
+    await crearUsuarioConPlan('u-redactar-basic', 'BASIC');
+    await crearUsuarioConPlan('u-redactar-pro', 'PRO');
+    expect(await capacidadPermitidaParaPlan('u-redactar-basic', 'PRO')).toBe(false);
+    expect(await capacidadPermitidaParaPlan('u-redactar-pro', 'PRO')).toBe(true);
+  });
+});
+
+describe('contextoAsistenteGlobal — cifras reales del negocio, PRO+ (Fase 3)', () => {
+  const USUARIO_BASIC = 'usuario-asistente-basic';
+  const USUARIO_PRO = 'usuario-asistente-pro';
+
+  // `beforeEach`, no `beforeAll`: el `afterEach` global de este archivo
+  // (arriba) borra Usuario/Cliente/Proyecto después de CADA test — con
+  // `beforeAll` los datos solo existían para el primero de este bloque.
+  beforeEach(async () => {
+    await crearUsuarioConPlan(USUARIO_BASIC, 'BASIC');
+    await crearUsuarioConPlan(USUARIO_PRO, 'PRO');
+    for (const usuarioId of [USUARIO_BASIC, USUARIO_PRO]) {
+      await ClienteModel.create({ id: `c-${usuarioId}`, usuarioId, nombre: 'Cliente de prueba', creado: new Date().toISOString() });
+      await ProyectoModel.create({
+        id: `p-${usuarioId}`, usuarioId, clienteId: `c-${usuarioId}`, proyecto: 'Cocina de prueba',
+        presupuesto: 3000, tarifaHora: 20, creado: new Date().toISOString(),
+      });
+      await svc.guardarFactura({
+        id: `f-${usuarioId}`, tipo: 'ingreso', fecha: '2026-01-15', importe: 1000,
+        concepto: 'Cobro de prueba', proveedor: '', clienteId: '', imagen: '', imagenes: [],
+        creado: new Date().toISOString(),
+      } as any, usuarioId);
+    }
+  });
+
+  it('BASIC: el resumen NO incluye cifras financieras reales, y el asistente sabe explicar por qué', async () => {
+    const { resumenParaPrompt, datosParaHerramientas } = await contextoAsistenteGlobal.construir({}, USUARIO_BASIC);
+    expect(resumenParaPrompt).not.toContain('RESUMEN FINANCIERO');
+    expect(resumenParaPrompt).not.toContain('1000.00');
+    expect(resumenParaPrompt).toContain('plan BASIC');
+    expect(resumenParaPrompt).toContain('plan PRO');
+    // La navegación (nombre/estado del proyecto) se mantiene — solo se quita el importe.
+    expect(resumenParaPrompt).toContain('Cocina de prueba');
+    const clientes = (datosParaHerramientas as any).clientes;
+    expect(clientes[0]).not.toHaveProperty('presupuesto');
+  });
+
+  it('PRO: el resumen SÍ incluye cifras financieras reales', async () => {
+    const { resumenParaPrompt, datosParaHerramientas } = await contextoAsistenteGlobal.construir({}, USUARIO_PRO);
+    expect(resumenParaPrompt).toContain('RESUMEN FINANCIERO DE TODA LA HISTORIA');
+    expect(resumenParaPrompt).toContain('1000.00');
+    const clientes = (datosParaHerramientas as any).clientes;
+    expect(clientes[0]).toHaveProperty('presupuesto', 3000);
+  });
+
+  it('admin: siempre ve cifras reales, sin importar su acceso', async () => {
+    const { resumenParaPrompt } = await contextoAsistenteGlobal.construir({}, 'admin');
+    expect(resumenParaPrompt).toContain('RESUMEN FINANCIERO');
   });
 });

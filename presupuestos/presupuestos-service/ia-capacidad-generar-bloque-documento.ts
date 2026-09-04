@@ -37,6 +37,11 @@ export const capacidadGenerarBloqueDocumento: CapacidadIA = {
   herramientas: [],
   permisosRequeridos: [],
   perfilModelo: 'rapido_economico',
+  // Fase 3, 04/09/2026 — misma categoría que "redactar-presupuesto" (ayuda
+  // IA para textos, PRO en V3): el Motor Documental es el editor compartido
+  // de presupuestos y contratos, así que se aplica el mismo criterio aquí,
+  // no solo al presupuesto en sí.
+  planMinimo: 'PRO',
   activa: true,
 };
 
