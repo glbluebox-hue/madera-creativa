@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import * as api from './api.js';
 import type { NotifPrefs, PreferenciaNotifTipo, RecordatorioPersonalizado } from './api.js';
 import type { EstadoPush } from './use-push.js';
+import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
+import { CandadoPlan } from './candado-plan.js';
 import styles from './styles.module.css';
 
 /** Props del panel de notificaciones. */
@@ -15,6 +17,15 @@ export type PanelNotificacionesProps = {
   onCerrar: () => void;
   /** Solo el admin ve el interruptor de "Nuevo usuario registrado" — no tiene sentido para una cuenta normal. */
   esAdmin: boolean;
+  /**
+   * Plan de la sesión actual (Fase 2.5, 04/09/2026) — BASIC solo tiene el
+   * recordatorio de horas; el resto exige PRO+. NOTA: como con el Tablero
+   * de medición, hoy no hay una comprobación equivalente en el backend al
+   * guardar preferencias — esta es la única protección real para esto por
+   * ahora (bajo riesgo: no expone datos de otra cuenta, solo decide si TU
+   * propia cuenta recibe un aviso).
+   */
+  plan?: PlanAcceso;
 };
 
 const TIPOS: Array<{ clave: typeof TIPOS_CON_HORA[number]; titulo: string; descripcion: string }> = [
@@ -81,7 +92,8 @@ function desdeHHMM(valor: string): { hora: number; minuto: number } {
  * horas en punto ("todo esto tiene que ser editable y con la posibilidad
  * de poner una hora y también minutos").
  */
-export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCerrar, esAdmin }: PanelNotificacionesProps) {
+export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCerrar, esAdmin, plan }: PanelNotificacionesProps) {
+  const tienePlanCompleto = puedeUsar(plan, PRO_O_SUPERIOR);
   const [cargando, setCargando] = useState(true);
   const [preferencias, setPreferencias] = useState<NotifPrefs>(PREFERENCIAS_POR_DEFECTO);
   const [recordatorios, setRecordatorios] = useState<RecordatorioPersonalizado[]>([]);
@@ -222,23 +234,28 @@ export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCe
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.4rem' }}>
                 {TIPOS.map((t) => {
                   const pref = preferencias[t.clave];
+                  // Solo "horas" está en BASIC (Fase 2.5, 04/09/2026) — el resto exige PRO+.
+                  const bloqueado = t.clave !== 'horas' && !tienePlanCompleto;
                   return (
                     <div key={t.clave} style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start' }}>
                       <input
                         type="checkbox"
                         style={{ marginTop: '0.2rem' }}
-                        checked={pref.activo}
+                        checked={!bloqueado && pref.activo}
+                        disabled={bloqueado}
                         onChange={(e) => cambiarTipo(t.clave, { activo: e.target.checked })}
                       />
-                      <div style={{ flex: 1 }}>
+                      <div style={{ flex: 1, opacity: bloqueado ? 0.6 : 1 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
-                          <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--negro)' }}>{t.titulo}</span>
+                          <span style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--negro)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            {t.titulo} {bloqueado && <CandadoPlan planMinimo="PRO" compacto />}
+                          </span>
                           <input
                             type="time"
                             className={styles.input}
                             style={{ width: '110px' }}
                             value={aHHMM(pref.hora, pref.minuto)}
-                            disabled={!pref.activo}
+                            disabled={bloqueado || !pref.activo}
                             onChange={(e) => { const { hora, minuto } = desdeHHMM(e.target.value); cambiarTipo(t.clave, { hora, minuto }); }}
                           />
                         </div>

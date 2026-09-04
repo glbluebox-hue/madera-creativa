@@ -6,12 +6,15 @@ import { EditorDibujo } from './editor-dibujo.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
 import { formatoFecha } from './calculos.js';
 import { urlImagenFiable } from './imagen-fallback.js';
+import type { PlanAcceso } from './planes.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
 
 /** Props del apartado "Dibujos" de la ficha de un proyecto. */
 export type TabDibujosProps = {
   proyecto: Proyecto;
+  /** Plan de la sesión actual (Fase 2.5, 04/09/2026) — fotos/cotas exigen PRO+; el dibujo básico sigue disponible en BASIC. */
+  plan?: PlanAcceso;
 };
 
 const IconoDibujo = ({ s = 40 }: { s?: number }) => (
@@ -67,7 +70,7 @@ function VistaPreviaCarpeta({ miniaturas }: { miniaturas: Dibujo[] }) {
  * entre vista de carpetas, contenido de una carpeta y resultados de
  * búsqueda — así cambiar de carpeta no dispara peticiones nuevas.
  */
-export function TabDibujos({ proyecto }: TabDibujosProps) {
+export function TabDibujos({ proyecto, plan }: TabDibujosProps) {
   // El parámetro sigue llamándose `clienteId` en estos hooks/API — aquí se
   // le pasa el id del PROYECTO (incremento "Cliente ≠ Proyecto",
   // 20/08/2026), que es la clave real de aislamiento entre los distintos
@@ -205,6 +208,7 @@ export function TabDibujos({ proyecto }: TabDibujosProps) {
         clienteId={proyecto.id}
         proyectoId={proyecto.id}
         carpetaId={carpetaId ?? SIN_CARPETA}
+        plan={plan}
         onVolver={() => setEditando(null)}
         onGuardar={async (d) => { await guardar(d); setEditando(null); }}
       />

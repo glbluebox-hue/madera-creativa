@@ -8,6 +8,7 @@ import { autoCrearProveedorDeFactura, type DatosProveedorDetectados } from './pr
 import { useAvisoGuardado, AvisoGuardado } from './aviso-guardado.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
 import { VisorFactura } from './visor-factura.js';
+import type { PlanAcceso } from './planes.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
 
@@ -41,6 +42,8 @@ export type FacturasProps = {
   onBorrar: (id: string) => void;
   onCrearProveedor?: (p: Omit<Proveedor, 'id' | 'creado'>) => Proveedor;
   onActualizarProveedor?: (p: Proveedor) => void;
+  /** Plan de la sesión actual (Fase 2.5, 04/09/2026) — se pasa al escáner para gatear "Extraer datos con IA". */
+  plan?: PlanAcceso;
 };
 
 /**
@@ -48,7 +51,7 @@ export type FacturasProps = {
  */
 export function Facturas({
   facturas, resumen, privado, filtro, onFiltroChange, hayMas, cargandoMas, onCargarMas,
-  clientes, proveedores = [], onGuardar, onBorrar, onCrearProveedor, onActualizarProveedor,
+  clientes, proveedores = [], onGuardar, onBorrar, onCrearProveedor, onActualizarProveedor, plan,
 }: FacturasProps) {
   const [escaner, setEscaner] = useState(false);
   const [facturaEditar, setFacturaEditar] = useState<Factura | undefined>(undefined);
@@ -456,6 +459,7 @@ export function Facturas({
           onGuardar={guardarYCerrar}
           onCerrar={() => { setEscaner(false); setFacturaEditar(undefined); }}
           facturaEditar={facturaEditar}
+          plan={plan}
         />
       )}
 

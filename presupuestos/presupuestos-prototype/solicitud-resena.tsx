@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import QRCode from 'qrcode';
 import * as api from './api.js';
+import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
+import { CandadoPlan } from './candado-plan.js';
 import styles from './styles.module.css';
 
 const IconoEstrella = (
@@ -13,6 +15,8 @@ const IconoEstrella = (
 export type SolicitudResenaProps = {
   /** Cliente (identidad) para el que se genera el enlace individual. */
   clienteId: string;
+  /** Plan de la sesión actual (Fase 2.5, 04/09/2026) — esta función exige PRO+ en el servidor (`requirePlan`); sin plan suficiente, el botón se muestra deshabilitado con el motivo, en vez de fallar al pulsarlo. */
+  plan?: PlanAcceso;
 };
 
 /**
@@ -25,7 +29,8 @@ export type SolicitudResenaProps = {
  * Documental para el elemento "Código QR" — no hace falta pedirlo al
  * servidor.
  */
-export function SolicitudResena({ clienteId }: SolicitudResenaProps) {
+export function SolicitudResena({ clienteId, plan }: SolicitudResenaProps) {
+  const tienePlan = puedeUsar(plan, PRO_O_SUPERIOR);
   const [abierto, setAbierto] = useState(false);
   const [generando, setGenerando] = useState(false);
   const [url, setUrl] = useState<string | null>(null);
@@ -67,11 +72,17 @@ export function SolicitudResena({ clienteId }: SolicitudResenaProps) {
 
   return (
     <>
-      <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={abrir} title="Generar enlace/QR de solicitud de reseña">
-        {IconoEstrella} Pedir reseña
-      </button>
+      {tienePlan ? (
+        <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={abrir} title="Generar enlace/QR de solicitud de reseña">
+          {IconoEstrella} Pedir reseña
+        </button>
+      ) : (
+        <button className={`${styles.btn} ${styles.btnSecundario}`} disabled style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', opacity: 0.7, cursor: 'not-allowed' }} title="Pedir reseña requiere el plan PRO o superior">
+          {IconoEstrella} Pedir reseña <CandadoPlan planMinimo="PRO" compacto />
+        </button>
+      )}
 
-      {abierto && (
+      {abierto && tienePlan && (
         <div className={styles.overlay} onClick={() => setAbierto(false)}>
           <div
             className={styles.modal}

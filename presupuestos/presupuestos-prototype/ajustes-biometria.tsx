@@ -8,11 +8,15 @@ import {
   borrarCredencialBiometrica,
 } from './use-biometria.js';
 import type { CredencialBiometrica } from './use-biometria.js';
+import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
+import { MensajeFuncionBloqueada } from './candado-plan.js';
 import styles from './styles.module.css';
 
 /** Props del panel de ajustes de acceso biométrico. */
 export type AjustesBiometriaProps = {
   onCerrar: () => void;
+  /** Plan de la sesión actual (Fase 2.5, 04/09/2026) — registrar una credencial NUEVA exige PRO+ en el servidor; los dispositivos ya registrados se siguen viendo y pudiendo quitar en cualquier plan. */
+  plan?: PlanAcceso;
 };
 
 const IconoHuella = ({ s = 18 }: { s?: number }) => (
@@ -47,7 +51,8 @@ type Disponibilidad = 'comprobando' | 'si' | 'no';
  * ni guarda un dato biométrico — solo habla con `navigator.credentials` a
  * través de `use-biometria.ts`.
  */
-export function AjustesBiometria({ onCerrar }: AjustesBiometriaProps) {
+export function AjustesBiometria({ onCerrar, plan }: AjustesBiometriaProps) {
+  const tienePlan = puedeUsar(plan, PRO_O_SUPERIOR);
   const soportado = soportaWebAuthn();
   const [disponible, setDisponible] = useState<Disponibilidad>('comprobando');
   const [credenciales, setCredenciales] = useState<CredencialBiometrica[] | null>(null);
@@ -192,8 +197,13 @@ export function AjustesBiometria({ onCerrar }: AjustesBiometriaProps) {
             </div>
           )}
 
-          {/* Añadir/activar este dispositivo */}
-          {soportado && disponible === 'si' && (
+          {/* Añadir/activar este dispositivo — exige PRO+ (Fase 2.5, 04/09/2026); los ya registrados arriba se siguen viendo y pudiendo quitar en cualquier plan. */}
+          {soportado && disponible === 'si' && !tienePlan && (
+            <MensajeFuncionBloqueada planMinimo="PRO" titulo={activo ? 'Añadir otro dispositivo' : 'Activar en este dispositivo'}>
+              Registrar un dispositivo nuevo con acceso biométrico requiere el plan PRO o superior.
+            </MensajeFuncionBloqueada>
+          )}
+          {soportado && disponible === 'si' && tienePlan && (
             <div style={{ border: '2px solid var(--borde)', borderRadius: 10, padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
               <p style={{ margin: 0, fontWeight: 700, fontSize: '0.88rem' }}>
                 {activo ? 'Añadir este dispositivo' : 'Activar en este dispositivo'}

@@ -4,6 +4,7 @@ import { PresupuestosListaGlobal } from './presupuestos-lista-global.js';
 import { PlantillasVista } from './plantillas-vista.js';
 import type { Empresa } from './use-empresa.js';
 import type { Proyecto } from './types.js';
+import type { PlanAcceso } from './planes.js';
 import styles from './styles.module.css';
 
 export type SeccionPresupuestosContenedorProps = {
@@ -13,6 +14,8 @@ export type SeccionPresupuestosContenedorProps = {
   onActualizarEmpresa: (cambios: Partial<Empresa>) => void;
   /** Crea un cliente y su primer proyecto reales sin salir de esta sección — usado por "+ Nuevo cliente" dentro del selector de "+ Crear presupuesto". */
   onCrearProyecto: (proyecto: Proyecto) => void;
+  /** Plan de la sesión actual (Fase 2.5, 04/09/2026) — se pasa a la lista de documentos para gatear "Generar enlace". */
+  plan?: PlanAcceso;
 };
 
 type SubPestana = 'resumen' | 'documentos' | 'plantillas';
@@ -31,7 +34,7 @@ type SubPestana = 'resumen' | 'documentos' | 'plantillas';
  * resumen (de solo lectura, sin ningún botón de creación), dejando el
  * editor del Motor Documental sin punto de entrada visible.
  */
-export function SeccionPresupuestosContenedor({ onAbrirCliente, clientes, empresa, onActualizarEmpresa, onCrearProyecto }: SeccionPresupuestosContenedorProps) {
+export function SeccionPresupuestosContenedor({ onAbrirCliente, clientes, empresa, onActualizarEmpresa, onCrearProyecto, plan }: SeccionPresupuestosContenedorProps) {
   const [pestana, setPestana] = useState<SubPestana>('documentos');
 
   return (
@@ -65,6 +68,7 @@ export function SeccionPresupuestosContenedor({ onAbrirCliente, clientes, empres
           onActualizarEmpresa={onActualizarEmpresa}
           onAbrirCliente={onAbrirCliente}
           onCrearProyecto={onCrearProyecto}
+          plan={plan}
         />
       )}
       {pestana === 'plantillas' && (

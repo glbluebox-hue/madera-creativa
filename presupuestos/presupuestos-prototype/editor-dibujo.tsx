@@ -15,6 +15,7 @@ import {
 import { puntosCandidatosSnap, buscarSnap, umbralSnapEscena, construirResaltoSnap } from './medicion-snapping.js';
 import type { HerramientaId } from './editor-dibujo-tipos.js';
 import { IDIOMAS, EXCALIDRAW_LANG_CODE, TEXTOS, type Idioma, type IdGrosor } from './editor-dibujo-idiomas.js';
+import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
 import styles from './styles.module.css';
 
 /** Props del editor de dibujo (Fase 2.1, destino de guardado en Fase 2.2). */
@@ -38,6 +39,15 @@ export type EditorDibujoProps = {
    * tal como hoy.
    */
   proyectoId?: string;
+  /**
+   * Plan de la sesión actual (Fase 2.5, 04/09/2026) — las herramientas de
+   * imagen y cota exigen PRO+; el dibujo/anotación básico sigue disponible
+   * en BASIC. NOTA: a diferencia del resto de gates de esta fase, aquí NO
+   * hay todavía una comprobación equivalente en el backend al guardar
+   * (queda como decisión pendiente de la especificación técnica) — este es
+   * hoy el único punto de protección real para esta función concreta.
+   */
+  plan?: PlanAcceso;
   /** Lista ligera de clientes — solo se usa si hace falta mostrar el selector de destino. */
   clientes?: { id: string; nombre: string }[];
   onGuardar: (d: Dibujo) => Promise<void>;
@@ -115,7 +125,8 @@ function atajoTeclado(key: string, opts: { ctrl?: boolean; shift?: boolean } = {
  * en styles.module.css); toda la interfaz visible es propia, con el Design
  * System de la aplicación, controlada vía la API imperativa de Excalidraw.
  */
-export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, clientes, onGuardar, onVolver }: EditorDibujoProps) {
+export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, clientes, onGuardar, onVolver }: EditorDibujoProps) {
+  const tienePlanAvanzado = puedeUsar(plan, PRO_O_SUPERIOR);
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const raizRef = useRef<HTMLDivElement | null>(null);
   const [pantallaCompleta, setPantallaCompleta] = useState(false);
@@ -261,7 +272,10 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, cliente
     }, 0);
   }, []);
 
+  /** "Imagen" y "Cota" exigen PRO+ (Fase 2.5, 04/09/2026) — comprobado aquí, en el propio punto de entrada, no solo visualmente en el botón. */
+  const HERRAMIENTAS_PRO: HerramientaId[] = ['image', 'cota'];
   const seleccionarHerramienta = (id: HerramientaId) => {
+    if (HERRAMIENTAS_PRO.includes(id) && !tienePlanAvanzado) return;
     setHerramienta(id);
     setCotaSeleccionadaId(null);
     // "Cota" no es una herramienta de Excalidraw — mientras esté activa,
@@ -1167,11 +1181,16 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, cliente
                   al separar Imagen del resto de herramientas de medición. */}
               {h.id === 'image' && <span className={styles.editorDibujoDivisor} />}
               <button
-                title={t.herramientas[h.id]}
+                title={HERRAMIENTAS_PRO.includes(h.id) && !tienePlanAvanzado ? `${t.herramientas[h.id]} — requiere el plan PRO o superior` : t.herramientas[h.id]}
                 className={`${styles.editorDibujoHerramientaBtn} ${herramienta === h.id ? styles.editorDibujoHerramientaBtnActivo : ''}`}
                 onClick={() => seleccionarHerramienta(h.id)}
+                disabled={HERRAMIENTAS_PRO.includes(h.id) && !tienePlanAvanzado}
+                style={HERRAMIENTAS_PRO.includes(h.id) && !tienePlanAvanzado ? { opacity: 0.4, cursor: 'not-allowed', position: 'relative' } : { position: 'relative' }}
               >
                 {h.icono}
+                {HERRAMIENTAS_PRO.includes(h.id) && !tienePlanAvanzado && (
+                  <span style={{ position: 'absolute', top: -2, right: -2, fontSize: '0.55rem', lineHeight: 1 }} aria-hidden="true">🔒</span>
+                )}
               </button>
               {h.id === 'image' && <span className={styles.editorDibujoDivisor} />}
             </Fragment>

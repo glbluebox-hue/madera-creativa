@@ -29,19 +29,33 @@ describe('BotonSubirModelo3D', () => {
 });
 
 describe('TarjetaModelo3D — solo existe cuando HAY un modelo', () => {
-  it('muestra el nombre del archivo y "Ver en SketchUp" siempre que se renderiza (nunca sin modelo, porque el componente exige uno)', () => {
+  it('con plan PRO, muestra el nombre del archivo y el enlace real "Ver en SketchUp"', () => {
     const html = renderToStaticMarkup(
-      <TarjetaModelo3D modelo3D={MODELO} subiendo={false} desasociando={false} onReemplazar={() => {}} onEliminar={() => {}} />
+      <TarjetaModelo3D modelo3D={MODELO} subiendo={false} desasociando={false} onReemplazar={() => {}} onEliminar={() => {}} plan="PRO" />
     );
     expect(html).toContain('Cocina_Garcia.glb');
     expect(html).toContain('Ver en SketchUp');
     expect(html).toContain('https://app.sketchup.com');
   });
 
-  it('muestra Visualizar/Descargar/Reemplazar/Eliminar', () => {
+  it('con plan PRO, muestra Visualizar/Descargar/Reemplazar/Eliminar', () => {
     const html = renderToStaticMarkup(
-      <TarjetaModelo3D modelo3D={MODELO} subiendo={false} desasociando={false} onReemplazar={() => {}} onEliminar={() => {}} />
+      <TarjetaModelo3D modelo3D={MODELO} subiendo={false} desasociando={false} onReemplazar={() => {}} onEliminar={() => {}} plan="PRO" />
     );
+    expect(html).toContain('Visualizar en 3D');
+    expect(html).toContain('Descargar modelo');
+    expect(html).toContain('Reemplazar dibujo 3D');
+    expect(html).toContain('Eliminar');
+  });
+
+  it('Fase 2.5 (04/09/2026): con plan BASIC, "Ver en SketchUp" aparece bloqueado — sin el enlace real, con el candado de PRO — pero Visualizar/Descargar/Reemplazar/Eliminar siguen intactos', () => {
+    const html = renderToStaticMarkup(
+      <TarjetaModelo3D modelo3D={MODELO} subiendo={false} desasociando={false} onReemplazar={() => {}} onEliminar={() => {}} plan="BASIC" />
+    );
+    expect(html).toContain('Ver en SketchUp');
+    expect(html).not.toContain('https://app.sketchup.com');
+    expect(html).toContain('🔒');
+    expect(html).toContain('PRO');
     expect(html).toContain('Visualizar en 3D');
     expect(html).toContain('Descargar modelo');
     expect(html).toContain('Reemplazar dibujo 3D');

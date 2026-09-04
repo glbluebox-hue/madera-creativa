@@ -10,6 +10,8 @@ import { Z_DESPLEGABLE } from './z-index.js';
 import { etiquetaEstado } from './estado-utils.js';
 import { resolverEmisorReceptor, nombresCoinciden, type EmpresaIdentificacion } from './identificacion-factura.js';
 import * as api from './api.js';
+import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
+import { CandadoPlan } from './candado-plan.js';
 import styles from './styles.module.css';
 
 /** Props del escáner de facturas. */
@@ -41,6 +43,8 @@ export type EscanerFacturaProps = {
   onCerrar: () => void;
   /** Factura existente para editar (si se pasa, el modal abre en modo edición). */
   facturaEditar?: Factura;
+  /** Plan de la sesión actual (Fase 2.5, 04/09/2026) — solo gatea "Extraer datos con IA"; capturar la página y rellenar los campos a mano siguen disponibles en cualquier plan. */
+  plan?: PlanAcceso;
 };
 
 /** Una página del documento escaneado — puede ser una imagen o un PDF subido directamente. */
@@ -68,7 +72,8 @@ const IA_FACTURA_DISPONIBLE = true;
  * Modal para añadir facturas manualmente o con captura de imagen.
  * Soporta múltiples hojas/páginas que se combinan como un único documento.
  */
-export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGuardar, onCerrar, facturaEditar }: EscanerFacturaProps) {
+export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGuardar, onCerrar, facturaEditar, plan }: EscanerFacturaProps) {
+  const tienePlanIA = puedeUsar(plan, PRO_O_SUPERIOR);
   const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
   const esEdicion = !!facturaEditar;
   const [paginas, setPaginas] = useState<Pagina[]>(() => {
@@ -532,15 +537,29 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
                   listo para reactivarse cambiando `IA_FACTURA_DISPONIBLE` a `true` el día que haya un modelo de
                   visión disponible (OpenAI u otro) sin riesgo de coste inesperado. */}
               {IA_FACTURA_DISPONIBLE && paginas.some(p => p.tipo === 'imagen') && (
-                <button
-                  className={`${styles.btn} ${styles.btnSecundario}`}
-                  style={{ width: '100%', justifyContent: 'center', marginTop: '0.5rem' }}
-                  onClick={extraerConIA}
-                  disabled={extrayendo}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6, verticalAlign: -2 }}><path d="M12 2a10 10 0 1 0 10 10" /><path d="M12 2v10l7-3" /></svg>
-                  {extrayendo ? 'Leyendo la factura…' : 'Extraer datos con IA'}
-                </button>
+                tienePlanIA ? (
+                  <button
+                    className={`${styles.btn} ${styles.btnSecundario}`}
+                    style={{ width: '100%', justifyContent: 'center', marginTop: '0.5rem' }}
+                    onClick={extraerConIA}
+                    disabled={extrayendo}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6, verticalAlign: -2 }}><path d="M12 2a10 10 0 1 0 10 10" /><path d="M12 2v10l7-3" /></svg>
+                    {extrayendo ? 'Leyendo la factura…' : 'Extraer datos con IA'}
+                  </button>
+                ) : (
+                  // Fase 2.5 (04/09/2026): la extracción con IA exige PRO+ en el servidor —
+                  // rellenar los campos a mano sigue funcionando igual, sin ningún gate.
+                  <button
+                    className={`${styles.btn} ${styles.btnSecundario}`}
+                    disabled
+                    title="Extraer datos con IA requiere el plan PRO o superior"
+                    style={{ width: '100%', justifyContent: 'center', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', opacity: 0.7, cursor: 'not-allowed' }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 10 10" /><path d="M12 2v10l7-3" /></svg>
+                    Extraer datos con IA <CandadoPlan planMinimo="PRO" compacto />
+                  </button>
+                )
               )}
               {confianzaIA && (
                 <p style={{ margin: '0.4rem 0 0', fontSize: '0.72rem', color: confianzaIA === 'alta' ? 'var(--verde)' : confianzaIA === 'media' ? 'var(--ocre)' : 'var(--rojo)' }}>

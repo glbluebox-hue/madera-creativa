@@ -645,6 +645,7 @@ export function PresupuestosPrototype() {
             empresa={empresa}
             onActualizarEmpresa={actualizar}
             onCrearProyecto={alCrearProyectoRapido}
+            plan={sesion?.plan}
           />
         )}
 
@@ -670,6 +671,7 @@ export function PresupuestosPrototype() {
             onBorrar={borrarFactura}
             onCrearProveedor={crearProveedor}
             onActualizarProveedor={actualizarProveedor}
+            plan={sesion?.plan}
           />
         )}
 
@@ -693,6 +695,7 @@ export function PresupuestosPrototype() {
                 proveedores={proveedores}
                 onCrearProveedor={crearProveedor}
                 onActualizarProveedor={actualizarProveedor}
+                plan={sesion?.plan}
               />
             ) : cargando && proyectos.length === 0 ? (
               <div className={styles.vacio}>
@@ -737,7 +740,7 @@ export function PresupuestosPrototype() {
       )}
 
       {ajustesBiometria && (
-        <AjustesBiometria onCerrar={() => setAjustesBiometria(false)} />
+        <AjustesBiometria onCerrar={() => setAjustesBiometria(false)} plan={sesion?.plan} />
       )}
 
       {ajustesPerfil && (
@@ -753,7 +756,7 @@ export function PresupuestosPrototype() {
       {panelAdmin && sesion?.esAdmin && <PanelAdmin onCerrar={() => setPanelAdmin(false)} />}
 
       {panelNotificaciones && (
-        <PanelNotificaciones estadoPush={estadoPush} errorPush={errorPush} onActivarPush={activarPush} onCerrar={() => setPanelNotificaciones(false)} esAdmin={sesion?.esAdmin ?? false} />
+        <PanelNotificaciones estadoPush={estadoPush} errorPush={errorPush} onActivarPush={activarPush} onCerrar={() => setPanelNotificaciones(false)} esAdmin={sesion?.esAdmin ?? false} plan={sesion?.plan} />
       )}
 
       {soportePanel && <SoportePanel onCerrar={() => setSoportePanel(false)} />}

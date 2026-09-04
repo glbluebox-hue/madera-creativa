@@ -4,6 +4,8 @@ import { formatoFecha } from './calculos.js';
 import { formatoTamano } from './modelo-3d-archivo.js';
 import { VisorModelo3D } from './visor-modelo-3d.js';
 import { BotonSubirModelo3D } from './boton-subir-modelo-3d.js';
+import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
+import { CandadoPlan } from './candado-plan.js';
 import styles from './styles.module.css';
 
 /** Punto de entrada oficial de SketchUp for Web (help.sketchup.com) — pide iniciar sesión con Trimble ID si hace falta; no hay una URL oficial que abra un proyecto/archivo concreto sin pasar por ahí primero. */
@@ -15,6 +17,8 @@ export type TarjetaModelo3DProps = {
   desasociando: boolean;
   onReemplazar: (file: File) => void;
   onEliminar: () => void;
+  /** Plan de la sesión actual (Fase 2.5, 04/09/2026) — solo gatea el enlace "Ver en SketchUp"; subir/ver/reemplazar/eliminar el modelo propio no cambian de plan. */
+  plan?: PlanAcceso;
 };
 
 /**
@@ -23,8 +27,9 @@ export type TarjetaModelo3DProps = {
  * únicamente aquí, al lado del propio dibujo, porque sin un modelo
  * asociado no tiene sentido ofrecerlo.
  */
-export function TarjetaModelo3D({ modelo3D, subiendo, desasociando, onReemplazar, onEliminar }: TarjetaModelo3DProps) {
+export function TarjetaModelo3D({ modelo3D, subiendo, desasociando, onReemplazar, onEliminar, plan }: TarjetaModelo3DProps) {
   const [visorAbierto, setVisorAbierto] = useState(false);
+  const tienePlanSketchUp = puedeUsar(plan, PRO_O_SUPERIOR);
 
   return (
     <div style={{ marginTop: '1rem', display: 'flex', gap: '0.8rem', alignItems: 'center', flexWrap: 'wrap', padding: '0.7rem 0.8rem', borderRadius: 8, background: 'var(--fondo-caja)' }}>
@@ -58,16 +63,26 @@ export function TarjetaModelo3D({ modelo3D, subiendo, desasociando, onReemplazar
         <button type="button" onClick={onEliminar} disabled={desasociando} style={{ background: 'none', border: 'none', color: 'var(--rojo)', cursor: 'pointer', fontSize: '0.76rem' }}>
           {desasociando ? 'Eliminando…' : 'Eliminar'}
         </button>
-        {/* "Ver en SketchUp" — solo aparece aquí, junto al dibujo, porque solo tiene sentido cuando hay un modelo que abrir. */}
-        <a
-          href={URL_SKETCHUP}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={`${styles.btn} ${styles.btnSecundario}`}
-          style={{ fontSize: '0.78rem', textDecoration: 'none' }}
-        >
-          🟢 Ver en SketchUp ↗
-        </a>
+        {/* "Ver en SketchUp" — solo aparece aquí, junto al dibujo, porque solo tiene sentido cuando hay un modelo que abrir. Exige PRO+ (Fase 2.5, 04/09/2026). */}
+        {tienePlanSketchUp ? (
+          <a
+            href={URL_SKETCHUP}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`${styles.btn} ${styles.btnSecundario}`}
+            style={{ fontSize: '0.78rem', textDecoration: 'none' }}
+          >
+            🟢 Ver en SketchUp ↗
+          </a>
+        ) : (
+          <span
+            title="Ver en SketchUp requiere el plan PRO o superior"
+            className={`${styles.btn} ${styles.btnSecundario}`}
+            style={{ fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', opacity: 0.7, cursor: 'not-allowed' }}
+          >
+            🟢 Ver en SketchUp <CandadoPlan planMinimo="PRO" compacto />
+          </span>
+        )}
       </div>
 
       {visorAbierto && modelo3D.url && (

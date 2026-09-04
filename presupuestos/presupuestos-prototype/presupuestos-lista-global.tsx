@@ -14,6 +14,8 @@ import { autoRellenarDatosCliente, type DatosClienteAutoRelleno } from './presup
 import { formatoEuro, formatoFecha } from './calculos.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
 import { AnalisisPrecioPresupuesto } from './analisis-precio-presupuesto.js';
+import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
+import { CandadoPlan } from './candado-plan.js';
 import styles from './styles.module.css';
 
 export type PresupuestosListaGlobalProps = {
@@ -26,6 +28,8 @@ export type PresupuestosListaGlobalProps = {
   onAbrirCliente: (clienteId: string) => void;
   /** Crea un cliente y su primer proyecto reales, sin salir de este selector — "+ Nuevo cliente" dentro de "+ Crear presupuesto". */
   onCrearProyecto: (proyecto: Proyecto) => void;
+  /** Plan de la sesión actual (Fase 2.5, 04/09/2026) — generar el enlace del Portal exige PRO+; crear/editar el presupuesto en sí no cambia de plan. */
+  plan?: PlanAcceso;
 };
 
 /**
@@ -44,7 +48,8 @@ export type PresupuestosListaGlobalProps = {
  * antes de abrir el editor — desde la Fase A (autoguardado, 23/08/2026) ya
  * no basta con abrirlo solo en memoria, ver el comentario de `crearBorrador`.
  */
-export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa, onAbrirCliente, onCrearProyecto }: PresupuestosListaGlobalProps) {
+export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa, onAbrirCliente, onCrearProyecto, plan }: PresupuestosListaGlobalProps) {
+  const tienePlanEnlace = puedeUsar(plan, PRO_O_SUPERIOR);
   const [presupuestos, setPresupuestos] = useState<PresupuestoMC[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -166,6 +171,17 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
   const accionEnlace = (p: PresupuestoMC) => {
     if (p.formato === 'lienzo') return null;
     const url = enlaces[p.id];
+    // Generar (o regenerar) el enlace del Portal exige PRO+ (Fase 2.5,
+    // 04/09/2026) — un único punto de corte, antes de toda la lógica de
+    // estados de abajo: ninguno de esos estados importa si la cuenta no
+    // puede generar un enlace nuevo en absoluto.
+    if (!url && !tienePlanEnlace) {
+      return (
+        <button className={`${styles.btn} ${styles.btnSecundario}`} disabled title="Generar enlace requiere el plan PRO o superior" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', opacity: 0.7, cursor: 'not-allowed' }}>
+          Generar enlace <CandadoPlan planMinimo="PRO" compacto />
+        </button>
+      );
+    }
     if (!url) {
       // Hallazgo real del usuario, 31/08/2026: si edita el presupuesto
       // DESPUÉS de mandar el enlace, ese enlace deja de servir para firmar
