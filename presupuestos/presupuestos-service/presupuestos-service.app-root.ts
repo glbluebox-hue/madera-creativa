@@ -14,7 +14,11 @@ import { inicializarMotorDocumental } from './documento-motor-inicializar.js';
 import { inicializarAutomatizaciones } from './automatizaciones-listener.js';
 import { PresupuestosService, ErrorDeNegocio } from './presupuestos-service.js';
 import { UsuarioModel, conectarUsuarios, migrarNombresNormalizados, asegurarIndiceNombreNormalizado, migrarEmailVerificadoUsuariosExistentes, ACCESO_POR_DEFECTO, leerPreferenciaNotif } from './usuario.model.js';
-import { requirePlan, obtenerPlanUsuario, planPermiteAcceso, contenidoDibujoUsaFuncionesPro, limitarNotifPrefsPorPlan, ocultarModelo3DSiNoPro, PRO_O_SUPERIOR, SOLO_PREMIUM } from './planes.js';
+import {
+  requirePlan, obtenerPlanUsuario, planPermiteAcceso, contenidoDibujoUsaFuncionesPro, limitarNotifPrefsPorPlan,
+  ocultarModelo3DSiNoPro, obtenerEstadoAccesoUsuario, requiereBloqueoPorSinPlan, iniciarTrialSiCorresponde,
+  PRO_O_SUPERIOR, SOLO_PREMIUM,
+} from './planes.js';
 import { ErrorCuotaAlmacenamientoSuperada, obtenerUsoAlmacenamiento } from './almacenamiento-cuota.js';
 import type { AccesoUsuario, EstadoUsuario } from './usuario.model.js';
 import { CodigoPromocionalModel, conectarCodigos, canjearCodigo, generarIdCodigo, normalizarCodigo } from './codigo-promocional.model.js';
@@ -307,6 +311,24 @@ export async function requireAuth(req: AuthRequest, res: express.Response, next:
     }
     if (!activo) { res.status(403).json({ error: 'Acceso denegado' }); return; }
     req.usuarioId = usuarioId;
+
+    // Prueba gratuita de 60 días / bloqueo post-trial (05/09/2026,
+    // Opción 3 de la auditoría) — punto único de aplicación: TODAS las
+    // rutas protegidas pasan por `requireAuth`, así que basta este único
+    // sitio para que ninguna quede sin cubrir (nunca hay que acordarse de
+    // añadir esto ruta por ruta). `admin` ya ha salido arriba y nunca
+    // llega aquí. Las rutas de `RUTAS_EXENTAS_BLOQUEO_PLAN` (perfil,
+    // canje de código, `/auth/yo`, uso de almacenamiento...) siguen
+    // accesibles aunque el trial haya terminado — el resto de la API de
+    // negocio responde 403 `sin_plan_activo`, nunca deja pasar la
+    // petición para que el frontend decida por su cuenta.
+    if (await requiereBloqueoPorSinPlan(usuarioId, req.path)) {
+      res.status(403).json({
+        error: 'sin_plan_activo',
+        mensaje: 'Tu prueba gratuita ha terminado o tu cuenta no tiene ningún plan activo. Elige un plan para seguir usando Madera Creativa Estudio.',
+      });
+      return;
+    }
     next();
   } catch (err) { responderError(req, res, err); }
 }
@@ -573,10 +595,17 @@ export function run() {
    */
   app.get('/auth/yo', requireAuth, async (req: AuthRequest, res) => {
     try {
-      // Reutiliza la misma caché que `requirePlan` (60s) — ni una consulta
-      // extra a Mongo por el hecho de exponerlo aquí.
-      const plan = await obtenerPlanUsuario(req.usuarioId!);
-      res.json({ ok: true, usuarioId: req.usuarioId, plan });
+      // `obtenerEstadoAccesoUsuario` (05/09/2026, prueba gratuita) en vez
+      // de solo `obtenerPlanUsuario`: el frontend necesita también
+      // `tipoAcceso`/`expiraEn` para mostrar "Prueba gratuita · Te quedan
+      // X días" en vez del plan técnico crudo — `plan` en la respuesta ya
+      // es el EFECTIVO (una prueba caducada aquí ya da `NONE`, nunca
+      // `PRO`, aunque en Mongo siga guardado `PRO` para conservar el
+      // historial). Ruta exenta del bloqueo por falta de plan (ver
+      // `RUTAS_EXENTAS_BLOQUEO_PLAN`) — siempre debe poder consultarse,
+      // sea cual sea el estado del trial.
+      const { plan, tipoAcceso, expiraEn } = await obtenerEstadoAccesoUsuario(req.usuarioId!);
+      res.json({ ok: true, usuarioId: req.usuarioId, plan, tipoAcceso, expiraEn });
     } catch (err) { responderError(req, res, err); }
   });
 
@@ -736,6 +765,30 @@ export function run() {
    * usuario no puede iniciar sesión (ver `/auth/login`). Mismo patrón que
    * `/auth/restablecer-password`: token de un solo uso, se borra al
    * consumirse, 400 genérico si no es válido o ya caducó.
+   *
+   * Prueba gratuita de 60 días (05/09/2026) — el trial empieza AQUÍ,
+   * nunca en `/auth/registrar`: es el primer momento en que la cuenta es
+   * real y utilizable (decisión explícita del usuario — empezar el
+   * contador en el registro desperdiciaría días si el email nunca se
+   * verifica). Solo se concede si la cuenta sigue exactamente en el
+   * estado por defecto (`ACCESO_POR_DEFECTO`: `plan:'NONE'`,
+   * `tipo:'free'`, `origen:'registro'`) — si el registro ya trajo un
+   * código promocional válido, `acceso` ya no es ese por defecto (lo fijó
+   * `/auth/registrar`), así que el trial automático NUNCA sustituye lo
+   * que ya concedió un código (política del caso B de la auditoría: el
+   * código prevalece, nunca se suman los dos).
+   *
+   * Idempotente por construcción, sin necesidad de una comprobación
+   * aparte: `verificacionTokenHash` se pone a `null` en el mismo
+   * `findOneAndUpdate` que marca `emailVerificado:true` — un segundo
+   * intento con el mismo token ya no encuentra ningún documento que
+   * coincida (el filtro exige `verificacionTokenHash: tokenHash`, y ese
+   * campo ya es `null`), así que responde 400 antes de llegar a esta
+   * lógica. Aun así, la comprobación de "sigue en el estado por defecto"
+   * es una segunda red de seguridad: aunque este endpoint se ejecutara
+   * dos veces por cualquier otro motivo, la segunda vez ya no vería
+   * `plan:'NONE'` (la primera ya lo cambió a `'PRO'`), así que nunca
+   * reinicia `activadoEn`/`expiraEn`.
    */
   app.post('/auth/verificar-email', limitadorAuth, validar(esquemaVerificarEmail), async (req, res) => {
     try {
@@ -748,6 +801,13 @@ export function run() {
         { new: true }
       ).lean().exec() as any;
       if (!u) { res.status(400).json({ error: 'El enlace no es válido o ha caducado.' }); return; }
+
+      const accesoTrial = iniciarTrialSiCorresponde(u.acceso);
+      if (accesoTrial) {
+        await UsuarioModel.updateOne({ id: u.id }, { $set: { acceso: accesoTrial } }).exec();
+        logger.info({ usuarioId: u.id, expiraEn: accesoTrial.expiraEn }, '[trial] Prueba gratuita de 60 días iniciada al verificar el email.');
+      }
+
       res.json({ ok: true });
     } catch (err) { responderError(req, res, err); }
   });
@@ -994,10 +1054,24 @@ export function run() {
 
   /**
    * Canjea un código promocional después del registro (por si el usuario no
-   * lo tenía a mano al crear la cuenta). Un usuario solo puede canjear un
-   * código una vez — si `acceso.codigoUsado` ya está relleno, se rechaza
-   * antes de tocar el código, para no gastar un uso de un código válido en
-   * un canje que de todas formas no iba a aplicarse.
+   * lo tenía a mano al crear la cuenta, o para recuperar el acceso tras la
+   * prueba gratuita — casos C/D de la política de trial, 05/09/2026: un
+   * trial activo o ya terminado nunca tiene `codigoUsado` relleno, así que
+   * puede canjear con normalidad; el código sustituye por completo el
+   * `acceso` anterior). Un usuario solo puede canjear un código una vez —
+   * si `acceso.codigoUsado` ya está relleno, se rechaza antes de tocar el
+   * código, para no gastar un uso de un código válido en un canje que de
+   * todas formas no iba a aplicarse.
+   *
+   * Caso E (05/09/2026, política de trial): una cuenta con una
+   * suscripción de PAGO activa (`tipo:'paid'`) NUNCA puede canjear un
+   * código — evita que un código de menor valor sustituya en silencio un
+   * plan de pago real. El modelo actual no sabe "comparar el valor" de un
+   * plan pagado contra el que concede un código, así que se bloquea sin
+   * excepción en vez de intentar decidir automáticamente cuál es mejor —
+   * dejado como PENDIENTE en la documentación si se necesitara en el
+   * futuro una política más fina (p. ej. permitir solo si el código
+   * concede un plan igual o superior).
    */
   app.post('/codigos/canjear', requireAuth, validar(esquemaCanjearCodigo), async (req: AuthRequest, res) => {
     try {
@@ -1005,6 +1079,7 @@ export function run() {
       const usuarioId = req.usuarioId!;
       const usuario = await UsuarioModel.findOne({ id: usuarioId }).lean().exec() as any;
       if (!usuario) { res.status(404).json({ error: 'Usuario no encontrado' }); return; }
+      if (usuario.acceso?.tipo === 'paid') { res.status(409).json({ error: 'Ya tienes una suscripción de pago activa — no se puede sustituir por un código. Contacta con soporte si necesitas aplicar uno.' }); return; }
       if (usuario.acceso?.codigoUsado) { res.status(409).json({ error: 'Ya has canjeado un código con esta cuenta.' }); return; }
 
       const resultado = await canjearCodigo(req.body.codigo);
@@ -2179,9 +2254,15 @@ export function run() {
    */
   app.get('/almacenamiento/uso', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const plan = await obtenerPlanUsuario(req.usuarioId!);
+      // `obtenerEstadoAccesoUsuario` en vez de solo `obtenerPlanUsuario`
+      // (05/09/2026, prueba gratuita): expone también `tipoAcceso` para
+      // que el frontend muestre "Prueba gratuita" en vez de "plan PRO"
+      // durante el trial — `plan` ya es el efectivo, así que
+      // `obtenerUsoAlmacenamiento` calcula el límite correcto (25 GB en
+      // trial activo) sin ningún cambio en `almacenamiento-cuota.ts`.
+      const { plan, tipoAcceso } = await obtenerEstadoAccesoUsuario(req.usuarioId!);
       const uso = await obtenerUsoAlmacenamiento(req.usuarioId!, plan);
-      res.json({ ...uso, limiteBytes: Number.isFinite(uso.limiteBytes) ? uso.limiteBytes : null });
+      res.json({ ...uso, tipoAcceso, limiteBytes: Number.isFinite(uso.limiteBytes) ? uso.limiteBytes : null });
     } catch (err) { responderError(req, res, err); }
   });
 

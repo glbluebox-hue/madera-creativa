@@ -1,12 +1,15 @@
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import mongoose from 'mongoose';
-import { UsuarioModel, conectarUsuarios } from './usuario.model.js';
+import { UsuarioModel, conectarUsuarios, ACCESO_POR_DEFECTO } from './usuario.model.js';
+import type { AccesoUsuario } from './usuario.model.js';
 import { ClienteModel, ProyectoModel } from './cliente.model.js';
 import {
   PLANES_COMERCIALES, PRO_O_SUPERIOR, SOLO_PREMIUM,
   planesDesde, planPermiteAcceso, obtenerPlanUsuario, requirePlan,
   contenidoDibujoUsaFuncionesPro, limitarNotifPrefsPorPlan,
   capacidadPermitidaParaPlan, ocultarModelo3DSiNoPro,
+  calcularPlanEfectivo, obtenerEstadoAccesoUsuario, requiereBloqueoPorSinPlan,
+  iniciarTrialSiCorresponde, RUTAS_EXENTAS_BLOQUEO_PLAN, DURACION_TRIAL_DIAS,
 } from './planes.js';
 import { PresupuestosService } from './presupuestos-service.js';
 import { contextoAsistenteGlobal } from './asistente-global.contexto-ia.js';
@@ -494,6 +497,191 @@ describe('Bypass administrativo — ADMIN tiene acceso total a BASIC/PRO/PREMIUM
   // `numeracion-presupuestos.ts` — verificado por la suite completa
   // (`numeracion-presupuestos.spec.ts`, `factura-seguridad.spec.ts`)
   // siguiendo en verde sin cambios, no por un test aparte aquí.
+});
+
+/**
+ * Prueba gratuita de 60 días (05/09/2026) — funciones puras, sin Mongo,
+ * de `planes.ts`. Los escenarios de extremo a extremo (registro → trial →
+ * expiración → recuperación) viven en `trial-60-dias.spec.ts`; aquí solo
+ * se prueba el CÁLCULO en sí, exhaustivamente.
+ */
+describe('calcularPlanEfectivo — única fuente de verdad de "qué plan tiene esta cuenta ahora mismo"', () => {
+  it('sin ningún acceso guardado, da NONE', () => {
+    expect(calcularPlanEfectivo(null)).toBe('NONE');
+    expect(calcularPlanEfectivo(undefined)).toBe('NONE');
+  });
+
+  it('trial activo (expiraEn en el futuro) da el plan guardado (PRO)', () => {
+    const acceso: AccesoUsuario = { tipo: 'trial', plan: 'PRO', activadoEn: new Date().toISOString(), expiraEn: new Date(Date.now() + 1000).toISOString(), origen: 'trial', codigoUsado: null };
+    expect(calcularPlanEfectivo(acceso)).toBe('PRO');
+  });
+
+  it('trial expirado (expiraEn en el pasado) da NONE, aunque el plan guardado siga siendo PRO', () => {
+    const acceso: AccesoUsuario = { tipo: 'trial', plan: 'PRO', activadoEn: new Date(Date.now() - 61 * 86_400_000).toISOString(), expiraEn: new Date(Date.now() - 1000).toISOString(), origen: 'trial', codigoUsado: null };
+    expect(calcularPlanEfectivo(acceso)).toBe('NONE');
+  });
+
+  it('trial que expira EXACTAMENTE ahora (borde) se trata como expirado — el límite es inclusive hacia "ya terminó"', () => {
+    const ahora = new Date();
+    const acceso: AccesoUsuario = { tipo: 'trial', plan: 'PRO', activadoEn: ahora.toISOString(), expiraEn: ahora.toISOString(), origen: 'trial', codigoUsado: null };
+    expect(calcularPlanEfectivo(acceso)).toBe('NONE');
+  });
+
+  it('una suscripción de pago (expiraEn: null) nunca expira, sea cual sea el plan', () => {
+    for (const plan of ['BASIC', 'PRO', 'PREMIUM'] as const) {
+      const acceso: AccesoUsuario = { tipo: 'paid', plan, activadoEn: new Date().toISOString(), expiraEn: null, origen: 'pago', codigoUsado: null };
+      expect(calcularPlanEfectivo(acceso)).toBe(plan);
+    }
+  });
+
+  it('LIFETIME_FREE se conserva tal cual (nunca tiene expiraEn en la práctica, y aunque lo tuviera en el futuro, sigue dando LIFETIME_FREE)', () => {
+    const acceso: AccesoUsuario = { tipo: 'promotional', plan: 'LIFETIME_FREE', activadoEn: new Date().toISOString(), expiraEn: null, origen: 'codigo', codigoUsado: 'MADERA-VITALICIO' };
+    expect(calcularPlanEfectivo(acceso)).toBe('LIFETIME_FREE');
+  });
+
+  it('un código promocional con duracionDias ya vencido da NONE — corrige el hallazgo de la auditoría (expiraEn nunca se comprobaba)', () => {
+    const acceso: AccesoUsuario = { tipo: 'promotional', plan: 'PRO', activadoEn: new Date(Date.now() - 40 * 86_400_000).toISOString(), expiraEn: new Date(Date.now() - 10 * 86_400_000).toISOString(), origen: 'codigo', codigoUsado: 'PROMO30' };
+    expect(calcularPlanEfectivo(acceso)).toBe('NONE');
+  });
+
+  it('un código promocional con duracionDias todavía vigente da el plan concedido', () => {
+    const acceso: AccesoUsuario = { tipo: 'promotional', plan: 'PREMIUM', activadoEn: new Date().toISOString(), expiraEn: new Date(Date.now() + 10 * 86_400_000).toISOString(), origen: 'codigo', codigoUsado: 'PROMO30' };
+    expect(calcularPlanEfectivo(acceso)).toBe('PREMIUM');
+  });
+
+  it('nunca modifica el objeto de entrada (función pura)', () => {
+    const acceso: AccesoUsuario = { tipo: 'trial', plan: 'PRO', activadoEn: new Date().toISOString(), expiraEn: new Date(Date.now() - 1000).toISOString(), origen: 'trial', codigoUsado: null };
+    const copia = JSON.parse(JSON.stringify(acceso));
+    calcularPlanEfectivo(acceso);
+    expect(acceso).toEqual(copia);
+  });
+});
+
+describe('iniciarTrialSiCorresponde — decide si procede empezar la prueba gratuita al verificar el email', () => {
+  it('una cuenta recién registrada (ACCESO_POR_DEFECTO exacto, sin código) SÍ recibe un trial', () => {
+    const ahora = new Date('2026-09-05T10:00:00.000Z');
+    const resultado = iniciarTrialSiCorresponde(ACCESO_POR_DEFECTO, ahora);
+    expect(resultado).not.toBeNull();
+    expect(resultado!.tipo).toBe('trial');
+    expect(resultado!.plan).toBe('PRO');
+    expect(resultado!.origen).toBe('trial');
+    expect(resultado!.codigoUsado).toBeNull();
+    expect(resultado!.activadoEn).toBe(ahora.toISOString());
+  });
+
+  it('expiraEn es exactamente activadoEn + DURACION_TRIAL_DIAS (60) días', () => {
+    const ahora = new Date('2026-09-05T10:00:00.000Z');
+    const resultado = iniciarTrialSiCorresponde(ACCESO_POR_DEFECTO, ahora)!;
+    const dias = (new Date(resultado.expiraEn!).getTime() - new Date(resultado.activadoEn!).getTime()) / 86_400_000;
+    expect(dias).toBe(DURACION_TRIAL_DIAS);
+    expect(DURACION_TRIAL_DIAS).toBe(60); // decisión definitiva del encargo
+  });
+
+  it('una cuenta con un código ya canjeado en el registro (origen:"codigo") NUNCA recibe trial además — el código prevalece (caso B)', () => {
+    const acceso: AccesoUsuario = { tipo: 'paid', plan: 'PRO', activadoEn: new Date().toISOString(), expiraEn: null, origen: 'codigo', codigoUsado: 'MADERA01' };
+    expect(iniciarTrialSiCorresponde(acceso)).toBeNull();
+  });
+
+  it('una cuenta que YA tiene un trial en marcha nunca lo reinicia (idempotencia — verificación repetida)', () => {
+    const acceso: AccesoUsuario = { tipo: 'trial', plan: 'PRO', activadoEn: '2026-01-01T00:00:00.000Z', expiraEn: '2026-03-02T00:00:00.000Z', origen: 'trial', codigoUsado: null };
+    expect(iniciarTrialSiCorresponde(acceso)).toBeNull();
+  });
+
+  it('una cuenta sin ningún acceso (undefined/null) nunca recibe trial — solo procede desde el estado por defecto exacto', () => {
+    expect(iniciarTrialSiCorresponde(null)).toBeNull();
+    expect(iniciarTrialSiCorresponde(undefined)).toBeNull();
+  });
+
+  it('una cuenta ya de pago (tipo:"paid") nunca recibe un trial', () => {
+    const acceso: AccesoUsuario = { tipo: 'paid', plan: 'BASIC', activadoEn: new Date().toISOString(), expiraEn: null, origen: 'pago', codigoUsado: null };
+    expect(iniciarTrialSiCorresponde(acceso)).toBeNull();
+  });
+});
+
+describe('obtenerEstadoAccesoUsuario — estado completo para mostrar en la interfaz (nunca para autorizar)', () => {
+  const USUARIO = 'usuario-estado-acceso-test';
+  afterEach(async () => { await UsuarioModel.deleteMany({ id: USUARIO }); });
+
+  it('una cuenta con trial activo devuelve plan PRO (efectivo), tipoAcceso "trial" y el expiraEn real', async () => {
+    const expiraEn = new Date(Date.now() + 30 * 86_400_000).toISOString();
+    await UsuarioModel.create({
+      id: USUARIO, nombre: 'x@example.com', nombreNormalizado: 'x@example.com', passwordHash: 'x', hashAlgo: 'bcrypt',
+      estado: 'activo', esAdmin: false, creadoEn: new Date().toISOString(),
+      acceso: { tipo: 'trial', plan: 'PRO', activadoEn: new Date().toISOString(), expiraEn, origen: 'trial', codigoUsado: null },
+    });
+    const estado = await obtenerEstadoAccesoUsuario(USUARIO);
+    expect(estado.plan).toBe('PRO');
+    expect(estado.tipoAcceso).toBe('trial');
+    expect(estado.expiraEn).toBe(expiraEn);
+  });
+
+  it('una cuenta con trial EXPIRADO devuelve plan NONE (efectivo) pero tipoAcceso sigue siendo "trial" — para que la interfaz pueda distinguir "nunca tuvo plan" de "tuvo un trial y terminó"', async () => {
+    const expiraEn = new Date(Date.now() - 1000).toISOString();
+    await UsuarioModel.create({
+      id: USUARIO, nombre: 'x@example.com', nombreNormalizado: 'x@example.com', passwordHash: 'x', hashAlgo: 'bcrypt',
+      estado: 'activo', esAdmin: false, creadoEn: new Date().toISOString(),
+      acceso: { tipo: 'trial', plan: 'PRO', activadoEn: new Date(Date.now() - 61 * 86_400_000).toISOString(), expiraEn, origen: 'trial', codigoUsado: null },
+    });
+    const estado = await obtenerEstadoAccesoUsuario(USUARIO);
+    expect(estado.plan).toBe('NONE');
+    expect(estado.tipoAcceso).toBe('trial');
+  });
+});
+
+describe('requiereBloqueoPorSinPlan — bloqueo de rutas de negocio cuando no hay ningún plan comercial activo (Opción 3)', () => {
+  const USUARIO = 'usuario-bloqueo-plan-test';
+  // Cada test usa su PROPIO usuarioId, nunca el mismo entre tests: la
+  // caché de 60s de `obtenerPlanUsuario` (`cachePlanUsuario`, module-level,
+  // no se resetea entre tests) devolvería el plan de un test anterior si
+  // se reutilizara el mismo id — mismo criterio que el resto de este
+  // archivo (`u-basic2`, `u-pro`, etc., nunca reutilizados).
+
+  it('una cuenta sin ningún plan (NONE) queda bloqueada en una ruta de negocio cualquiera', async () => {
+    await crearUsuarioConPlan(`${USUARIO}-none`, null); // NONE
+    expect(await requiereBloqueoPorSinPlan(`${USUARIO}-none`, '/proyectos/p1')).toBe(true);
+  });
+
+  it('un trial activo (plan efectivo PRO) NUNCA queda bloqueado', async () => {
+    const id = `${USUARIO}-trial-activo`;
+    await UsuarioModel.create({
+      id, nombre: 'x@example.com', nombreNormalizado: `${id}@example.com`, passwordHash: 'x', hashAlgo: 'bcrypt',
+      estado: 'activo', esAdmin: false, creadoEn: new Date().toISOString(),
+      acceso: { tipo: 'trial', plan: 'PRO', activadoEn: new Date().toISOString(), expiraEn: new Date(Date.now() + 1000).toISOString(), origen: 'trial', codigoUsado: null },
+    });
+    expect(await requiereBloqueoPorSinPlan(id, '/proyectos/p1')).toBe(false);
+  });
+
+  it('un trial EXPIRADO SÍ queda bloqueado en una ruta de negocio', async () => {
+    const id = `${USUARIO}-trial-expirado`;
+    await UsuarioModel.create({
+      id, nombre: 'x@example.com', nombreNormalizado: `${id}@example.com`, passwordHash: 'x', hashAlgo: 'bcrypt',
+      estado: 'activo', esAdmin: false, creadoEn: new Date().toISOString(),
+      acceso: { tipo: 'trial', plan: 'PRO', activadoEn: new Date(Date.now() - 61 * 86_400_000).toISOString(), expiraEn: new Date(Date.now() - 1000).toISOString(), origen: 'trial', codigoUsado: null },
+    });
+    expect(await requiereBloqueoPorSinPlan(id, '/proyectos/p1')).toBe(true);
+  });
+
+  it('las rutas exentas (perfil, /auth/yo, canje de código, uso de almacenamiento) nunca se bloquean, ni con trial expirado', async () => {
+    const id = `${USUARIO}-exentas`;
+    await crearUsuarioConPlan(id, null);
+    for (const ruta of RUTAS_EXENTAS_BLOQUEO_PLAN) {
+      expect(await requiereBloqueoPorSinPlan(id, ruta)).toBe(false);
+    }
+  });
+
+  it('BASIC/PRO/PREMIUM de pago nunca se bloquean', async () => {
+    for (const plan of ['BASIC', 'PRO', 'PREMIUM'] as const) {
+      const id = `${USUARIO}-${plan.toLowerCase()}`;
+      await crearUsuarioConPlan(id, plan);
+      expect(await requiereBloqueoPorSinPlan(id, '/proyectos/p1')).toBe(false);
+    }
+  });
+
+  it('LIFETIME_FREE nunca se bloquea — conserva el comportamiento ya existente', async () => {
+    const id = `${USUARIO}-lifetime`;
+    await crearUsuarioConPlan(id, 'LIFETIME_FREE');
+    expect(await requiereBloqueoPorSinPlan(id, '/proyectos/p1')).toBe(false);
+  });
 });
 
 /**

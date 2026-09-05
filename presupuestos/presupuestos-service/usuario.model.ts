@@ -16,14 +16,23 @@ export type EstadoUsuario = 'pendiente' | 'activo' | 'suspendido';
 export type TipoAcceso = 'trial' | 'promotional' | 'free' | 'paid';
 
 /**
- * Plan asociado al acceso. `BASIC`/`PRO`/`PREMIUM` no tienen lógica real
- * todavía (no existe sistema de pagos) — existen en el tipo para que,
- * cuando lo haya, no haga falta ninguna migración de esquema.
+ * Plan asociado al acceso. `BASIC`/`PRO`/`PREMIUM` tienen lógica real y
+ * completa desde la Fase 1+2 de planes (`planes.ts`) y el sistema de
+ * cuota de almacenamiento (`almacenamiento-cuota.ts`) — el comentario
+ * anterior ("no tienen lógica real todavía") quedó desactualizado.
+ * `NONE`/`LIFETIME_FREE` nunca cumplen ningún requisito comercial (ver
+ * `PLANES_COMERCIALES` en `planes.ts`).
  */
 export type PlanAcceso = 'NONE' | 'LIFETIME_FREE' | 'BASIC' | 'PRO' | 'PREMIUM';
 
-/** Cómo se concedió el acceso actual — trazabilidad, nunca se usa para autorizar nada. */
-export type OrigenAcceso = 'registro' | 'codigo' | 'admin' | 'pago';
+/**
+ * Cómo se concedió el acceso actual — trazabilidad, nunca se usa para
+ * autorizar nada (la autorización real siempre pasa por
+ * `planes.ts`/`calcularPlanEfectivo`, nunca compara este campo). `'trial'`
+ * (05/09/2026, prueba gratuita de 60 días) — igual que `'codigo'`/`'pago'`,
+ * es solo de cara a mostrar/auditar de dónde vino el acceso.
+ */
+export type OrigenAcceso = 'registro' | 'codigo' | 'admin' | 'pago' | 'trial';
 
 /** Bloque de acceso/plan de una cuenta — ver `TipoAcceso`. */
 export type AccesoUsuario = {
@@ -52,7 +61,7 @@ const AccesoSchema = new Schema(
     plan:        { type: String, enum: ['NONE', 'LIFETIME_FREE', 'BASIC', 'PRO', 'PREMIUM'], default: 'NONE' },
     activadoEn:  { type: String, default: null },
     expiraEn:    { type: String, default: null },
-    origen:      { type: String, enum: ['registro', 'codigo', 'admin', 'pago'], default: 'registro' },
+    origen:      { type: String, enum: ['registro', 'codigo', 'admin', 'pago', 'trial'], default: 'registro' },
     codigoUsado: { type: String, default: null },
   },
   { _id: false }

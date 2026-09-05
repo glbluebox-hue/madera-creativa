@@ -24,6 +24,7 @@ import { LoginPage } from './login-page.js';
 import { AjustesBiometria } from './ajustes-biometria.js';
 import { PanelAdmin } from './panel-admin.js';
 import { useLicencia } from './use-licencia.js';
+import { BannerTrial, PantallaTrialTerminado } from './estado-trial.js';
 import { usePush } from './use-push.js';
 import { useTema } from './use-tema.js';
 import { usePerfil } from './use-perfil.js';
@@ -203,8 +204,33 @@ export function PresupuestosPrototype() {
   // Cierre de sesión por inactividad (Ajustes de empresa) — desactivado por defecto (`tiempoInactividadMin: null`).
   useInactividad(empresa.tiempoInactividadMin, autenticado, logout);
 
-  useLicencia(sesion, logout);
+  const estadoAcceso = useLicencia(sesion, logout);
   const { estado: estadoPush, error: errorPush, activar: activarPush } = usePush(sesion);
+
+  /**
+   * Bloqueo tras el fin de la prueba gratuita (05/09/2026, Opción 3 de la
+   * auditoría) — el backend ya es la autoridad real (`requireAuth`
+   * rechaza cualquier ruta de negocio con 403 `sin_plan_activo`); esta
+   * pantalla solo explica por qué y ofrece cómo recuperar el acceso, sin
+   * confiar en `sesion.plan` (que solo se fija en el login y puede quedar
+   * desactualizado si el trial expira con la sesión ya abierta).
+   *
+   * Dos señales independientes, cualquiera basta:
+   * - `estadoAcceso` (sondeo periódico de `useLicencia`, cada 2 minutos).
+   * - `bloqueadoPorApi` (reacción inmediata si CUALQUIER llamada a la API
+   *   responde 403 `sin_plan_activo` antes de que el sondeo periódico lo
+   *   detecte — `api.alQuedarSinPlanActivo`).
+   *
+   * Nunca se aplica al admin (`sesion?.esAdmin`) — su bypass ya es real en
+   * el backend; esto es solo la señal visual, y no debe mostrarle una
+   * pantalla de bloqueo que no le corresponde aunque su `acceso` guardado
+   * en Mongo (irrelevante para él) diga cualquier cosa.
+   */
+  const [bloqueadoPorApi, setBloqueadoPorApi] = useState(false);
+  useEffect(() => {
+    api.alQuedarSinPlanActivo(() => setBloqueadoPorApi(true));
+  }, []);
+  const trialTerminado = !sesion?.esAdmin && (bloqueadoPorApi || (!!estadoAcceso && estadoAcceso.tipoAcceso === 'trial' && estadoAcceso.plan === 'NONE'));
 
   if (!autenticado) {
     return <LoginPage onLogin={login} onLoginDirecto={loginDirecto} onRegistrar={registrar} />;
@@ -215,6 +241,23 @@ export function PresupuestosPrototype() {
       <div className={styles.vacio} style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
         <span className={styles.loginSpinner} style={{ width: 22, height: 22, borderColor: 'rgba(81,72,63,0.25)', borderTopColor: 'var(--topo)' }} />
       </div>
+    );
+  }
+
+  if (trialTerminado) {
+    return (
+      <>
+        <PantallaTrialTerminado onCerrarSesion={logout} onIrAPerfil={() => setAjustesPerfil(true)} />
+        {ajustesPerfil && (
+          <AjustesPerfil
+            perfil={perfil}
+            nombreAcceso={sesion?.nombre || ''}
+            onGuardar={actualizarPerfil}
+            onCambioAcceso={loginDirecto}
+            onCerrar={() => setAjustesPerfil(false)}
+          />
+        )}
+      </>
     );
   }
 
@@ -289,6 +332,7 @@ export function PresupuestosPrototype() {
 
   return (
     <div className={styles.app} data-theme={dataTheme}>
+      {!sesion?.esAdmin && <BannerTrial estadoAcceso={estadoAcceso} />}
       <div className={styles.appConSidebar}>
         {/* ===== Botón de menú — solo móvil, abre el mismo menú lateral ===== */}
         <button

@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { AlmacenamientoUso, formatoGB } from './almacenamiento-uso.js';
+import { AlmacenamientoUso, formatoGB, etiquetaPlan } from './almacenamiento-uso.js';
+import type { UsoAlmacenamiento } from './api.js';
 
 /**
  * Panel "Almacenamiento" (cuota por plan, 05/09/2026) — mismo criterio de
@@ -22,6 +23,30 @@ describe('formatoGB', () => {
   });
   it('0 bytes se muestra como "0 GB", nunca vacío ni NaN', () => {
     expect(formatoGB(0)).toBe('0 GB');
+  });
+});
+
+/** `UsoAlmacenamiento` de mentira, con solo los campos que le interesan a `etiquetaPlan`. */
+function usoDe(plan: UsoAlmacenamiento['plan'], tipoAcceso: UsoAlmacenamiento['tipoAcceso']): UsoAlmacenamiento {
+  return { bytesUsados: 0, limiteBytes: 0, plan, tipoAcceso, ilimitado: false, porcentaje: 0, estado: 'normal' };
+}
+
+describe('etiquetaPlan — regla explícita, prueba gratuita de 60 días (05/09/2026): nunca "NONE" ni "plan NONE" visible', () => {
+  it('trial activo (plan efectivo PRO) muestra "prueba gratuita", nunca "plan PRO"', () => {
+    expect(etiquetaPlan(usoDe('PRO', 'trial'))).toBe('prueba gratuita');
+  });
+  it('trial terminado (plan efectivo NONE) muestra "prueba gratuita terminada", NUNCA "plan NONE" ni "sin plan"', () => {
+    const texto = etiquetaPlan(usoDe('NONE', 'trial'));
+    expect(texto).toBe('prueba gratuita terminada');
+    expect(texto.toUpperCase()).not.toContain('NONE');
+  });
+  it('un plan de pago real (no trial) sí muestra el nombre técnico del plan', () => {
+    expect(etiquetaPlan(usoDe('PRO', 'paid'))).toBe('plan PRO');
+    expect(etiquetaPlan(usoDe('BASIC', 'free'))).toBe('plan BASIC');
+  });
+  it('una cuenta sin plan que NO es un trial nunca muestra "NONE" tal cual', () => {
+    const texto = etiquetaPlan(usoDe('NONE', 'free'));
+    expect(texto.toUpperCase()).not.toContain('NONE');
   });
 });
 

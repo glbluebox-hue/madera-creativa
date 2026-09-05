@@ -31,6 +31,7 @@ const BASE = (import.meta as any).env?.VITE_API_BASE ?? '/api/presupuestos-servi
 
 let accessToken: string | null = null;
 let callbackSesionInvalida: (() => void) | null = null;
+let callbackSinPlanActivo: (() => void) | null = null;
 let refrescoEnCurso: Promise<boolean> | null = null;
 
 /** Guarda (o borra, con `null`) el access token en memoria. */
@@ -50,6 +51,21 @@ export function obtenerAccessToken(): string | null {
  */
 export function alPerderSesion(callback: () => void): void {
   callbackSesionInvalida = callback;
+}
+
+/**
+ * Registra la función a llamar cuando CUALQUIER petición protegida
+ * responde 403 `sin_plan_activo` (05/09/2026, prueba gratuita de 60
+ * días) — la cuenta ya no tiene ningún plan comercial activo (trial
+ * terminado, o cualquier cuenta sin plan). Reacción GLOBAL, no por
+ * pantalla: como el backend puede rechazar cualquier ruta de negocio en
+ * cualquier momento (incluso si `sesion.plan` en memoria seguía
+ * mostrando "PRO" porque el trial expiró mientras la pestaña estaba
+ * abierta), el sitio correcto para reaccionar es aquí, no en cada
+ * componente por separado — mismo criterio que `alPerderSesion`.
+ */
+export function alQuedarSinPlanActivo(callback: () => void): void {
+  callbackSinPlanActivo = callback;
 }
 
 function esperar(ms: number): Promise<void> {
@@ -154,9 +170,28 @@ async function comoErrorCuota(res: Response): Promise<Error | null> {
   return new Error(cuerpo?.mensaje || 'Se ha alcanzado el límite de almacenamiento de tu plan.');
 }
 
+/**
+ * Cuerpo de error de `requireAuth` cuando la cuenta no tiene ningún plan
+ * comercial activo (405/09/2026, prueba gratuita — `presupuestos-service.app-root.ts`,
+ * `requiereBloqueoPorSinPlan`). Comprobado ANTES del `throw` genérico de
+ * 401/403 (que descarta el cuerpo) para poder distinguir este caso
+ * concreto y disparar la reacción global (`alQuedarSinPlanActivo`).
+ */
+type CuerpoErrorSinPlan = { error: 'sin_plan_activo'; mensaje: string };
+
+async function comoErrorSinPlan(res: Response): Promise<Error | null> {
+  if (res.status !== 403) return null;
+  const cuerpo = await res.json().catch(() => null) as (CuerpoErrorSinPlan & Record<string, unknown>) | null;
+  if (cuerpo?.error !== 'sin_plan_activo') return null;
+  callbackSinPlanActivo?.();
+  return new Error(cuerpo.mensaje || 'Tu prueba gratuita ha terminado. Elige un plan para continuar.');
+}
+
 /** Lanza error con codigo HTTP si la respuesta no es ok. */
 async function comprobarRespuesta(res: Response, mensaje: string): Promise<Response> {
   if (res.ok) return res;
+  const errorSinPlan = await comoErrorSinPlan(res);
+  if (errorSinPlan) throw errorSinPlan;
   if (res.status === 401 || res.status === 403) throw new Error(String(res.status));
   const errorCuota = await comoErrorCuota(res);
   if (errorCuota) throw errorCuota;
@@ -175,6 +210,8 @@ async function comprobarRespuesta(res: Response, mensaje: string): Promise<Respo
  */
 async function comprobarRespuestaConMotivo(res: Response, mensaje: string): Promise<Response> {
   if (res.ok) return res;
+  const errorSinPlan = await comoErrorSinPlan(res);
+  if (errorSinPlan) throw errorSinPlan;
   if (res.status === 401 || res.status === 403) throw new Error(String(res.status));
   const errorCuota = await comoErrorCuota(res);
   if (errorCuota) throw errorCuota;
@@ -1550,11 +1587,17 @@ export async function guardarPerfil(perfil: Partial<Perfil>): Promise<void> {
 /* ===== ALMACENAMIENTO (cuota por plan) ===== */
 
 /** Uso de almacenamiento de la cuenta — ver `GET /almacenamiento/uso`, `obtenerUsoAlmacenamiento()` en el backend. */
+/** Cómo se concedió el acceso actual — mismo tipo que `TipoAcceso` en el backend (`usuario.model.ts`), copia mínima del lado del cliente (mismo criterio que `PlanAcceso` en `planes.ts`). */
+export type TipoAcceso = 'trial' | 'promotional' | 'free' | 'paid';
+
 export type UsoAlmacenamiento = {
   bytesUsados: number;
   /** `null` para una cuenta ilimitada (admin) — nunca `Infinity` (no es JSON válido). */
   limiteBytes: number | null;
+  /** Ya es el plan EFECTIVO (prueba gratuita de 60 días, 05/09/2026) — un trial activo ya llega aquí como `'PRO'`, uno terminado como `'NONE'`. */
   plan: PlanAcceso;
+  /** `'trial'` durante la prueba gratuita — úsalo para mostrar "Prueba gratuita" en vez del nombre técnico del plan (nunca mostrar "NONE"/"plan NONE" al usuario). */
+  tipoAcceso: TipoAcceso;
   ilimitado: boolean;
   porcentaje: number;
   estado: 'normal' | 'aviso' | 'lleno';
@@ -1565,6 +1608,46 @@ export async function obtenerUsoAlmacenamiento(): Promise<UsoAlmacenamiento> {
   const res = await fetchConAuth('/almacenamiento/uso');
   await comprobarRespuesta(res, 'No se pudo cargar el uso de almacenamiento');
   return res.json();
+}
+
+/* ===== PRUEBA GRATUITA / ESTADO DE ACCESO (05/09/2026) ===== */
+
+/** Estado de acceso real de la cuenta — `GET /auth/yo`. `plan` ya es el EFECTIVO (ver `UsoAlmacenamiento.plan`); `tipoAcceso`/`expiraEn` son los valores crudos, para calcular "te quedan X días" y distinguir un PRO de pago de uno por prueba gratuita. */
+export type EstadoAcceso = {
+  ok: true;
+  usuarioId: string;
+  plan: PlanAcceso;
+  tipoAcceso: TipoAcceso;
+  expiraEn: string | null;
+};
+
+/** Recupera el estado de acceso real de la cuenta autenticada — ruta exenta del bloqueo por falta de plan, siempre responde aunque el trial haya terminado. */
+export async function obtenerEstadoAcceso(): Promise<EstadoAcceso> {
+  const res = await fetchConAuth('/auth/yo');
+  await comprobarRespuesta(res, 'No se pudo comprobar el estado de la cuenta');
+  return res.json();
+}
+
+/**
+ * Canjea un código de acceso con la cuenta ya autenticada (a diferencia
+ * del código opcional del registro) — pensado sobre todo para recuperar
+ * el acceso tras el fin de la prueba gratuita (`PantallaTrialTerminado`).
+ * Ruta también exenta del bloqueo por falta de plan: debe poder llamarse
+ * precisamente cuando la cuenta ya no tiene ninguno.
+ */
+export async function canjearCodigoAcceso(codigo: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const res = await fetchConAuth('/codigos/canjear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ codigo }),
+    });
+    const data = await res.json().catch(() => ({})) as { error?: string };
+    if (!res.ok) return { ok: false, error: data.error || 'No se pudo aplicar el código.' };
+    return { ok: true };
+  } catch {
+    return { ok: false, error: 'Sin conexión con el servidor.' };
+  }
 }
 
 /** Resultado de cambiar el usuario/contraseña de acceso. */

@@ -31,6 +31,18 @@ const COLOR_POR_ESTADO: Record<UsoAlmacenamiento['estado'], { barra: string; tex
   lleno: { barra: 'var(--rojo)', texto: 'var(--rojo)' },
 };
 
+/**
+ * Texto comercial del plan — NUNCA el valor técnico crudo "NONE" (regla
+ * explícita, prueba gratuita de 60 días, 05/09/2026): durante el trial se
+ * ve "prueba gratuita" (activa o ya terminada), nunca "plan PRO" ni "plan
+ * NONE". Fuera del trial, una cuenta sin ningún plan tampoco muestra
+ * "NONE" tal cual.
+ */
+export function etiquetaPlan(uso: UsoAlmacenamiento): string {
+  if (uso.tipoAcceso === 'trial') return uso.plan === 'NONE' ? 'prueba gratuita terminada' : 'prueba gratuita';
+  return uso.plan === 'NONE' ? 'sin plan asignado' : `plan ${uso.plan}`;
+}
+
 export function AlmacenamientoUso() {
   const [uso, setUso] = useState<UsoAlmacenamiento | null>(null);
   const [error, setError] = useState('');
@@ -66,7 +78,7 @@ export function AlmacenamientoUso() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
       <p style={{ margin: 0, fontWeight: 600, fontSize: 'var(--texto-base, 0.84rem)' }}>
         {formatoGB(uso.bytesUsados)} de {formatoGB(uso.limiteBytes ?? 0)} utilizados
-        <span style={{ fontWeight: 400, color: 'var(--topo-claro)' }}> · plan {uso.plan}</span>
+        <span style={{ fontWeight: 400, color: 'var(--topo-claro)' }}> · {etiquetaPlan(uso)}</span>
       </p>
       <div
         role="progressbar"

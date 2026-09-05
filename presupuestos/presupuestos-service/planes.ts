@@ -1,7 +1,10 @@
 import express from 'express';
 import { UsuarioModel, conectarUsuarios } from './usuario.model.js';
-import type { PlanAcceso } from './usuario.model.js';
+import type { PlanAcceso, TipoAcceso, AccesoUsuario } from './usuario.model.js';
 import type { AuthRequest } from './presupuestos-service.app-root.js';
+
+/** Duración de la prueba gratuita — decisión definitiva (05/09/2026), única constante de este número en todo el proyecto. */
+export const DURACION_TRIAL_DIAS = 60;
 
 /**
  * Motor de autorización por plan comercial (Fase 1+2, 04/09/2026) — punto
@@ -46,16 +49,125 @@ export function planPermiteAcceso(planActual: PlanAcceso, permitidos: PlanComerc
 const TTL_CACHE_PLAN_MS = 60_000;
 const cachePlanUsuario = new Map<string, { plan: PlanAcceso; expira: number }>();
 
-/** Plan actual de una cuenta, con caché corta. `'NONE'` si no se encuentra la cuenta (mismo criterio conservador que `ACCESO_POR_DEFECTO`). */
+/**
+ * Calcula el plan EFECTIVO a partir del `acceso` guardado — nunca se fía
+ * de `acceso.plan` a solas (prueba gratuita de 60 días, 05/09/2026):
+ * si `expiraEn` está definido y ya ha pasado, el acceso se trata como si
+ * no existiera ningún plan comercial (`NONE`), sin importar qué plan
+ * dijera guardado. Cubre a la vez dos casos con el mismo campo:
+ * - El trial (`tipo:'trial'`, `plan:'PRO'`, `expiraEn` = inicio + 60 días).
+ * - Cualquier código promocional con `duracionDias` (`codigo-promocional.model.ts`),
+ *   que hasta ahora calculaba y guardaba `expiraEn` pero NUNCA se
+ *   comprobaba en ningún sitio — un código "temporal" era, en la
+ *   práctica, permanente (hallazgo de la auditoría previa, corregido aquí).
+ *
+ * Una suscripción de pago real siempre tiene `expiraEn: null`
+ * (`canjearCodigo`/futuro webhook de pago), así que nunca la afecta esta
+ * comprobación. NUNCA modifica el documento en Mongo — el trial vencido
+ * sigue teniendo `plan:'PRO'` guardado (se conserva el historial, tal
+ * como se pidió), solo se CALCULA como `NONE` al leer.
+ *
+ * Punto único de verdad: la usan `obtenerPlanUsuario` (autorización,
+ * cacheada) y `obtenerEstadoAccesoUsuario` (display, sin caché) — nunca
+ * se duplica esta comprobación en ningún otro sitio del proyecto.
+ */
+export function calcularPlanEfectivo(acceso: Pick<AccesoUsuario, 'plan' | 'expiraEn'> | null | undefined): PlanAcceso {
+  if (!acceso) return 'NONE';
+  if (acceso.expiraEn && new Date(acceso.expiraEn).getTime() <= Date.now()) return 'NONE';
+  return acceso.plan;
+}
+
+/** Plan EFECTIVO actual de una cuenta, con caché corta. `'NONE'` si no se encuentra la cuenta (mismo criterio conservador que `ACCESO_POR_DEFECTO`) o si su acceso temporal ya ha expirado (ver `calcularPlanEfectivo`). */
 export async function obtenerPlanUsuario(usuarioId: string): Promise<PlanAcceso> {
   const ahora = Date.now();
   const enCache = cachePlanUsuario.get(usuarioId);
   if (enCache && enCache.expira > ahora) return enCache.plan;
   await conectarUsuarios();
   const u = await UsuarioModel.findOne({ id: usuarioId }).select('acceso').lean().exec() as any;
-  const plan: PlanAcceso = u?.acceso?.plan ?? 'NONE';
+  const plan: PlanAcceso = calcularPlanEfectivo(u?.acceso);
   cachePlanUsuario.set(usuarioId, { plan, expira: ahora + TTL_CACHE_PLAN_MS });
   return plan;
+}
+
+/**
+ * Estado de acceso completo de una cuenta, para mostrar en la interfaz
+ * (nunca para autorizar — eso sigue siendo `obtenerPlanUsuario`/
+ * `requirePlan`): `plan` ya es el EFECTIVO (ver `calcularPlanEfectivo`),
+ * `tipoAcceso`/`expiraEn` son los valores crudos guardados, para que el
+ * frontend pueda distinguir "PRO de pago" de "PRO por prueba gratuita" y
+ * calcular los días restantes — nunca se muestra `NONE` tal cual al
+ * usuario (eso lo decide la interfaz, no esta función). Sin caché
+ * propia (no es una ruta caliente como `requirePlan`) — una consulta más
+ * a Mongo por petición a `/auth/yo`/`/almacenamiento/uso` es aceptable.
+ */
+export async function obtenerEstadoAccesoUsuario(usuarioId: string): Promise<{ plan: PlanAcceso; tipoAcceso: TipoAcceso; expiraEn: string | null }> {
+  await conectarUsuarios();
+  const u = await UsuarioModel.findOne({ id: usuarioId }).select('acceso').lean().exec() as any;
+  const acceso = u?.acceso;
+  return {
+    plan: calcularPlanEfectivo(acceso),
+    tipoAcceso: acceso?.tipo ?? 'free',
+    expiraEn: acceso?.expiraEn ?? null,
+  };
+}
+
+/**
+ * Decide si procede iniciar la prueba gratuita de 60 días al verificar el
+ * email de una cuenta — función PURA (nunca toca Mongo, solo decide),
+ * para poder probarla directamente sin levantar una base de datos. Se
+ * llama desde `/auth/verificar-email` (`presupuestos-service.app-root.ts`)
+ * justo después de marcar `emailVerificado:true`.
+ *
+ * Solo concede el trial si `accesoActual` sigue EXACTAMENTE en el estado
+ * por defecto (`ACCESO_POR_DEFECTO`: `plan:'NONE'`, `tipo:'free'`,
+ * `origen:'registro'`) — nunca lo hace si el registro ya trajo un código
+ * promocional válido (ese `acceso` ya no es el por defecto, política del
+ * caso B: el código prevalece, nunca se suman los dos) y nunca lo repite
+ * una segunda vez sobre una cuenta que ya tiene un trial en marcha o
+ * cualquier otro acceso (`plan` ya no sería `'NONE'`) — es la misma
+ * comprobación la que da la idempotencia, no hace falta ningún estado
+ * aparte para "ya se hizo esto antes".
+ *
+ * Devuelve el nuevo `AccesoUsuario` a guardar, o `null` si no procede
+ * iniciar ningún trial (el llamador no debe escribir nada en ese caso).
+ */
+export function iniciarTrialSiCorresponde(accesoActual: AccesoUsuario | null | undefined, ahora: Date = new Date()): AccesoUsuario | null {
+  if (!(accesoActual?.plan === 'NONE' && accesoActual?.tipo === 'free' && accesoActual?.origen === 'registro')) return null;
+  const activadoEn = ahora.toISOString();
+  const expiraEn = new Date(ahora.getTime() + DURACION_TRIAL_DIAS * 24 * 60 * 60 * 1000).toISOString();
+  return { tipo: 'trial', plan: 'PRO', activadoEn, expiraEn, origen: 'trial', codigoUsado: null };
+}
+
+/**
+ * Rutas que una cuenta sin ningún plan comercial activo (trial nunca
+ * empezado, trial terminado, o cualquier cuenta en `NONE`) debe poder
+ * seguir usando — el mínimo para ver su situación, gestionar su cuenta,
+ * y recuperar el acceso (Opción 3 de la auditoría, 05/09/2026). Todo lo
+ * demás (cualquier dato de negocio: clientes, proyectos, presupuestos,
+ * facturas, dibujos...) queda bloqueado. Comparación exacta contra
+ * `req.path` — todas son rutas estáticas, sin parámetros.
+ */
+export const RUTAS_EXENTAS_BLOQUEO_PLAN: readonly string[] = [
+  '/auth/yo', '/auth/logout', '/auth/verificar',
+  '/perfil', '/perfil/acceso',
+  '/codigos/canjear',
+  '/almacenamiento/uso',
+];
+
+/**
+ * ¿Debe bloquearse esta petición porque la cuenta no tiene NINGÚN plan
+ * comercial activo? Llamar solo tras confirmar que `usuarioId !== 'admin'`
+ * (el admin nunca pasa por aquí, igual que nunca pasa por `requirePlan`).
+ * `NONE` es la única señal que bloquea — cubre a la vez "nunca tuvo
+ * ningún plan" y "su trial/código temporal ya expiró" (mismo cálculo,
+ * `calcularPlanEfectivo`), sin necesidad de distinguirlos aquí. Nunca
+ * bloquea `LIFETIME_FREE`/`BASIC`/`PRO`/`PREMIUM` — conserva el
+ * comportamiento ya existente para esos planes.
+ */
+export async function requiereBloqueoPorSinPlan(usuarioId: string, path: string): Promise<boolean> {
+  if (RUTAS_EXENTAS_BLOQUEO_PLAN.includes(path)) return false;
+  const plan = await obtenerPlanUsuario(usuarioId);
+  return plan === 'NONE';
 }
 
 /**
