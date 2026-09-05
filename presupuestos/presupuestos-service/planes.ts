@@ -126,6 +126,30 @@ export async function capacidadPermitidaParaPlan(usuarioId: string, planMinimo: 
   return planPermiteAcceso(plan, planesDesde(planMinimo as PlanComercial));
 }
 
+/**
+ * Oculta `modelo3D` de un `ProyectoDoc` cuando la cuenta no tiene PRO+
+ * (cierre de plan "Modelo 3D / SketchUp Desktop", 05/09/2026) — decisión
+ * definitiva del usuario: "Modelo 3D" es función PRO/PREMIUM completa,
+ * incluido VERLO, no solo subirlo. No basta con que las rutas de subida
+ * exijan `requirePlan(PRO_O_SUPERIOR)`: si el proyecto ya tenía un modelo
+ * de antes de un downgrade PRO→BASIC, cualquier respuesta que devuelva el
+ * proyecto entero (`GET /proyectos/:id`, y las rutas quirúrgicas de
+ * movimientos/tareas/estado/presupuesto/características/trabajo-extra,
+ * que también devuelven el documento completo) seguiría enviándoselo tal
+ * cual a una cuenta BASIC sin este filtro. Nunca oculta nada a `admin`
+ * (mismo bypass que el resto de este archivo). Vive aquí (no en
+ * `presupuestos-service.app-root.ts`) por el mismo motivo que
+ * `contenidoDibujoUsaFuncionesPro`/`limitarNotifPrefsPorPlan`: es lógica
+ * de "qué significa un plan", no de enrutado.
+ */
+export async function ocultarModelo3DSiNoPro<T extends Record<string, unknown>>(proyecto: T, usuarioId: string): Promise<T> {
+  if (usuarioId === 'admin') return proyecto;
+  const plan = await obtenerPlanUsuario(usuarioId);
+  if (planPermiteAcceso(plan, PRO_O_SUPERIOR)) return proyecto;
+  const { modelo3D: _modelo3D, ...resto } = proyecto as Record<string, unknown>;
+  return resto as T;
+}
+
 export function requirePlan(permitidos: PlanComercial[]) {
   return async (req: AuthRequest, res: express.Response, next: express.NextFunction) => {
     if (req.usuarioId === 'admin') { next(); return; }

@@ -3,7 +3,6 @@ import type { Cliente, Proyecto, Movimiento, RegistroHoras, RegistroHorasAyudant
 import * as api from './api.js';
 import { GaleriaFotos } from './galeria-fotos.js';
 import { useModelo3D } from './use-modelo-3d.js';
-import { BotonSubirModelo3D } from './boton-subir-modelo-3d.js';
 import { TarjetaModelo3D } from './tarjeta-modelo-3d.js';
 import type { FotoProyecto } from './galeria-fotos.js';
 import { EscanerFactura } from './escaner-factura.js';
@@ -375,10 +374,9 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
             adjuntos={adjuntosProyecto}
             onAnadir={anadirAdjunto}
             onBorrar={borrarAdjunto}
-            botonExtra={<BotonSubirModelo3D subiendo={modelo3D.subiendo} onArchivo={modelo3D.subirArchivo} />}
-            contenidoExtra={proyecto.modelo3D ? (
+            contenidoExtra={(
               <TarjetaModelo3D
-                modelo3D={proyecto.modelo3D}
+                modelo3D={proyecto.modelo3D ?? null}
                 subiendo={modelo3D.subiendo}
                 desasociando={modelo3D.desasociando}
                 onReemplazar={modelo3D.subirArchivo}
@@ -386,7 +384,7 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
                 plan={plan}
                 esAdmin={esAdmin}
               />
-            ) : null}
+            )}
           />
           {modelo3D.error && <p style={{ margin: '-0.5rem 0 0.75rem', fontSize: '0.78rem', color: 'var(--rojo)' }}>{modelo3D.error}</p>}
           <TabMediciones proyecto={proyecto} onActualizar={onActualizarProyecto} />

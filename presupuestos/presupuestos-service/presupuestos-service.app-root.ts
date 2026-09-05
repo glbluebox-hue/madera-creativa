@@ -14,7 +14,7 @@ import { inicializarMotorDocumental } from './documento-motor-inicializar.js';
 import { inicializarAutomatizaciones } from './automatizaciones-listener.js';
 import { PresupuestosService, ErrorDeNegocio } from './presupuestos-service.js';
 import { UsuarioModel, conectarUsuarios, migrarNombresNormalizados, asegurarIndiceNombreNormalizado, migrarEmailVerificadoUsuariosExistentes, ACCESO_POR_DEFECTO, leerPreferenciaNotif } from './usuario.model.js';
-import { requirePlan, obtenerPlanUsuario, planPermiteAcceso, contenidoDibujoUsaFuncionesPro, limitarNotifPrefsPorPlan, PRO_O_SUPERIOR, SOLO_PREMIUM } from './planes.js';
+import { requirePlan, obtenerPlanUsuario, planPermiteAcceso, contenidoDibujoUsaFuncionesPro, limitarNotifPrefsPorPlan, ocultarModelo3DSiNoPro, PRO_O_SUPERIOR, SOLO_PREMIUM } from './planes.js';
 import { ErrorCuotaAlmacenamientoSuperada, obtenerUsoAlmacenamiento } from './almacenamiento-cuota.js';
 import type { AccesoUsuario, EstadoUsuario } from './usuario.model.js';
 import { CodigoPromocionalModel, conectarCodigos, canjearCodigo, generarIdCodigo, normalizarCodigo } from './codigo-promocional.model.js';
@@ -1322,7 +1322,7 @@ export function run() {
     try {
       const proyecto = await svc.obtenerProyecto(req.params.id, req.usuarioId!);
       if (!proyecto) { res.status(404).json({ error: 'No encontrado' }); return; }
-      res.json(proyecto);
+      res.json(await ocultarModelo3DSiNoPro(proyecto as Record<string, unknown>, req.usuarioId!));
     } catch (err) { responderError(req, res, err); }
   });
 
@@ -1336,7 +1336,7 @@ export function run() {
   app.put('/proyectos/:id', requireAuth, validar(esquemaProyecto), async (req: AuthRequest, res) => {
     try {
       const proyecto = await svc.guardarProyecto({ ...req.body, id: req.params.id }, req.usuarioId!);
-      res.json(proyecto);
+      res.json(await ocultarModelo3DSiNoPro(proyecto as Record<string, unknown>, req.usuarioId!));
     } catch (err) { responderError(req, res, err); }
   });
 
@@ -1354,17 +1354,17 @@ export function run() {
    * `presupuestos-service.ts`).
    */
   app.post('/proyectos/:id/movimientos', requireAuth, validar(esquemaMovimientoEntrada), async (req: AuthRequest, res) => {
-    try { res.json(await svc.anadirMovimientoProyecto(req.params.id, req.usuarioId!, req.body)); }
+    try { res.json(await ocultarModelo3DSiNoPro(await svc.anadirMovimientoProyecto(req.params.id, req.usuarioId!, req.body) as Record<string, unknown>, req.usuarioId!)); }
     catch (err) { responderError(req, res, err); }
   });
 
   app.put('/proyectos/:id/movimientos/:movId', requireAuth, validar(esquemaMovimientoEntrada), async (req: AuthRequest, res) => {
-    try { res.json(await svc.editarMovimientoProyecto(req.params.id, req.usuarioId!, req.params.movId, req.body)); }
+    try { res.json(await ocultarModelo3DSiNoPro(await svc.editarMovimientoProyecto(req.params.id, req.usuarioId!, req.params.movId, req.body) as Record<string, unknown>, req.usuarioId!)); }
     catch (err) { responderError(req, res, err); }
   });
 
   app.delete('/proyectos/:id/movimientos/:movId', requireAuth, async (req: AuthRequest, res) => {
-    try { res.json(await svc.borrarMovimientoProyecto(req.params.id, req.usuarioId!, req.params.movId)); }
+    try { res.json(await ocultarModelo3DSiNoPro(await svc.borrarMovimientoProyecto(req.params.id, req.usuarioId!, req.params.movId) as Record<string, unknown>, req.usuarioId!)); }
     catch (err) { responderError(req, res, err); }
   });
 
@@ -1379,47 +1379,64 @@ export function run() {
     catch (err) { responderError(req, res, err); }
   });
 
-  /** Diseño 3D (Fase SketchUp/Trimble Connect, 30/08/2026) — ver `svc.asociarModelo3DProyecto`/`svc.quitarModelo3DProyecto`. */
-  app.post('/proyectos/:id/modelo3d', requireAuth, validar(esquemaModelo3DEntrada), async (req: AuthRequest, res) => {
+  /**
+   * Diseño 3D / SketchUp Desktop (Fase SketchUp/Trimble Connect, 30/08/2026
+   * — cierre de plan 05/09/2026): decisión definitiva del usuario, "Modelo
+   * 3D" y "SketchUp Desktop" son función PRO/PREMIUM completa, BASIC no
+   * tiene ninguna de las dos. Antes solo se gateaba el enlace decorativo
+   * "Ver en SketchUp" en el frontend — subir/reemplazar el modelo (aquí)
+   * quedaba libre para cualquier plan, contradiciendo la promesa
+   * comercial. `requirePlan` es la autoridad real; el frontend (candado)
+   * es solo la señal visual — ver `svc.asociarModelo3DProyecto`/
+   * `svc.quitarModelo3DProyecto`.
+   */
+  app.post('/proyectos/:id/modelo3d', requireAuth, requirePlan(PRO_O_SUPERIOR), validar(esquemaModelo3DEntrada), async (req: AuthRequest, res) => {
     try { res.json(await svc.asociarModelo3DProyecto(req.params.id, req.usuarioId!, req.body)); }
     catch (err) { responderError(req, res, err); }
   });
 
+  /**
+   * Deliberadamente SIN `requirePlan` — quitar/liberar el propio modelo 3D
+   * nunca debe bloquearse por plan (mismo criterio que el resto de la app:
+   * un downgrade nunca impide borrar/liberar datos ya existentes, solo
+   * impide crear/ampliar). Cubre también el caso de una cuenta que tenía
+   * PRO, subió un modelo, y bajó a BASIC — puede seguir quitándolo.
+   */
   app.delete('/proyectos/:id/modelo3d', requireAuth, async (req: AuthRequest, res) => {
     try { res.json(await svc.quitarModelo3DProyecto(req.params.id, req.usuarioId!)); }
     catch (err) { responderError(req, res, err); }
   });
 
-  /** Diseño 3D — subida manual (30/08/2026, independiente de Trimble) — ver `svc.asociarModelo3DArchivoProyecto`. Comparte el mismo `DELETE /proyectos/:id/modelo3d` de arriba para desasociar/borrar. */
-  app.post('/proyectos/:id/modelo3d/archivo', requireAuth, validar(esquemaModelo3DArchivoEntrada), async (req: AuthRequest, res) => {
+  /** Diseño 3D — subida manual (30/08/2026, independiente de Trimble) — ver `svc.asociarModelo3DArchivoProyecto`. Comparte el mismo `DELETE /proyectos/:id/modelo3d` de arriba para desasociar/borrar (sin gate de plan, ver comentario de esa ruta). PRO+ (ver comentario de `POST /proyectos/:id/modelo3d` arriba). */
+  app.post('/proyectos/:id/modelo3d/archivo', requireAuth, requirePlan(PRO_O_SUPERIOR), validar(esquemaModelo3DArchivoEntrada), async (req: AuthRequest, res) => {
     try { res.json(await svc.asociarModelo3DArchivoProyecto(req.params.id, req.usuarioId!, req.body)); }
     catch (err) { responderError(req, res, err); }
   });
 
   app.put('/proyectos/:id/tareas', requireAuth, validar(esquemaTareasEntrada), async (req: AuthRequest, res) => {
-    try { res.json(await svc.guardarTareasProyecto(req.params.id, req.usuarioId!, req.body.tareas)); }
+    try { res.json(await ocultarModelo3DSiNoPro(await svc.guardarTareasProyecto(req.params.id, req.usuarioId!, req.body.tareas) as Record<string, unknown>, req.usuarioId!)); }
     catch (err) { responderError(req, res, err); }
   });
 
   app.put('/proyectos/:id/estado', requireAuth, validar(esquemaEstadoClienteEntrada), async (req: AuthRequest, res) => {
-    try { res.json(await svc.cambiarEstadoProyecto(req.params.id, req.usuarioId!, req.body.estado)); }
+    try { res.json(await ocultarModelo3DSiNoPro(await svc.cambiarEstadoProyecto(req.params.id, req.usuarioId!, req.body.estado) as Record<string, unknown>, req.usuarioId!)); }
     catch (err) { responderError(req, res, err); }
   });
 
   app.put('/proyectos/:id/presupuesto', requireAuth, validar(esquemaPresupuestoClienteEntrada), async (req: AuthRequest, res) => {
-    try { res.json(await svc.cambiarPresupuestoProyecto(req.params.id, req.usuarioId!, req.body.presupuesto)); }
+    try { res.json(await ocultarModelo3DSiNoPro(await svc.cambiarPresupuestoProyecto(req.params.id, req.usuarioId!, req.body.presupuesto) as Record<string, unknown>, req.usuarioId!)); }
     catch (err) { responderError(req, res, err); }
   });
 
   /** Histórico Inteligente (Fase 2A) — ver `svc.guardarCaracteristicaProyecto`. */
   app.put('/proyectos/:id/caracteristica', requireAuth, validar(esquemaCaracteristicaEntrada), async (req: AuthRequest, res) => {
-    try { res.json(await svc.guardarCaracteristicaProyecto(req.params.id, req.usuarioId!, req.body.clave, req.body.valor)); }
+    try { res.json(await ocultarModelo3DSiNoPro(await svc.guardarCaracteristicaProyecto(req.params.id, req.usuarioId!, req.body.clave, req.body.valor) as Record<string, unknown>, req.usuarioId!)); }
     catch (err) { responderError(req, res, err); }
   });
 
   /** Trabajo extra durante la obra (pedido real, 28/08/2026) — ver `svc.anadirTrabajoExtraProyecto`. */
   app.post('/proyectos/:id/trabajo-extra', requireAuth, validar(esquemaTrabajoExtraEntrada), async (req: AuthRequest, res) => {
-    try { res.json(await svc.anadirTrabajoExtraProyecto(req.params.id, req.usuarioId!, req.body.descripcion, req.body.precio)); }
+    try { res.json(await ocultarModelo3DSiNoPro(await svc.anadirTrabajoExtraProyecto(req.params.id, req.usuarioId!, req.body.descripcion, req.body.precio) as Record<string, unknown>, req.usuarioId!)); }
     catch (err) { responderError(req, res, err); }
   });
 

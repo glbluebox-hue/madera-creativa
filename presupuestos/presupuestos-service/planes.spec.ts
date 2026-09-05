@@ -6,7 +6,7 @@ import {
   PLANES_COMERCIALES, PRO_O_SUPERIOR, SOLO_PREMIUM,
   planesDesde, planPermiteAcceso, obtenerPlanUsuario, requirePlan,
   contenidoDibujoUsaFuncionesPro, limitarNotifPrefsPorPlan,
-  capacidadPermitidaParaPlan,
+  capacidadPermitidaParaPlan, ocultarModelo3DSiNoPro,
 } from './planes.js';
 import { PresupuestosService } from './presupuestos-service.js';
 import { contextoAsistenteGlobal } from './asistente-global.contexto-ia.js';
@@ -494,4 +494,100 @@ describe('Bypass administrativo — ADMIN tiene acceso total a BASIC/PRO/PREMIUM
   // `numeracion-presupuestos.ts` — verificado por la suite completa
   // (`numeracion-presupuestos.spec.ts`, `factura-seguridad.spec.ts`)
   // siguiendo en verde sin cambios, no por un test aparte aquí.
+});
+
+/**
+ * Modelo 3D / SketchUp Desktop — cierre de plan (05/09/2026). Decisión
+ * definitiva del usuario: "Modelo 3D" y "SketchUp Desktop" son función
+ * PRO/PREMIUM COMPLETA; BASIC no las tiene en absoluto. Antes solo se
+ * bloqueaba, en el frontend, el enlace decorativo "Ver en SketchUp" — las
+ * rutas reales de subida/reemplazo (`POST /proyectos/:id/modelo3d`,
+ * `POST /proyectos/:id/modelo3d/archivo`) no tenían ningún `requirePlan`,
+ * así que BASIC podía subir y reemplazar su propio modelo sin ninguna
+ * restricción real. Estos tests ejercitan la MISMA función que las rutas
+ * montan literalmente (`requirePlan(PRO_O_SUPERIOR)`,
+ * `ocultarModelo3DSiNoPro`), nunca una reimplementación paralela — mismo
+ * criterio que el resto de este archivo.
+ */
+describe('Modelo 3D / SketchUp Desktop — PRO/PREMIUM completo, BASIC bloqueado (cierre de plan, 05/09/2026)', () => {
+  it('BASIC recibe 403 al intentar subir/reemplazar el modelo 3D — mismo `requirePlan(PRO_O_SUPERIOR)` que montan `POST /proyectos/:id/modelo3d` y `POST /proyectos/:id/modelo3d/archivo`', async () => {
+    await crearUsuarioConPlan('u-3d-basic', 'BASIC');
+    const { req, res, next, resultado } = mockReqResNext('u-3d-basic');
+    await requirePlan(PRO_O_SUPERIOR)(req, res, next);
+    const r = resultado();
+    expect(r.siguio).toBe(false);
+    expect(r.status).toBe(403);
+    expect(r.body.error).toBe('plan_insuficiente');
+  });
+
+  it('PRO puede subir/reemplazar el modelo 3D y abrir el enlace a SketchUp Desktop (pasa el mismo gate)', async () => {
+    await crearUsuarioConPlan('u-3d-pro', 'PRO');
+    const { req, res, next, resultado } = mockReqResNext('u-3d-pro');
+    await requirePlan(PRO_O_SUPERIOR)(req, res, next);
+    expect(resultado().siguio).toBe(true);
+  });
+
+  it('PREMIUM puede usar el modelo 3D y SketchUp Desktop igual que PRO', async () => {
+    await crearUsuarioConPlan('u-3d-premium', 'PREMIUM');
+    const { req, res, next, resultado } = mockReqResNext('u-3d-premium');
+    await requirePlan(PRO_O_SUPERIOR)(req, res, next);
+    expect(resultado().siguio).toBe(true);
+  });
+
+  it('ADMIN nunca queda bloqueado, tenga el plan que tenga almacenado', async () => {
+    await crearUsuarioConPlan('admin', null); // admin real sin acceso explícito (equivalente a NONE)
+    const { req, res, next, resultado } = mockReqResNext('admin');
+    await requirePlan(PRO_O_SUPERIOR)(req, res, next);
+    expect(resultado().siguio).toBe(true);
+  });
+
+  it('integración real: `svc.asociarModelo3DArchivoProyecto` en sí no conoce planes (es responsabilidad exclusiva de la ruta) — pero el flujo completo (gate + servicio) bloquea a BASIC de verdad', async () => {
+    const usuarioId = 'u-3d-integracion-basic';
+    await crearUsuarioConPlan(usuarioId, 'BASIC');
+    await ClienteModel.create({ id: 'c-3d-integracion', usuarioId, nombre: 'Cliente 3D', creado: new Date().toISOString() });
+    await ProyectoModel.create({ id: 'p-3d-integracion', usuarioId, clienteId: 'c-3d-integracion', creado: new Date().toISOString() });
+
+    const { req, res, next, resultado } = mockReqResNext(usuarioId);
+    await requirePlan(PRO_O_SUPERIOR)(req, res, next);
+    expect(resultado().siguio).toBe(false); // el gate ya corta aquí — la ruta real nunca llegaría a llamar al servicio
+
+    // Confirmación explícita de que el propio servicio SIGUE aceptando la
+    // llamada si algo se saltara el middleware (defensa en profundidad,
+    // no seguridad): el bloqueo real vive en el gate de la ruta, nunca en
+    // el servicio — por eso es tan importante que el gate esté montado.
+    const buffer = Buffer.alloc(50, 1).toString('base64');
+    const doc = await svc.asociarModelo3DArchivoProyecto('p-3d-integracion', usuarioId, { nombreArchivo: 'x.glb', url: `data:model/gltf-binary;base64,${buffer}` });
+    expect((doc as any).modelo3D).toBeTruthy();
+    await ProyectoModel.deleteMany({});
+    await ClienteModel.deleteMany({});
+  });
+
+  describe('ocultarModelo3DSiNoPro — "ver" el modelo también exige PRO+, no solo subirlo', () => {
+    const MODELO_FALSO = { id: 'p-oculto', titulo: 'x', modelo3D: { proveedor: 'manual', nombreArchivo: 'x.glb', url: 'https://ejemplo.test/x.glb' } };
+
+    it('BASIC nunca recibe `modelo3D` en la respuesta, aunque el proyecto ya tenga uno (p. ej. tras un downgrade PRO→BASIC)', async () => {
+      await crearUsuarioConPlan('u-3d-oculto-basic', 'BASIC');
+      const resultado = await ocultarModelo3DSiNoPro(MODELO_FALSO, 'u-3d-oculto-basic');
+      expect(resultado).not.toHaveProperty('modelo3D');
+      expect(resultado.id).toBe('p-oculto'); // el resto del proyecto no se toca
+    });
+
+    it('PRO sí recibe `modelo3D` en la respuesta', async () => {
+      await crearUsuarioConPlan('u-3d-oculto-pro', 'PRO');
+      const resultado = await ocultarModelo3DSiNoPro(MODELO_FALSO, 'u-3d-oculto-pro');
+      expect(resultado).toHaveProperty('modelo3D');
+    });
+
+    it('PREMIUM sí recibe `modelo3D` en la respuesta', async () => {
+      await crearUsuarioConPlan('u-3d-oculto-premium', 'PREMIUM');
+      const resultado = await ocultarModelo3DSiNoPro(MODELO_FALSO, 'u-3d-oculto-premium');
+      expect(resultado).toHaveProperty('modelo3D');
+    });
+
+    it('ADMIN siempre recibe `modelo3D`, sin importar su plan almacenado', async () => {
+      await crearUsuarioConPlan('admin', null);
+      const resultado = await ocultarModelo3DSiNoPro(MODELO_FALSO, 'admin');
+      expect(resultado).toHaveProperty('modelo3D');
+    });
+  });
 });
