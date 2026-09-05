@@ -132,10 +132,35 @@ export async function fetchConAuth(path: string, opciones: RequestInit = {}): Pr
   return res;
 }
 
+/**
+ * Cuerpo de error de `ErrorCuotaAlmacenamientoSuperada` (413) —
+ * `presupuestos-service.app-root.ts`, `responderError()`. `mensaje` ya
+ * viene redactado en español, listo para mostrar tal cual ("Se ha
+ * alcanzado el límite de almacenamiento de tu plan...").
+ */
+type CuerpoErrorCuota = { error: 'cuota_almacenamiento_superada'; mensaje: string };
+
+/**
+ * Si la respuesta es un 413 de cuota de almacenamiento superada, lanza su
+ * propio mensaje (ya listo para el usuario) — común a CUALQUIER subida de
+ * archivo (fotos, adjuntos, facturas, dibujos, modelos 3D, recursos,
+ * presupuestos/contratos en formato documento, firma del Portal), sin
+ * tener que repetir esta comprobación en cada función de subida por
+ * separado (05/09/2026).
+ */
+async function comoErrorCuota(res: Response): Promise<Error | null> {
+  if (res.status !== 413) return null;
+  const cuerpo = await res.json().catch(() => null) as CuerpoErrorCuota | null;
+  return new Error(cuerpo?.mensaje || 'Se ha alcanzado el límite de almacenamiento de tu plan.');
+}
+
 /** Lanza error con codigo HTTP si la respuesta no es ok. */
 async function comprobarRespuesta(res: Response, mensaje: string): Promise<Response> {
-  if (!res.ok) throw new Error(res.status === 401 || res.status === 403 ? String(res.status) : mensaje);
-  return res;
+  if (res.ok) return res;
+  if (res.status === 401 || res.status === 403) throw new Error(String(res.status));
+  const errorCuota = await comoErrorCuota(res);
+  if (errorCuota) throw errorCuota;
+  throw new Error(mensaje);
 }
 
 /**
@@ -151,6 +176,8 @@ async function comprobarRespuesta(res: Response, mensaje: string): Promise<Respo
 async function comprobarRespuestaConMotivo(res: Response, mensaje: string): Promise<Response> {
   if (res.ok) return res;
   if (res.status === 401 || res.status === 403) throw new Error(String(res.status));
+  const errorCuota = await comoErrorCuota(res);
+  if (errorCuota) throw errorCuota;
   if (res.status === 400 || res.status === 409) {
     const cuerpo = await res.json().catch(() => null) as { error?: string; detalles?: { campo: string; mensaje: string }[] } | null;
     if (cuerpo?.detalles?.length) throw new Error(cuerpo.detalles.map((d) => d.mensaje).join(' '));
@@ -1518,6 +1545,26 @@ export async function guardarPerfil(perfil: Partial<Perfil>): Promise<void> {
     body: JSON.stringify({ nombreMostrar: perfil.nombreMostrar ?? '', foto: perfil.foto ?? '' }),
   });
   await comprobarRespuesta(res, 'No se pudo guardar el perfil');
+}
+
+/* ===== ALMACENAMIENTO (cuota por plan) ===== */
+
+/** Uso de almacenamiento de la cuenta — ver `GET /almacenamiento/uso`, `obtenerUsoAlmacenamiento()` en el backend. */
+export type UsoAlmacenamiento = {
+  bytesUsados: number;
+  /** `null` para una cuenta ilimitada (admin) — nunca `Infinity` (no es JSON válido). */
+  limiteBytes: number | null;
+  plan: PlanAcceso;
+  ilimitado: boolean;
+  porcentaje: number;
+  estado: 'normal' | 'aviso' | 'lleno';
+};
+
+/** Recupera el uso de almacenamiento (bytes usados, límite del plan, porcentaje/estado) de la cuenta autenticada. */
+export async function obtenerUsoAlmacenamiento(): Promise<UsoAlmacenamiento> {
+  const res = await fetchConAuth('/almacenamiento/uso');
+  await comprobarRespuesta(res, 'No se pudo cargar el uso de almacenamiento');
+  return res.json();
 }
 
 /** Resultado de cambiar el usuario/contraseña de acceso. */

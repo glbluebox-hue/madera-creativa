@@ -52,12 +52,12 @@ function sanitizarHtmlTextoEnriquecido(html: string): string {
 }
 
 function obtenerRecursoUrl(elemento: ElementoMC) {
-  const c = elemento.contenido as { url: string; claveAlmacenamiento?: string };
-  return { url: c.url, claveAlmacenamiento: c.claveAlmacenamiento };
+  const c = elemento.contenido as { url: string; claveAlmacenamiento?: string; tamano?: number };
+  return { url: c.url, claveAlmacenamiento: c.claveAlmacenamiento, tamano: c.tamano };
 }
 
-function establecerRecursoUrl(elemento: ElementoMC, recurso: { url: string; claveAlmacenamiento?: string }): ElementoMC {
-  return { ...elemento, contenido: { ...(elemento.contenido as object), url: recurso.url, claveAlmacenamiento: recurso.claveAlmacenamiento } };
+function establecerRecursoUrl(elemento: ElementoMC, recurso: { url: string; claveAlmacenamiento?: string; tamano?: number }): ElementoMC {
+  return { ...elemento, contenido: { ...(elemento.contenido as object), url: recurso.url, claveAlmacenamiento: recurso.claveAlmacenamiento, tamano: recurso.tamano } };
 }
 
 export const definicionesTiposIniciales: RegistroTipoElemento[] = [
@@ -80,6 +80,8 @@ export const definicionesTiposIniciales: RegistroTipoElemento[] = [
     esquemaContenido: z.object({
       url: z.string(),
       claveAlmacenamiento: z.string().optional(),
+      /** Tamaño en bytes en almacenamiento externo (cuota de almacenamiento, 05/09/2026) — ausente en imágenes guardadas antes de esta función. */
+      tamano: z.number().nonnegative().optional(),
       recorte: z.object({ x: z.number(), y: z.number(), ancho: z.number(), alto: z.number() }).nullable().default(null),
       /** Referencia a un `RecursoMC` de la biblioteca (Incremento 5) — `null` si la imagen se subió directamente, sin pasar por la biblioteca. */
       recursoId: z.string().nullable().optional().default(null),
@@ -97,6 +99,8 @@ export const definicionesTiposIniciales: RegistroTipoElemento[] = [
       modo: z.enum(['vinculado', 'fijo']).default('vinculado'),
       url: z.string(),
       claveAlmacenamiento: z.string().optional(),
+      /** Tamaño en bytes en almacenamiento externo (cuota de almacenamiento, 05/09/2026) — ausente en elementos guardados antes de esta función. */
+      tamano: z.number().nonnegative().optional(),
       recursoId: z.string().nullable().optional().default(null),
     }),
     esquemaPropiedadesEspecificas: z.object({}),
@@ -112,6 +116,8 @@ export const definicionesTiposIniciales: RegistroTipoElemento[] = [
       modo: z.enum(['vinculado', 'fijo']).default('vinculado'),
       url: z.string(),
       claveAlmacenamiento: z.string().optional(),
+      /** Tamaño en bytes en almacenamiento externo (cuota de almacenamiento, 05/09/2026) — ausente en elementos guardados antes de esta función. */
+      tamano: z.number().nonnegative().optional(),
       recursoId: z.string().nullable().optional().default(null),
     }),
     esquemaPropiedadesEspecificas: z.object({}),

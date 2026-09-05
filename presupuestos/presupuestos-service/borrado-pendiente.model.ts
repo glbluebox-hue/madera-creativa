@@ -18,6 +18,17 @@ const BorradoPendienteSchema = new Schema({
   ultimoError: { type: String, default: '' },
   creado: { type: String, required: true },
   actualizado: { type: String, required: true },
+  /**
+   * Dueño + tamaño del archivo (cuota de almacenamiento, 05/09/2026) —
+   * opcionales: un borrado pendiente de ANTES de esta función no los
+   * tiene, y no pasa nada — simplemente su reintento no libera ningún
+   * contador (el archivo se borra igual). Con ellos, `ejecutarReintentoBorrados()`
+   * puede liberar la cuota del usuario correcto en cuanto el borrado
+   * realmente se completa, nunca antes (evita desincronizar el contador
+   * con lo que de verdad queda en R2).
+   */
+  usuarioId: { type: String, default: '' },
+  tamano: { type: Number, default: 0 },
 });
 
 export const BorradoPendienteModel: Model<any> = models.BorradoPendiente || model('BorradoPendiente', BorradoPendienteSchema);

@@ -15,6 +15,7 @@ import { inicializarAutomatizaciones } from './automatizaciones-listener.js';
 import { PresupuestosService, ErrorDeNegocio } from './presupuestos-service.js';
 import { UsuarioModel, conectarUsuarios, migrarNombresNormalizados, asegurarIndiceNombreNormalizado, migrarEmailVerificadoUsuariosExistentes, ACCESO_POR_DEFECTO, leerPreferenciaNotif } from './usuario.model.js';
 import { requirePlan, obtenerPlanUsuario, planPermiteAcceso, contenidoDibujoUsaFuncionesPro, limitarNotifPrefsPorPlan, PRO_O_SUPERIOR, SOLO_PREMIUM } from './planes.js';
+import { ErrorCuotaAlmacenamientoSuperada, obtenerUsoAlmacenamiento } from './almacenamiento-cuota.js';
 import type { AccesoUsuario, EstadoUsuario } from './usuario.model.js';
 import { CodigoPromocionalModel, conectarCodigos, canjearCodigo, generarIdCodigo, normalizarCodigo } from './codigo-promocional.model.js';
 import { SoporteHiloModel, conectarSoporte, generarIdHiloSoporte } from './soporte-hilo.model.js';
@@ -180,6 +181,23 @@ export type AuthRequest = express.Request & { usuarioId?: string; requestId?: st
 export function responderError(req: AuthRequest, res: express.Response, err: unknown): void {
   if (err instanceof ErrorDeNegocio) {
     res.status(err.status).json({ error: err.message });
+    return;
+  }
+  // Cuota de almacenamiento (05/09/2026) — reconocida aquí, centralmente,
+  // para que las 9 rutas reales de subida (incluida la pública del
+  // Portal, que también pasa por este mismo `responderError`) devuelvan
+  // el mismo código identificable sin repetirlo en cada una. 413 (Payload
+  // Too Large): a diferencia de `plan_insuficiente` (403, el plan no
+  // incluye la función), aquí el plan SÍ la incluye — es la cuenta la que
+  // se ha quedado sin espacio.
+  if (err instanceof ErrorCuotaAlmacenamientoSuperada) {
+    res.status(413).json({
+      error: 'cuota_almacenamiento_superada',
+      mensaje: err.message,
+      bytesUsados: err.bytesUsados,
+      limiteBytes: err.limiteBytes,
+      bytesSolicitados: err.bytesSolicitados,
+    });
     return;
   }
   logger.error(
@@ -2133,6 +2151,21 @@ export function run() {
   app.delete('/plantillas/:id', requireAuth, async (req: AuthRequest, res) => {
     try { await svc.borrarPlantilla(req.params.id, req.usuarioId!); res.json({ ok: true }); }
     catch (err) { responderError(req, res, err); }
+  });
+
+  /**
+   * Cuota de almacenamiento por plan (05/09/2026) — bytes usados, límite
+   * del plan actual y estado (`normal`/`aviso`/`lleno`), para que el
+   * frontend muestre "X de Y GB" y avise antes de llegar al límite. Admin
+   * ilimitado (`limiteBytes: null` en la respuesta — `Infinity` no es JSON
+   * válido).
+   */
+  app.get('/almacenamiento/uso', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const plan = await obtenerPlanUsuario(req.usuarioId!);
+      const uso = await obtenerUsoAlmacenamiento(req.usuarioId!, plan);
+      res.json({ ...uso, limiteBytes: Number.isFinite(uso.limiteBytes) ? uso.limiteBytes : null });
+    } catch (err) { responderError(req, res, err); }
   });
 
   // ── Biblioteca de recursos (Motor Documental, Incremento 5) — aislada por usuarioId ──

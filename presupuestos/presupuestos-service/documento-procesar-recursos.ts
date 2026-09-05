@@ -1,5 +1,7 @@
 import { almacenamiento } from './almacenamiento.service.js';
 import { obtenerTipoElemento, recorrerElementosMC } from './documento-registro-tipos.js';
+import { reclamarEspacioAlmacenamiento, liberarEspacioAlmacenamiento } from './almacenamiento-cuota.js';
+import type { PlanAcceso } from './usuario.model.js';
 import type { DocumentoMC } from './documento-modelo.js';
 
 /**
@@ -27,10 +29,25 @@ function esBase64(valor: unknown): valor is string {
  * del documento, sustituyendo su `url` por la resultante — deja tal cual
  * los que ya son una URL externa (guardado anterior). Devuelve una copia
  * del documento; no muta el original.
+ *
+ * Cuota de almacenamiento (05/09/2026, `contexto` opcional para no romper
+ * los tests existentes que llaman a esta función sin él): primero decodifica
+ * TODOS los recursos nuevos del documento y calcula el total de bytes,
+ * reclama esa cuota de una sola vez (atómico) y SOLO SI se concede empieza
+ * a subir de verdad — así un documento con varias imágenes nuevas nunca
+ * puede dejar unas subidas y otras rechazadas a medias, y nunca sube nada
+ * a R2 antes de saber que hay sitio. Si la subida real falla después de
+ * haber reclamado la cuota (fallo de red/proveedor), la libera antes de
+ * relanzar el error — nunca deja el contador inflado por una subida que no
+ * llegó a completarse.
  */
-export async function procesarRecursosDocumento(documento: DocumentoMC): Promise<DocumentoMC> {
+export async function procesarRecursosDocumento(
+  documento: DocumentoMC,
+  contexto?: { usuarioId: string; plan: PlanAcceso }
+): Promise<DocumentoMC> {
   const copia = structuredClone(documento);
-  const subidas: Promise<void>[] = [];
+  const pendientes: { reemplazar: (nuevo: any) => void; elemento: any; establecerRecurso: any; buffer: Buffer; tipoMime: string }[] = [];
+
   for (const { elemento, reemplazar } of recorrerElementosMC(copia)) {
     const definicion = obtenerTipoElemento(elemento.tipo);
     if (!definicion.contieneRecurso || !definicion.obtenerRecurso || !definicion.establecerRecurso) continue;
@@ -40,18 +57,28 @@ export async function procesarRecursosDocumento(documento: DocumentoMC): Promise
     if (!coincide) continue;
     const [, tipoMime, base64] = coincide;
     const buffer = Buffer.from(base64, 'base64');
-    const establecerRecurso = definicion.establecerRecurso;
-    subidas.push(
-      almacenamiento.subir(buffer, { contentType: tipoMime, carpeta: 'documentos' }).then((subido) => {
-        reemplazar(establecerRecurso(elemento, { url: subido.url, claveAlmacenamiento: subido.clave }));
-      })
-    );
+    pendientes.push({ elemento, reemplazar, establecerRecurso: definicion.establecerRecurso, buffer, tipoMime });
   }
-  // Mismo patrón que `procesarArchivosLienzo`: subidas en paralelo. Si
-  // cualquiera falla, `Promise.all` rechaza antes de que `guardarPresupuesto`
-  // llegue a persistir nada — no queda ninguna referencia a medio sustituir
-  // en Mongo (el documento nunca se escribe si esta función lanza).
-  await Promise.all(subidas);
+
+  const totalBytesNuevos = pendientes.reduce((suma, p) => suma + p.buffer.length, 0);
+  if (contexto && totalBytesNuevos > 0) {
+    await reclamarEspacioAlmacenamiento(contexto.usuarioId, totalBytesNuevos, contexto.plan);
+  }
+
+  try {
+    // Mismo patrón que antes: subidas en paralelo. Si cualquiera falla,
+    // `Promise.all` rechaza antes de que `guardarPresupuesto` llegue a
+    // persistir nada — no queda ninguna referencia a medio sustituir en
+    // Mongo (el documento nunca se escribe si esta función lanza).
+    await Promise.all(pendientes.map(async (p) => {
+      const subido = await almacenamiento.subir(p.buffer, { contentType: p.tipoMime, carpeta: 'documentos' });
+      p.reemplazar(p.establecerRecurso(p.elemento, { url: subido.url, claveAlmacenamiento: subido.clave, tamano: subido.metadatos.tamano }));
+    }));
+  } catch (err) {
+    if (contexto && totalBytesNuevos > 0) await liberarEspacioAlmacenamiento(contexto.usuarioId, totalBytesNuevos).catch(() => {});
+    throw err;
+  }
+
   return copia;
 }
 
@@ -62,8 +89,17 @@ export async function procesarRecursosDocumento(documento: DocumentoMC): Promise
  * sin borrar el documento entero. Mismo criterio que
  * `borrarBlobsHuerfanos`/`borrarArchivosLienzoHuerfanos`, generalizado a
  * cualquier tipo de elemento registrado con recurso.
+ *
+ * Cuota de almacenamiento (05/09/2026): libera el `tamano` de cada
+ * recurso realmente borrado — `usuarioId` opcional (si no se pasa, se
+ * borra el archivo pero no se toca ningún contador; mantiene esta función
+ * usable en los tests existentes sin cuota).
  */
-export async function borrarRecursosDocumentoHuerfanos(antes: DocumentoMC | null | undefined, despues: DocumentoMC | null | undefined): Promise<void> {
+export async function borrarRecursosDocumentoHuerfanos(
+  antes: DocumentoMC | null | undefined,
+  despues: DocumentoMC | null | undefined,
+  usuarioId?: string
+): Promise<void> {
   if (!antes) return;
   const clavesDespues = new Set<string>();
   if (despues) {
@@ -80,6 +116,7 @@ export async function borrarRecursosDocumentoHuerfanos(antes: DocumentoMC | null
     const recurso = definicion.obtenerRecurso(elemento);
     if (recurso?.claveAlmacenamiento && !clavesDespues.has(recurso.claveAlmacenamiento)) {
       await almacenamiento.borrar(recurso.claveAlmacenamiento).catch(() => {});
+      if (usuarioId && recurso.tamano) await liberarEspacioAlmacenamiento(usuarioId, recurso.tamano).catch(() => {});
     }
   }
 }

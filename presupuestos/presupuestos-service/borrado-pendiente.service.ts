@@ -1,6 +1,7 @@
 import { BorradoPendienteModel } from './borrado-pendiente.model.js';
 import { conectar } from './cliente.model.js';
 import { almacenamiento } from './almacenamiento.service.js';
+import { liberarEspacioAlmacenamiento } from './almacenamiento-cuota.js';
 import { logger } from './logger.service.js';
 
 /**
@@ -16,6 +17,14 @@ import { logger } from './logger.service.js';
  * estado pendiente SÍ se guarda en Mongo (no en memoria): un borrado
  * pendiente debe sobrevivir a un reinicio del proceso, a diferencia de la
  * guarda "ya avisé hoy" de los recordatorios, que no importa perder.
+ *
+ * Cuota de almacenamiento (05/09/2026): un borrado nunca debe liberar
+ * espacio del contador hasta que de verdad se ha completado en R2 — si se
+ * liberara al primer intento (que puede fallar), el contador quedaría por
+ * debajo de lo que en realidad sigue ocupado, permitiendo subir más de lo
+ * real. `contexto` (opcional, `{usuarioId, tamano}`) se guarda junto al
+ * pendiente para poder liberar la cuota correcta en cuanto el reintento
+ * automático (`ejecutarReintentoBorrados`) por fin lo consiga.
  */
 
 const INTERVALO_REINTENTO_MS = 5 * 60 * 1000;
@@ -24,13 +33,19 @@ const MAX_INTENTOS = 5;
 /** Cuántos pendientes procesar por pasada — acota el trabajo de una única ejecución del intervalo. */
 const LOTE_MAXIMO = 50;
 
-/** Registra (o incrementa) un borrado pendiente — nunca guarda contenido del archivo ni datos personales, solo la clave técnica y el mensaje de error. */
-async function registrarBorradoPendiente(clave: string, error: string): Promise<void> {
+export type ContextoBorrado = { usuarioId: string; tamano: number };
+
+/** Registra (o incrementa) un borrado pendiente — nunca guarda contenido del archivo ni datos personales, solo la clave técnica, el mensaje de error y (si se conoce) quién era el dueño y cuánto pesaba, para poder liberar su cuota cuando el reintento tenga éxito. */
+async function registrarBorradoPendiente(clave: string, error: string, contexto?: ContextoBorrado): Promise<void> {
   await conectar();
   const ahora = new Date().toISOString();
   await BorradoPendienteModel.findOneAndUpdate(
     { clave },
-    { $inc: { intentos: 1 }, $set: { ultimoError: error, actualizado: ahora }, $setOnInsert: { creado: ahora } },
+    {
+      $inc: { intentos: 1 },
+      $set: { ultimoError: error, actualizado: ahora, ...(contexto ? { usuarioId: contexto.usuarioId, tamano: contexto.tamano } : {}) },
+      $setOnInsert: { creado: ahora },
+    },
     { upsert: true }
   ).exec();
 }
@@ -40,12 +55,19 @@ async function registrarBorradoPendiente(clave: string, error: string): Promise<
  * registrado como pendiente en vez de descartar el error. Sustituye a cada
  * `almacenamiento.borrar(clave).catch(() => {})` que había antes en
  * `presupuestos-service.ts`.
+ *
+ * `contexto` (opcional, 05/09/2026): si se pasa, y el borrado se completa
+ * a la primera, libera esos bytes del contador de cuota del usuario
+ * inmediatamente. Si falla, la liberación queda pendiente del reintento
+ * automático (ver cabecera del archivo) — nunca se libera antes de que el
+ * archivo realmente deje de existir en R2.
  */
-export async function intentarBorrarArchivo(clave: string): Promise<void> {
+export async function intentarBorrarArchivo(clave: string, contexto?: ContextoBorrado): Promise<void> {
   try {
     await almacenamiento.borrar(clave);
+    if (contexto && contexto.tamano > 0) await liberarEspacioAlmacenamiento(contexto.usuarioId, contexto.tamano);
   } catch (err) {
-    await registrarBorradoPendiente(clave, err instanceof Error ? err.message : String(err));
+    await registrarBorradoPendiente(clave, err instanceof Error ? err.message : String(err), contexto);
   }
 }
 
@@ -65,6 +87,7 @@ export async function ejecutarReintentoBorrados(): Promise<void> {
     try {
       await almacenamiento.borrar(p.clave);
       await BorradoPendienteModel.deleteOne({ clave: p.clave }).exec();
+      if (p.usuarioId && p.tamano > 0) await liberarEspacioAlmacenamiento(p.usuarioId, p.tamano);
     } catch (err) {
       await BorradoPendienteModel.updateOne(
         { clave: p.clave },

@@ -11,12 +11,12 @@ import type { ElementoMC } from './documento-modelo.js';
  */
 
 function obtenerRecursoUrl(elemento: ElementoMC) {
-  const c = elemento.contenido as { url: string; claveAlmacenamiento?: string };
-  return { url: c.url, claveAlmacenamiento: c.claveAlmacenamiento };
+  const c = elemento.contenido as { url: string; claveAlmacenamiento?: string; tamano?: number };
+  return { url: c.url, claveAlmacenamiento: c.claveAlmacenamiento, tamano: c.tamano };
 }
 
-function establecerRecursoUrl(elemento: ElementoMC, recurso: { url: string; claveAlmacenamiento?: string }): ElementoMC {
-  return { ...elemento, contenido: { ...(elemento.contenido as object), url: recurso.url, claveAlmacenamiento: recurso.claveAlmacenamiento } };
+function establecerRecursoUrl(elemento: ElementoMC, recurso: { url: string; claveAlmacenamiento?: string; tamano?: number }): ElementoMC {
+  return { ...elemento, contenido: { ...(elemento.contenido as object), url: recurso.url, claveAlmacenamiento: recurso.claveAlmacenamiento, tamano: recurso.tamano } };
 }
 
 export const definicionesTiposAvanzados: RegistroTipoElemento[] = [
@@ -46,6 +46,8 @@ export const definicionesTiposAvanzados: RegistroTipoElemento[] = [
     esquemaContenido: z.object({
       url: z.string().default(''),
       claveAlmacenamiento: z.string().optional(),
+      /** Tamaño en bytes en almacenamiento externo (cuota de almacenamiento, 05/09/2026) — ausente en firmas guardadas antes de esta función. */
+      tamano: z.number().nonnegative().optional(),
       nombreFirmante: z.string().default(''),
       fecha: z.string().nullable().default(null),
     }),
@@ -76,6 +78,8 @@ export const definicionesTiposAvanzados: RegistroTipoElemento[] = [
     esquemaContenido: z.object({
       url: z.string().default(''),
       claveAlmacenamiento: z.string().optional(),
+      /** Tamaño en bytes en almacenamiento externo (cuota de almacenamiento, 05/09/2026) — ausente en dibujos guardados antes de esta función. */
+      tamano: z.number().nonnegative().optional(),
       escenaExcalidraw: z.record(z.string(), z.unknown()).nullable().default(null),
     }),
     esquemaPropiedadesEspecificas: z.object({}),

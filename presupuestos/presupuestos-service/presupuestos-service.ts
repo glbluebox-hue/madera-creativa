@@ -22,6 +22,9 @@ import type { AnalisisPrecio } from './inteligencia-precios.js';
 import { calcularComparables } from './comparables.js';
 import type { ResultadoComparables } from './comparables.js';
 import { anioMadrid, formatearNumeroPresupuesto, parsearNumeroPresupuesto, reclamarNumeroPresupuesto, liberarNumeroPresupuesto } from './numeracion-presupuestos.js';
+import { reclamarEspacioAlmacenamiento, reclamarEspacioParaSustitucion, liberarEspacioAlmacenamiento, tamanoContenidoJson } from './almacenamiento-cuota.js';
+import { obtenerPlanUsuario } from './planes.js';
+import type { PlanAcceso } from './usuario.model.js';
 
 /**
  * Checklist base de carpintería (Fase 1 — "presupuesto aceptado") —
@@ -104,6 +107,19 @@ async function subirSiEsBase64(valor: unknown, carpeta: string) {
   const [, tipoMime, base64] = coincide;
   const buffer = Buffer.from(base64, 'base64');
   return almacenamiento.subir(buffer, { contentType: tipoMime, carpeta });
+}
+
+/**
+ * Igual que `subirSiEsBase64`, pero solo decodifica — no sube nada.
+ * Cuota de almacenamiento (05/09/2026): permite conocer el tamaño real de
+ * varios archivos ANTES de subir ninguno, para poder reclamar el total de
+ * una sola vez y no subir nada si no hay cuota (`guardarFactura`).
+ */
+function decodificarBase64(valor: unknown): { buffer: Buffer; tipoMime: string } | null {
+  if (typeof valor !== 'string' || !valor.startsWith('data:')) return null;
+  const coincide = valor.match(/^data:([^;]+);base64,(.+)$/);
+  if (!coincide) return null;
+  return { buffer: Buffer.from(coincide[2], 'base64'), tipoMime: coincide[1] };
 }
 
 /** Diseño 3D — subida manual (30/08/2026): solo `.glb` por ahora (archivo único autocontenido, ver `asociarModelo3DArchivoProyecto`). */
@@ -205,21 +221,63 @@ async function resolverUrlsFactura(doc: Record<string, unknown>): Promise<Record
   return { ...resto, imagen, pdfOriginalUrl, imagenes, paginas };
 }
 
+/**
+ * Contexto de cuota (05/09/2026) — `usuarioId`/`plan` de quien está
+ * subiendo, para reservar espacio ANTES de subir de verdad. Opcional en
+ * todas las funciones de esta sección para no romper los tests existentes
+ * que las llaman sin cuota (mismo criterio que `procesarRecursosDocumento`).
+ */
+type ContextoCuota = { usuarioId: string; plan: PlanAcceso };
+
+/**
+ * Sube un lote de archivos Base64 con cuota de almacenamiento: decodifica
+ * TODOS primero (sin subir nada todavía), reclama de una sola vez el total
+ * de bytes nuevos (nunca uno a uno — evita que la mitad del lote se suba y
+ * la otra mitad se rechace) y solo si se concede empieza a subir de
+ * verdad. Si la subida real falla después de reclamar la cuota, la libera
+ * antes de relanzar — nunca deja el contador inflado por una subida que no
+ * llegó a completarse. Las entradas que ya son una URL externa (guardado
+ * anterior) se dejan tal cual, sin contar bytes nuevos.
+ */
+async function subirLoteConCuota<T extends Record<string, any>>(
+  items: T[],
+  campoUrl: string,
+  carpeta: string,
+  contexto: ContextoCuota | undefined,
+  construir: (item: T, subido: Awaited<ReturnType<typeof almacenamiento.subir>>) => T
+): Promise<T[]> {
+  const decodificados = items.map((item) => {
+    const valor = item[campoUrl];
+    if (typeof valor !== 'string' || !valor.startsWith('data:')) return { item, nuevo: null as null | { buffer: Buffer; tipoMime: string } };
+    const coincide = valor.match(/^data:([^;]+);base64,(.+)$/);
+    if (!coincide) return { item, nuevo: null };
+    return { item, nuevo: { buffer: Buffer.from(coincide[2], 'base64'), tipoMime: coincide[1] } };
+  });
+  const totalNuevo = decodificados.reduce((suma, d) => suma + (d.nuevo?.buffer.length ?? 0), 0);
+  if (contexto && totalNuevo > 0) await reclamarEspacioAlmacenamiento(contexto.usuarioId, totalNuevo, contexto.plan);
+  try {
+    return await Promise.all(decodificados.map(async ({ item, nuevo }) => {
+      if (!nuevo) return item;
+      const subido = await almacenamiento.subir(nuevo.buffer, { contentType: nuevo.tipoMime, carpeta });
+      return construir(item, subido);
+    }));
+  } catch (err) {
+    if (contexto && totalNuevo > 0) await liberarEspacioAlmacenamiento(contexto.usuarioId, totalNuevo).catch(() => {});
+    throw err;
+  }
+}
+
 /** Sube las fotos nuevas (Base64) de un cliente; deja las ya subidas tal cual. */
-async function procesarFotos(fotos: any[] | undefined): Promise<any[]> {
-  return Promise.all((fotos ?? []).map(async (f) => {
-    const resultado = await subirSiEsBase64(f.url, 'fotos');
-    if (!resultado) return f;
-    return { ...f, url: resultado.url, claveAlmacenamiento: resultado.clave, tamano: resultado.metadatos.tamano, tipoMime: resultado.metadatos.tipoMime, subidoEn: resultado.metadatos.subidoEn };
+async function procesarFotos(fotos: any[] | undefined, contexto?: ContextoCuota): Promise<any[]> {
+  return subirLoteConCuota(fotos ?? [], 'url', 'fotos', contexto, (f, resultado) => ({
+    ...f, url: resultado.url, claveAlmacenamiento: resultado.clave, tamano: resultado.metadatos.tamano, tipoMime: resultado.metadatos.tipoMime, subidoEn: resultado.metadatos.subidoEn,
   }));
 }
 
 /** Sube los adjuntos nuevos (Base64) de un cliente; deja los ya subidos tal cual. */
-async function procesarAdjuntos(adjuntos: any[] | undefined): Promise<any[]> {
-  return Promise.all((adjuntos ?? []).map(async (a) => {
-    const resultado = await subirSiEsBase64(a.url, 'adjuntos');
-    if (!resultado) return a;
-    return { ...a, url: resultado.url, claveAlmacenamiento: resultado.clave, tamano: resultado.metadatos.tamano, tipo: resultado.metadatos.tipoMime, subidoEn: resultado.metadatos.subidoEn };
+async function procesarAdjuntos(adjuntos: any[] | undefined, contexto?: ContextoCuota): Promise<any[]> {
+  return subirLoteConCuota(adjuntos ?? [], 'url', 'adjuntos', contexto, (a, resultado) => ({
+    ...a, url: resultado.url, claveAlmacenamiento: resultado.clave, tamano: resultado.metadatos.tamano, tipo: resultado.metadatos.tipoMime, subidoEn: resultado.metadatos.subidoEn,
   }));
 }
 
@@ -227,13 +285,17 @@ async function procesarAdjuntos(adjuntos: any[] | undefined): Promise<any[]> {
  * Borra del almacenamiento externo los archivos que estaban en `antes` pero
  * ya no están en `despues` (comparando por `id` del subdocumento) — evita
  * acumular archivos huérfanos cuando se quita una foto/adjunto/dibujo de un
- * cliente sin borrar el cliente entero (Incremento 1.7).
+ * cliente sin borrar el cliente entero (Incremento 1.7). `usuarioId`
+ * opcional (05/09/2026): si se pasa, libera la cuota de cada archivo
+ * realmente borrado, a través de la cola de reintento
+ * (`intentarBorrarArchivo`) — nunca libera hasta que el borrado en R2 se
+ * confirma de verdad.
  */
-async function borrarBlobsHuerfanos(antes: any[] | undefined, despues: any[] | undefined): Promise<void> {
+async function borrarBlobsHuerfanos(antes: any[] | undefined, despues: any[] | undefined, usuarioId?: string): Promise<void> {
   const idsDespues = new Set((despues ?? []).map((d) => d.id));
   for (const item of antes ?? []) {
     if (!idsDespues.has(item.id) && item.claveAlmacenamiento) {
-      await almacenamiento.borrar(item.claveAlmacenamiento).catch(() => {});
+      await intentarBorrarArchivo(item.claveAlmacenamiento, usuarioId ? { usuarioId, tamano: item.tamano || 0 } : undefined);
     }
   }
 }
@@ -246,16 +308,33 @@ async function borrarBlobsHuerfanos(antes: any[] | undefined, despues: any[] | u
  * entradas que ya son una URL (guardado anterior) o presupuestos en modo
  * simple, que no tienen `contenidoLienzo.files`.
  */
-async function procesarArchivosLienzo(contenidoLienzo: unknown): Promise<unknown> {
+async function procesarArchivosLienzo(contenidoLienzo: unknown, contexto?: ContextoCuota): Promise<unknown> {
   if (!contenidoLienzo || typeof contenidoLienzo !== 'object' || !('files' in contenidoLienzo)) return contenidoLienzo;
   const files = (contenidoLienzo as any).files as Record<string, any> | undefined;
   if (!files) return contenidoLienzo;
-  const entradas = await Promise.all(Object.entries(files).map(async ([fileId, f]) => {
-    const resultado = await subirSiEsBase64(f?.dataURL, 'presupuestos-lienzo');
-    if (!resultado) return [fileId, f] as const;
-    return [fileId, { ...f, dataURL: resultado.url, claveAlmacenamiento: resultado.clave }] as const;
-  }));
-  return { ...(contenidoLienzo as object), files: Object.fromEntries(entradas) };
+
+  const entradasFiles = Object.entries(files);
+  const decodificados = entradasFiles.map(([fileId, f]) => {
+    const valor = f?.dataURL;
+    if (typeof valor !== 'string' || !valor.startsWith('data:')) return { fileId, f, nuevo: null as null | { buffer: Buffer; tipoMime: string } };
+    const coincide = valor.match(/^data:([^;]+);base64,(.+)$/);
+    if (!coincide) return { fileId, f, nuevo: null };
+    return { fileId, f, nuevo: { buffer: Buffer.from(coincide[2], 'base64'), tipoMime: coincide[1] } };
+  });
+  const totalNuevo = decodificados.reduce((suma, d) => suma + (d.nuevo?.buffer.length ?? 0), 0);
+  if (contexto && totalNuevo > 0) await reclamarEspacioAlmacenamiento(contexto.usuarioId, totalNuevo, contexto.plan);
+
+  try {
+    const entradas = await Promise.all(decodificados.map(async ({ fileId, f, nuevo }) => {
+      if (!nuevo) return [fileId, f] as const;
+      const subido = await almacenamiento.subir(nuevo.buffer, { contentType: nuevo.tipoMime, carpeta: 'presupuestos-lienzo' });
+      return [fileId, { ...f, dataURL: subido.url, claveAlmacenamiento: subido.clave, tamano: subido.metadatos.tamano }] as const;
+    }));
+    return { ...(contenidoLienzo as object), files: Object.fromEntries(entradas) };
+  } catch (err) {
+    if (contexto && totalNuevo > 0) await liberarEspacioAlmacenamiento(contexto.usuarioId, totalNuevo).catch(() => {});
+    throw err;
+  }
 }
 
 /**
@@ -264,12 +343,12 @@ async function procesarArchivosLienzo(contenidoLienzo: unknown): Promise<unknown
  * no están en `despues` — mismo criterio que `borrarBlobsHuerfanos`, adaptado
  * a que `files` es un diccionario por `fileId`, no un array.
  */
-async function borrarArchivosLienzoHuerfanos(antes: unknown, despues: unknown): Promise<void> {
+async function borrarArchivosLienzoHuerfanos(antes: unknown, despues: unknown, usuarioId?: string): Promise<void> {
   const filesAntes = (antes as any)?.files as Record<string, any> | undefined;
   const filesDespues = (despues as any)?.files as Record<string, any> | undefined;
   for (const [fileId, f] of Object.entries(filesAntes ?? {})) {
     if (!filesDespues?.[fileId] && f?.claveAlmacenamiento) {
-      await almacenamiento.borrar(f.claveAlmacenamiento).catch(() => {});
+      await intentarBorrarArchivo(f.claveAlmacenamiento, usuarioId ? { usuarioId, tamano: f.tamano || 0 } : undefined);
     }
   }
 }
@@ -583,8 +662,9 @@ export class PresupuestosService {
     const anterior = await ProyectoModel.findOne({ id: proyecto.id, usuarioId }).lean().exec() as any;
     if (!anterior) throw new ErrorDeNegocio('Proyecto no encontrado', 400);
 
-    const fotos = await procesarFotos((proyecto as any).fotos);
-    const adjuntos = await procesarAdjuntos((proyecto as any).adjuntos);
+    const contexto = { usuarioId, plan: await obtenerPlanUsuario(usuarioId) };
+    const fotos = await procesarFotos((proyecto as any).fotos, contexto);
+    const adjuntos = await procesarAdjuntos((proyecto as any).adjuntos, contexto);
 
     const { movimientos: _movimientos, tareas: _tareas, estado: _estado, clienteId: _clienteId, ...proyectoSinCamposProtegidos } = proyecto as any;
 
@@ -594,8 +674,8 @@ export class PresupuestosService {
       { new: true }
     ).lean().exec();
 
-    await borrarBlobsHuerfanos(anterior.fotos, fotos);
-    await borrarBlobsHuerfanos(anterior.adjuntos, adjuntos);
+    await borrarBlobsHuerfanos(anterior.fotos, fotos, usuarioId);
+    await borrarBlobsHuerfanos(anterior.adjuntos, adjuntos, usuarioId);
 
     return this.limpiarProyecto(doc);
   }
@@ -621,7 +701,7 @@ export class PresupuestosService {
     await conectar();
     const proyecto = await ProyectoModel.findOne({ id: proyectoId, usuarioId }).select('adjuntos').lean().exec();
     if (!proyecto) throw new ErrorDeNegocio('Proyecto no encontrado', 400);
-    const [procesado] = await procesarAdjuntos([adjunto]);
+    const [procesado] = await procesarAdjuntos([adjunto], { usuarioId, plan: await obtenerPlanUsuario(usuarioId) });
     const actuales = Array.isArray((proyecto as any).adjuntos) ? (proyecto as any).adjuntos : [];
     const doc = await ProyectoModel.findOneAndUpdate(
       { id: proyectoId, usuarioId },
@@ -646,7 +726,7 @@ export class PresupuestosService {
       { new: true }
     ).select('adjuntos').lean().exec();
     if (!doc) throw new ErrorDeNegocio('Proyecto no encontrado', 400);
-    if (borrado?.claveAlmacenamiento) await almacenamiento.borrar(borrado.claveAlmacenamiento).catch(() => {});
+    if (borrado?.claveAlmacenamiento) await intentarBorrarArchivo(borrado.claveAlmacenamiento, { usuarioId, tamano: borrado.tamano || 0 });
     return (this.limpiarProyecto(doc as Record<string, unknown>).adjuntos as unknown[]) ?? [];
   }
 
@@ -704,7 +784,7 @@ export class PresupuestosService {
     if (!doc) throw new ErrorDeNegocio('Proyecto no encontrado', 400);
 
     if (modeloAnterior?.proveedor === 'manual' && modeloAnterior.claveAlmacenamiento) {
-      await almacenamiento.borrar(modeloAnterior.claveAlmacenamiento).catch(() => {});
+      await intentarBorrarArchivo(modeloAnterior.claveAlmacenamiento, { usuarioId, tamano: modeloAnterior.tamano || 0 });
     }
     return this.limpiarProyecto(doc);
   }
@@ -727,16 +807,48 @@ export class PresupuestosService {
       throw new ErrorDeNegocio(`Formato no admitido — de momento solo se admiten archivos .${EXTENSIONES_MODELO_3D_PERMITIDAS.join(', .')}.`, 400);
     }
 
-    const resultado = await subirSiEsBase64(datos.url, 'modelos3d');
-    if (!resultado) throw new ErrorDeNegocio('No se pudo leer el archivo.', 400);
-    if (resultado.metadatos.tamano > TAMANO_MAXIMO_MODELO_3D_BYTES) {
-      await almacenamiento.borrar(resultado.clave).catch(() => {});
+    // Decodifica ANTES de subir — permite comprobar el tope de tamaño (ya
+    // existente) y reservar la cuota de almacenamiento sin haber tocado R2
+    // todavía si cualquiera de las dos comprobaciones rechaza el archivo.
+    const coincide = typeof datos.url === 'string' ? datos.url.match(/^data:([^;]+);base64,(.+)$/) : null;
+    if (!coincide) throw new ErrorDeNegocio('No se pudo leer el archivo.', 400);
+    const buffer = Buffer.from(coincide[2], 'base64');
+    if (buffer.length > TAMANO_MAXIMO_MODELO_3D_BYTES) {
       throw new ErrorDeNegocio(`El archivo es demasiado grande (máximo ${Math.round(TAMANO_MAXIMO_MODELO_3D_BYTES / (1024 * 1024))} MB).`, 400);
     }
 
     // Reemplazar nunca acumula basura: si ya había un modelo SUBIDO A MANO, se borra su blob
     // al confirmar el nuevo guardado (nunca antes: si algo falla arriba, el modelo anterior sigue intacto).
     const anteriorManual = (proyecto as any).modelo3D?.proveedor === 'manual' ? (proyecto as any).modelo3D : null;
+
+    // Cuota de almacenamiento (05/09/2026): solo reserva la DIFERENCIA si
+    // se está reemplazando un modelo manual anterior — sustituir por uno
+    // igual o más pequeño nunca puede rechazarse por cuota.
+    const plan = await obtenerPlanUsuario(usuarioId);
+    const tamanoAntiguo = anteriorManual?.tamano || 0;
+    await reclamarEspacioParaSustitucion(usuarioId, plan, buffer.length, tamanoAntiguo);
+
+    // Deshace exactamente el ajuste de arriba — invierte los mismos dos
+    // argumentos (nuevo/antiguo) para volver al estado previo a la
+    // reserva. Necesario porque, si se reemplaza por un archivo más
+    // PEQUEÑO, `reclamarEspacioParaSustitucion` ya ha LIBERADO la
+    // diferencia de forma optimista, antes de saber si el resto de la
+    // operación (subida, guardado en Mongo) va a tener éxito — un
+    // `liberarEspacioAlmacenamiento(Math.max(0, delta))` (como se hacía
+    // antes de este arreglo) es un no-op cuando `delta` es negativo, y
+    // dejaría el contador permanentemente por debajo de lo real si algo
+    // falla después. Invertir la sustitución sí deshace correctamente
+    // ambos sentidos (reservó → libera; liberó → vuelve a reservar).
+    const deshacerReserva = () => reclamarEspacioParaSustitucion(usuarioId, plan, tamanoAntiguo, buffer.length)
+      .catch((err) => logger.error({ err, usuarioId, proyectoId }, '[cuota] No se pudo deshacer la reserva de un modelo 3D tras un fallo — el contador puede quedar desincronizado hasta el próximo backfill.'));
+
+    let resultado;
+    try {
+      resultado = await almacenamiento.subir(buffer, { contentType: 'model/gltf-binary', carpeta: 'modelos3d' });
+    } catch (err) {
+      await deshacerReserva();
+      throw err;
+    }
 
     const modelo3D = {
       proveedor: 'manual' as const,
@@ -748,17 +860,30 @@ export class PresupuestosService {
       actualizado: new Date().toISOString(),
       asociadoPor: usuarioId,
     };
-    const doc = await ProyectoModel.findOneAndUpdate(
-      { id: proyectoId, usuarioId },
-      { $set: { modelo3D } },
-      { new: true }
-    ).lean().exec();
+    let doc;
+    try {
+      doc = await ProyectoModel.findOneAndUpdate(
+        { id: proyectoId, usuarioId },
+        { $set: { modelo3D } },
+        { new: true }
+      ).lean().exec();
+    } catch (err) {
+      await intentarBorrarArchivo(resultado.clave); // sin contexto: la cuota se deshace abajo, no se libera aparte
+      await deshacerReserva();
+      throw err;
+    }
     if (!doc) {
-      await almacenamiento.borrar(resultado.clave).catch(() => {});
+      await intentarBorrarArchivo(resultado.clave);
+      await deshacerReserva();
       throw new ErrorDeNegocio('Proyecto no encontrado', 400);
     }
 
-    if (anteriorManual?.claveAlmacenamiento) await almacenamiento.borrar(anteriorManual.claveAlmacenamiento).catch(() => {});
+    if (anteriorManual?.claveAlmacenamiento) {
+      // La cuota de este blob viejo ya se ha descontado arriba (como parte
+      // de la diferencia neta) — aquí solo se borra el archivo en sí,
+      // nunca se libera su tamaño una segunda vez.
+      await intentarBorrarArchivo(anteriorManual.claveAlmacenamiento);
+    }
     return this.limpiarProyecto(doc);
   }
 
@@ -955,7 +1080,13 @@ export class PresupuestosService {
     if (doc) {
       const todos = [...(doc.fotos ?? []), ...(doc.adjuntos ?? [])];
       for (const item of todos) {
-        if (item.claveAlmacenamiento) await almacenamiento.borrar(item.claveAlmacenamiento).catch(() => {});
+        if (item.claveAlmacenamiento) await intentarBorrarArchivo(item.claveAlmacenamiento, { usuarioId, tamano: item.tamano || 0 });
+      }
+      // Modelo 3D subido a mano (Fase "Diseño 3D") — mismo criterio: solo
+      // libera cuota si el archivo era propio (`proveedor === 'manual'`);
+      // un modelo de Trimble Connect nunca ocupó espacio propio.
+      if (doc.modelo3D?.proveedor === 'manual' && doc.modelo3D.claveAlmacenamiento) {
+        await intentarBorrarArchivo(doc.modelo3D.claveAlmacenamiento, { usuarioId, tamano: doc.modelo3D.tamano || 0 });
       }
     }
     await ProyectoModel.deleteOne({ id, usuarioId }).exec();
@@ -1533,40 +1664,72 @@ export class PresupuestosService {
     // `anterior.imagen` — repara de forma permanente, en el primer
     // reguardado, cualquier factura que ya se hubiera visto afectada por
     // este bug antes de corregirlo.
-    const resultadoImagen = await subirSiEsBase64((factura as any).imagen, 'facturas');
-    const imagen = resultadoImagen ? resultadoImagen.url : (factura as any).imagen;
-    const imagenClave = resultadoImagen
-      ? resultadoImagen.clave
-      : ((factura as any).imagenClave || anterior?.imagenClave || (anterior?.imagen ? almacenamiento.claveDesdeUrlPrivada(anterior.imagen) : null) || '');
-
+    // Cuota de almacenamiento (05/09/2026): decodifica TODOS los campos
+    // Base64 primero (imagen, imagenes[], pdfOriginalUrl, paginas[].url),
+    // sin subir nada todavía, y reclama el TOTAL de una sola vez — evita
+    // que una factura con varias páginas nuevas suba unas y rechace otras
+    // a medias. Si la subida real falla después, libera lo reclamado.
+    const decImagen = decodificarBase64((factura as any).imagen);
     const imagenesOriginal = (factura as any).imagenes;
-    const imagenesSubidas = Array.isArray(imagenesOriginal)
-      ? await Promise.all(imagenesOriginal.map((img: string) => subirSiEsBase64(img, 'facturas')))
-      : null;
-    const imagenes = imagenesSubidas
-      ? imagenesSubidas.map((r, i) => (r ? r.url : imagenesOriginal[i]))
-      : imagenesOriginal;
-    const imagenesClaves = imagenesSubidas
-      ? imagenesSubidas.map((r, i) => (r ? r.clave : (factura as any).imagenesClaves?.[i] || anterior?.imagenesClaves?.[i] || ''))
-      : ((factura as any).imagenesClaves ?? anterior?.imagenesClaves);
-
-    // Igual tratamiento para el PDF original (si la factura se subió
-    // directamente como PDF) y para `paginas` (el documento completo en
-    // orden, mezclando imagen/PDF) — ambos campos nuevos de la Fase
-    // Facturas Profesional, mismo patrón que `imagen`/`imagenes`.
-    const resultadoPdfOriginal = await subirSiEsBase64((factura as any).pdfOriginalUrl, 'facturas');
-    const pdfOriginalUrl = resultadoPdfOriginal ? resultadoPdfOriginal.url : (factura as any).pdfOriginalUrl;
-    const pdfOriginalClave = resultadoPdfOriginal
-      ? resultadoPdfOriginal.clave
-      : ((factura as any).pdfOriginalClave || anterior?.pdfOriginalClave || (anterior?.pdfOriginalUrl ? almacenamiento.claveDesdeUrlPrivada(anterior.pdfOriginalUrl) : null) || '');
-
+    const decImagenes = Array.isArray(imagenesOriginal) ? imagenesOriginal.map(decodificarBase64) : null;
+    const decPdfOriginal = decodificarBase64((factura as any).pdfOriginalUrl);
     const paginasOriginal = (factura as any).paginas;
-    const paginas = Array.isArray(paginasOriginal)
-      ? await Promise.all(paginasOriginal.map(async (p: { tipo: string; url: string; clave?: string }, i: number) => {
-          const r = await subirSiEsBase64(p.url, 'facturas');
-          return r ? { ...p, url: r.url, clave: r.clave } : { ...p, clave: p.clave || anterior?.paginas?.[i]?.clave || '' };
-        }))
-      : paginasOriginal;
+    const decPaginas = Array.isArray(paginasOriginal) ? paginasOriginal.map((p: any) => decodificarBase64(p?.url)) : null;
+
+    const totalBytesNuevos = (decImagen?.buffer.length ?? 0)
+      + (decImagenes?.reduce((s, d) => s + (d?.buffer.length ?? 0), 0) ?? 0)
+      + (decPdfOriginal?.buffer.length ?? 0)
+      + (decPaginas?.reduce((s, d) => s + (d?.buffer.length ?? 0), 0) ?? 0);
+
+    const plan = await obtenerPlanUsuario(usuarioId);
+    if (totalBytesNuevos > 0) await reclamarEspacioAlmacenamiento(usuarioId, totalBytesNuevos, plan);
+
+    let imagen: any, imagenClave: any, imagenTamano: number, imagenes: any, imagenesClaves: any, imagenesTamanos: any,
+      pdfOriginalUrl: any, pdfOriginalClave: any, pdfOriginalTamano: number, paginas: any;
+    try {
+      const resultadoImagen = decImagen ? await almacenamiento.subir(decImagen.buffer, { contentType: decImagen.tipoMime, carpeta: 'facturas' }) : null;
+      imagen = resultadoImagen ? resultadoImagen.url : (factura as any).imagen;
+      imagenClave = resultadoImagen
+        ? resultadoImagen.clave
+        : ((factura as any).imagenClave || anterior?.imagenClave || (anterior?.imagen ? almacenamiento.claveDesdeUrlPrivada(anterior.imagen) : null) || '');
+      imagenTamano = resultadoImagen ? resultadoImagen.metadatos.tamano : ((factura as any).imagenTamano ?? anterior?.imagenTamano ?? 0);
+
+      const imagenesSubidas = decImagenes
+        ? await Promise.all(decImagenes.map((d) => (d ? almacenamiento.subir(d.buffer, { contentType: d.tipoMime, carpeta: 'facturas' }) : null)))
+        : null;
+      imagenes = imagenesSubidas
+        ? imagenesSubidas.map((r, i) => (r ? r.url : imagenesOriginal[i]))
+        : imagenesOriginal;
+      imagenesClaves = imagenesSubidas
+        ? imagenesSubidas.map((r, i) => (r ? r.clave : (factura as any).imagenesClaves?.[i] || anterior?.imagenesClaves?.[i] || ''))
+        : ((factura as any).imagenesClaves ?? anterior?.imagenesClaves);
+      imagenesTamanos = imagenesSubidas
+        ? imagenesSubidas.map((r, i) => (r ? r.metadatos.tamano : (factura as any).imagenesTamanos?.[i] ?? anterior?.imagenesTamanos?.[i] ?? 0))
+        : ((factura as any).imagenesTamanos ?? anterior?.imagenesTamanos);
+
+      // Igual tratamiento para el PDF original (si la factura se subió
+      // directamente como PDF) y para `paginas` (el documento completo en
+      // orden, mezclando imagen/PDF) — ambos campos nuevos de la Fase
+      // Facturas Profesional, mismo patrón que `imagen`/`imagenes`.
+      const resultadoPdfOriginal = decPdfOriginal ? await almacenamiento.subir(decPdfOriginal.buffer, { contentType: decPdfOriginal.tipoMime, carpeta: 'facturas' }) : null;
+      pdfOriginalUrl = resultadoPdfOriginal ? resultadoPdfOriginal.url : (factura as any).pdfOriginalUrl;
+      pdfOriginalClave = resultadoPdfOriginal
+        ? resultadoPdfOriginal.clave
+        : ((factura as any).pdfOriginalClave || anterior?.pdfOriginalClave || (anterior?.pdfOriginalUrl ? almacenamiento.claveDesdeUrlPrivada(anterior.pdfOriginalUrl) : null) || '');
+      pdfOriginalTamano = resultadoPdfOriginal ? resultadoPdfOriginal.metadatos.tamano : ((factura as any).pdfOriginalTamano ?? anterior?.pdfOriginalTamano ?? 0);
+
+      paginas = decPaginas
+        ? await Promise.all(decPaginas.map(async (d, i) => {
+            const p = paginasOriginal[i];
+            if (!d) return { ...p, clave: p.clave || anterior?.paginas?.[i]?.clave || '', tamano: p.tamano ?? anterior?.paginas?.[i]?.tamano ?? 0 };
+            const r = await almacenamiento.subir(d.buffer, { contentType: d.tipoMime, carpeta: 'facturas' });
+            return { ...p, url: r.url, clave: r.clave, tamano: r.metadatos.tamano };
+          }))
+        : paginasOriginal;
+    } catch (err) {
+      if (totalBytesNuevos > 0) await liberarEspacioAlmacenamiento(usuarioId, totalBytesNuevos).catch(() => {});
+      throw err;
+    }
 
     // Una factura de GASTO nunca puede llevar el propio CIF/NIF del usuario
     // como dato fiscal — es del proveedor (quien la emite), no del
@@ -1585,7 +1748,7 @@ export class PresupuestosService {
 
     const doc = await FacturaModel.findOneAndUpdate(
       { id: factura.id, usuarioId },
-      { ...factura, imagen, imagenClave, imagenes, imagenesClaves, pdfOriginalUrl, pdfOriginalClave, paginas, cifNif, usuarioId },
+      { ...factura, imagen, imagenClave, imagenTamano, imagenes, imagenesClaves, imagenesTamanos, pdfOriginalUrl, pdfOriginalClave, pdfOriginalTamano, paginas, cifNif, usuarioId },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     ).lean().exec();
 
@@ -1595,20 +1758,22 @@ export class PresupuestosService {
       // cae en derivarla de la URL pública de siempre — mismo mecanismo
       // que ya existía, ahora solo como respaldo. Cada borrado pasa por
       // `intentarBorrarArchivo`, que registra el fallo en vez de
-      // descartarlo en silencio (Incremento "Facturas privadas", 27/08/2026).
+      // descartarlo en silencio (Incremento "Facturas privadas", 27/08/2026)
+      // — y libera la cuota del tamaño antiguo en cuanto el borrado se
+      // confirma de verdad (05/09/2026).
       const claveDe = (url: string | undefined, clave: string | undefined): string | null =>
         clave || (url ? almacenamiento.claveDesdeUrl(url) : null);
 
       const claveAnteriorImagen = claveDe(anterior.imagen, anterior.imagenClave);
       const claveNuevaImagen = claveDe(imagen, imagenClave);
       if (claveAnteriorImagen && claveAnteriorImagen !== claveNuevaImagen) {
-        await intentarBorrarArchivo(claveAnteriorImagen);
+        await intentarBorrarArchivo(claveAnteriorImagen, { usuarioId, tamano: anterior.imagenTamano || 0 });
       }
 
       const claveAnteriorPdf = claveDe(anterior.pdfOriginalUrl, anterior.pdfOriginalClave);
       const claveNuevaPdf = claveDe(pdfOriginalUrl, pdfOriginalClave);
       if (claveAnteriorPdf && claveAnteriorPdf !== claveNuevaPdf) {
-        await intentarBorrarArchivo(claveAnteriorPdf);
+        await intentarBorrarArchivo(claveAnteriorPdf, { usuarioId, tamano: anterior.pdfOriginalTamano || 0 });
       }
 
       const clavesImagenesNuevas = new Set(
@@ -1618,7 +1783,9 @@ export class PresupuestosService {
       );
       for (let i = 0; i < (anterior.imagenes ?? []).length; i++) {
         const claveVieja = claveDe(anterior.imagenes[i], anterior.imagenesClaves?.[i]);
-        if (claveVieja && !clavesImagenesNuevas.has(claveVieja)) await intentarBorrarArchivo(claveVieja);
+        if (claveVieja && !clavesImagenesNuevas.has(claveVieja)) {
+          await intentarBorrarArchivo(claveVieja, { usuarioId, tamano: anterior.imagenesTamanos?.[i] || 0 });
+        }
       }
 
       const clavesPaginasNuevas = new Set(
@@ -1626,7 +1793,9 @@ export class PresupuestosService {
       );
       for (const p of anterior.paginas ?? []) {
         const claveVieja = claveDe(p.url, p.clave);
-        if (claveVieja && !clavesPaginasNuevas.has(claveVieja)) await intentarBorrarArchivo(claveVieja);
+        if (claveVieja && !clavesPaginasNuevas.has(claveVieja)) {
+          await intentarBorrarArchivo(claveVieja, { usuarioId, tamano: p.tamano || 0 });
+        }
       }
     }
 
@@ -1683,14 +1852,20 @@ export class PresupuestosService {
       // antes del Incremento "Facturas privadas") — mismo respaldo que en
       // `guardarFactura()`. Cada borrado pasa por `intentarBorrarArchivo`:
       // un fallo queda registrado para reintento, nunca se pierde en silencio.
-      const claves = [
-        doc.imagenClave || (doc.imagen ? almacenamiento.claveDesdeUrl(doc.imagen) : null),
-        doc.pdfOriginalClave || (doc.pdfOriginalUrl ? almacenamiento.claveDesdeUrl(doc.pdfOriginalUrl) : null),
-        ...(doc.imagenes ?? []).map((url: string, i: number) => doc.imagenesClaves?.[i] || (url ? almacenamiento.claveDesdeUrl(url) : null)),
-        ...((doc.paginas ?? []) as { url: string; clave?: string }[]).map((p) => p.clave || (p.url ? almacenamiento.claveDesdeUrl(p.url) : null)),
-      ].filter((c): c is string => Boolean(c));
-      for (const clave of claves) {
-        await intentarBorrarArchivo(clave);
+      const archivos: { clave: string | null; tamano: number }[] = [
+        { clave: doc.imagenClave || (doc.imagen ? almacenamiento.claveDesdeUrl(doc.imagen) : null), tamano: doc.imagenTamano || 0 },
+        { clave: doc.pdfOriginalClave || (doc.pdfOriginalUrl ? almacenamiento.claveDesdeUrl(doc.pdfOriginalUrl) : null), tamano: doc.pdfOriginalTamano || 0 },
+        ...(doc.imagenes ?? []).map((url: string, i: number) => ({
+          clave: doc.imagenesClaves?.[i] || (url ? almacenamiento.claveDesdeUrl(url) : null),
+          tamano: doc.imagenesTamanos?.[i] || 0,
+        })),
+        ...((doc.paginas ?? []) as { url: string; clave?: string; tamano?: number }[]).map((p) => ({
+          clave: p.clave || (p.url ? almacenamiento.claveDesdeUrl(p.url) : null),
+          tamano: p.tamano || 0,
+        })),
+      ];
+      for (const { clave, tamano } of archivos) {
+        if (clave) await intentarBorrarArchivo(clave, { usuarioId, tamano });
       }
       // Evita un movimiento huérfano que siguiera afectando al margen de
       // ganancia de un proyecto tras borrar la factura de origen.
@@ -2541,11 +2716,17 @@ export class PresupuestosService {
   async guardarPresupuesto(presupuesto: Record<string, unknown>, usuarioId: string): Promise<Record<string, unknown>> {
     await conectar();
     const anterior = await PresupuestoModel.findOne({ id: presupuesto.id, usuarioId }).lean().exec();
+    // Cuota de almacenamiento (05/09/2026): se resuelve una única vez el
+    // plan del usuario y se pasa como contexto a ambos procesadores de
+    // archivos — cada uno reserva/libera de forma independiente (lienzo
+    // legado por un lado, Motor Documental por otro), nunca se suman a
+    // mano fuera de las funciones que ya saben hacerlo de forma atómica.
+    const contextoCuota = { usuarioId, plan: await obtenerPlanUsuario(usuarioId) };
     // LEGADO — solo se sigue procesando para formato:'lienzo' ya existentes; no crea documentos nuevos (ver ARQUITECTURA-MOTOR-DOCUMENTAL.md).
-    const contenidoLienzo = await procesarArchivosLienzo(presupuesto.contenidoLienzo);
+    const contenidoLienzo = await procesarArchivosLienzo(presupuesto.contenidoLienzo, contextoCuota);
     // Motor Documental — independiente de lo anterior, solo se procesa cuando el propio presupuesto es formato:'documento'.
     const contenidoDocumento = presupuesto.formato === 'documento'
-      ? await procesarRecursosDocumento(presupuesto.contenidoDocumento as DocumentoMC)
+      ? await procesarRecursosDocumento(presupuesto.contenidoDocumento as DocumentoMC, contextoCuota)
       : presupuesto.contenidoDocumento;
     // Numeración oficial de presupuestos (05/09/2026) — SOLO en el primer
     // guardado POSTERIOR a la creación (`anterior` ya existe) y solo si
@@ -2583,9 +2764,9 @@ export class PresupuestosService {
       { upsert: true, new: true, setDefaultsOnInsert: true }
     ).lean().exec();
     if (anterior) {
-      await borrarArchivosLienzoHuerfanos((anterior as any).contenidoLienzo, contenidoLienzo);
+      await borrarArchivosLienzoHuerfanos((anterior as any).contenidoLienzo, contenidoLienzo, usuarioId);
       if (presupuesto.formato === 'documento') {
-        await borrarRecursosDocumentoHuerfanos((anterior as any).contenidoDocumento, contenidoDocumento as DocumentoMC);
+        await borrarRecursosDocumentoHuerfanos((anterior as any).contenidoDocumento, contenidoDocumento as DocumentoMC, usuarioId);
       }
     }
     busEventos.publicar({
@@ -2840,24 +3021,44 @@ export class PresupuestosService {
       throw new ErrorDeNegocio('La firma no es una imagen PNG válida.', 400);
     }
 
-    // Reclama PRIMERO (atómico, guarda contra doble envío concurrente del
-    // mismo enlace), sube la firma DESPUÉS — solo si se gana la carrera, ver
+    // Cuota de almacenamiento (05/09/2026) — la firma pertenece al
+    // CARPINTERO (`enlace.usuarioId`), no al cliente que la firma (esta
+    // ruta es pública, sin sesión propia). Se reserva ANTES de
+    // `reclamarEnlaceAceptado` a propósito: si el carpintero no tiene
+    // espacio, así no se consume el enlace del cliente (que quedaría
+    // inservible sin haberse aceptado nada) — el cliente puede reintentar
+    // con el MISMO enlace en cuanto el carpintero libere espacio o cambie
+    // de plan. No hay archivo todavía en este punto (solo la reserva del
+    // contador), así que perder la carrera después no deja huérfanos.
+    const plan = await obtenerPlanUsuario(enlace.usuarioId);
+    await reclamarEspacioAlmacenamiento(enlace.usuarioId, bufferFirma.length, plan);
+
+    // Reclama (atómico, guarda contra doble envío concurrente del mismo
+    // enlace), sube la firma DESPUÉS — solo si se gana la carrera, ver
     // comentario en `reclamarEnlaceAceptado`.
     const enlaceReclamado = await reclamarEnlaceAceptado(tokenPlano, { ip: evidencia.ip, userAgent: evidencia.userAgent });
     if (!enlaceReclamado) {
       // Perdió la carrera contra otra petición concurrente con el mismo
       // enlace — esa otra ya está aceptando (o ya aceptó); no repetir el
-      // trabajo aquí.
+      // trabajo aquí. La reserva de cuota de arriba nunca llegó a
+      // convertirse en un archivo real, así que se libera de inmediato.
+      await liberarEspacioAlmacenamiento(enlace.usuarioId, bufferFirma.length).catch(() => {});
       return { ok: true, yaEstabaAceptado: true };
     }
 
-    const subida = await almacenamiento.subir(bufferFirma, { contentType: 'image/png', carpeta: 'firmas' });
+    let subida;
+    try {
+      subida = await almacenamiento.subir(bufferFirma, { contentType: 'image/png', carpeta: 'firmas' });
+    } catch (err) {
+      await liberarEspacioAlmacenamiento(enlace.usuarioId, bufferFirma.length).catch(() => {});
+      throw err;
+    }
     await guardarFirmaEnlace(tokenPlano, subida.url);
 
     const ahora = new Date().toISOString();
     await PresupuestoModel.updateOne(
       { id: enlace.presupuestoId, usuarioId: enlace.usuarioId },
-      { $set: { firmaClienteUrl: subida.url, firmaClienteFecha: ahora } }
+      { $set: { firmaClienteUrl: subida.url, firmaClienteFecha: ahora, firmaClienteTamano: subida.metadatos.tamano } }
     ).exec();
 
     const { transicionOcurrioAhora } = await this.aceptarPresupuesto(enlace.presupuestoId, enlace.usuarioId);
@@ -3063,7 +3264,8 @@ export class PresupuestosService {
       buscarPorHash: async (uid: string, hash: string) =>
         (await RecursoModel.findOne({ usuarioId: uid, hashContenido: hash }).lean().exec()) as unknown as RecursoMC | null,
     };
-    const { recurso, nuevo } = await subirORecuperarRecurso(buffer, { nombre: datos.nombre, tipo: datos.tipo, mimeType, ambito: datos.ambito, etiquetas: datos.etiquetas }, usuarioId, repositorio);
+    const plan = await obtenerPlanUsuario(usuarioId);
+    const { recurso, nuevo } = await subirORecuperarRecurso(buffer, { nombre: datos.nombre, tipo: datos.tipo, mimeType, ambito: datos.ambito, etiquetas: datos.etiquetas }, usuarioId, repositorio, { plan });
     if (nuevo) await RecursoModel.create({ ...recurso, usuarioId });
     return recurso;
   }
@@ -3082,7 +3284,7 @@ export class PresupuestosService {
     const doc = await RecursoModel.findOne({ id, usuarioId }).lean().exec();
     if (!doc) return;
     await RecursoModel.deleteOne({ id, usuarioId }).exec();
-    await almacenamiento.borrar((doc as any).claveAlmacenamiento).catch(() => {});
+    await intentarBorrarArchivo((doc as any).claveAlmacenamiento, { usuarioId, tamano: (doc as any).tamano || 0 });
   }
 
   // ── Componentes reutilizables (Motor Documental, Incremento 6) — aislados por usuarioId ──
@@ -3167,14 +3369,15 @@ export class PresupuestosService {
   async guardarContrato(contrato: Record<string, unknown>, usuarioId: string): Promise<Record<string, unknown>> {
     await conectar();
     const anterior = await ContratoModel.findOne({ id: contrato.id, usuarioId }).lean().exec();
-    const contenidoDocumento = await procesarRecursosDocumento(contrato.contenidoDocumento as DocumentoMC);
+    const plan = await obtenerPlanUsuario(usuarioId);
+    const contenidoDocumento = await procesarRecursosDocumento(contrato.contenidoDocumento as DocumentoMC, { usuarioId, plan });
     const doc = await ContratoModel.findOneAndUpdate(
       { id: contrato.id, usuarioId },
       { ...contrato, contenidoDocumento, usuarioId },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     ).lean().exec();
     if (anterior) {
-      await borrarRecursosDocumentoHuerfanos((anterior as any).contenidoDocumento, contenidoDocumento as DocumentoMC);
+      await borrarRecursosDocumentoHuerfanos((anterior as any).contenidoDocumento, contenidoDocumento as DocumentoMC, usuarioId);
     }
     busEventos.publicar({
       nombre: 'contrato.guardado',
@@ -3315,26 +3518,78 @@ export class PresupuestosService {
     await conectar();
     const anterior = await DibujoModel.findOne({ id: dibujo.id, usuarioId }).lean().exec() as any;
 
-    const resultadoMiniatura = await subirSiEsBase64((dibujo as any).miniatura, 'dibujos-miniaturas');
-    const miniatura = resultadoMiniatura ? resultadoMiniatura.url : (dibujo as any).miniatura;
+    // Cuota de almacenamiento (05/09/2026) — dos componentes:
+    // - `miniatura`: se sube a R2 como cualquier otro archivo (decodificar
+    //   antes de subir, para poder reclamar cuota sin huérfanos si no hay sitio).
+    // - `contenido`: NUNCA se sube a R2 — es el propio snapshot de
+    //   Excalidraw (incluida cualquier foto pegada dentro, embebida como
+    //   Base64), guardado tal cual en este documento de Mongo. Se cuenta
+    //   igualmente contra la cuota del usuario (ver `tamanoContenidoJson`),
+    //   o ese consumo real quedaría invisible.
+    // Ambos se reservan como UNA sola sustitución neta (solo la diferencia
+    // total cuenta) — así, p. ej., una miniatura más grande compensada por
+    // un contenido más pequeño nunca se rechaza injustamente por cuota.
+    const decMiniatura = decodificarBase64((dibujo as any).miniatura);
+    const miniaturaTamanoAntiguo = anterior?.miniaturaTamano || 0;
+    const miniaturaTamanoNuevo = decMiniatura ? decMiniatura.buffer.length : miniaturaTamanoAntiguo;
+    const contenidoTamanoAntiguo = anterior?.contenidoTamano || 0;
+    const contenidoTamanoNuevo = tamanoContenidoJson((dibujo as any).contenido);
+
+    const plan = await obtenerPlanUsuario(usuarioId);
+    const totalNuevo = contenidoTamanoNuevo + miniaturaTamanoNuevo;
+    const totalAntiguo = contenidoTamanoAntiguo + miniaturaTamanoAntiguo;
+    await reclamarEspacioParaSustitucion(usuarioId, plan, totalNuevo, totalAntiguo);
+
+    // Deshace exactamente el ajuste de arriba (invierte nuevo/antiguo) —
+    // mismo motivo que en `asociarModelo3DArchivoProyecto`: si el dibujo
+    // se ha hecho más pequeño (contenido y/o miniatura), la reserva de
+    // arriba ya ha LIBERADO la diferencia de forma optimista, antes de
+    // saber si la subida o el guardado en Mongo van a tener éxito. Un
+    // simple "liberar Math.max(0, delta)" es un no-op cuando `delta` es
+    // negativo y dejaría el contador por debajo de lo real para siempre
+    // si algo falla después — deshacer la sustitución sí revierte
+    // correctamente los dos sentidos.
+    const deshacerReserva = () => reclamarEspacioParaSustitucion(usuarioId, plan, totalAntiguo, totalNuevo)
+      .catch((err) => logger.error({ err, usuarioId, dibujoId: dibujo.id }, '[cuota] No se pudo deshacer la reserva de un dibujo tras un fallo — el contador puede quedar desincronizado hasta el próximo backfill.'));
+
+    let miniatura: any, miniaturaTamano: number;
+    try {
+      const resultadoMiniatura = decMiniatura ? await almacenamiento.subir(decMiniatura.buffer, { contentType: decMiniatura.tipoMime, carpeta: 'dibujos-miniaturas' }) : null;
+      miniatura = resultadoMiniatura ? resultadoMiniatura.url : (dibujo as any).miniatura;
+      miniaturaTamano = resultadoMiniatura ? resultadoMiniatura.metadatos.tamano : miniaturaTamanoAntiguo;
+    } catch (err) {
+      await deshacerReserva();
+      throw err;
+    }
 
     const ahora = new Date().toISOString();
-    const doc = await DibujoModel.findOneAndUpdate(
-      { id: dibujo.id, usuarioId },
-      {
-        ...dibujo,
-        miniatura,
-        usuarioId,
-        creadoEn: anterior?.creadoEn ?? ahora,
-        actualizadoEn: ahora,
-        version: (anterior?.version ?? 0) + 1,
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    ).lean().exec();
+    let doc;
+    try {
+      doc = await DibujoModel.findOneAndUpdate(
+        { id: dibujo.id, usuarioId },
+        {
+          ...dibujo,
+          miniatura,
+          miniaturaTamano,
+          contenidoTamano: contenidoTamanoNuevo,
+          usuarioId,
+          creadoEn: anterior?.creadoEn ?? ahora,
+          actualizadoEn: ahora,
+          version: (anterior?.version ?? 0) + 1,
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      ).lean().exec();
+    } catch (err) {
+      await deshacerReserva();
+      throw err;
+    }
 
     if (anterior?.miniatura && anterior.miniatura !== miniatura) {
       const claveVieja = almacenamiento.claveDesdeUrl(anterior.miniatura);
-      if (claveVieja) await almacenamiento.borrar(claveVieja).catch(() => {});
+      // La cuota de la miniatura vieja ya se ha descontado arriba (como
+      // parte de la diferencia neta) — aquí solo se borra el archivo en
+      // sí, nunca se libera su tamaño una segunda vez.
+      if (claveVieja) await intentarBorrarArchivo(claveVieja);
     }
 
     busEventos.publicar({
@@ -3358,8 +3613,12 @@ export class PresupuestosService {
     const doc = await DibujoModel.findOne({ id, usuarioId }).lean().exec() as any;
     if (doc?.miniatura) {
       const clave = almacenamiento.claveDesdeUrl(doc.miniatura);
-      if (clave) await almacenamiento.borrar(clave).catch(() => {});
+      if (clave) await intentarBorrarArchivo(clave, { usuarioId, tamano: doc.miniaturaTamano || 0 });
     }
+    // `contenido` nunca se sube a R2 (ver `guardarDibujo`) — no hay nada que
+    // borrar en el almacenamiento, pero sus bytes sí cuentan en el
+    // contador de cuota y hay que liberarlos al borrar el dibujo.
+    if (doc?.contenidoTamano) await liberarEspacioAlmacenamiento(usuarioId, doc.contenidoTamano).catch(() => {});
     await DibujoModel.deleteOne({ id, usuarioId }).exec();
   }
 
@@ -3380,16 +3639,32 @@ export class PresupuestosService {
     await conectar();
     const original = await DibujoModel.findOne({ id, usuarioId }).lean().exec() as any;
     if (!original) return null;
+    // Cuota de almacenamiento (05/09/2026): la copia reutiliza la MISMA
+    // miniatura ya subida (no se vuelve a subir nada a R2), pero el nuevo
+    // documento declara los mismos `miniaturaTamano`/`contenidoTamano` —
+    // sin reservar esos bytes, duplicar en bucle sería una forma trivial de
+    // saltarse el límite del plan. Se cuenta igual que cualquier otro
+    // dibujo nuevo (esta app no deduplica fotos/adjuntos/dibujos; solo la
+    // biblioteca de recursos lo hace, por hash de contenido).
+    const totalBytes = (original.miniaturaTamano || 0) + (original.contenidoTamano || 0);
+    const plan = await obtenerPlanUsuario(usuarioId);
+    if (totalBytes > 0) await reclamarEspacioAlmacenamiento(usuarioId, totalBytes, plan);
     const { _id, __v, ...resto } = original;
     const ahora = new Date().toISOString();
-    const doc = await DibujoModel.create({
-      ...resto,
-      id: randomUUID(),
-      nombre: `${original.nombre} (copia)`,
-      version: 1,
-      creadoEn: ahora,
-      actualizadoEn: ahora,
-    });
+    let doc;
+    try {
+      doc = await DibujoModel.create({
+        ...resto,
+        id: randomUUID(),
+        nombre: `${original.nombre} (copia)`,
+        version: 1,
+        creadoEn: ahora,
+        actualizadoEn: ahora,
+      });
+    } catch (err) {
+      if (totalBytes > 0) await liberarEspacioAlmacenamiento(usuarioId, totalBytes).catch(() => {});
+      throw err;
+    }
     return this.limpiarDibujo(doc.toObject());
   }
 

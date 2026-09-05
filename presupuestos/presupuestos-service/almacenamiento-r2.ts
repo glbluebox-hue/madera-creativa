@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, PutBucketCorsCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutBucketCorsCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { AlmacenamientoArchivos, ResultadoSubida } from './almacenamiento-archivos.js';
 import { logger } from './logger.service.js';
@@ -174,6 +174,24 @@ export class AlmacenamientoR2 implements AlmacenamientoArchivos {
       const trozos: Buffer[] = [];
       for await (const trozo of respuesta.Body as AsyncIterable<Buffer>) trozos.push(Buffer.from(trozo));
       return { datos: Buffer.concat(trozos), contentType: respuesta.ContentType ?? 'application/octet-stream' };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Ver contrato en `AlmacenamientoArchivos.obtenerTamano` — `HeadObject`,
+   * nunca `GetObject`: consulta solo los metadatos, sin descargar el
+   * archivo entero (que `obtener()` sí hace). `null` tanto si no existe
+   * como ante cualquier otro fallo (permiso, red) — el backfill que lo usa
+   * ya trata `null` como "no se ha podido calcular, dejar para revisión
+   * manual", nunca como "el archivo pesa 0 bytes".
+   */
+  async obtenerTamano(clave: string): Promise<number | null> {
+    try {
+      const { cliente, bucket } = this.destinoParaClave(clave);
+      const respuesta = await cliente.send(new HeadObjectCommand({ Bucket: bucket, Key: clave }));
+      return respuesta.ContentLength ?? null;
     } catch {
       return null;
     }

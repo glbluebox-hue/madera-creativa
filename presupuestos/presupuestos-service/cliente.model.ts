@@ -704,6 +704,8 @@ const PresupuestoSchema = new Schema({
    */
   firmaClienteUrl: { type: String, default: '' },
   firmaClienteFecha: { type: String, default: '' },
+  /** Tamaño en bytes de `firmaClienteUrl` en almacenamiento externo (cuota de almacenamiento, 05/09/2026) — 0 si no hay firma o es de antes de esta función. */
+  firmaClienteTamano: { type: Number, default: 0 },
   /**
    * Hitos de cobro (roadmap "cobros pendientes", 18/08/2026). Generados al
    * aceptar, EXCLUIDOS de `esquemaPresupuestoMC` a propósito (mismo patrón
@@ -911,6 +913,8 @@ const FacturaSchema = new Schema({
    * sirviéndose con la URL pública de siempre, sin romper nada.
    */
   imagenClave: { type: String, default: '' },
+  /** Tamaño en bytes de `imagen` en almacenamiento externo (cuota de almacenamiento, 05/09/2026) — 0 en facturas guardadas antes de esta función o cuya imagen nunca pasó por `almacenamiento.subir()` (Base64 antiguo, URL externa). */
+  imagenTamano: { type: Number, default: 0 },
   /**
    * Páginas adicionales del documento multihoja — el frontend ya las
    * construye y `esquemaFactura` (Zod) ya las validaba, pero al no estar
@@ -921,6 +925,8 @@ const FacturaSchema = new Schema({
   imagenes: { type: [String], default: [] },
   /** Claves privadas paralelas a `imagenes` (mismo índice) — mismo criterio que `imagenClave`. */
   imagenesClaves: { type: [String], default: [] },
+  /** Tamaños paralelos a `imagenes` (mismo índice) — cuota de almacenamiento, 05/09/2026. */
+  imagenesTamanos: { type: [Number], default: [] },
   creado: { type: String, required: true },
 
   // ── Ampliación documental/fiscal (Fase Facturas Profesional) — todo
@@ -955,9 +961,11 @@ const FacturaSchema = new Schema({
   pdfOriginalUrl: { type: String, default: '' },
   /** Clave privada de `pdfOriginalUrl` — mismo criterio que `imagenClave`. */
   pdfOriginalClave: { type: String, default: '' },
+  /** Tamaño en bytes de `pdfOriginalUrl` — cuota de almacenamiento, 05/09/2026. */
+  pdfOriginalTamano: { type: Number, default: 0 },
   /** Páginas del documento en orden, con su tipo — sustituye gradualmente a `imagenes` para poder mezclar imagen y PDF en un mismo documento. */
   paginas: {
-    type: [{ tipo: { type: String, enum: ['imagen', 'pdf'] }, url: String, clave: { type: String, default: '' } }],
+    type: [{ tipo: { type: String, enum: ['imagen', 'pdf'] }, url: String, clave: { type: String, default: '' }, tamano: { type: Number, default: 0 } }],
     default: [],
   },
 });
@@ -1036,7 +1044,21 @@ const DibujoSchema = new Schema({
   nombre: { type: String, required: true },
   /** URL en almacenamiento externo tras subir el Base64 recibido (Incremento 1.7). */
   miniatura: { type: String, default: '' },
+  /** Tamaño en bytes de `miniatura` en almacenamiento externo (cuota de almacenamiento, 05/09/2026) — 0 en dibujos guardados antes de esta función. */
+  miniaturaTamano: { type: Number, default: 0 },
   contenido: { type: Schema.Types.Mixed, default: {} },
+  /**
+   * Tamaño en bytes de `JSON.stringify(contenido)` (cuota de almacenamiento,
+   * 05/09/2026) — `contenido` NUNCA se sube a almacenamiento externo (a
+   * diferencia de `miniatura`): es el propio snapshot de Excalidraw,
+   * incluida cualquier foto pegada dentro como Base64 embebido (ver
+   * `contenidoDibujoUsaFuncionesPro`, `planes.ts`), guardado tal cual en
+   * este documento de Mongo. Sin este campo, ese consumo real de
+   * almacenamiento (hasta `LIMITE_CONTENIDO_DIBUJO_BYTES` = 4 MB por
+   * dibujo) sería invisible para la cuota. 0 en dibujos guardados antes de
+   * esta función, hasta el backfill.
+   */
+  contenidoTamano: { type: Number, default: 0 },
   version: { type: Number, default: 1 },
   /** Reservado: aún sin interfaz para gestionarlas. */
   etiquetas: { type: [String], default: [] },

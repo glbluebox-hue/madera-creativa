@@ -4,6 +4,7 @@ import { leerArchivoComoBase64 } from './archivos.js';
 import { comprimirImagen } from './procesamiento-imagenes.js';
 import { cambiarAcceso } from './api.js';
 import type { PlanAcceso } from './planes.js';
+import { AlmacenamientoUso } from './almacenamiento-uso.js';
 import styles from './styles.module.css';
 
 /**
@@ -109,7 +110,7 @@ export function AjustesPerfil({ perfil, nombreAcceso, onGuardar, onCambioAcceso,
       passwordNueva: passwordNueva || undefined,
     });
     setGuardandoAcceso(false);
-    if (!resultado.ok) { setErrorAcceso(resultado.error); return; }
+    if (resultado.ok === false) { setErrorAcceso(resultado.error); return; }
     onCambioAcceso(resultado.id, resultado.nombre, resultado.esAdmin, resultado.plan);
     setPasswordActual(''); setNombreNuevo(''); setPasswordNueva(''); setPasswordNuevaConfirmar('');
     setExitoAcceso('Acceso actualizado. Ya puedes usar los nuevos datos la próxima vez que entres.');
@@ -175,6 +176,13 @@ export function AjustesPerfil({ perfil, nombreAcceso, onGuardar, onCambioAcceso,
             <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={guardar} disabled={guardandoPerfil || subiendoFoto}>
               {guardandoPerfil ? <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><span className={styles.loginSpinner} /> Guardando…</span> : 'Guardar'}
             </button>
+          </div>
+
+          <hr style={{ border: 'none', borderTop: '1px solid var(--borde)', margin: '0.25rem 0' }} />
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <p style={{ margin: 0, fontWeight: 700, fontSize: '0.85rem' }}>Almacenamiento</p>
+            <AlmacenamientoUso />
           </div>
 
           <hr style={{ border: 'none', borderTop: '1px solid var(--borde)', margin: '0.25rem 0' }} />

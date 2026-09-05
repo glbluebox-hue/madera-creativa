@@ -22,6 +22,8 @@ import { esquemaElementoBaseMC, esquemaPaginaMC, esquemaDocumentoMC, type Elemen
 export interface RecursoDeElemento {
   url: string;
   claveAlmacenamiento?: string;
+  /** Tamaño en bytes del recurso en almacenamiento externo (cuota de almacenamiento, 05/09/2026) — `undefined` en elementos guardados antes de esta función. */
+  tamano?: number;
 }
 
 export interface RegistroTipoElemento {

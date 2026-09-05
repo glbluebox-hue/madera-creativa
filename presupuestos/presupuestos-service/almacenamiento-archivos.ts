@@ -77,6 +77,17 @@ export interface AlmacenamientoArchivos {
   generarUrlTemporal(clave: string, ttlSegundos?: number): Promise<string>;
 
   /**
+   * Tamaño en bytes de un archivo ya subido, o `null` si no existe — SIN
+   * descargar su contenido (`obtener()` sí lo descarga entero; usarlo solo
+   * para conocer un tamaño desperdiciaría ancho de banda en un archivo que
+   * puede pesar megabytes). Pensado para el backfill de cuota de
+   * almacenamiento (05/09/2026): documentos guardados antes de esa función
+   * tienen la clave del archivo pero no su tamaño, y hace falta
+   * reconstruirlo sin volver a tocar el archivo en sí.
+   */
+  obtenerTamano(clave: string): Promise<number | null>;
+
+  /**
    * Asegura que el bucket PÚBLICO tiene una política CORS que permite leer
    * sus archivos vía `fetch()` desde el navegador, solo para los orígenes
    * indicados (Incremento "Diseño 3D", 30/08/2026). Hasta ahora nunca hacía

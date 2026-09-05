@@ -1,5 +1,7 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { almacenamiento } from './almacenamiento.service.js';
+import { reclamarEspacioAlmacenamiento, liberarEspacioAlmacenamiento } from './almacenamiento-cuota.js';
+import type { PlanAcceso } from './usuario.model.js';
 import type { RecursoMC } from './documento-modelo.js';
 
 /**
@@ -34,18 +36,33 @@ export interface OpcionesSubidaRecurso {
  * se sube nada a almacenamiento externo, se devuelve la entrada existente
  * tal cual. `nuevo:true` significa que el llamante debe persistir el
  * `RecursoMC` devuelto (este módulo no conoce la base de datos).
+ *
+ * Cuota de almacenamiento (05/09/2026, `contexto` opcional por compatibilidad
+ * con los tests existentes que no la usan): la reserva se hace justo antes
+ * de subir, y SOLO cuando de verdad hay una subida nueva — el caso
+ * deduplicado (`nuevo:false`) reutiliza un archivo que ya se contó la
+ * primera vez, así que no consume cuota una segunda vez. Si la subida
+ * falla tras reservar, se libera antes de relanzar el error.
  */
 export async function subirORecuperarRecurso(
   datos: Buffer,
   opciones: OpcionesSubidaRecurso,
   usuarioId: string,
-  repositorio: RepositorioRecursos
+  repositorio: RepositorioRecursos,
+  contexto?: { plan: PlanAcceso }
 ): Promise<{ recurso: RecursoMC; nuevo: boolean }> {
   const hash = calcularHashContenido(datos);
   const existente = await repositorio.buscarPorHash(usuarioId, hash);
   if (existente) return { recurso: existente, nuevo: false };
 
-  const subido = await almacenamiento.subir(datos, { contentType: opciones.mimeType, carpeta: 'recursos' });
+  if (contexto) await reclamarEspacioAlmacenamiento(usuarioId, datos.length, contexto.plan);
+  let subido;
+  try {
+    subido = await almacenamiento.subir(datos, { contentType: opciones.mimeType, carpeta: 'recursos' });
+  } catch (err) {
+    if (contexto) await liberarEspacioAlmacenamiento(usuarioId, datos.length).catch(() => {});
+    throw err;
+  }
   const recurso: RecursoMC = {
     id: randomUUID(),
     nombre: opciones.nombre,
