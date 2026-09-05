@@ -4,6 +4,8 @@ import { formatoEuroPrivado, formatoFecha } from './calculos.js';
 import { paginasVisualizablesDeFactura } from './factura-paginas.js';
 import * as api from './api.js';
 import { urlImagenFiable } from './imagen-fallback.js';
+import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
+import { CandadoPlan } from './candado-plan.js';
 import styles from './styles.module.css';
 
 export type VisorFacturaProps = {
@@ -14,6 +16,10 @@ export type VisorFacturaProps = {
   onDescargarPdf: (id: string) => void;
   /** Modo privacidad activo — oculta el importe (el interruptor vive en Inicio; ver `use-privacidad.ts`). */
   privado?: boolean;
+  /** Plan de la sesión actual (05/09/2026) — descargar el PDF exige PRO+ en el servidor; VER la factura sigue disponible en cualquier plan. */
+  plan?: PlanAcceso;
+  /** Bypass administrativo — ver `puedeUsar()` en `planes.ts`. */
+  esAdmin?: boolean;
 };
 
 /**
@@ -22,7 +28,8 @@ export type VisorFacturaProps = {
  * trae `imagen`/`paginas` por ligereza) y muestra sus páginas en grande,
  * con los datos (proveedor, fecha, importe) como cabecera.
  */
-export function VisorFactura({ facturaId, onCerrar, onEditar, onDescargarPdf, privado = false }: VisorFacturaProps) {
+export function VisorFactura({ facturaId, onCerrar, onEditar, onDescargarPdf, privado = false, plan, esAdmin }: VisorFacturaProps) {
+  const tienePlanDescarga = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
   const [factura, setFactura] = useState<Factura | null>(null);
   const [cargando, setCargando] = useState(true);
   const [paginaActiva, setPaginaActiva] = useState(0);
@@ -106,9 +113,14 @@ export function VisorFactura({ facturaId, onCerrar, onEditar, onDescargarPdf, pr
 
               <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
                 {paginas.length > 0 && (
-                  <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={() => onDescargarPdf(factura.id)}>
+                  <button
+                    className={`${styles.btn} ${styles.btnSecundario}`}
+                    onClick={() => { if (tienePlanDescarga) onDescargarPdf(factura.id); }}
+                    disabled={!tienePlanDescarga}
+                    title={tienePlanDescarga ? undefined : 'Descargar el PDF es una función PRO'}
+                  >
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                    Descargar PDF
+                    Descargar PDF {!tienePlanDescarga && <CandadoPlan planMinimo="PRO" compacto />}
                   </button>
                 )}
                 {onEditar && (

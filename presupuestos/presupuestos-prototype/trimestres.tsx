@@ -3,6 +3,8 @@ import * as api from './api.js';
 import type { GastoPeriodico } from './types.js';
 import { GastosPeriodicos } from './gastos-periodicos.js';
 import { esGastoPeriodicoDeducible } from './gasto-periodico-fiscal.js';
+import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
+import { CandadoPlan } from './candado-plan.js';
 import styles from './styles.module.css';
 
 /** Props del resumen trimestral. */
@@ -11,6 +13,10 @@ export type TrimestresProps = {
   anio?: number;
   /** Modo privacidad activo — oculta los importes (el interruptor vive en Inicio; ver `use-privacidad.ts`). */
   privado?: boolean;
+  /** Plan de la sesión actual (05/09/2026) — descargar/exportar la documentación del asesor y el PDF combinado exige PRO+; consultar el resumen sigue siendo BASIC. */
+  plan?: PlanAcceso;
+  /** Bypass administrativo — ver `puedeUsar()` en `planes.ts`. */
+  esAdmin?: boolean;
 };
 
 type DatosTrimestre = {
@@ -60,7 +66,8 @@ function trimestre(fecha: string): number {
  * como el resto de la app pasó a paginar, ya no hay garantía de que el
  * componente padre tenga cargado un año completo de facturas.
  */
-export function Trimestres({ anio, privado = false }: TrimestresProps) {
+export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresProps) {
+  const tienePlanDescarga = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
   const anioActual = anio ?? new Date().getFullYear();
   const [anioSeleccionado, setAnioSeleccionado] = React.useState(anioActual);
   const [aniosDisponibles, setAniosDisponibles] = React.useState<number[]>([anioActual]);
@@ -138,6 +145,7 @@ export function Trimestres({ anio, privado = false }: TrimestresProps) {
   const trimActual = Math.floor(new Date().getMonth() / 3);
 
   const descargarDocumentacionAsesor = async (indiceTrimestre: number) => {
+    if (!tienePlanDescarga) return;
     setDescargandoAsesor(indiceTrimestre);
     try { await api.descargarDocumentacionAsesor(anioSeleccionado, indiceTrimestre + 1); }
     finally { setDescargandoAsesor(null); }
@@ -145,6 +153,7 @@ export function Trimestres({ anio, privado = false }: TrimestresProps) {
 
   /** Solo y exclusivamente las facturas del trimestre, en un único PDF — sin resumen ni ZIP (petición real, 25/08/2026). */
   const descargarPdfFacturas = async (indiceTrimestre: number) => {
+    if (!tienePlanDescarga) return;
     setDescargandoPdf(indiceTrimestre);
     try { await api.descargarPdfCombinadoFacturas(anioSeleccionado, indiceTrimestre + 1); }
     finally { setDescargandoPdf(null); }
@@ -362,20 +371,21 @@ export function Trimestres({ anio, privado = false }: TrimestresProps) {
                     className={`${styles.btn} ${styles.btnSecundario}`}
                     style={{ width: '100%', justifyContent: 'center', fontSize: '0.78rem' }}
                     onClick={() => descargarDocumentacionAsesor(i)}
-                    disabled={descargandoAsesor === i}
+                    disabled={descargandoAsesor === i || !tienePlanDescarga}
+                    title={tienePlanDescarga ? undefined : 'Descargar/exportar informes es una función PRO'}
                   >
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                    {descargandoAsesor === i ? 'Generando…' : 'Documentación para el asesor'}
+                    {descargandoAsesor === i ? 'Generando…' : 'Documentación para el asesor'} {!tienePlanDescarga && <CandadoPlan planMinimo="PRO" compacto />}
                   </button>
                   <button
                     className={`${styles.btn} ${styles.btnSecundario}`}
                     style={{ width: '100%', justifyContent: 'center', fontSize: '0.78rem' }}
                     onClick={() => descargarPdfFacturas(i)}
-                    disabled={descargandoPdf === i}
-                    title="Un único PDF con las páginas de todas las facturas del trimestre, sin resumen ni ZIP"
+                    disabled={descargandoPdf === i || !tienePlanDescarga}
+                    title={tienePlanDescarga ? 'Un único PDF con las páginas de todas las facturas del trimestre, sin resumen ni ZIP' : 'Descargar/exportar informes es una función PRO'}
                   >
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
-                    {descargandoPdf === i ? 'Generando…' : 'Solo facturas (PDF único)'}
+                    {descargandoPdf === i ? 'Generando…' : 'Solo facturas (PDF único)'} {!tienePlanDescarga && <CandadoPlan planMinimo="PRO" compacto />}
                   </button>
                 </div>
               )}

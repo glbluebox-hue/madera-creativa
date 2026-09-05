@@ -8,7 +8,8 @@ import { autoCrearProveedorDeFactura, type DatosProveedorDetectados } from './pr
 import { useAvisoGuardado, AvisoGuardado } from './aviso-guardado.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
 import { VisorFactura } from './visor-factura.js';
-import type { PlanAcceso } from './planes.js';
+import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
+import { CandadoPlan } from './candado-plan.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
 
@@ -55,6 +56,13 @@ export function Facturas({
   facturas, resumen, privado, filtro, onFiltroChange, hayMas, cargandoMas, onCargarMas,
   clientes, proveedores = [], onGuardar, onBorrar, onCrearProveedor, onActualizarProveedor, plan, esAdmin,
 }: FacturasProps) {
+  // Exportación de informes y PDF de facturas — solo PRO (05/09/2026):
+  // consultar/ver facturas sigue siendo BASIC; descargar/exportar exige
+  // PRO+. El backend ya lo exige en las 4 rutas reales
+  // (`/facturas/:id/pdf`, `/facturas/descargar-zip`,
+  // `/facturas/documentacion-asesor`, `/facturas/pdf-trimestre`) — esto
+  // solo añade el reflejo visual.
+  const tienePlanDescarga = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
   const [escaner, setEscaner] = useState(false);
   const [facturaEditar, setFacturaEditar] = useState<Factura | undefined>(undefined);
   const [vista, setVista] = useState<Vista>('lista');
@@ -170,12 +178,13 @@ export function Facturas({
   };
 
   const descargarPdf = async (id: string) => {
+    if (!tienePlanDescarga) return;
     setDescargando(true);
     try { await api.descargarPdfFactura(id); } finally { setDescargando(false); }
   };
 
   const descargarSeleccionadas = async () => {
-    if (!seleccionadas.size) return;
+    if (!seleccionadas.size || !tienePlanDescarga) return;
     setDescargando(true);
     try {
       await api.descargarZipFacturas({ ids: [...seleccionadas] });
@@ -186,6 +195,7 @@ export function Facturas({
   };
 
   const descargarTodas = async () => {
+    if (!tienePlanDescarga) return;
     setDescargando(true);
     try {
       await api.descargarZipFacturas({
@@ -227,7 +237,7 @@ export function Facturas({
       </div>
 
       {/* ── Vista trimestral ── */}
-      {vista === 'trimestres' && <Trimestres privado={privado} />}
+      {vista === 'trimestres' && <Trimestres privado={privado} plan={plan} esAdmin={esAdmin} />}
 
       {/* ── Vista lista ── */}
       {vista === 'lista' && (
@@ -334,14 +344,24 @@ export function Facturas({
             {facturasBase.length > 0 && (
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                 {seleccionadas.size > 0 && (
-                  <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={descargarSeleccionadas} disabled={descargando}>
+                  <button
+                    className={`${styles.btn} ${styles.btnPrimario}`}
+                    onClick={descargarSeleccionadas}
+                    disabled={descargando || !tienePlanDescarga}
+                    title={tienePlanDescarga ? undefined : 'Descargar/exportar facturas es una función PRO'}
+                  >
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                    Descargar {seleccionadas.size} seleccionada{seleccionadas.size !== 1 ? 's' : ''}
+                    Descargar {seleccionadas.size} seleccionada{seleccionadas.size !== 1 ? 's' : ''} {!tienePlanDescarga && <CandadoPlan planMinimo="PRO" compacto />}
                   </button>
                 )}
-                <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={descargarTodas} disabled={descargando} title="Descarga un ZIP con el PDF de todas las facturas del filtro actual">
+                <button
+                  className={`${styles.btn} ${styles.btnSecundario}`}
+                  onClick={descargarTodas}
+                  disabled={descargando || !tienePlanDescarga}
+                  title={tienePlanDescarga ? 'Descarga un ZIP con el PDF de todas las facturas del filtro actual' : 'Descargar/exportar facturas es una función PRO'}
+                >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                  Descargar todas
+                  Descargar todas {!tienePlanDescarga && <CandadoPlan planMinimo="PRO" compacto />}
                 </button>
               </div>
             )}
@@ -427,7 +447,13 @@ export function Facturas({
                           </button>
                         ) : null}
                         {(f.tieneDocumento || f.paginas?.length || f.imagen || f.pdfOriginalUrl) ? (
-                          <button className={styles.btnIcono} title="Descargar PDF" aria-label="Descargar PDF" onClick={() => descargarPdf(f.id)} disabled={descargando}>
+                          <button
+                            className={styles.btnIcono}
+                            title={tienePlanDescarga ? 'Descargar PDF' : 'Descargar PDF — función PRO'}
+                            aria-label="Descargar PDF"
+                            onClick={() => descargarPdf(f.id)}
+                            disabled={descargando || !tienePlanDescarga}
+                          >
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                           </button>
                         ) : null}
@@ -473,6 +499,8 @@ export function Facturas({
           onEditar={(f) => abrirEdicion(f)}
           onDescargarPdf={descargarPdf}
           privado={privado}
+          plan={plan}
+          esAdmin={esAdmin}
         />
       )}
     </div>

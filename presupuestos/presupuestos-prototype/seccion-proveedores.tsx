@@ -8,6 +8,7 @@ import { useAvisoGuardado, AvisoGuardado } from './aviso-guardado.js';
 import { colorAvatar } from './avatar-utils.js';
 import { VisorFactura } from './visor-factura.js';
 import { nombresCoinciden } from './identificacion-factura.js';
+import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
 import styles from './styles.module.css';
 
 /** Props de la sección de proveedores. */
@@ -24,6 +25,10 @@ export type SeccionProveedoresProps = {
   onCrearProducto: (p: Omit<Producto, 'id'>) => void;
   onActualizarProducto: (p: Producto) => void;
   onBorrarProducto: (id: string) => void;
+  /** Plan de la sesión actual (05/09/2026) — descargar el PDF de una factura de un proveedor exige PRO+; ver/gestionar el proveedor sigue siendo BASIC. */
+  plan?: PlanAcceso;
+  /** Bypass administrativo — ver `puedeUsar()` en `planes.ts`. */
+  esAdmin?: boolean;
 };
 
 type VistaProveedores = 'lista' | 'ficha' | 'catalogo';
@@ -284,8 +289,9 @@ function ModalFusionarProveedor({
 export function SeccionProveedores({
   proveedores, productos, privado,
   onCrearProveedor, onActualizarProveedor, onBorrarProveedor, onFusionarProveedores,
-  onCrearProducto, onActualizarProducto, onBorrarProducto,
+  onCrearProducto, onActualizarProducto, onBorrarProducto, plan, esAdmin,
 }: SeccionProveedoresProps) {
+  const tienePlanDescarga = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
   const [vista, setVista] = useState<VistaProveedores>('lista');
   const [proveedorActivo, setProveedorActivo] = useState<Proveedor | null>(null);
   const [modalProveedor, setModalProveedor] = useState(false);
@@ -300,6 +306,7 @@ export function SeccionProveedores({
   const avisoGuardado = useAvisoGuardado();
 
   const descargarPdfProveedor = async (id: string) => {
+    if (!tienePlanDescarga) return;
     setDescargandoPdf(true);
     try { await api.descargarPdfFactura(id); } finally { setDescargandoPdf(false); }
   };
@@ -436,7 +443,13 @@ export function SeccionProveedores({
                       {f.tieneDocumento && (
                         <span style={{ display: 'flex', gap: '0.25rem', justifyContent: 'flex-end' }}>
                           <button className={styles.btnIcono} title="Ver factura" aria-label="Ver factura" onClick={() => setViendoFacturaId(f.id)}><IconoOjo /></button>
-                          <button className={styles.btnIcono} title="Descargar PDF" aria-label="Descargar PDF" onClick={() => descargarPdfProveedor(f.id)} disabled={descargandoPdf}><IconoDescargar /></button>
+                          <button
+                            className={styles.btnIcono}
+                            title={tienePlanDescarga ? 'Descargar PDF' : 'Descargar PDF — función PRO'}
+                            aria-label="Descargar PDF"
+                            onClick={() => descargarPdfProveedor(f.id)}
+                            disabled={descargandoPdf || !tienePlanDescarga}
+                          ><IconoDescargar /></button>
                         </span>
                       )}
                     </td>
@@ -453,6 +466,8 @@ export function SeccionProveedores({
             onCerrar={() => setViendoFacturaId(null)}
             onDescargarPdf={descargarPdfProveedor}
             privado={privado}
+            plan={plan}
+            esAdmin={esAdmin}
           />
         )}
 

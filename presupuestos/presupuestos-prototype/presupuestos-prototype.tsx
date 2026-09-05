@@ -634,6 +634,8 @@ export function PresupuestosPrototype() {
             onCrearProducto={crearProducto}
             onActualizarProducto={actualizarProducto}
             onBorrarProducto={borrarProducto}
+            plan={sesion?.plan}
+            esAdmin={sesion?.esAdmin}
           />
         )}
 

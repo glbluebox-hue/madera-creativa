@@ -566,6 +566,8 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
           onCerrar={() => setViendoFacturaId(null)}
           onDescargarPdf={api.descargarPdfFactura}
           privado={privado}
+          plan={plan}
+          esAdmin={esAdmin}
         />
       )}
 

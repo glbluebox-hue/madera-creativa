@@ -1729,8 +1729,14 @@ export function run() {
    * múltiple con selección) o por filtro `anio`/`trimestre`/`tipo`
    * (descargar todas). Debe registrarse antes de `/facturas/:id` para no
    * colisionar con él (mismo motivo que `resumen`/`resumen-proveedores`/`anios`).
+   *
+   * Solo PRO+ (05/09/2026, "Exportación de informes y PDF de facturas") —
+   * BASIC sigue viendo/consultando sus facturas con normalidad, pero
+   * descargar/exportar es una función de PRO (preparar documentación para
+   * el asesor). Mismo criterio que el resto del código: `requirePlan`
+   * después de `requireAuth`, nunca antes.
    */
-  app.post('/facturas/descargar-zip', requireAuth, async (req: AuthRequest, res) => {
+  app.post('/facturas/descargar-zip', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
     try {
       const { ids, anio, trimestre, tipo } = req.body as { ids?: string[]; anio?: number; trimestre?: number; tipo?: 'ingreso' | 'gasto' };
       const zip = await svc.obtenerZipFacturas(req.usuarioId!, { ids, anio, trimestre, tipo });
@@ -1743,8 +1749,10 @@ export function run() {
   /**
    * Documentación completa para el asesor de un trimestre (resumen + ZIP
    * de facturas organizadas). Debe registrarse antes de `/facturas/:id`.
+   *
+   * Solo PRO+ (05/09/2026) — ver el comentario de `/facturas/descargar-zip`.
    */
-  app.get('/facturas/documentacion-asesor', requireAuth, async (req: AuthRequest, res) => {
+  app.get('/facturas/documentacion-asesor', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
     try {
       const anio = Number(req.query.anio);
       const trimestre = Number(req.query.trimestre);
@@ -1760,8 +1768,10 @@ export function run() {
    * Único PDF con las páginas de las facturas de un año/trimestre (y tipo
    * opcional) — "solo y exclusivamente las facturas", sin resumen ni ZIP.
    * Debe registrarse antes de `/facturas/:id`.
+   *
+   * Solo PRO+ (05/09/2026) — ver el comentario de `/facturas/descargar-zip`.
    */
-  app.get('/facturas/pdf-trimestre', requireAuth, async (req: AuthRequest, res) => {
+  app.get('/facturas/pdf-trimestre', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
     try {
       const anio = Number(req.query.anio);
       const trimestre = req.query.trimestre ? Number(req.query.trimestre) : undefined;
@@ -1851,8 +1861,15 @@ export function run() {
     } catch (err) { responderError(req, res, err); }
   });
 
-  /** PDF real de una factura individual — descarga directa. */
-  app.get('/facturas/:id/pdf', requireAuth, async (req: AuthRequest, res) => {
+  /**
+   * PDF real de una factura individual — descarga directa.
+   *
+   * Solo PRO+ (05/09/2026, "Exportación de informes y PDF de facturas") —
+   * consultar/ver la factura en la app sigue siendo BASIC; solo descargar
+   * el PDF exige PRO. `numeroFactura` no cambia en absoluto — este gate
+   * es únicamente sobre la descarga del documento, nunca sobre el dato.
+   */
+  app.get('/facturas/:id/pdf', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
     try {
       const resultado = await svc.obtenerPdfFactura(req.params.id, req.usuarioId!);
       if (!resultado) { res.status(404).json({ error: 'No encontrada' }); return; }
