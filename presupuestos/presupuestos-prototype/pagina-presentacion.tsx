@@ -108,15 +108,23 @@ const PALETA_OSCURA: CSSProperties = {
 const V = (nombre: string) => `var(${nombre})`;
 
 /**
- * Recolorea el logo real según el tema (08/09/2026, mismo tratamiento
- * verificado píxel a píxel sobre la maqueta) — el PNG de marca tiene
- * fondo blanco sólido y tinta de un único marrón: en vez de un recorte
- * "todo o nada" (que dejaba motas en los trazos finos), se calcula una
- * máscara de opacidad SUAVE según el brillo de cada píxel, y esa misma
- * silueta se rellena con un color distinto según el tema — el marrón
- * real de la marca en modo claro, una variante clara del mismo marrón en
- * modo oscuro (nunca gris ni blanco, para que se siga leyendo como la
- * misma marca).
+ * Recolorea el logo real según el tema — el marrón real de la marca en
+ * modo claro, una variante clara del mismo marrón en modo oscuro (nunca
+ * gris ni blanco, para que se siga leyendo como la misma marca).
+ *
+ * Corrección (08/09/2026, mismo día): el primer intento reproducía el
+ * tratamiento verificado sobre la maqueta (una máscara de opacidad
+ * calculada a partir del BRILLO de cada píxel) — válido ahí porque ese
+ * PNG tenía fondo blanco SÓLIDO, sin transparencia propia. El logo real
+ * de la app (`assets/logo.png`) es justo lo contrario: ya es un PNG con
+ * canal alfa real (confirmado: colorType RGBA). En un PNG así, el color
+ * RGB de los píxeles totalmente transparentes no está definido de forma
+ * fiable (puede ser negro u otra basura, nunca pensado para verse) —
+ * calcular el brillo ahí y tratarlo como "trazo oscuro" pintaba un
+ * bloque sólido feo por toda la caja de la imagen. La corrección usa
+ * directamente el canal alfa YA REAL del propio PNG (nunca lo
+ * recalcula): cada píxel conserva su transparencia original, solo se le
+ * cambia el color.
  */
 const MARCA_OSCURA_RGB: [number, number, number] = [0x51, 0x46, 0x3b];
 const MARCA_CLARA_RGB: [number, number, number] = [0xb8, 0xb0, 0xa5];
@@ -137,20 +145,11 @@ function useVariantesLogo(src: string): { claro: string; oscuro: string } | null
         ctx.drawImage(img, 0, 0);
         const original = ctx.getImageData(0, 0, lienzo.width, lienzo.height);
         const total = lienzo.width * lienzo.height;
-        const alfas = new Uint8ClampedArray(total);
-        const UMBRAL_DIBUJO = 120; // brillo igual o menor: 100% del trazo
-        const UMBRAL_FONDO = 250; // brillo igual o mayor: 100% fondo (transparente)
-        for (let i = 0, j = 0; j < total; i += 4, j++) {
-          const brillo = (original.data[i] + original.data[i + 1] + original.data[i + 2]) / 3;
-          if (brillo <= UMBRAL_DIBUJO) alfas[j] = 255;
-          else if (brillo >= UMBRAL_FONDO) alfas[j] = 0;
-          else alfas[j] = 255 - Math.round(((brillo - UMBRAL_DIBUJO) / (UMBRAL_FONDO - UMBRAL_DIBUJO)) * 255);
-        }
         const pintarVariante = ([r, g, b]: [number, number, number]) => {
           const salida = ctx.createImageData(lienzo.width, lienzo.height);
-          for (let i = 0, j = 0; j < total; i += 4, j++) {
+          for (let i = 0; i < total * 4; i += 4) {
             salida.data[i] = r; salida.data[i + 1] = g; salida.data[i + 2] = b;
-            salida.data[i + 3] = alfas[j];
+            salida.data[i + 3] = original.data[i + 3]; // el alfa real del PNG, sin tocar
           }
           ctx.putImageData(salida, 0, 0);
           return lienzo.toDataURL('image/png');
@@ -272,7 +271,7 @@ export function PaginaPresentacion({ onEntrar, onEmpezar }: PaginaPresentacionPr
         <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexWrap: 'wrap', gap: '3rem', alignItems: 'center', maxWidth: 1180, margin: '0 auto' }}>
           <div style={{ flex: '1 1 460px', display: 'flex', flexDirection: 'column', gap: '1.3rem' }}>
             <span style={{ fontSize: '0.74rem', fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: V('--ocre') }}>
-              Hecho de carpinteros, para carpinteros
+              Hecho por carpinteros, para carpinteros
             </span>
             <h1 style={{ margin: 0, fontSize: 'clamp(2rem, 4.2vw, 3.1rem)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.08, color: V('--negro') }}>
               Toda tu carpintería, <span style={{ color: V('--ocre') }}>conectada</span> en un solo lugar.
