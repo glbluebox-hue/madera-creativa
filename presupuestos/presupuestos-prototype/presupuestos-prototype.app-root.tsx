@@ -4,6 +4,13 @@ import { PresupuestosPrototype } from './presupuestos-prototype.js';
 import { PortalPresupuesto } from './portal-presupuesto.js';
 import { PoliticaPrivacidad } from './politica-privacidad.js';
 import { ErrorBoundary } from './error-boundary.js';
+// Import solo por su efecto secundario (08/09/2026): registra el
+// listener de "beforeinstallprompt" en cuanto se ejecuta este módulo,
+// antes de createRoot().render() más abajo — ver el comentario dentro
+// de ese archivo para el motivo exacto (un evento disparado antes de
+// que React monte nada, con nadie escuchando todavía, se pierde para
+// siempre en esa carga de página).
+import './instalar-app-estado.js';
 
 // El manifest y los apple-touch-icon se sirven ESTÁTICOS desde index.html
 // (/manifest.webmanifest, /assets/icon-*.png) — hasta ahora este archivo
