@@ -266,6 +266,18 @@ export function PaginaPresentacion({ onEntrar, onEmpezar }: PaginaPresentacionPr
           <a href="#planes" style={{ color: V('--topo-claro'), textDecoration: 'none' }}>Planes</a>
         </nav>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginLeft: 'auto', flexWrap: 'wrap' }}>
+          {/* Mismo botón real de instalación que la sección de más abajo (ver useInstalarApp) — aquí en la cabecera, siempre a mano mientras se navega la página, en vez de solo al llegar a esa sección. */}
+          {instalacionDisponible && (
+            <button
+              type="button"
+              onClick={instalar}
+              title="Instalar aplicación"
+              style={{ background: 'none', border: `1px solid ${V('--borde')}`, borderRadius: V('--radio'), padding: '0.5rem 0.9rem', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', color: V('--topo'), display: 'inline-flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}
+            >
+              <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+              Instalar en tu dispositivo
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setTema((t) => (t === 'dark' ? 'light' : 'dark'))}
