@@ -1457,3 +1457,9 @@
 2026-09-07T22:47:12.263Z 21884 build presupuestos-prototype, failed
 2026-09-07T22:48:18.325Z 13108 build presupuestos-prototype, started
 2026-09-07T22:49:49.052Z 13108 build presupuestos-prototype, failed
+2026-09-07T22:56:06.712Z 32100 build presupuestos-service, started
+2026-09-07T22:57:23.360Z 32100 build presupuestos-service, failed
+2026-09-07T22:58:37.349Z 26964 test presupuestos-service, started
+2026-09-07T22:59:18.382Z 26964 test presupuestos-service, failed
+2026-09-07T23:00:01.941Z 33604 test presupuestos-service, started
+2026-09-07T23:00:30.824Z 33604 test presupuestos-service, succeeded

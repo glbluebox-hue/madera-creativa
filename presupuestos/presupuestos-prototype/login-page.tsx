@@ -599,10 +599,19 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar, pantallaInicia
                 <p style={{ margin: '0 0 1rem', fontSize: '0.88rem', color: 'var(--topo)' }}>
                   Contraseña actualizada. Ya puedes entrar con ella.
                 </p>
+                {/*
+                  Corrección (08/09/2026, reporte real): recargar a la
+                  ruta pelada (sin `?entrar=1`) volvía a mostrar la
+                  página de presentación comercial en vez de ir directo a
+                  "Entrar" — `debeSaltarPresentacionComercial()` ya no
+                  veía ningún parámetro transaccional en la URL una vez
+                  quitado `?recuperar=`. Mismo arreglo en la pantalla de
+                  verificación de email, más abajo.
+                */}
                 <button
                   type="button"
                   className={`${styles.btn} ${styles.btnPrimario} ${styles.btnLoginSubmit}`}
-                  onClick={() => { window.location.href = window.location.pathname; }}
+                  onClick={() => { window.location.href = `${window.location.pathname}?entrar=1`; }}
                 >
                   Ir a entrar
                 </button>
@@ -690,7 +699,7 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar, pantallaInicia
                     type="button"
                     className={`${styles.btn} ${styles.btnPrimario} ${styles.btnLoginSubmit}`}
                     style={{ marginTop: '1rem' }}
-                    onClick={() => { window.location.href = window.location.pathname; }}
+                    onClick={() => { window.location.href = `${window.location.pathname}?entrar=1`; }}
                   >
                     Ir a entrar
                   </button>

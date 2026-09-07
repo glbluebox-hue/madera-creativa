@@ -22,6 +22,9 @@ describe('debeSaltarPresentacionComercial — cuándo se salta la presentación 
   it('con ?recuperar= (enlace de recuperación de contraseña) se salta la presentación', () => {
     expect(debeSaltarPresentacionComercial(new URLSearchParams('recuperar=untokenlargo'))).toBe(true);
   });
+  it('con ?entrar=1 (recarga tras verificar el email o restablecer la contraseña, 08/09/2026) se salta la presentación', () => {
+    expect(debeSaltarPresentacionComercial(new URLSearchParams('entrar=1'))).toBe(true);
+  });
   it('sin ningún parámetro relevante, se muestra la presentación (no se salta)', () => {
     expect(debeSaltarPresentacionComercial(new URLSearchParams(''))).toBe(false);
   });

@@ -44,9 +44,16 @@ export type PaginaPresentacionProps = {
  * enlaces no le corresponde ver primero una página comercial, sino la
  * pantalla que ese enlace concreto espera mostrar. Función pura, testable
  * sin depender de `window.location` global.
+ *
+ * `?entrar=1` (08/09/2026, reporte real): tras verificar el email o
+ * restablecer la contraseña, `login-page.tsx` recarga a esta misma marca
+ * en vez de a la ruta pelada — sin ella, al perderse `?verificar=`/
+ * `?recuperar=` de la URL en la recarga, esta función dejaba de ver
+ * ningún parámetro transaccional y volvía a mostrar la presentación
+ * comercial en vez de llevar directo a "Entrar".
  */
 export function debeSaltarPresentacionComercial(params: URLSearchParams): boolean {
-  return !!params.get('codigo') || !!params.get('verificar') || !!params.get('recuperar');
+  return !!params.get('codigo') || !!params.get('verificar') || !!params.get('recuperar') || !!params.get('entrar');
 }
 
 /** Paleta propia de esta página — ver comentario de arriba. Cast a CSSProperties: las variables CSS no están tipadas de forma nativa en React. */
