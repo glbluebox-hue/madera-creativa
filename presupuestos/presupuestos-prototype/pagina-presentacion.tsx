@@ -3,6 +3,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import logoMadera from './assets/logo.png';
 import loginMadera from './assets/login-madera.jpg';
 import { PaginaPlanes } from './pagina-planes.js';
+import { useInstalarApp } from './use-instalar-app.js';
 
 /**
  * Página de presentación comercial (05/09/2026, rediseño completo
@@ -243,6 +244,7 @@ function Ola({ fondo, siguiente, variante }: { fondo: string; siguiente: string;
 export function PaginaPresentacion({ onEntrar, onEmpezar }: PaginaPresentacionProps) {
   const [informeGenerado, setInformeGenerado] = useState(false);
   const [tema, setTema] = useState<'light' | 'dark'>('light');
+  const { disponible: instalacionDisponible, instalada, instalar } = useInstalarApp();
   const paletaActiva: CSSProperties = tema === 'dark' ? { ...PALETA, ...PALETA_OSCURA } : PALETA;
 
   return (
@@ -570,6 +572,29 @@ export function PaginaPresentacion({ onEntrar, onEmpezar }: PaginaPresentacionPr
           <p style={{ margin: 0, color: V('--topo-claro'), fontSize: '0.92rem', lineHeight: 1.6, maxWidth: 520 }}>
             Sin tiendas de aplicaciones ni nada que descargar aparte: funciona desde el navegador y se instala como una app más, con su propio icono.
           </p>
+          {/*
+            Botón real de instalación (08/09/2026) — solo aparece cuando
+            el propio navegador confirma que se puede instalar de
+            verdad (Chrome/Edge en Android y en ordenador; `disponible`
+            viene de `useInstalarApp`, ver ese archivo). En iPhone/iPad
+            (Safari) esto nunca aparece — Apple no permite disparar
+            "Añadir a pantalla de inicio" desde la propia página, así
+            que ahí solo vale la instrucción manual de las dos tarjetas
+            de abajo.
+          */}
+          {instalacionDisponible && (
+            <button
+              type="button"
+              onClick={instalar}
+              style={{ border: 'none', borderRadius: V('--radio'), padding: '0.8rem 1.6rem', fontSize: '0.9rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', background: V('--ocre'), color: V('--blanco'), display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
+            >
+              <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+              Instalar aplicación ahora
+            </button>
+          )}
+          {instalada && (
+            <p style={{ margin: 0, color: V('--verde'), fontSize: '0.82rem', fontWeight: 700 }}>Ya la tienes instalada en este dispositivo.</p>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.9rem', width: '100%', marginTop: '0.3rem' }}>
             <div style={E.descargaItem}>
               <svg width={26} height={26} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ color: V('--ocre') }}><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>
