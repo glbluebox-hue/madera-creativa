@@ -162,10 +162,8 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar, pantallaInicia
   const [regVerificacionEnviada, setRegVerificacionEnviada] = useState(false);
   const [regAvisoCodigo, setRegAvisoCodigo] = useState('');
 
-  // "¿Tienes un código de acceso?" — colapsado por defecto, para no alargar
-  // el formulario a quien no tiene uno (la mayoría de altas normales). Ya
-  // abierto y relleno si se llegó con un enlace de invitación (`?codigo=`).
-  const [mostrarCampoCodigo, setMostrarCampoCodigo] = useState(() => !!codigoInvitacionDeLaUrl());
+  // Código de acceso (08/09/2026: siempre visible, ver más abajo) — ya
+  // relleno si se llegó con un enlace de invitación (`?codigo=`).
   const [regCodigo, setRegCodigo] = useState(codigoInvitacionDeLaUrl);
 
   const iniciarSesion = async (e: React.FormEvent) => {
@@ -539,26 +537,20 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar, pantallaInicia
                 />
               </div>
 
-              {/* "¿Tienes un código de acceso?" — colapsado por defecto, un enlace pequeño en vez de un campo más en el formulario. */}
-              {mostrarCampoCodigo ? (
-                <div className={styles.loginInputWrap}>
-                  <span className={styles.loginIconoBadge}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41L13.42 20.6a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg>
-                  </span>
-                  <input
-                    className={`${styles.input} ${styles.loginInputSimple}`}
-                    type="text"
-                    value={regCodigo}
-                    onChange={e => setRegCodigo(e.target.value)}
-                    placeholder="Código de acceso (opcional)"
-                    autoCapitalize="characters"
-                  />
-                </div>
-              ) : (
-                <button type="button" className={styles.loginRecuperar} style={{ textAlign: 'left' }} onClick={() => setMostrarCampoCodigo(true)}>
-                  ¿Tienes un código de acceso?
-                </button>
-              )}
+              {/* Corrección (08/09/2026, reporte real): antes colapsado detrás de un enlace pequeño ("¿Tienes un código de acceso?") — con los campos nuevos del formulario (nombre/apellidos/teléfono) quedaba tan abajo que pasaba desapercibido. Ahora siempre visible. */}
+              <div className={styles.loginInputWrap}>
+                <span className={styles.loginIconoBadge}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41L13.42 20.6a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg>
+                </span>
+                <input
+                  className={`${styles.input} ${styles.loginInputSimple}`}
+                  type="text"
+                  value={regCodigo}
+                  onChange={e => setRegCodigo(e.target.value)}
+                  placeholder="Código de acceso (opcional)"
+                  autoCapitalize="characters"
+                />
+              </div>
 
               {regError && <div className={styles.loginError}><span style={{ display: 'inline-flex' }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12" y2="17" /></svg></span> {regError}</div>}
 
