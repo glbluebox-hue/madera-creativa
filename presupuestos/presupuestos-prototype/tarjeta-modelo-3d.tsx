@@ -6,6 +6,7 @@ import { VisorModelo3D } from './visor-modelo-3d.js';
 import { BotonSubirModelo3D } from './boton-subir-modelo-3d.js';
 import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
 import { MensajeFuncionBloqueada } from './candado-plan.js';
+import { AvisoMarcaSketchUp } from './aviso-marca-sketchup.js';
 import styles from './styles.module.css';
 
 /**
@@ -16,26 +17,6 @@ import styles from './styles.module.css';
  * enlace solo lleva al usuario a SU PROPIO SketchUp Desktop.
  */
 const URL_SKETCHUP = 'https://app.sketchup.com';
-
-/**
- * Aviso de marca (decisión definitiva, 05/09/2026): "SketchUp" es una
- * marca de Trimble Inc.; Madera Creativa Estudio usa el nombre textual
- * "SketchUp Desktop" únicamente para identificar el software externo al
- * que lleva el enlace — nunca se presenta como integración oficial, socio
- * o patrocinado por Trimble. Debe aparecer escrito directamente junto a
- * CUALQUIER mención de SketchUp Desktop (nunca detrás de un tooltip/hover),
- * en un tamaño auxiliar pero con contraste suficiente para ser legible —
- * nunca escondido ni relegado solo a una página legal general.
- */
-const AVISO_MARCA_SKETCHUP = 'SketchUp es una marca de Trimble Inc. Madera Creativa Estudio no está afiliada ni patrocinada por Trimble.';
-
-function AvisoMarcaSketchUp() {
-  return (
-    <p style={{ margin: '0.5rem 0 0', fontSize: '0.68rem', lineHeight: 1.4, color: 'var(--topo-claro)' }}>
-      {AVISO_MARCA_SKETCHUP}
-    </p>
-  );
-}
 
 export type TarjetaModelo3DProps = {
   /** `null` cuando el proyecto todavía no tiene modelo subido. */

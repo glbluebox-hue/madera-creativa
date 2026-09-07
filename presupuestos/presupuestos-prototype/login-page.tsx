@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import logoImg from './assets/logo.png';
 import loginMadera from './assets/login-madera.jpg';
 import loginHojas from './assets/login-hojas.jpg';
-import { registrarEnServidor, loginEnServidor, solicitarRecuperacion, restablecerPassword, verificarEmail } from './use-registro.js';
+import { registrarEnServidor, loginEnServidor, solicitarRecuperacion, restablecerPassword, verificarEmail, debeRegistrarseLocalmente } from './use-registro.js';
 import { soportaWebAuthn, iniciarSesionBiometrica } from './use-biometria.js';
 import type { PlanAcceso } from './planes.js';
 import styles from './styles.module.css';
@@ -13,9 +13,18 @@ export type LoginPageProps = {
   onLogin: (nombre: string, password: string) => { ok: boolean; error?: string };
   onLoginDirecto: (id: string, nombre: string, esAdmin: boolean, plan?: PlanAcceso) => void;
   onRegistrar: (nombre: string, password: string) => { ok: boolean; error?: string };
+  /**
+   * Pestaña con la que abrir esta pantalla (05/09/2026, página de
+   * presentación comercial) — la usa `PaginaPresentacion` para que
+   * "Empezar ahora"/"Empezar mis 60 días gratis" lleguen directamente a
+   * "Regístrate", y "Entrar" a "Entrar". Opcional: sin ella, se mantiene
+   * exactamente el criterio de siempre (`?codigo=` en la URL abre
+   * "Regístrate", cualquier otro caso abre "Entrar").
+   */
+  pantallaInicial?: Pantalla;
 };
 
-type Pantalla = 'login' | 'registro';
+export type Pantalla = 'login' | 'registro';
 
 const IconoUsuario = ({ s = 18 }: { s?: number }) => (
   <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
@@ -41,23 +50,23 @@ const IconoHuella = ({ s = 18 }: { s?: number }) => (
  * Un único de-uso al cargar, igual que `accion=clientes` en
  * `presupuestos-prototype.tsx` — nunca algo persistente.
  */
-function codigoInvitacionDeLaUrl(): string {
+export function codigoInvitacionDeLaUrl(): string {
   return new URLSearchParams(window.location.search).get('codigo') ?? '';
 }
 
 /** Token del enlace de recuperación de contraseña (`?recuperar=…`, enviado por email desde `/auth/solicitar-recuperacion`) — mismo patrón de un solo uso al cargar. */
-function tokenRecuperacionDeLaUrl(): string {
+export function tokenRecuperacionDeLaUrl(): string {
   return new URLSearchParams(window.location.search).get('recuperar') ?? '';
 }
 
 /** Token del enlace de verificación de email (`?verificar=…`, enviado por email desde `/auth/registrar`) — mismo patrón de un solo uso al cargar. */
-function tokenVerificacionDeLaUrl(): string {
+export function tokenVerificacionDeLaUrl(): string {
   return new URLSearchParams(window.location.search).get('verificar') ?? '';
 }
 
 /** Pantalla de inicio de sesión y registro de Madera Creativa. */
-export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPageProps) {
-  const [pantalla, setPantalla] = useState<Pantalla>(() => (codigoInvitacionDeLaUrl() ? 'registro' : 'login'));
+export function LoginPage({ onLogin, onLoginDirecto, onRegistrar, pantallaInicial }: LoginPageProps) {
+  const [pantalla, setPantalla] = useState<Pantalla>(() => pantallaInicial ?? (codigoInvitacionDeLaUrl() ? 'registro' : 'login'));
 
   // Login
   const [loginUsuario, setLoginUsuario] = useState('');
@@ -138,6 +147,10 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
 
   // Registro
   const [regNombre, setRegNombre] = useState('');
+  // Datos personales (08/09/2026, formulario ampliado a petición del cliente) — independientes de regNombre, que sigue siendo el email/identificador de acceso.
+  const [regNombrePersona, setRegNombrePersona] = useState('');
+  const [regApellidos, setRegApellidos] = useState('');
+  const [regTelefono, setRegTelefono] = useState('');
   const [regPass, setRegPass] = useState('');
   const [regPass2, setRegPass2] = useState('');
   const [regError, setRegError] = useState('');
@@ -199,25 +212,37 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
     if (regPass !== regPass2) { setRegError('Las contraseñas no coinciden.'); return; }
     setRegCargando(true);
     // Registrar en servidor primero
-    const srv = await registrarEnServidor(regNombre, regPass, regCodigo.trim() || undefined);
+    const srv = await registrarEnServidor(
+      regNombre, regPass,
+      { nombrePersona: regNombrePersona.trim(), apellidos: regApellidos.trim(), telefono: regTelefono.trim() },
+      regCodigo.trim() || undefined
+    );
+    setRegCargando(false);
+
     if (!srv.ok && srv.codigo !== 'error-red') {
       setRegError(srv.error ?? 'Error al registrarse.');
-      setRegCargando(false);
       return;
     }
-    // Guardar localmente también
-    const local = onRegistrar(regNombre, regPass);
-    if (!local.ok) { setRegError(local.error ?? 'Error al registrarse.'); setRegCargando(false); return; }
 
-    setRegCargando(false);
-    if (srv.ok) {
-      // La cuenta queda activa de inmediato en el servidor, pero no se
-      // puede entrar hasta verificar el email (con o sin código) — ya no
-      // tiene sentido intentar iniciar sesión aquí, siempre fallaría con
-      // 'email-no-verificado'.
-      if (srv.avisoCodigo) setRegAvisoCodigo(srv.avisoCodigo);
-      setRegVerificacionEnviada(true);
+    // Corrección (05/09/2026, auditoría del flujo de registro): la sesión
+    // LOCAL (heredada, `onRegistrar` → `use-auth.ts`) solo se crea en la
+    // reserva sin conexión — nunca cuando el registro en el SERVIDOR tuvo
+    // éxito. Antes se llamaba en los dos casos, lo que dejaba entrar en la
+    // app (con una sesión sin ningún token real detrás) antes de verificar
+    // el email — ver `debeRegistrarseLocalmente()` para el detalle exacto.
+    if (debeRegistrarseLocalmente(srv)) {
+      const local = onRegistrar(regNombre, regPass);
+      if (!local.ok) { setRegError(local.error ?? 'Error al registrarse.'); }
+      return;
     }
+
+    // La cuenta queda activa de inmediato en el servidor, pero no se puede
+    // entrar hasta verificar el email (con o sin código) — nunca se crea
+    // ninguna sesión aquí; solo el servidor decide cuándo se puede entrar
+    // (`emailVerificado`), y el trial solo arranca en
+    // `POST /auth/verificar-email`.
+    if (srv.avisoCodigo) setRegAvisoCodigo(srv.avisoCodigo);
+    setRegVerificacionEnviada(true);
   };
 
   return (
@@ -406,9 +431,61 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
                   revisa tu bandeja de entrada (y la carpeta de spam, por si acaso) y pulsa el enlace.
                   Hasta que lo verifiques no podrás iniciar sesión.
                 </p>
+                {/* Explícito (05/09/2026): el trial NUNCA empieza a contar en el registro, solo tras verificar el email (ver `iniciarTrialSiCorresponde` en el backend) — esta pantalla no debe sugerir lo contrario. */}
+                <p style={{ margin: '0.6rem 0 0', fontSize: '0.8rem', color: 'var(--topo-claro)' }}>
+                  Tu prueba de 60 días todavía no ha empezado — empezará a contar en cuanto verifiques tu email.
+                </p>
               </div>
             ) : (
             <form className={styles.loginForm} onSubmit={registrar} noValidate>
+              {/*
+                Insignias de confianza (05/09/2026, encargo §2) — se
+                muestran ANTES del formulario, como insignias visuales
+                claras, nunca como texto suelto perdido en un párrafo.
+                Reutilizan el mismo lenguaje visual que `--verde-bg`/
+                `--verde` ya usa en el resto de la app para "estado
+                positivo" (p. ej. `AlmacenamientoUso`).
+              */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.3rem' }}>
+                {['60 días de prueba', 'Basic + Pro durante la prueba', 'Sin tarjeta'].map((texto) => (
+                  <span
+                    key={texto}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                      fontSize: '0.7rem', fontWeight: 700, color: 'var(--verde)',
+                      background: 'var(--verde-bg)', borderRadius: 999, padding: '0.3em 0.7em',
+                    }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                    {texto}
+                  </span>
+                ))}
+              </div>
+
+              {/* Datos personales (08/09/2026, formulario ampliado a petición del cliente) — nombre y apellidos antes del correo, teléfono justo después. */}
+              <div className={styles.loginInputWrap}>
+                <span className={styles.loginIconoBadge}><IconoUsuario /></span>
+                <input
+                  className={`${styles.input} ${styles.loginInputSimple}`}
+                  type="text"
+                  value={regNombrePersona}
+                  onChange={e => setRegNombrePersona(e.target.value)}
+                  placeholder="Nombre"
+                  autoComplete="given-name"
+                  autoFocus
+                />
+              </div>
+              <div className={styles.loginInputWrap}>
+                <span className={styles.loginIconoBadge}><IconoUsuario /></span>
+                <input
+                  className={`${styles.input} ${styles.loginInputSimple}`}
+                  type="text"
+                  value={regApellidos}
+                  onChange={e => setRegApellidos(e.target.value)}
+                  placeholder="Apellidos"
+                  autoComplete="family-name"
+                />
+              </div>
               <div className={styles.loginInputWrap}>
                 <span className={styles.loginIconoBadge}><IconoCorreo /></span>
                 <input
@@ -418,7 +495,19 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
                   onChange={e => setRegNombre(e.target.value)}
                   placeholder="Correo electrónico"
                   autoComplete="email"
-                  autoFocus
+                />
+              </div>
+              <div className={styles.loginInputWrap}>
+                <span className={styles.loginIconoBadge}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                </span>
+                <input
+                  className={`${styles.input} ${styles.loginInputSimple}`}
+                  type="tel"
+                  value={regTelefono}
+                  onChange={e => setRegTelefono(e.target.value)}
+                  placeholder="Teléfono"
+                  autoComplete="tel"
                 />
               </div>
               <div className={styles.loginInputWrap}>
@@ -476,10 +565,27 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
               <button
                 type="submit"
                 className={`${styles.btn} ${styles.btnPrimario} ${styles.btnLoginSubmit}`}
-                disabled={regCargando || !regNombre.trim() || !regPass.trim() || !regPass2.trim()}
+                disabled={
+                  regCargando || !regNombrePersona.trim() || !regApellidos.trim() || !regTelefono.trim() ||
+                  !regNombre.trim() || !regPass.trim() || !regPass2.trim()
+                }
               >
                 {regCargando ? <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center' }}><span className={styles.loginSpinner} /> Creando cuenta…</span> : 'Crear cuenta'}
               </button>
+
+              {/*
+                PUNTO DE INTEGRACIÓN FUTURA — zona legal del registro
+                (05/09/2026, encargo §2 y §24): aquí iría la casilla de
+                aceptación de Términos/Privacidad/consentimiento, cuando
+                exista texto legal definitivo. Deliberadamente sin
+                implementar todavía: la Fase 2 legal está pausada a la
+                espera de validación jurídica (ver AUDITORIA-LEGAL-
+                PRIVACIDAD.md §14) y el encargo prohíbe explícitamente
+                inventar un texto "provisional" que pudiera colarse en
+                producción. El enlace a "Política de privacidad" del pie
+                de esta misma pantalla es, por ahora, la única referencia
+                legal real.
+              */}
             </form>
             )
           )}
@@ -548,12 +654,42 @@ export function LoginPage({ onLogin, onLoginDirecto, onRegistrar }: LoginPagePro
                 <p style={{ margin: 0, fontSize: '0.88rem', color: 'var(--topo)' }}>Verificando tu email…</p>
               ) : verificado ? (
                 <>
-                  <p style={{ margin: '0 0 1rem', fontSize: '0.88rem', color: 'var(--topo)' }}>
-                    Email verificado. Ya puedes entrar.
-                  </p>
+                  {/*
+                    Bienvenida (05/09/2026, encargo §4) — sustituye la
+                    antigua confirmación de una sola línea. Aquí es
+                    exactamente donde `iniciarTrialSiCorresponde` ya ha
+                    arrancado el trial en el backend (ver
+                    `presupuestos-service.app-root.ts`, ruta de
+                    verificación) — el mensaje puede afirmar con
+                    seguridad que la prueba ya ha empezado. Icono propio
+                    (regalo, mismo grosor de trazo que el resto de la
+                    app) en vez de un emoji de sistema — nunca debe leerse
+                    como un anuncio publicitario.
+                  */}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', textAlign: 'center' }}>
+                    <span style={{ color: 'var(--verde)' }} aria-hidden="true">
+                      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="8" width="18" height="13" rx="1.5" />
+                        <path d="M3 12h18" />
+                        <path d="M12 8v13" />
+                        <path d="M12 8c-2 0-4-1.2-4-3.2S9.2 2 10.5 2 12 4 12 8Z" />
+                        <path d="M12 8c2 0 4-1.2 4-3.2S13.8 2 12.5 2 12 4 12 8Z" />
+                      </svg>
+                    </span>
+                    <p style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: 'var(--topo)' }}>
+                      Email verificado — tu prueba de 60 días ya ha empezado.
+                    </p>
+                    <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.35rem', fontSize: '0.8rem', color: 'var(--topo-claro)', textAlign: 'left' }}>
+                      <li>· Acceso completo a Basic + Pro durante los 60 días.</li>
+                      <li>· No necesitas ninguna tarjeta.</li>
+                      <li>· Tus datos se quedan aunque más adelante cambies de plan.</li>
+                      <li>· Entra con tu cuenta y elige tu plan para empezar.</li>
+                    </ul>
+                  </div>
                   <button
                     type="button"
                     className={`${styles.btn} ${styles.btnPrimario} ${styles.btnLoginSubmit}`}
+                    style={{ marginTop: '1rem' }}
                     onClick={() => { window.location.href = window.location.pathname; }}
                   >
                     Ir a entrar

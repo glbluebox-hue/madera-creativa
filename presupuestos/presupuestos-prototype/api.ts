@@ -9,7 +9,7 @@ import type { PlantillaMC, RecursoMC, ComponenteMC } from './documento-modelo.js
 import type { ContratoMC } from './contratos-modelo.js';
 import type { Empresa } from './use-empresa.js';
 import type { Perfil } from './use-perfil.js';
-import type { PlanAcceso } from './planes.js';
+import type { PlanAcceso, PlanComercial } from './planes.js';
 
 // En local (Bit) el gateway solo entiende peticiones bajo `/api/presupuestos-service/...`,
 // así que ese es el valor por defecto. En un despliegue combinado fuera de
@@ -1619,6 +1619,8 @@ export type EstadoAcceso = {
   plan: PlanAcceso;
   tipoAcceso: TipoAcceso;
   expiraEn: string | null;
+  /** ¿Ya eligió un plan comercial? (08/09/2026) — `true` fuera de un trial (nunca se le exige elegir nada); en un trial, `false` hasta la primera elección. Ver `PantallaElegirPlan`. */
+  planElegido: boolean;
 };
 
 /** Recupera el estado de acceso real de la cuenta autenticada — ruta exenta del bloqueo por falta de plan, siempre responde aunque el trial haya terminado. */
@@ -1626,6 +1628,28 @@ export async function obtenerEstadoAcceso(): Promise<EstadoAcceso> {
   const res = await fetchConAuth('/auth/yo');
   await comprobarRespuesta(res, 'No se pudo comprobar el estado de la cuenta');
   return res.json();
+}
+
+/**
+ * Elige un plan comercial preferido (08/09/2026, pantalla obligatoria
+ * "Elige tu plan" tras verificar el email — ver `PantallaElegirPlan`).
+ * Solo registra la preferencia; el trial ya da acceso completo PRO desde
+ * antes, elija lo que elija (ver el comentario de `/auth/elegir-plan` en
+ * el backend).
+ */
+export async function elegirPlan(plan: PlanComercial, periodo: 'mensual' | 'anual'): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const res = await fetchConAuth('/auth/elegir-plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan, periodo }),
+    });
+    const data = await res.json().catch(() => ({})) as { error?: string };
+    if (!res.ok) return { ok: false, error: data.error || 'No se pudo guardar tu elección.' };
+    return { ok: true };
+  } catch {
+    return { ok: false, error: 'Sin conexión con el servidor.' };
+  }
 }
 
 /**

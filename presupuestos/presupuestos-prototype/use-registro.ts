@@ -33,18 +33,40 @@ export type ResultadoAuth = {
 };
 
 /**
+ * ¿Debe crearse sesión LOCAL (heredada, `use-auth.ts`) tras un intento de
+ * registro? Corrección (05/09/2026, auditoría del flujo de registro):
+ * ÚNICAMENTE en la reserva sin conexión (`error-red`, servidor
+ * inalcanzable) — igual que ya hace `iniciarSesion()` para el login. Antes
+ * se llamaba también cuando el registro en el SERVIDOR había tenido éxito
+ * (`srv.ok === true`), lo que creaba una sesión local válida antes de que
+ * el email estuviera verificado: la app se montaba brevemente como
+ * autenticada, la primera petición protegida devolvía 401 (no había
+ * ningún access token real, `loginEnServidor`/`loginDirecto` nunca se
+ * habían llamado) y la sesión se cerraba sola — nunca un acceso funcional,
+ * pero sí un estado incorrecto que dejaba la pantalla de "revisa tu email"
+ * sin mostrarse. Extraída como función pura para poder probarla sin
+ * simular la interacción completa del formulario.
+ */
+export function debeRegistrarseLocalmente(srv: Pick<ResultadoAuth, 'ok' | 'codigo'>): boolean {
+  return srv.ok === false && srv.codigo === 'error-red';
+}
+
+/** Datos personales del registro (08/09/2026, formulario ampliado a petición del cliente) — independientes de `nombre` (el email/identificador de acceso). */
+export type DatosPersonaRegistro = { nombrePersona: string; apellidos: string; telefono: string };
+
+/**
  * Registra un nuevo usuario en el servidor. Verificación de email
  * (04/09/2026): la cuenta queda `activa` de inmediato siempre, con o sin
  * código — pero no puede iniciar sesión hasta verificar el email que el
  * servidor le manda (ver `loginEnServidor`, código `'email-no-verificado'`).
  */
-export async function registrarEnServidor(nombre: string, password: string, codigoPromocional?: string): Promise<ResultadoAuth> {
+export async function registrarEnServidor(nombre: string, password: string, datosPersona: DatosPersonaRegistro, codigoPromocional?: string): Promise<ResultadoAuth> {
   try {
     const res = await fetch(`${BASE}/auth/registrar`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ nombre, password, ...(codigoPromocional ? { codigoPromocional } : {}) }),
+      body: JSON.stringify({ nombre, password, ...datosPersona, ...(codigoPromocional ? { codigoPromocional } : {}) }),
     });
     const data = await res.json() as any;
     if (res.status === 409) return { ok: false, error: 'Ese nombre de usuario ya existe.', codigo: 'credenciales' };

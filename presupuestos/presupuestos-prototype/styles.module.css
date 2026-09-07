@@ -86,6 +86,15 @@
   --azul-bg: #eaf0f5;
   --ocre: #8a6835;
   --ocre-bg: #f5ede0;
+  /*
+   * Tarjeta de Pro en "Elige tu plan" (08/09/2026) — mismo tratamiento
+   * que en la landing comercial: fondo marrón oscuro fijo (no se
+   * redeclara en modo oscuro, igual que --topo unas líneas más abajo no
+   * lo hace) con "Pro"/precio resaltados en un ocre más claro, legible
+   * sobre ese fondo oscuro en los dos temas.
+   */
+  --marca-oscura: #55483f;
+  --ocre-claro: #e0ac5c;
   --morado: #6554a0;
   --morado-bg: #f0edf8;
 

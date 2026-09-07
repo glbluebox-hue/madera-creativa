@@ -45,6 +45,13 @@ export type AccesoUsuario = {
   codigoUsado: string | null;
 };
 
+/** Plan comercial preferido guardado por la cuenta — ver `PlanPreferidoSchema`. */
+export type PlanPreferido = {
+  plan: 'BASIC' | 'PRO' | 'PREMIUM';
+  periodo: 'mensual' | 'anual';
+  elegidoEn: string;
+};
+
 /** Valor por defecto de `acceso` para cuentas nuevas sin código (o documentos anteriores a este campo). */
 export const ACCESO_POR_DEFECTO: AccesoUsuario = {
   tipo: 'free',
@@ -63,6 +70,27 @@ const AccesoSchema = new Schema(
     expiraEn:    { type: String, default: null },
     origen:      { type: String, enum: ['registro', 'codigo', 'admin', 'pago', 'trial'], default: 'registro' },
     codigoUsado: { type: String, default: null },
+  },
+  { _id: false }
+);
+
+/**
+ * Plan preferido (08/09/2026, pantalla obligatoria "Elige tu plan" tras
+ * verificar el email) — GUARDA LA INTENCIÓN comercial de la cuenta, nunca
+ * autoriza nada por sí sola: el trial ya concede acceso completo PRO al
+ * verificar el email (`iniciarTrialSiCorresponde`, sin cambios), igual
+ * para quien elija Basic, Pro o Premium — así la promesa "Basic + Pro
+ * incluidos durante la prueba" es la misma para todos. Este campo es
+ * solo para saber qué le tocará pagar cuando exista pasarela de cobro
+ * (ver `elegir()` en `tarjeta-plan.tsx`) y para no volver a preguntar en
+ * la pantalla de "tu prueba ha terminado". `null` hasta que el usuario
+ * elige por primera vez.
+ */
+const PlanPreferidoSchema = new Schema(
+  {
+    plan:      { type: String, enum: ['BASIC', 'PRO', 'PREMIUM'], required: true },
+    periodo:   { type: String, enum: ['mensual', 'anual'], required: true },
+    elegidoEn: { type: String, required: true },
   },
   { _id: false }
 );
@@ -218,12 +246,26 @@ const UsuarioSchema = new Schema({
   /** Foto de perfil en formato data URL (base64) — mismo patrón que `Empresa.logo`. Vacía si no se ha subido ninguna. */
   foto:         { type: String, default: '' },
   /**
+   * Datos personales del registro (08/09/2026, formulario ampliado a
+   * petición del cliente) — independientes de `nombre` (que sigue siendo
+   * el identificador de acceso/email, sin cambios: tocarlo afectaría al
+   * login, al índice único y a todo lo que ya depende de él). Vacíos por
+   * defecto para las cuentas creadas antes de este cambio — no hace falta
+   * ninguna migración, el formulario nuevo simplemente los exige a partir
+   * de ahora en `/auth/registrar`.
+   */
+  nombrePersona: { type: String, default: '' },
+  apellidos:     { type: String, default: '' },
+  telefono:      { type: String, default: '' },
+  /**
    * Tipo de acceso/plan de la cuenta (sistema de códigos promocionales y,
    * en el futuro, suscripciones de pago). Con `default`, así que los
    * documentos ya existentes en producción lo reciben automáticamente al
    * leerse — no hace falta ninguna migración destructiva.
    */
   acceso:       { type: AccesoSchema, default: () => ACCESO_POR_DEFECTO },
+  /** Ver `PlanPreferidoSchema` — `null` hasta la primera elección. */
+  planPreferido: { type: PlanPreferidoSchema, default: null },
   notifPrefs:   { type: PreferenciasNotificacionesSchema, default: () => ({}) },
   recordatoriosPersonalizados: { type: [RecordatorioPersonalizadoSchema], default: [] },
 });

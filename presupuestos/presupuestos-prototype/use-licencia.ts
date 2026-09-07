@@ -11,13 +11,17 @@ import { fetchConAuth, obtenerEstadoAcceso, type EstadoAcceso } from './api.js';
  *
  * @param sesion Sesión activa del usuario.
  * @param onSuspendido Callback cuando la cuenta ha sido suspendida o eliminada.
- * @returns El último `EstadoAcceso` conocido (`null` hasta la primera
- * comprobación) — para que la interfaz muestre "Prueba gratuita · Te
- * quedan X días" sin depender de que `sesion.plan` (fijado solo en el
- * login, nunca se refresca solo) siga siendo correcto si el trial expira
- * con la sesión ya abierta.
+ * @returns `{ estadoAcceso, refrescar }` — `estadoAcceso` es el último
+ * conocido (`null` hasta la primera comprobación), para que la interfaz
+ * muestre "Prueba gratuita · Te quedan X días" sin depender de que
+ * `sesion.plan` (fijado solo en el login, nunca se refresca solo) siga
+ * siendo correcto si el trial expira con la sesión ya abierta.
+ * `refrescar` (08/09/2026, pantalla "Elige tu plan") fuerza una
+ * comprobación inmediata — sin ella, tras elegir un plan habría que
+ * esperar hasta 2 minutos (el sondeo periódico) para que la app dejara de
+ * pedir que se elija.
  */
-export function useLicencia(sesion: SesionActiva | null, onSuspendido: () => void): EstadoAcceso | null {
+export function useLicencia(sesion: SesionActiva | null, onSuspendido: () => void): { estadoAcceso: EstadoAcceso | null; refrescar: () => Promise<void> } {
   const usuarioId = sesion?.usuarioId ?? null;
   const onSuspRef = useRef(onSuspendido);
   onSuspRef.current = onSuspendido;
@@ -69,5 +73,5 @@ export function useLicencia(sesion: SesionActiva | null, onSuspendido: () => voi
     };
   }, [usuarioId, verificar]);
 
-  return estadoAcceso;
+  return { estadoAcceso, refrescar: verificar };
 }

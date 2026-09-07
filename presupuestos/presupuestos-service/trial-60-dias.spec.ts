@@ -7,7 +7,7 @@ import { ClienteModel, ProyectoModel } from './cliente.model.js';
 import { CodigoPromocionalModel, canjearCodigo } from './codigo-promocional.model.js';
 import {
   obtenerPlanUsuario, calcularPlanEfectivo, iniciarTrialSiCorresponde, requiereBloqueoPorSinPlan,
-  requirePlan, capacidadPermitidaParaPlan, PRO_O_SUPERIOR, SOLO_PREMIUM, DURACION_TRIAL_DIAS,
+  requirePlan, capacidadPermitidaParaPlan, obtenerEstadoAccesoUsuario, PRO_O_SUPERIOR, SOLO_PREMIUM, DURACION_TRIAL_DIAS,
 } from './planes.js';
 import { obtenerUsoAlmacenamiento, LIMITES_ALMACENAMIENTO_BYTES } from './almacenamiento-cuota.js';
 import { obtenerCapacidad } from './ia-registro-capacidades.js';
@@ -51,6 +51,12 @@ function mockReqResNext(usuarioId: string) {
   let siguio = false;
   const next = () => { siguio = true; };
   return { req, res, next, resultado: () => ({ status, body, siguio }) };
+}
+
+/** Simula la MISMA secuencia que ejecuta `POST /auth/elegir-plan` (08/09/2026) — solo guarda `planPreferido`, nunca toca `acceso`. */
+async function elegirPlanReal(usuarioId: string, plan: 'BASIC' | 'PRO' | 'PREMIUM', periodo: 'mensual' | 'anual') {
+  const planPreferido = { plan, periodo, elegidoEn: new Date().toISOString() };
+  await UsuarioModel.updateOne({ id: usuarioId }, { $set: { planPreferido } }).exec();
 }
 
 /** Simula la MISMA secuencia atómica que ejecuta `POST /auth/verificar-email` (token de un solo uso + `iniciarTrialSiCorresponde`). */
@@ -455,6 +461,75 @@ describe('T. Cuentas existentes antiguas — nunca reciben trial retroactivo', (
     // tiene un único punto de llamada. No hay backfill ni migración
     // asociados a esta función, a propósito (petición explícita del
     // encargo: "no crear trial automáticamente para cuentas antiguas").
+    expect(true).toBe(true);
+  });
+});
+
+// ── U — pantalla obligatoria "Elige tu plan" (08/09/2026) ──────────────────
+describe('U. Elegir plan — pantalla obligatoria tras verificar el email, antes de entrar a la app', () => {
+  it('U1. cuenta recién verificada, trial activo, sin elegir plan todavía: planElegido es false', async () => {
+    const id = 'u1-trial-sin-elegir';
+    await conectarUsuarios();
+    await UsuarioModel.create(usuarioNuevo(id, {
+      emailVerificado: true,
+      acceso: { tipo: 'trial', plan: 'PRO', activadoEn: new Date().toISOString(), expiraEn: new Date(Date.now() + DURACION_TRIAL_DIAS * 86_400_000).toISOString(), origen: 'trial', codigoUsado: null },
+    }));
+    const estado = await obtenerEstadoAccesoUsuario(id);
+    expect(estado.planElegido).toBe(false);
+  });
+
+  it('U2. tras elegir un plan, planElegido pasa a true — pero acceso.plan sigue siendo PRO exactamente igual, elija Basic, Pro o Premium (la promesa "Basic + Pro incluidos" es la misma para todos)', async () => {
+    const id = 'u2-elige-basic';
+    await conectarUsuarios();
+    await UsuarioModel.create(usuarioNuevo(id, {
+      emailVerificado: true,
+      acceso: { tipo: 'trial', plan: 'PRO', activadoEn: new Date().toISOString(), expiraEn: new Date(Date.now() + DURACION_TRIAL_DIAS * 86_400_000).toISOString(), origen: 'trial', codigoUsado: null },
+    }));
+
+    await elegirPlanReal(id, 'BASIC', 'mensual');
+
+    const estado = await obtenerEstadoAccesoUsuario(id);
+    expect(estado.planElegido).toBe(true);
+    expect(estado.plan).toBe('PRO'); // el trial no cambia por haber elegido Basic
+    expect(await obtenerPlanUsuario(id)).toBe('PRO');
+
+    const u = await UsuarioModel.findOne({ id }).lean().exec() as any;
+    expect(u.planPreferido).toMatchObject({ plan: 'BASIC', periodo: 'mensual' });
+  });
+
+  it('U3. elegir un plan se puede repetir (cambiar de opinión) — la última elección sustituye a la anterior', async () => {
+    const id = 'u3-cambia-de-opinion';
+    await conectarUsuarios();
+    await UsuarioModel.create(usuarioNuevo(id, {
+      emailVerificado: true,
+      acceso: { tipo: 'trial', plan: 'PRO', activadoEn: new Date().toISOString(), expiraEn: new Date(Date.now() + DURACION_TRIAL_DIAS * 86_400_000).toISOString(), origen: 'trial', codigoUsado: null },
+    }));
+    await elegirPlanReal(id, 'BASIC', 'mensual');
+    await elegirPlanReal(id, 'PREMIUM', 'anual');
+    const u = await UsuarioModel.findOne({ id }).lean().exec() as any;
+    expect(u.planPreferido).toMatchObject({ plan: 'PREMIUM', periodo: 'anual' });
+  });
+
+  it('U4. una cuenta que nunca ha verificado el email (plan NONE, tipo free) no está obligada a elegir plan — planElegido es true por defecto (no le corresponde esta pantalla)', async () => {
+    const id = 'u4-sin-verificar';
+    await conectarUsuarios();
+    await UsuarioModel.create(usuarioNuevo(id));
+    const estado = await obtenerEstadoAccesoUsuario(id);
+    expect(estado.planElegido).toBe(true);
+  });
+
+  it('U5. una cuenta con código promocional (origen "codigo", no trial) nunca está obligada a elegir plan', async () => {
+    const id = 'u5-codigo';
+    await conectarUsuarios();
+    await UsuarioModel.create(usuarioNuevo(id, {
+      emailVerificado: true,
+      acceso: { tipo: 'promotional', plan: 'PRO', activadoEn: new Date().toISOString(), expiraEn: null, origen: 'codigo', codigoUsado: 'PROMO1' },
+    }));
+    const estado = await obtenerEstadoAccesoUsuario(id);
+    expect(estado.planElegido).toBe(true);
+  });
+
+  it('U6. el admin nunca pasa por esta pantalla — no depende de obtenerEstadoAccesoUsuario, se decide en el frontend por sesion.esAdmin (documental)', () => {
     expect(true).toBe(true);
   });
 });

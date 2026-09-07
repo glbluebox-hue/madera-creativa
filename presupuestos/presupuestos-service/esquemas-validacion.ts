@@ -32,12 +32,32 @@ export const esquemaLogin = z.object({
 /**
  * Registro: mínimo de 8 caracteres — más estricto que el login (que debe
  * admitir contraseñas de cuentas ya existentes, creadas antes de este mínimo).
+ *
+ * Datos personales (08/09/2026, formulario ampliado a petición del
+ * cliente) — `nombre` sigue siendo el email/identificador de acceso, sin
+ * cambios; `nombrePersona`/`apellidos`/`telefono` son datos nuevos,
+ * exigidos siempre (nunca opcionales), para tener un contacto real de
+ * cada alta.
  */
 export const esquemaRegistro = z.object({
   nombre: z.string().trim().min(3, 'El usuario debe tener al menos 3 caracteres.').max(254),
   password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres.').max(256),
+  nombrePersona: z.string().trim().min(1, 'Falta el nombre.').max(100),
+  apellidos: z.string().trim().min(1, 'Faltan los apellidos.').max(150),
+  telefono: z.string().trim().min(6, 'El teléfono no es válido.').max(30),
   /** Opcional — "¿Tienes un código de acceso?" en el registro. Se valida y canjea siempre en el servidor (ver `codigo-promocional.model.ts`), nunca se confía en nada más que en el propio texto del código. */
   codigoPromocional: z.string().trim().max(40).optional(),
+});
+
+/**
+ * Elegir plan comercial preferido (08/09/2026, pantalla obligatoria tras
+ * verificar el email) — ver `PlanPreferidoSchema` en `usuario.model.ts`.
+ * Solo BASIC/PRO/PREMIUM: `NONE`/`LIFETIME_FREE` nunca son una elección
+ * real del usuario.
+ */
+export const esquemaElegirPlan = z.object({
+  plan: z.enum(['BASIC', 'PRO', 'PREMIUM']),
+  periodo: z.enum(['mensual', 'anual']),
 });
 
 /** Abrir un hilo de soporte (comentarios/sugerencias/incidencias, 26/08/2026). */

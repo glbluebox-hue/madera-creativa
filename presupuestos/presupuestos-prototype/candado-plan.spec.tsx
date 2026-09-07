@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { puedeUsar, planesDesde, PRO_O_SUPERIOR, SOLO_PREMIUM } from './planes.js';
+import { puedeUsar, planesDesde, PRO_O_SUPERIOR, SOLO_PREMIUM, CATALOGO_PLANES, DESCUENTO_ANUAL_PORCENTAJE, calcularAhorroAnual, formatoPrecio } from './planes.js';
 import { CandadoPlan, MensajeFuncionBloqueada } from './candado-plan.js';
 import { SolicitudResena } from './solicitud-resena.js';
 
@@ -70,6 +70,55 @@ describe('CandadoPlan / MensajeFuncionBloqueada — componente reutilizable', ()
     expect(html).toContain('Investigación de mercado');
     expect(html).toContain('PREMIUM');
     expect(html).toContain('🔒');
+  });
+});
+
+/**
+ * Catálogo comercial (05/09/2026, experiencia de registro/trial/planes) —
+ * único punto de verdad de precios/nombres/funciones para toda la UI
+ * comercial. Precios oficiales EXACTOS del encargo: nunca deben derivar
+ * de un cálculo en coma flotante que pudiera redondear mal lo que se
+ * muestra, así que se comprueban aquí como literales.
+ */
+describe('CATALOGO_PLANES — precios y descuento anual oficiales', () => {
+  it('tiene exactamente BASIC, PRO y PREMIUM en ese orden', () => {
+    expect(CATALOGO_PLANES.map((p) => p.plan)).toEqual(['BASIC', 'PRO', 'PREMIUM']);
+  });
+  it('precios mensuales oficiales', () => {
+    expect(CATALOGO_PLANES.find((p) => p.plan === 'BASIC')?.precioMensual).toBe(19);
+    expect(CATALOGO_PLANES.find((p) => p.plan === 'PRO')?.precioMensual).toBe(39);
+    expect(CATALOGO_PLANES.find((p) => p.plan === 'PREMIUM')?.precioMensual).toBe(59);
+  });
+  it('precios anuales oficiales (ya con el 10% aplicado)', () => {
+    expect(CATALOGO_PLANES.find((p) => p.plan === 'BASIC')?.precioAnual).toBe(205.20);
+    expect(CATALOGO_PLANES.find((p) => p.plan === 'PRO')?.precioAnual).toBe(421.20);
+    expect(CATALOGO_PLANES.find((p) => p.plan === 'PREMIUM')?.precioAnual).toBe(637.20);
+  });
+  it('almacenamiento anunciado por plan (solo de presentación — el límite real vive en el backend)', () => {
+    expect(CATALOGO_PLANES.find((p) => p.plan === 'BASIC')?.almacenamientoGB).toBe(5);
+    expect(CATALOGO_PLANES.find((p) => p.plan === 'PRO')?.almacenamientoGB).toBe(25);
+    expect(CATALOGO_PLANES.find((p) => p.plan === 'PREMIUM')?.almacenamientoGB).toBe(100);
+  });
+  it('el descuento anual es siempre del 10% frente al mensual, para los tres planes', () => {
+    expect(DESCUENTO_ANUAL_PORCENTAJE).toBe(10);
+    for (const info of CATALOGO_PLANES) {
+      const anualSinDescuento = info.precioMensual * 12;
+      const descuentoReal = (anualSinDescuento - info.precioAnual) / anualSinDescuento;
+      expect(Math.round(descuentoReal * 100)).toBe(10);
+    }
+  });
+  it('calcularAhorroAnual: cuánto se ahorra al año pagando anual', () => {
+    expect(calcularAhorroAnual(CATALOGO_PLANES[0])).toBeCloseTo(19 * 12 - 205.20, 2);
+  });
+  it('formatoPrecio: coma decimal, sin decimales si es un número redondo', () => {
+    expect(formatoPrecio(19)).toBe('19 €');
+    expect(formatoPrecio(205.20)).toBe('205,20 €');
+  });
+  it('cada plan tiene lema y al menos una función propia, nunca listas vacías', () => {
+    for (const info of CATALOGO_PLANES) {
+      expect(info.lema.length).toBeGreaterThan(0);
+      expect(info.caracteristicasPropias.length).toBeGreaterThan(0);
+    }
   });
 });
 

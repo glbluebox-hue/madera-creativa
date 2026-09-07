@@ -100,14 +100,22 @@ export async function obtenerPlanUsuario(usuarioId: string): Promise<PlanAcceso>
  * propia (no es una ruta caliente como `requirePlan`) — una consulta más
  * a Mongo por petición a `/auth/yo`/`/almacenamiento/uso` es aceptable.
  */
-export async function obtenerEstadoAccesoUsuario(usuarioId: string): Promise<{ plan: PlanAcceso; tipoAcceso: TipoAcceso; expiraEn: string | null }> {
+export async function obtenerEstadoAccesoUsuario(usuarioId: string): Promise<{ plan: PlanAcceso; tipoAcceso: TipoAcceso; expiraEn: string | null; planElegido: boolean }> {
   await conectarUsuarios();
-  const u = await UsuarioModel.findOne({ id: usuarioId }).select('acceso').lean().exec() as any;
+  const u = await UsuarioModel.findOne({ id: usuarioId }).select('acceso planPreferido').lean().exec() as any;
   const acceso = u?.acceso;
   return {
     plan: calcularPlanEfectivo(acceso),
     tipoAcceso: acceso?.tipo ?? 'free',
     expiraEn: acceso?.expiraEn ?? null,
+    /**
+     * ¿Ya eligió un plan? (08/09/2026, pantalla obligatoria "Elige tu
+     * plan") — solo tiene sentido preguntarlo durante un trial: fuera de
+     * un trial (cuenta con código/promocional, o sin ningún plan) nunca
+     * se le exige elegir nada aquí, `true` por defecto para no bloquear
+     * un caso que no le corresponde.
+     */
+    planElegido: acceso?.tipo !== 'trial' || !!u?.planPreferido,
   };
 }
 

@@ -155,3 +155,101 @@ describe('migrarEmailVerificadoUsuariosExistentes — backfill de cuentas anteri
     expect(u.emailVerificado).toBe(true);
   });
 });
+
+/**
+ * Bloqueo de login por verificación (corrección 05/09/2026, auditoría del
+ * flujo de registro) — misma comprobación exacta que `POST /auth/login`
+ * (`if (!u.emailVerificado) { … 403 'email-no-verificado' }` en
+ * `presupuestos-service.app-root.ts`), reproducida aquí en vez de
+ * importar esa ruta (mismo criterio que el resto de este archivo: sin
+ * pruebas a nivel HTTP en este proyecto). Antes de esta corrección no
+ * existía ninguna prueba, en ningún archivo, para esta comprobación en
+ * concreto — solo se probaba el consumo del token de verificación, nunca
+ * el efecto real de `emailVerificado` sobre el login.
+ */
+function loginBloqueadoPorVerificacion(u: { emailVerificado?: boolean }): boolean {
+  return !u.emailVerificado;
+}
+
+describe('Bloqueo de login por verificación — misma comprobación que /auth/login', () => {
+  it('B. una cuenta recién registrada (emailVerificado:false) queda bloqueada para entrar', async () => {
+    await UsuarioModel.create(usuarioBase('login-sin-verificar', { emailVerificado: false }));
+    const u = await UsuarioModel.findOne({ id: 'login-sin-verificar' }).lean().exec() as any;
+    expect(loginBloqueadoPorVerificacion(u)).toBe(true);
+  });
+
+  it('C. tras verificar el email (mismo camino que /auth/verificar-email), la cuenta ya no queda bloqueada para entrar', async () => {
+    const tokenPlano = randomBytes(32).toString('hex');
+    await UsuarioModel.create(usuarioBase('login-verificado', {
+      emailVerificado: false,
+      verificacionTokenHash: createHash('sha256').update(tokenPlano).digest('hex'),
+      verificacionTokenExpira: new Date(Date.now() + 60_000).toISOString(),
+    }));
+    const tokenHash = createHash('sha256').update(tokenPlano).digest('hex');
+    await UsuarioModel.findOneAndUpdate(
+      { verificacionTokenHash: tokenHash, verificacionTokenExpira: { $gt: new Date().toISOString() } },
+      { emailVerificado: true, verificacionTokenHash: null, verificacionTokenExpira: null },
+    ).exec();
+    const u = await UsuarioModel.findOne({ id: 'login-verificado' }).lean().exec() as any;
+    expect(loginBloqueadoPorVerificacion(u)).toBe(false);
+  });
+});
+
+/**
+ * Admin maestro — corrección 05/09/2026 (auditoría del flujo de
+ * registro): en una base de datos NUEVA, `asegurarAdmin()`
+ * (`presupuestos-service.app-root.ts`) creaba el documento del admin sin
+ * fijar `emailVerificado`, que por defecto del esquema es `false` — y
+ * `migrarEmailVerificadoUsuariosExistentes()` (arriba) nunca lo alcanza,
+ * porque se ejecuta DESPUÉS y esa cuenta ya tiene el campo (con `false`,
+ * guardado por Mongoose al crearla) en vez de tenerlo ausente. Resultado:
+ * el admin quedaba bloqueado por "email-no-verificado" igual que
+ * cualquier cuenta normal sin verificar.
+ *
+ * Se reproduce aquí la misma secuencia exacta que la función real (nunca
+ * se importa `presupuestos-service.app-root.ts` en un test — tiene
+ * efectos secundarios propios al cargarse, p. ej. `dns.setServers(...)`).
+ */
+async function asegurarAdminReal(): Promise<void> {
+  const existe = await UsuarioModel.findOne({ esAdmin: true }).lean().exec() as any;
+  if (!existe) {
+    await UsuarioModel.create({
+      id: 'admin', nombre: 'admin@example.com', nombreNormalizado: 'admin@example.com',
+      passwordHash: 'x', hashAlgo: 'bcrypt', estado: 'activo', esAdmin: true,
+      creadoEn: new Date().toISOString(), emailVerificado: true,
+    });
+  } else if (!existe.emailVerificado) {
+    await UsuarioModel.updateOne({ id: existe.id, esAdmin: true }, { $set: { emailVerificado: true } });
+  }
+}
+
+describe('asegurarAdmin() — el admin maestro queda siempre emailVerificado:true', () => {
+  it('E. en una base de datos nueva, crea el admin ya con emailVerificado:true', async () => {
+    await asegurarAdminReal();
+    const admin = await UsuarioModel.findOne({ esAdmin: true }).lean().exec() as any;
+    expect(admin).not.toBeNull();
+    expect(admin.emailVerificado).toBe(true);
+  });
+
+  it('corrige un admin ya existente que hubiera quedado con emailVerificado:false (el bug de antes de esta corrección)', async () => {
+    await UsuarioModel.create(usuarioBase('admin-viejo', { esAdmin: true, emailVerificado: false }));
+    await asegurarAdminReal();
+    const admin = await UsuarioModel.findOne({ esAdmin: true }).lean().exec() as any;
+    expect(admin.emailVerificado).toBe(true);
+  });
+
+  it('si ya existe un admin verificado, no crea uno segundo ni lo modifica', async () => {
+    await UsuarioModel.create(usuarioBase('admin-ok', { esAdmin: true, emailVerificado: true }));
+    await asegurarAdminReal();
+    const admins = await UsuarioModel.find({ esAdmin: true }).lean().exec();
+    expect(admins.length).toBe(1);
+    expect((admins[0] as any).id).toBe('admin-ok');
+  });
+
+  it('F. un usuario normal nuevo sigue empezando con emailVerificado:false — asegurarAdmin() nunca lo toca', async () => {
+    await UsuarioModel.create(usuarioBase('usuario-normal', { esAdmin: false, emailVerificado: false }));
+    await asegurarAdminReal();
+    const u = await UsuarioModel.findOne({ id: 'usuario-normal' }).lean().exec() as any;
+    expect(u.emailVerificado).toBe(false);
+  });
+});

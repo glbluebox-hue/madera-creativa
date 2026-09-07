@@ -37,6 +37,12 @@ export type AjustesPerfilProps = {
   onCambioAcceso: (id: string, nombre: string, esAdmin: boolean, plan?: PlanAcceso) => void;
   /** Cierra el modal. */
   onCerrar: () => void;
+  /**
+   * Abre la página de planes (05/09/2026) — omitido para el admin, que no
+   * tiene un plan comercial real (ver `presupuestos-prototype.tsx`, único
+   * llamante que decide si pasar esta prop).
+   */
+  onVerPlanes?: () => void;
 };
 
 /**
@@ -46,7 +52,7 @@ export type AjustesPerfilProps = {
  * empresa (`ajustes-empresa.tsx`): se guarda como data URL, sin pasar por
  * el servicio de almacenamiento de archivos.
  */
-export function AjustesPerfil({ perfil, nombreAcceso, onGuardar, onCambioAcceso, onCerrar }: AjustesPerfilProps) {
+export function AjustesPerfil({ perfil, nombreAcceso, onGuardar, onCambioAcceso, onCerrar, onVerPlanes }: AjustesPerfilProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [nombreMostrar, setNombreMostrar] = useState(perfil.nombreMostrar);
   const [foto, setFoto] = useState(perfil.foto);
@@ -184,6 +190,18 @@ export function AjustesPerfil({ perfil, nombreAcceso, onGuardar, onCambioAcceso,
             <p style={{ margin: 0, fontWeight: 700, fontSize: '0.85rem' }}>Almacenamiento</p>
             <AlmacenamientoUso />
           </div>
+
+          {onVerPlanes && (
+            <>
+              <hr style={{ border: 'none', borderTop: '1px solid var(--borde)', margin: '0.25rem 0' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <p style={{ margin: 0, fontWeight: 700, fontSize: '0.85rem' }}>Mi plan</p>
+                <button type="button" className={`${styles.btn} ${styles.btnSecundario}`} onClick={onVerPlanes} style={{ alignSelf: 'flex-start' }}>
+                  Ver planes
+                </button>
+              </div>
+            </>
+          )}
 
           <hr style={{ border: 'none', borderTop: '1px solid var(--borde)', margin: '0.25rem 0' }} />
 

@@ -21,10 +21,14 @@ import { useProyectos } from './use-proyectos.js';
 import { useFacturas } from './use-facturas.js';
 import { useAuth } from './use-auth.js';
 import { LoginPage } from './login-page.js';
+import type { Pantalla } from './login-page.js';
+import { PaginaPresentacion, debeSaltarPresentacionComercial } from './pagina-presentacion.js';
 import { AjustesBiometria } from './ajustes-biometria.js';
 import { PanelAdmin } from './panel-admin.js';
 import { useLicencia } from './use-licencia.js';
 import { BannerTrial, PantallaTrialTerminado } from './estado-trial.js';
+import { PantallaElegirPlan } from './pantalla-elegir-plan.js';
+import { PaginaPlanes } from './pagina-planes.js';
 import { usePush } from './use-push.js';
 import { useTema } from './use-tema.js';
 import { usePerfil } from './use-perfil.js';
@@ -59,6 +63,20 @@ const ETIQUETA_SECCION_CORTA: Record<Seccion, string> = {
  */
 export function PresupuestosPrototype() {
   const { autenticado, verificando, sesion, storagePrefix, login, loginDirecto, registrar, logout } = useAuth();
+  /**
+   * Página de presentación comercial (05/09/2026) — nueva capa ANTES del
+   * login/registro para un visitante sin sesión, nunca un sustituto de
+   * ninguno de los dos. Se salta directamente a `LoginPage` cuando la URL
+   * ya trae un enlace transaccional real (invitación/verificación/
+   * recuperación) — quien llega por uno de esos enlaces no debe ver antes
+   * una pantalla comercial. `tabLoginInicial` decide con qué pestaña se
+   * abre `LoginPage` cuando el usuario pulsa "Entrar" o "Empezar…" en la
+   * presentación.
+   */
+  const [mostrarPresentacion, setMostrarPresentacion] = useState(
+    () => !debeSaltarPresentacionComercial(new URLSearchParams(window.location.search))
+  );
+  const [tabLoginInicial, setTabLoginInicial] = useState<Pantalla>('login');
   // No disparar ninguna petición protegida hasta confirmar que hay un access
   // token válido en memoria — recién autenticado (verificando ya es false
   // desde el principio) o recién confirmado tras recargar la página. Cierra
@@ -158,6 +176,8 @@ export function PresupuestosPrototype() {
   const { privado, alternar: alternarPrivacidad } = usePrivacidad();
   const { perfil, actualizar: actualizarPerfil } = usePerfil(listo);
   const [ajustesPerfil, setAjustesPerfil] = useState(false);
+  /** Página de planes (05/09/2026) — modal reutilizable desde el banner del trial, la pantalla de trial terminado y "Mi perfil"; nunca duplica la lógica de precios (`pagina-planes.tsx`/`planes.ts`). */
+  const [mostrarPlanes, setMostrarPlanes] = useState(false);
   const [panelNotificaciones, setPanelNotificaciones] = useState(false);
   /** "Comentarios y sugerencias" (26/08/2026) — hilo de soporte del usuario con el admin. */
   const [soportePanel, setSoportePanel] = useState(false);
@@ -204,7 +224,7 @@ export function PresupuestosPrototype() {
   // Cierre de sesión por inactividad (Ajustes de empresa) — desactivado por defecto (`tiempoInactividadMin: null`).
   useInactividad(empresa.tiempoInactividadMin, autenticado, logout);
 
-  const estadoAcceso = useLicencia(sesion, logout);
+  const { estadoAcceso, refrescar: refrescarLicencia } = useLicencia(sesion, logout);
   const { estado: estadoPush, error: errorPush, activar: activarPush } = usePush(sesion);
 
   /**
@@ -232,8 +252,29 @@ export function PresupuestosPrototype() {
   }, []);
   const trialTerminado = !sesion?.esAdmin && (bloqueadoPorApi || (!!estadoAcceso && estadoAcceso.tipoAcceso === 'trial' && estadoAcceso.plan === 'NONE'));
 
+  /**
+   * Pantalla obligatoria "Elige tu plan" (08/09/2026) — tras verificar el
+   * email, antes de entrar a la app. Puramente del lado del frontend
+   * (nunca bloqueado también en el backend, a propósito: extender aquí el
+   * mismo mecanismo de `requiereBloqueoPorSinPlan` habría afectado a la
+   * batería extensa de pruebas del trial de 60 días, que da por hecho
+   * acceso completo e inmediato en cuanto el trial está activo — ver
+   * `trial-60-dias.spec.ts`, escenarios C-F). Mutuamente excluyente con
+   * `trialTerminado`: aquí `estadoAcceso.plan` nunca es `'NONE'` (el
+   * trial sigue activo), solo falta `planElegido`.
+   */
+  const nuncaEligioPlan = !sesion?.esAdmin && !!estadoAcceso && estadoAcceso.tipoAcceso === 'trial' && estadoAcceso.plan !== 'NONE' && !estadoAcceso.planElegido;
+
   if (!autenticado) {
-    return <LoginPage onLogin={login} onLoginDirecto={loginDirecto} onRegistrar={registrar} />;
+    if (mostrarPresentacion) {
+      return (
+        <PaginaPresentacion
+          onEntrar={() => { setTabLoginInicial('login'); setMostrarPresentacion(false); }}
+          onEmpezar={() => { setTabLoginInicial('registro'); setMostrarPresentacion(false); }}
+        />
+      );
+    }
+    return <LoginPage onLogin={login} onLoginDirecto={loginDirecto} onRegistrar={registrar} pantallaInicial={tabLoginInicial} />;
   }
 
   if (verificando) {
@@ -242,6 +283,10 @@ export function PresupuestosPrototype() {
         <span className={styles.loginSpinner} style={{ width: 22, height: 22, borderColor: 'rgba(81,72,63,0.25)', borderTopColor: 'var(--topo)' }} />
       </div>
     );
+  }
+
+  if (nuncaEligioPlan) {
+    return <PantallaElegirPlan onElegido={refrescarLicencia} onCerrarSesion={logout} />;
   }
 
   if (trialTerminado) {
@@ -332,7 +377,7 @@ export function PresupuestosPrototype() {
 
   return (
     <div className={styles.app} data-theme={dataTheme}>
-      {!sesion?.esAdmin && <BannerTrial estadoAcceso={estadoAcceso} />}
+      {!sesion?.esAdmin && <BannerTrial estadoAcceso={estadoAcceso} onVerPlanes={() => setMostrarPlanes(true)} />}
       <div className={styles.appConSidebar}>
         {/* ===== Botón de menú — solo móvil, abre el mismo menú lateral ===== */}
         <button
@@ -799,7 +844,24 @@ export function PresupuestosPrototype() {
           onGuardar={actualizarPerfil}
           onCambioAcceso={loginDirecto}
           onCerrar={() => setAjustesPerfil(false)}
+          onVerPlanes={sesion?.esAdmin ? undefined : () => setMostrarPlanes(true)}
         />
+      )}
+
+      {mostrarPlanes && (
+        <div className={styles.modalFondo} onClick={() => setMostrarPlanes(false)}>
+          <div className={styles.modalCaja} style={{ maxWidth: 900 }} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalCabecera}>
+              <h2 className={styles.h2}>Elige tu plan</h2>
+              <button className={styles.btnIcono} onClick={() => setMostrarPlanes(false)} aria-label="Cerrar">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </div>
+            <div style={{ padding: '1.25rem' }}>
+              <PaginaPlanes />
+            </div>
+          </div>
+        </div>
       )}
 
       {panelAdmin && sesion?.esAdmin && <PanelAdmin onCerrar={() => setPanelAdmin(false)} />}

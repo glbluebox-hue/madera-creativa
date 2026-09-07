@@ -52,3 +52,86 @@ export function puedeUsar(planActual: PlanAcceso | undefined, permitidos: PlanCo
   if (!planActual) return false;
   return (permitidos as string[]).includes(planActual);
 }
+
+/* ===== CATÁLOGO COMERCIAL (05/09/2026, experiencia de registro/trial/planes) =====
+ *
+ * Punto único de verdad de nombres/precios/periodos/características/límites
+ * para TODA la interfaz comercial (página de planes, pantalla de trial
+ * terminado, cualquier sitio futuro que necesite mostrar un plan) — nunca
+ * se repiten estos números en otro archivo. Encargo explícito: "si ya
+ * existe planes.ts, reutilízalo y amplíalo en lugar de duplicar datos".
+ *
+ * Los precios y el 25/100 GB de almacenamiento son datos SOLO DE
+ * PRESENTACIÓN — la autorización real (backend) y el límite real de
+ * almacenamiento (backend, `almacenamiento-cuota.ts`) no leen nada de
+ * aquí; si algún día divergen, hay que corregir ambos sitios a mano (no
+ * hay forma de compartir un archivo entre frontend y backend en este
+ * monorepo — mismo criterio ya documentado arriba para `PLANES_COMERCIALES`).
+ */
+
+/** Descuento del pago anual frente al mensual — decisión definitiva, siempre 10 %, nunca otro número. */
+export const DESCUENTO_ANUAL_PORCENTAJE = 10;
+
+/** Ficha comercial completa de un plan — usada por `TarjetaPlan`/`PaginaPlanes`. */
+export type InfoPlanComercial = {
+  plan: PlanComercial;
+  /** Nombre para mostrar — mismo valor que `plan`, pero con mayúscula solo inicial (Basic, Pro, Premium), nunca todo mayúsculas en el texto corrido. */
+  nombre: string;
+  /** Frase de posicionamiento — estrategia de venta ya decidida, no sustituir sin instrucción explícita. */
+  lema: string;
+  precioMensual: number;
+  /** Precio anual ya con el 10 % de descuento aplicado — cifra oficial de lanzamiento, no derivada por cálculo para evitar cualquier redondeo de coma flotante en lo que se muestra. */
+  precioAnual: number;
+  almacenamientoGB: number;
+  /**
+   * Funciones PROPIAS de este plan — nunca repite las del plan inferior
+   * (`TarjetaPlan` antepone "Todo Basic/Pro, además:" antes de esta lista
+   * para PRO/PREMIUM). No inventar funciones que no existan en el código
+   * real — cada una debe corresponder a un gate/capacidad ya implementado.
+   */
+  caracteristicasPropias: string[];
+};
+
+export const CATALOGO_PLANES: readonly InfoPlanComercial[] = [
+  {
+    plan: 'BASIC', nombre: 'Basic', lema: 'Yo gestiono.',
+    precioMensual: 19, precioAnual: 205.20, almacenamientoGB: 5,
+    caracteristicasPropias: [
+      'Gestión de clientes y proyectos',
+      'Presupuestos y facturas',
+      'Tablero de mediciones y dibujo',
+    ],
+  },
+  {
+    plan: 'PRO', nombre: 'Pro', lema: 'La aplicación me ayuda a trabajar.',
+    precioMensual: 39, precioAnual: 421.20, almacenamientoGB: 25,
+    caracteristicasPropias: [
+      'Portal para clientes',
+      'Aceptación y firma digital',
+      'Fotografías y cotas de medición',
+      'Modelo 3D y enlace con SketchUp Desktop',
+      'Escáner de facturas con IA',
+      'Análisis de rentabilidad propia',
+    ],
+  },
+  {
+    plan: 'PREMIUM', nombre: 'Premium', lema: 'La aplicación me ayuda a decidir.',
+    precioMensual: 59, precioAnual: 637.20, almacenamientoGB: 100,
+    caracteristicasPropias: [
+      'Copiloto visual para presupuestos',
+      'Investigación de mercado con IA',
+      'Comparables inteligentes',
+    ],
+  },
+] as const;
+
+/** Cuánto se ahorra al año pagando anual en vez de mensual — para mostrar "Ahorras X €/año" sin que el usuario tenga que hacer la cuenta. */
+export function calcularAhorroAnual(info: InfoPlanComercial): number {
+  return Math.round((info.precioMensual * 12 - info.precioAnual) * 100) / 100;
+}
+
+/** `19 €`/`205,20 €` — coma decimal (convención española del proyecto), sin decimales si es un número redondo. */
+export function formatoPrecio(valor: number): string {
+  const texto = Number.isInteger(valor) ? valor.toFixed(0) : valor.toFixed(2);
+  return `${texto.replace('.', ',')} €`;
+}

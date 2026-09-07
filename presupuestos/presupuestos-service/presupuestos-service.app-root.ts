@@ -96,6 +96,7 @@ import {
   esquemaSolicitarRecuperacion,
   esquemaRestablecerPassword,
   esquemaVerificarEmail,
+  esquemaElegirPlan,
   esquemaCrearHiloSoporte,
   esquemaMensajeSoporte,
 } from './esquemas-validacion.js';
@@ -396,10 +397,36 @@ async function notificarAdminMensajeSoporte(usuarioNombre: string, cuerpo: strin
   }
 }
 
-/** Asegura que el usuario admin existe en la DB al arrancar. */
+/**
+ * Asegura que el usuario admin existe en la DB al arrancar, y que queda
+ * `emailVerificado:true`.
+ *
+ * Corrección (05/09/2026, auditoría del flujo de registro) — en una base
+ * de datos NUEVA, este documento se creaba sin fijar `emailVerificado`,
+ * así que tomaba el `false` por defecto del esquema (`usuario.model.ts`).
+ * `migrarEmailVerificadoUsuariosExistentes()` (pensada para perdonar a
+ * cuentas anteriores a este campo) se ejecuta DESPUÉS de esta función en
+ * el arranque y filtra por `{ emailVerificado: { $exists: false } }` — el
+ * documento del admin ya tiene el campo (con `false`, guardado por
+ * Mongoose al crearlo), así que esa migración nunca lo alcanza. Resultado:
+ * el admin maestro quedaba bloqueado por "email-no-verificado" en
+ * cualquier base de datos creada desde cero. El admin nunca pasa por el
+ * formulario público de registro ni puede recibir un email de
+ * verificación, así que exigirle el mismo requisito que a una cuenta
+ * normal no tiene sentido — se crea ya verificado.
+ *
+ * El segundo caso (`else if`) corrige, de forma idempotente y dirigida
+ * SOLO a la cuenta admin, una base de datos donde `asegurarAdmin()` ya se
+ * hubiera ejecutado con el bug todavía sin corregir (el admin ya existe,
+ * pero con `emailVerificado:false`) — nunca toca ninguna cuenta normal.
+ * En una base de datos donde el admin ya estaba verificado (p. ej.
+ * producción, alcanzado en su día por la migración de compatibilidad
+ * porque entonces el campo `emailVerificado` todavía no existía en ese
+ * documento) esta comprobación no hace nada.
+ */
 async function asegurarAdmin(): Promise<void> {
   await conectarUsuarios();
-  const existe = await UsuarioModel.findOne({ esAdmin: true }).lean().exec();
+  const existe = await UsuarioModel.findOne({ esAdmin: true }).lean().exec() as any;
   if (!existe) {
     await UsuarioModel.create({
       id: 'admin',
@@ -410,8 +437,12 @@ async function asegurarAdmin(): Promise<void> {
       estado: 'activo',
       esAdmin: true,
       creadoEn: new Date().toISOString(),
+      emailVerificado: true,
     });
     logger.info('Admin creado en DB');
+  } else if (!existe.emailVerificado) {
+    await UsuarioModel.updateOne({ id: existe.id, esAdmin: true }, { $set: { emailVerificado: true } });
+    logger.info('Admin existente corregido a emailVerificado:true');
   }
 }
 
@@ -604,8 +635,8 @@ export function run() {
       // historial). Ruta exenta del bloqueo por falta de plan (ver
       // `RUTAS_EXENTAS_BLOQUEO_PLAN`) — siempre debe poder consultarse,
       // sea cual sea el estado del trial.
-      const { plan, tipoAcceso, expiraEn } = await obtenerEstadoAccesoUsuario(req.usuarioId!);
-      res.json({ ok: true, usuarioId: req.usuarioId, plan, tipoAcceso, expiraEn });
+      const { plan, tipoAcceso, expiraEn, planElegido } = await obtenerEstadoAccesoUsuario(req.usuarioId!);
+      res.json({ ok: true, usuarioId: req.usuarioId, plan, tipoAcceso, expiraEn, planElegido });
     } catch (err) { responderError(req, res, err); }
   });
 
@@ -688,7 +719,9 @@ export function run() {
   app.post('/auth/registrar', limitadorAuth, validar(esquemaRegistro), async (req: AuthRequest, res) => {
     try {
       await conectarUsuarios();
-      const { nombre, password, codigoPromocional } = req.body as { nombre: string; password: string; codigoPromocional?: string };
+      const { nombre, password, nombrePersona, apellidos, telefono, codigoPromocional } = req.body as {
+        nombre: string; password: string; nombrePersona: string; apellidos: string; telefono: string; codigoPromocional?: string;
+      };
       const nombreNormalizado = nombre.toLowerCase();
       const existe = await UsuarioModel.findOne({ nombreNormalizado }).lean().exec();
       if (existe) { res.status(409).json({ error: 'Ese email ya está registrado.' }); return; }
@@ -729,6 +762,9 @@ export function run() {
         estado,
         esAdmin: false,
         creadoEn: new Date().toISOString(),
+        nombrePersona,
+        apellidos,
+        telefono,
         acceso,
         emailVerificado: false,
         verificacionTokenHash: tokenHash,
@@ -809,6 +845,33 @@ export function run() {
       }
 
       res.json({ ok: true });
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /**
+   * Elige un plan comercial preferido (08/09/2026, pantalla obligatoria
+   * "Elige tu plan" que el frontend muestra tras verificar el email, antes
+   * de dejar entrar a la app — ver `nuncaEligioPlan` en
+   * `presupuestos-prototype.tsx`).
+   *
+   * SOLO guarda `planPreferido` — NUNCA toca `acceso`: el trial de 60 días
+   * ya concedió acceso completo PRO al verificar el email
+   * (`iniciarTrialSiCorresponde`, sin cambios aquí), igual para quien
+   * elija Basic, Pro o Premium, para que "Basic + Pro incluidos durante
+   * la prueba" sea la misma promesa para todos. Esto es solo la señal
+   * comercial de qué le tocaría pagar cuando exista pasarela de cobro real
+   * (ver el comentario de `elegir()` en `tarjeta-plan.tsx`) — se puede
+   * llamar más de una vez (p. ej. si cambia de opinión antes de que exista
+   * cobro), siempre sustituye la elección anterior sin más.
+   */
+  app.post('/auth/elegir-plan', requireAuth, validar(esquemaElegirPlan), async (req: AuthRequest, res) => {
+    try {
+      await conectarUsuarios();
+      const { plan, periodo } = req.body as { plan: 'BASIC' | 'PRO' | 'PREMIUM'; periodo: 'mensual' | 'anual' };
+      const planPreferido = { plan, periodo, elegidoEn: new Date().toISOString() };
+      const u = await UsuarioModel.findOneAndUpdate({ id: req.usuarioId }, { $set: { planPreferido } }, { new: true }).lean().exec() as any;
+      if (!u) { res.status(404).json({ error: 'Usuario no encontrado' }); return; }
+      res.json({ ok: true, planPreferido });
     } catch (err) { responderError(req, res, err); }
   });
 
