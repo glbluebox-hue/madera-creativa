@@ -124,6 +124,12 @@ export function BannerTrial({ estadoAcceso, onVerPlanes }: { estadoAcceso: Estad
  * muestra tanto si `GET /auth/yo` ya confirma el trial terminado como si
  * cualquier llamada a la API responde 403 `sin_plan_activo` mientras el
  * usuario seguía viendo la app con datos en memoria desactualizados.
+ *
+ * `className={styles.app}` en el contenedor raíz (corrección 08/09/2026):
+ * es un `return` que sustituye toda la app, sin ningún ancestro con esa
+ * clase — sin ella, esta pantalla no heredaba ni la fuente Inter ni los
+ * tokens de color (ambos declarados dentro de `.app`), y se veía con la
+ * fuente serif por defecto del navegador.
  */
 export function PantallaTrialTerminado({ onCerrarSesion, onIrAPerfil }: { onCerrarSesion: () => void; onIrAPerfil: () => void }) {
   const [codigo, setCodigo] = useState('');
@@ -143,7 +149,7 @@ export function PantallaTrialTerminado({ onCerrarSesion, onIrAPerfil }: { onCerr
   };
 
   return (
-    <div style={{
+    <div className={styles.app} style={{
       position: 'fixed', inset: 0, zIndex: 9999, background: 'var(--fondo)',
       display: 'flex', justifyContent: 'center', padding: '2rem 1.5rem', overflowY: 'auto',
     }}>

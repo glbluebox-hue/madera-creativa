@@ -79,7 +79,13 @@ const PALETA: CSSProperties = {
   color: 'var(--negro)',
   background: 'var(--fondo)',
   minHeight: '100vh',
-  overflowX: 'hidden',
+  // Sin overflowX aquí a propósito (corrección 08/09/2026): cualquier
+  // overflow distinto de "visible" en un ANCESTRO rompe `position:
+  // sticky` en sus descendientes (aquí, la cabecera) — por eso la
+  // cabecera no se quedaba fija al hacer scroll. El único elemento que
+  // de verdad necesitaba recortar su desbordamiento (el fondo decorativo
+  // del hero) ya tiene su propio overflow:hidden local, así que quitarlo
+  // de aquí no reintroduce scroll horizontal.
 };
 
 /**
