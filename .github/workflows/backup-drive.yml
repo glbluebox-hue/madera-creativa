@@ -1,0 +1,46 @@
+name: Backup de código a Google Drive
+
+# Fase actual (feature/fase-0-security en curso, 02/09/2026): dispara en
+# main Y en esta rama de trabajo, para no perder cobertura mientras dura
+# la fase — cuando termine, quitar 'feature/fase-0-security' de la lista
+# de abajo y dejar solo 'main' + el disparo manual.
+on:
+  push:
+    branches:
+      - main
+      - feature/fase-0-security
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    name: Generar y subir backup
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v4
+
+      - name: Instalar rclone
+        run: curl https://rclone.org/install.sh | sudo bash
+
+      - name: Instalar gitleaks
+        run: |
+          set -euo pipefail
+          GITLEAKS_VERSION=$(curl -fsSL "https://api.github.com/repos/gitleaks/gitleaks/releases/latest" \
+            | grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/')
+          echo "gitleaks v${GITLEAKS_VERSION}"
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar xz gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Generar, comprobar y subir el backup
+        env:
+          GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
+          GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
+          GDRIVE_RCLONE_TOKEN: ${{ secrets.GDRIVE_RCLONE_TOKEN }}
+          GDRIVE_FOLDER_ID: ${{ vars.GDRIVE_FOLDER_ID }}
+        run: bash presupuestos/presupuestos-platform/scripts/backup-codigo-drive.sh
