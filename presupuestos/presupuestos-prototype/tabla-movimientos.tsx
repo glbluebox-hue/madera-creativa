@@ -18,9 +18,22 @@ export type TablaMovimientosProps = {
   onEditar: (m: Movimiento) => void;
 };
 
+const IconoEditar = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
+);
+
 /**
  * Tabla editable de gastos e ingresos del proyecto, con formulario inline
  * para añadir nuevas filas y editar las existentes.
+ *
+ * Móvil (10/09/2026, reporte real: "tengo que hacer scroll horizontal
+ * para verlo todo y no puedo editar"): la tabla de 6 columnas no cabía en
+ * un móvil, así que la columna de acciones (editar/borrar) quedaba fuera
+ * de pantalla — de ahí que "no se pudiera editar". En pantallas estrechas
+ * se muestra en su lugar una lista de tarjetas, una por movimiento, con
+ * los botones de editar/borrar siempre visibles. La tabla clásica se
+ * mantiene tal cual en escritorio (alternadas por CSS, ver
+ * `.movTabla`/`.movLista` en `styles.module.css`).
  */
 export function TablaMovimientos({ movimientos, onAnadir, onBorrar, onEditar }: TablaMovimientosProps) {
   const [mostrarForm, setMostrarForm] = useState(false);
@@ -42,6 +55,11 @@ export function TablaMovimientos({ movimientos, onAnadir, onBorrar, onEditar }: 
     setTipo(m.tipo);
     setImporte(String(m.importe));
     setMostrarForm(true);
+    // En móvil el formulario aparece al final del panel — si no se lleva
+    // el foco/scroll ahí, el usuario pulsa "editar" y no ve que ha pasado nada.
+    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches) {
+      setTimeout(() => document.getElementById('mov-form-inline')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
+    }
   };
 
   /** Resetea el formulario al estado vacío (modo añadir). */
@@ -84,6 +102,21 @@ export function TablaMovimientos({ movimientos, onAnadir, onBorrar, onEditar }: 
     setMostrarForm(false);
   };
 
+  const acciones = (m: Movimiento) => (
+    <>
+      <button
+        className={styles.btnIcono}
+        onClick={() => iniciarEdicion(m)}
+        title="Editar"
+        aria-label="Editar movimiento"
+        style={{ color: 'var(--azul)' }}
+      >
+        <IconoEditar />
+      </button>
+      <ConfirmarBorrado onConfirmar={() => onBorrar(m.id)} titulo="Borrar movimiento" />
+    </>
+  );
+
   return (
     <div className={styles.panel}>
       <div className={styles.panelHeader}>
@@ -95,11 +128,12 @@ export function TablaMovimientos({ movimientos, onAnadir, onBorrar, onEditar }: 
           className={`${styles.btn} ${styles.btnSecundario}`}
           onClick={() => { resetForm(); setMostrarForm(v => !v); }}
         >
-          {mostrarForm && !editandoId ? 'Cerrar' : '+ Añadir movimiento'}
+          {mostrarForm ? 'Cerrar' : '+ Añadir movimiento'}
         </button>
       </div>
 
-      <div className={styles.tablaWrap}>
+      {/* ── ESCRITORIO: tabla clásica ── */}
+      <div className={`${styles.tablaWrap} ${styles.movTabla}`}>
         <table className={styles.tabla}>
           <thead>
             <tr>
@@ -133,16 +167,7 @@ export function TablaMovimientos({ movimientos, onAnadir, onBorrar, onEditar }: 
                     {m.tipo === 'gasto' ? '-' : '+'}{formatoEuro(m.importe)}
                   </td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    <button
-                      className={styles.btnIcono}
-                      onClick={() => iniciarEdicion(m)}
-                      title="Editar"
-                      aria-label="Editar movimiento"
-                      style={{ color: 'var(--azul)' }}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
-                    </button>
-                    <ConfirmarBorrado onConfirmar={() => onBorrar(m.id)} titulo="Borrar movimiento" />
+                    {acciones(m)}
                   </td>
                 </tr>
               ))
@@ -151,8 +176,37 @@ export function TablaMovimientos({ movimientos, onAnadir, onBorrar, onEditar }: 
         </table>
       </div>
 
+      {/* ── MÓVIL: una tarjeta por movimiento, con editar/borrar siempre visibles ── */}
+      <div className={styles.movLista}>
+        {movimientos.length === 0 ? (
+          <p className={styles.tablaVacia} style={{ margin: 0 }}>Todavía no hay movimientos registrados.</p>
+        ) : (
+          movimientos.map((m) => (
+            <div key={m.id} className={styles.movTarjeta}>
+              <div className={styles.movTarjetaFila}>
+                <span className={`${styles.tipoBadge} ${m.tipo === 'gasto' ? styles.tipoGasto : styles.tipoIngreso}`}>
+                  {m.tipo === 'gasto' ? 'Gasto' : 'Ingreso'}
+                </span>
+                <span className={m.tipo === 'gasto' ? styles.importeGasto : styles.importeIngreso} style={{ fontSize: '0.95rem' }}>
+                  {m.tipo === 'gasto' ? '-' : '+'}{formatoEuro(m.importe)}
+                </span>
+              </div>
+              <div className={styles.movTarjetaConcepto}>{m.concepto}</div>
+              <div className={styles.movTarjetaMeta}>
+                <span>{formatoFecha(m.fecha)}</span>
+                <span>·</span>
+                <span>{m.categoria}</span>
+              </div>
+              <div className={styles.movTarjetaAcciones}>
+                {acciones(m)}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
       {mostrarForm && (
-        <div className={styles.formInline}>
+        <div className={styles.formInline} id="mov-form-inline">
           <div className={styles.campo}>
             <label className={styles.campoLabel}>Fecha</label>
             <input className={styles.input} type="date" value={fecha} onChange={e => setFecha(e.target.value)} />
@@ -179,11 +233,9 @@ export function TablaMovimientos({ movimientos, onAnadir, onBorrar, onEditar }: 
           <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={guardar}>
             {editandoId ? 'Guardar cambios' : 'Añadir'}
           </button>
-          {editandoId && (
-            <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={cancelar}>
-              Cancelar
-            </button>
-          )}
+          <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={cancelar}>
+            Cancelar
+          </button>
         </div>
       )}
     </div>

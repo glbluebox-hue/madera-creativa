@@ -1489,6 +1489,88 @@
 .tipoGasto { background: var(--rojo-bg); color: var(--rojo); }
 .tipoIngreso { background: var(--verde-bg); color: var(--verde); }
 
+/*
+ * Gastos e ingresos: tabla en escritorio / tarjetas en móvil (10/09/2026,
+ * reporte real: en móvil la tabla de 6 columnas obligaba a scroll
+ * horizontal y la columna de acciones quedaba fuera de pantalla — de ahí
+ * "no puedo editar"). Mismo criterio que el bloque de `.tablaFacturas` de
+ * más arriba, pero aquí con una lista de tarjetas en vez de recortar
+ * columnas: cada movimiento cabe entero y los botones editar/borrar
+ * quedan siempre visibles.
+ */
+.movLista { display: none; }
+@media (max-width: 640px) {
+  .movTabla { display: none; }
+  .movLista { display: flex; flex-direction: column; gap: 0.6rem; }
+}
+.movTarjeta {
+  border: 1px solid var(--borde);
+  border-radius: var(--radio-md);
+  padding: 0.8rem 0.9rem;
+  background: var(--blanco);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.movTarjetaFila {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.movTarjetaConcepto {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--negro);
+  word-break: break-word;
+}
+.movTarjetaMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  font-size: 0.76rem;
+  color: var(--topo-claro);
+}
+.movTarjetaAcciones {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  margin-top: 0.15rem;
+  border-top: 1px solid var(--borde-fino);
+  padding-top: 0.5rem;
+}
+/* Tap targets cómodos en móvil: los botones de la tarjeta (editar / borrar)
+ * pasan de ~24px a ~40px de zona pulsable. */
+.movTarjetaAcciones > button {
+  min-width: 40px;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* El formulario inline (añadir / editar movimiento) en móvil: una columna,
+ * cada campo a lo ancho — antes los campos quedaban estrechos y el importe
+ * fijo a 110px se salía del criterio. `.movLista` siempre está en el DOM
+ * (solo oculto por CSS en escritorio), así que es el ancla estable. */
+@media (max-width: 640px) {
+  .movLista + .formInline {
+    padding: 1rem;
+    gap: 0.7rem;
+  }
+  .movLista + .formInline .campo {
+    flex: 1 1 100% !important;
+    width: 100%;
+  }
+  .movLista + .formInline .campo input,
+  .movLista + .formInline .campo select {
+    width: 100% !important;
+  }
+  .movLista + .formInline > button {
+    flex: 1 1 calc(50% - 0.35rem);
+  }
+}
+
 .tablaVacia {
   text-align: center;
   color: var(--topo-muy-claro);
