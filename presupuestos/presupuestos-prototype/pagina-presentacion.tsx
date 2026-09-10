@@ -241,31 +241,55 @@ function Ola({ fondo, siguiente, variante }: { fondo: string; siguiente: string;
   );
 }
 
+/** Mismo punto de corte que el resto de la app (`@media (max-width: 640px)`). */
+function useEsMovil(): boolean {
+  const [esMovil, setEsMovil] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)');
+    const escuchar = () => setEsMovil(mq.matches);
+    mq.addEventListener('change', escuchar);
+    return () => mq.removeEventListener('change', escuchar);
+  }, []);
+  return esMovil;
+}
+
 export function PaginaPresentacion({ onEntrar, onEmpezar }: PaginaPresentacionProps) {
   const [informeGenerado, setInformeGenerado] = useState(false);
   const [tema, setTema] = useState<'light' | 'dark'>('light');
   const { disponible: instalacionDisponible, instalada, instalar } = useInstalarApp();
   const paletaActiva: CSSProperties = tema === 'dark' ? { ...PALETA, ...PALETA_OSCURA } : PALETA;
+  const esMovil = useEsMovil();
 
   return (
     <div style={paletaActiva}>
 
-      {/* ── NAV ── */}
+      {/* ── NAV ──
+          En móvil (petición del usuario, 10/09/2026) toda la cabecera va
+          en columna y centrada: primero el logo, debajo los enlaces
+          (Cómo funciona / Fiscal / IA / Planes) centrados, y debajo
+          "¿Ya tienes cuenta? Entrar" y "Empezar gratis" uno bajo otro. */}
       <header style={{
         display: 'flex', alignItems: 'center', gap: '1.2rem', flexWrap: 'wrap', padding: '0.9rem 1.5rem',
         borderBottom: `1px solid ${V('--borde')}`, position: 'sticky', top: 0, background: 'color-mix(in srgb, var(--fondo) 92%, transparent)',
         backdropFilter: 'blur(8px)', zIndex: 30, isolation: 'isolate',
+        ...(esMovil ? { flexDirection: 'column' as const, alignItems: 'center', textAlign: 'center' as const, gap: '0.9rem', position: 'static' as const } : null),
       }}>
-        <div style={{ display: 'flex', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', ...(esMovil ? { justifyContent: 'center' } : null) }}>
           <LogoMarca tema={tema} alto={56} alt="Madera Creativa Estudio" />
         </div>
-        <nav style={{ display: 'flex', gap: '1.3rem', flexWrap: 'wrap', marginLeft: '0.8rem', fontSize: '0.83rem' }}>
+        <nav style={{
+          display: 'flex', gap: '1.3rem', flexWrap: 'wrap', marginLeft: '0.8rem', fontSize: '0.83rem',
+          ...(esMovil ? { marginLeft: 0, justifyContent: 'center', width: '100%' } : null),
+        }}>
           <a href="#idea" style={{ color: V('--topo-claro'), textDecoration: 'none' }}>Cómo funciona</a>
           <a href="#fiscal" style={{ color: V('--topo-claro'), textDecoration: 'none' }}>Fiscal</a>
           <a href="#ia" style={{ color: V('--topo-claro'), textDecoration: 'none' }}>IA</a>
           <a href="#planes" style={{ color: V('--topo-claro'), textDecoration: 'none' }}>Planes</a>
         </nav>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginLeft: 'auto', flexWrap: 'wrap' }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '1rem', marginLeft: 'auto', flexWrap: 'wrap',
+          ...(esMovil ? { flexDirection: 'column' as const, alignItems: 'center', marginLeft: 0, width: '100%', gap: '0.75rem' } : null),
+        }}>
           {/* Mismo botón real de instalación que la sección de más abajo (ver useInstalarApp) — aquí en la cabecera, siempre a mano mientras se navega la página, en vez de solo al llegar a esa sección. */}
           {instalacionDisponible && (
             <button
