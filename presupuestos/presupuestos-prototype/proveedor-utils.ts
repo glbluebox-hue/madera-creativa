@@ -39,6 +39,10 @@ export function autoCrearProveedorDeFactura(
   onActualizarProveedor?: (p: Proveedor) => void,
   datosDetectados?: DatosProveedorDetectados
 ): string {
+  // Solo los GASTOS tienen un proveedor real. En un INGRESO, `factura.proveedor`
+  // guarda el nombre del CLIENTE (ver `escaner-factura.tsx`, campo "Cliente") —
+  // nunca se debe crear una ficha de proveedor con él (10/09/2026).
+  if (factura.tipo !== 'gasto') return factura.proveedorId ?? '';
   if (!factura.proveedor?.trim()) return factura.proveedorId ?? '';
 
   const completarDatos = (existente: Proveedor) => {

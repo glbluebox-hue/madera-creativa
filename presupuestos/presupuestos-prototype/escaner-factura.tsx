@@ -343,8 +343,10 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
       importe: parseFloat(String(importe).replace(',', '.')) || 0,
       proveedor,
       proveedorId,
-      clienteId: tipo === 'gasto' ? (proyectoFijo?.clienteId || clienteId) : '',
-      proyectoId: tipo === 'gasto' ? (proyectoFijo?.id || proyectoId) : '',
+      // Cliente/proyecto se guardan en gastos Y en ingresos (10/09/2026) —
+      // el backend sincroniza el Movimiento del proyecto para los dos tipos.
+      clienteId: proyectoFijo?.clienteId || clienteId,
+      proyectoId: proyectoFijo?.id || proyectoId,
       imagen: paginasImagen[0]?.dataUrl ?? (esSoloPdf ? '' : facturaEditar?.imagen ?? ''),
       imagenes: paginas.length ? paginasImagen.map(p => p.dataUrl) : facturaEditar?.imagenes ?? [],
       paginas: paginas.length
@@ -710,7 +712,13 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
             </p>
           )}
 
-          {tipo === 'gasto' && !proyectoFijo && clientes.length > 0 && (
+          {/* Vincular a cliente/proyecto — también en INGRESOS (10/09/2026,
+              reporte del usuario: "no puedo relacionar ese ingreso con un
+              cliente"). Un ingreso ligado a un cliente+proyecto aparece como
+              tal en el "Control de gasto" de ese proyecto y cuenta en su
+              margen — el backend ya lo soporta para los dos tipos
+              (`sincronizarMovimientoFactura`). */}
+          {(tipo === 'gasto' || tipo === 'ingreso') && !proyectoFijo && clientes.length > 0 && (
             <>
               <label className={styles.label}>Vincular a cliente (opcional)
                 <select className={styles.select} value={clienteId} onChange={(e) => setClienteId(e.target.value)}>
@@ -741,7 +749,7 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
               )}
               {clienteId && proyectosDelCliente.length > 1 && !proyectoId && (
                 <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--ocre, #a67c00)' }}>
-                  Este cliente tiene varios proyectos — si no eliges uno, el gasto se guardará sin vincular a ningún proyecto (nunca se adivina cuál).
+                  Este cliente tiene varios proyectos — si no eliges uno, la factura se guardará sin vincular a ningún proyecto (nunca se adivina cuál).
                 </p>
               )}
               {clienteId && proyectosDelCliente.length === 0 && (
