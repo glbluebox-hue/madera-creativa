@@ -607,12 +607,23 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
             <ImporteInput value={importe} onChange={setImporte} placeholder="0,00" />
           </label>
 
-          <label className={styles.label}>Proveedor / Emisor
+          {/*
+           * Etiqueta según el tipo (10/09/2026, reporte real del usuario):
+           * en una factura de INGRESO que emite él, la otra parte del
+           * documento es su CLIENTE, no un "proveedor/emisor" — ver que
+           * ponía "Emisor: <nombre del cliente>" le hacía pensar que la IA
+           * se había equivocado. El emisor en un ingreso es siempre Madera
+           * Creativa (se muestra debajo, en solo lectura, desde Ajustes de
+           * empresa). El dato que sí se guarda aquí es el del cliente,
+           * porque el libro de facturas emitidas y el asesor lo necesitan.
+           */}
+          <label className={styles.label}>
+            {tipo === 'ingreso' ? 'Cliente' : tipo === 'gasto' ? 'Proveedor' : 'Proveedor / Cliente'}
             <div style={{ position: 'relative' }}>
               <input
                 className={styles.input}
                 type="text"
-                placeholder="Nombre del proveedor"
+                placeholder={tipo === 'ingreso' ? 'Nombre del cliente' : 'Nombre del proveedor'}
                 value={proveedor}
                 onChange={(e) => {
                   const texto = e.target.value;
@@ -636,8 +647,9 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
                 onBlur={() => setTimeout(() => setMostrarSugerencias(false), 150)}
                 autoComplete="off"
               />
-              {/* Desplegable de proveedores existentes */}
-              {mostrarSugerencias && proveedores.length > 0 && (
+              {/* Desplegable de proveedores existentes — solo en gastos: en un
+                  ingreso esta lista (proveedores de material) no viene a cuento. */}
+              {mostrarSugerencias && tipo !== 'ingreso' && proveedores.length > 0 && (
                 <div style={{
                   position: 'absolute', top: 'calc(100% + 2px)', left: 0, right: 0,
                   background: 'var(--blanco)', border: '1px solid var(--borde)', borderRadius: 8,
@@ -673,6 +685,19 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
               )}
             </div>
           </label>
+
+          {/* En un ingreso, el emisor eres tú: se muestra en solo lectura
+              desde Ajustes de empresa, sin volver a pedirlo en cada factura. */}
+          {tipo === 'ingreso' && (
+            <p style={{ margin: '-0.35rem 0 0', fontSize: '0.76rem', color: 'var(--topo-claro)', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M20 6L9 17l-5-5" /></svg>
+              {empresa && (empresa.nombre || empresa.titular || empresa.nifCif) ? (
+                <span>Emisor: <strong>{empresa.titular || empresa.nombre}</strong>{empresa.nifCif ? ` · ${empresa.nifCif}` : ''}</span>
+              ) : (
+                <span>Emisor: tú. Completa tu nombre y NIF en <strong>Ajustes de empresa</strong> para que salgan en la documentación del asesor.</span>
+              )}
+            </p>
+          )}
 
           <label className={styles.label}>Concepto
             <input className={styles.input} type="text" placeholder="Descripción de la factura" value={concepto} onChange={(e) => setConcepto(e.target.value)} />
@@ -735,7 +760,8 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
                 <label className={styles.label} style={{ flex: '1 1 120px', minWidth: 0 }}>Nº factura
                   <input className={styles.input} style={{ width: '100%', boxSizing: 'border-box' }} value={numeroFactura} onChange={(e) => setNumeroFactura(e.target.value)} />
                 </label>
-                <label className={styles.label} style={{ flex: '1 1 120px', minWidth: 0 }}>CIF/NIF
+                <label className={styles.label} style={{ flex: '1 1 120px', minWidth: 0 }}>
+                  {tipo === 'ingreso' ? 'NIF del cliente' : tipo === 'gasto' ? 'NIF del proveedor' : 'CIF/NIF'}
                   <input className={styles.input} style={{ width: '100%', boxSizing: 'border-box' }} value={cifNif} onChange={(e) => setCifNif(e.target.value)} />
                 </label>
               </div>
