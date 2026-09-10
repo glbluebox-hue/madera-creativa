@@ -708,7 +708,7 @@ export function PresupuestosPrototype() {
         {seccion === 'codigosQR' && <CodigosQRVista />}
 
         {/* ── SECCIÓN DIBUJOS (Fase 2.1) ── */}
-        {seccion === 'dibujos' && <SeccionDibujos clientes={nombresClientes} onEditorAbierto={setDibujoEditorAbierto} />}
+        {seccion === 'dibujos' && <SeccionDibujos clientes={nombresClientes} onEditorAbierto={setDibujoEditorAbierto} plan={sesion?.plan} esAdmin={sesion?.esAdmin} />}
 
         {/* ── SECCIÓN PROVEEDORES ── */}
         {seccion === 'proveedores' && (

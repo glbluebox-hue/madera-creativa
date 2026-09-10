@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Dibujo } from './types.js';
+import type { PlanAcceso } from './planes.js';
 import { useDibujos } from './use-dibujos.js';
 import { EditorDibujo } from './editor-dibujo.js';
 import { SelectorDestinoGuardado, type DestinoDibujo } from './selector-destino-guardado.js';
@@ -13,6 +14,16 @@ import styles from './styles.module.css';
 export type SeccionDibujosProps = {
   /** Lista ligera de clientes — para el selector de destino al guardar o asignar. */
   clientes?: { id: string; nombre: string }[];
+  /**
+   * Plan y rol del usuario — se pasan tal cual a `EditorDibujo` para que
+   * "Imagen" y "Cota" (PRO+) no salgan bloqueadas a quien sí puede usarlas.
+   * Bug real (10/09/2026): la Pizarra de medición del menú lateral no los
+   * pasaba y a un ADMIN le aparecían esas dos herramientas con candado,
+   * aunque el bypass de admin (`puedeUsar`) es real — solo faltaba el dato.
+   * La versión de la ficha de cliente (`TabDibujos`) sí los pasaba.
+   */
+  plan?: PlanAcceso;
+  esAdmin?: boolean;
   /**
    * Avisa al contenedor cuando el editor de un dibujo está abierto a
    * pantalla completa. Sin esto, la barra "← Inicio" móvil (fuera de este
@@ -47,7 +58,7 @@ const IconoAsignar = () => (
  * con "Asignar a cliente", sin haber tenido que decidir nada en el momento
  * de dibujar.
  */
-export function SeccionDibujos({ clientes = [], onEditorAbierto }: SeccionDibujosProps) {
+export function SeccionDibujos({ clientes = [], onEditorAbierto, plan, esAdmin }: SeccionDibujosProps) {
   const { dibujos, cargando, guardar, borrar } = useDibujos(true, { temporales: true });
   const [busqueda, setBusqueda] = useState('');
   const [editando, setEditando] = useState<{ dibujo: Dibujo | null } | null>(null);
@@ -87,6 +98,8 @@ export function SeccionDibujos({ clientes = [], onEditorAbierto }: SeccionDibujo
       <EditorDibujo
         dibujo={editando.dibujo}
         clientes={clientes}
+        plan={plan}
+        esAdmin={esAdmin}
         onVolver={() => setEditando(null)}
         onGuardar={async (d) => { await guardar(d); setEditando(null); }}
       />
