@@ -1473,3 +1473,27 @@
 2026-09-07T23:31:05.687Z 18564 build presupuestos-prototype, failed
 2026-09-07T23:37:04.132Z 27576 build presupuestos-prototype, started
 2026-09-07T23:38:30.612Z 27576 build presupuestos-prototype, failed
+2026-09-10T19:02:37.087Z 29976 build presupuestos-prototype, started
+2026-09-10T19:08:08.469Z 35536 test presupuestos-prototype, started
+2026-09-10T19:08:58.523Z 35536 test presupuestos-prototype, failed
+2026-09-10T19:09:41.116Z 32808 build presupuestos-prototype, started
+2026-09-10T19:30:14.647Z 15372 list, started
+2026-09-10T19:30:15.997Z 15372 list, succeeded
+2026-09-10T19:30:20.897Z 6592 check-types madera-creativa.presupuestos/presupuestos-prototype, started
+2026-09-10T19:32:14.767Z 6592 check-types madera-creativa.presupuestos/presupuestos-prototype, succeeded
+2026-09-10T19:32:28.598Z 10992 test madera-creativa.presupuestos/presupuestos-prototype, started
+2026-09-10T19:32:47.263Z 10992 test madera-creativa.presupuestos/presupuestos-prototype, failed
+2026-09-10T19:32:58.869Z 22984 app list, started
+2026-09-10T19:33:19.798Z 22984 app list, succeeded
+2026-09-10T19:34:52.489Z 3884 status, started
+2026-09-10T19:35:05.940Z 3884 status, succeeded
+2026-09-10T19:35:30.820Z 11604 run presupuestos-platform, started
+2026-09-10T19:35:48.020Z 11604 run presupuestos-platform, failed
+2026-09-10T19:38:59.911Z 13956 compile, started
+2026-09-10T19:39:14.892Z 13956 compile, succeeded
+2026-09-10T19:39:39.528Z 23564 run presupuestos-platform, started
+2026-09-10T19:40:03.146Z 23564 run presupuestos-platform, failed
+2026-09-10T19:41:07.357Z 2300 install --skip-compilation, started
+2026-09-10T19:41:12.765Z 7068 install, started
+2026-09-10T19:42:59.355Z 7068 install, succeeded
+2026-09-10T19:43:05.983Z 8792 run presupuestos-platform, started
