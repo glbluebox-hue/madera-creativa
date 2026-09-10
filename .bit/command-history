@@ -1497,3 +1497,8 @@
 2026-09-10T19:41:12.765Z 7068 install, started
 2026-09-10T19:42:59.355Z 7068 install, succeeded
 2026-09-10T19:43:05.983Z 8792 run presupuestos-platform, started
+2026-09-10T20:13:12.354Z 23452 compile, started
+2026-09-10T20:13:28.283Z 23452 compile, succeeded
+2026-09-10T20:13:36.866Z 21728 run presupuestos-platform, started
+2026-09-10T20:16:53.986Z 20692 compile, started
+2026-09-10T20:17:09.186Z 20692 compile, succeeded

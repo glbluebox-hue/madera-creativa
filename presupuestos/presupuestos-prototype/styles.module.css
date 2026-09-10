@@ -1490,13 +1490,15 @@
 .tipoIngreso { background: var(--verde-bg); color: var(--verde); }
 
 /*
- * Gastos e ingresos: tabla en escritorio / tarjetas en móvil (10/09/2026,
- * reporte real: en móvil la tabla de 6 columnas obligaba a scroll
+ * Tablas de la pestaña "Control de gasto" (Gastos e ingresos, Horas
+ * trabajadas, Horas del ayudante): tabla en escritorio / tarjetas en
+ * móvil (10/09/2026, reporte real: en móvil las tablas obligaban a scroll
  * horizontal y la columna de acciones quedaba fuera de pantalla — de ahí
  * "no puedo editar"). Mismo criterio que el bloque de `.tablaFacturas` de
  * más arriba, pero aquí con una lista de tarjetas en vez de recortar
- * columnas: cada movimiento cabe entero y los botones editar/borrar
- * quedan siempre visibles.
+ * columnas: cada fila cabe entera y los botones editar/borrar quedan
+ * siempre visibles. Clases compartidas por `tabla-movimientos.tsx`,
+ * `tabla-horas.tsx` y `tabla-horas-ayudante.tsx`.
  */
 .movLista { display: none; }
 @media (max-width: 640px) {
@@ -1565,6 +1567,7 @@
   .movLista + .formInline .campo input,
   .movLista + .formInline .campo select {
     width: 100% !important;
+    box-sizing: border-box; /* .input base no lo trae — sin esto el padding+borde desbordan la tarjeta */
   }
   .movLista + .formInline > button {
     flex: 1 1 calc(50% - 0.35rem);

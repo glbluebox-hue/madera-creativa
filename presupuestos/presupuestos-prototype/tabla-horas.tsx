@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { RegistroHoras } from './types.js';
 import { generarId } from './mock.js';
+import { formatoFecha } from './calculos.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
 import styles from './styles.module.css';
 
@@ -16,8 +17,15 @@ export type TablaHorasProps = {
   onBorrar: (id: string) => void;
 };
 
+const euro = (n: number) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(n);
+
 /**
  * Tabla de horas trabajadas en el proyecto, con formulario inline.
+ *
+ * Móvil (10/09/2026): igual que `TablaMovimientos`, la tabla obligaba a
+ * scroll horizontal y la acción de borrar quedaba fuera de pantalla. En
+ * ≤640px se muestra una lista de tarjetas (una por registro) reutilizando
+ * las clases `.movTabla`/`.movLista`/`.movTarjeta*` de `styles.module.css`.
  */
 export function TablaHoras({ horas, tarifaHora, onAnadir, onBorrar }: TablaHorasProps) {
   const [mostrarForm, setMostrarForm] = useState(false);
@@ -52,7 +60,8 @@ export function TablaHoras({ horas, tarifaHora, onAnadir, onBorrar }: TablaHoras
         </button>
       </div>
 
-      <div className={styles.tablaWrap}>
+      {/* ── ESCRITORIO: tabla clásica ── */}
+      <div className={`${styles.tablaWrap} ${styles.movTabla}`}>
         <table className={styles.tabla}>
           <thead>
             <tr>
@@ -77,7 +86,7 @@ export function TablaHoras({ horas, tarifaHora, onAnadir, onBorrar }: TablaHoras
                   <td>{h.tarea}</td>
                   <td style={{ textAlign: 'right' }}>{h.horas} h</td>
                   <td style={{ textAlign: 'right' }} className={styles.importeGasto}>
-                    {new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(h.horas * tarifaHora)}
+                    {euro(h.horas * tarifaHora)}
                   </td>
                   <td style={{ textAlign: 'right' }}>
                     <ConfirmarBorrado onConfirmar={() => onBorrar(h.id)} titulo="Borrar registro de horas" />
@@ -87,6 +96,31 @@ export function TablaHoras({ horas, tarifaHora, onAnadir, onBorrar }: TablaHoras
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* ── MÓVIL: una tarjeta por registro ── */}
+      <div className={styles.movLista}>
+        {horas.length === 0 ? (
+          <p className={styles.tablaVacia} style={{ margin: 0 }}>Todavía no hay horas registradas.</p>
+        ) : (
+          horas.map((h) => (
+            <div key={h.id} className={styles.movTarjeta}>
+              <div className={styles.movTarjetaFila}>
+                <span className={styles.tipoBadge} style={{ background: 'var(--azul-bg)', color: 'var(--azul)' }}>
+                  {h.horas} h
+                </span>
+                <span className={styles.importeGasto} style={{ fontSize: '0.95rem' }}>{euro(h.horas * tarifaHora)}</span>
+              </div>
+              <div className={styles.movTarjetaConcepto}>{h.tarea}</div>
+              <div className={styles.movTarjetaMeta}>
+                <span>{formatoFecha(h.fecha)}</span>
+              </div>
+              <div className={styles.movTarjetaAcciones}>
+                <ConfirmarBorrado onConfirmar={() => onBorrar(h.id)} titulo="Borrar registro de horas" />
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
       {mostrarForm && (
@@ -104,6 +138,7 @@ export function TablaHoras({ horas, tarifaHora, onAnadir, onBorrar }: TablaHoras
             <input className={styles.input} type="number" value={cantidad} onChange={(e) => setCantidad(e.target.value)} placeholder="0" style={{ width: '90px' }} />
           </div>
           <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={anadir}>Añadir</button>
+          <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={() => setMostrarForm(false)}>Cancelar</button>
         </div>
       )}
     </div>

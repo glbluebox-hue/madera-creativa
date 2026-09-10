@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import type { RegistroHorasAyudante } from './types.js';
 import { generarId } from './mock.js';
+import { formatoFecha } from './calculos.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
 import styles from './styles.module.css';
+
+const euro = (n: number) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(n);
 
 /** Props de la tabla de horas trabajadas por un ayudante. */
 export type TablaHorasAyudanteProps = {
@@ -21,6 +24,10 @@ export type TablaHorasAyudanteProps = {
  * hecho cada uno, sin mezclarlas. A diferencia de las horas propias (una
  * tarifa fija por proyecto), aquí la tarifa por hora se indica en cada
  * registro — puede variar entre ayudantes o entre días.
+ *
+ * Móvil (10/09/2026): igual que `TablaMovimientos`, en ≤640px la tabla de
+ * 7 columnas se sustituye por una lista de tarjetas reutilizando las
+ * clases `.movTabla`/`.movLista`/`.movTarjeta*` de `styles.module.css`.
  */
 export function TablaHorasAyudante({ horasAyudante, onAnadir, onBorrar }: TablaHorasAyudanteProps) {
   const [mostrarForm, setMostrarForm] = useState(false);
@@ -62,7 +69,8 @@ export function TablaHorasAyudante({ horasAyudante, onAnadir, onBorrar }: TablaH
         </button>
       </div>
 
-      <div className={styles.tablaWrap}>
+      {/* ── ESCRITORIO: tabla clásica ── */}
+      <div className={`${styles.tablaWrap} ${styles.movTabla}`}>
         <table className={styles.tabla}>
           <thead>
             <tr>
@@ -90,10 +98,10 @@ export function TablaHorasAyudante({ horasAyudante, onAnadir, onBorrar }: TablaH
                   <td>{h.tarea}</td>
                   <td style={{ textAlign: 'right' }}>{h.horas} h</td>
                   <td style={{ textAlign: 'right' }}>
-                    {new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(h.tarifaHora)}
+                    {euro(h.tarifaHora)}
                   </td>
                   <td style={{ textAlign: 'right' }} className={styles.importeGasto}>
-                    {new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(h.horas * h.tarifaHora)}
+                    {euro(h.horas * h.tarifaHora)}
                   </td>
                   <td style={{ textAlign: 'right' }}>
                     <ConfirmarBorrado onConfirmar={() => onBorrar(h.id)} titulo="Borrar registro de horas de ayudante" />
@@ -103,6 +111,33 @@ export function TablaHorasAyudante({ horasAyudante, onAnadir, onBorrar }: TablaH
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* ── MÓVIL: una tarjeta por registro ── */}
+      <div className={styles.movLista}>
+        {horasAyudante.length === 0 ? (
+          <p className={styles.tablaVacia} style={{ margin: 0 }}>Todavía no hay horas de ayudante registradas.</p>
+        ) : (
+          horasAyudante.map((h) => (
+            <div key={h.id} className={styles.movTarjeta}>
+              <div className={styles.movTarjetaFila}>
+                <span className={styles.movTarjetaConcepto}>{h.ayudante}</span>
+                <span className={styles.importeGasto} style={{ fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{euro(h.horas * h.tarifaHora)}</span>
+              </div>
+              <div className={styles.movTarjetaConcepto} style={{ fontWeight: 400, color: 'var(--topo-claro)' }}>{h.tarea}</div>
+              <div className={styles.movTarjetaMeta}>
+                <span>{formatoFecha(h.fecha)}</span>
+                <span>·</span>
+                <span>{h.horas} h</span>
+                <span>·</span>
+                <span>{euro(h.tarifaHora)}/h</span>
+              </div>
+              <div className={styles.movTarjetaAcciones}>
+                <ConfirmarBorrado onConfirmar={() => onBorrar(h.id)} titulo="Borrar registro de horas de ayudante" />
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
       {mostrarForm && (
@@ -128,6 +163,7 @@ export function TablaHorasAyudante({ horasAyudante, onAnadir, onBorrar }: TablaH
             <input className={styles.input} type="number" value={tarifa} onChange={(e) => setTarifa(e.target.value)} placeholder="0,00" style={{ width: '90px' }} />
           </div>
           <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={anadir}>Añadir</button>
+          <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={() => setMostrarForm(false)}>Cancelar</button>
         </div>
       )}
     </div>
