@@ -63,6 +63,7 @@ import {
   esquemaPushSubscribe,
   esquemaPaginacionClientes,
   esquemaPaginacionFacturas,
+  esquemaResumenEconomico,
   esquemaProveedor,
   esquemaFusionProveedores,
   esquemaProducto,
@@ -1851,6 +1852,21 @@ export function run() {
   app.get('/facturas/resumen', requireAuth, async (req: AuthRequest, res) => {
     try {
       res.json(await svc.resumenFacturas(req.usuarioId!));
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /**
+   * Resumen económico de un período `[desde, hasta]` (Fase 1 — "Períodos +
+   * Resultado"). Fuente de verdad única de la zona económica del dashboard:
+   * ingresos, gastos y su diferencia ("Resultado"), filtrando por fecha de
+   * emisión. No calcula impuestos — ver `svc.resumenEconomico`. Debe
+   * registrarse antes de `/facturas/:id` para no colisionar con él (mismo
+   * motivo que `resumen`/`anios`).
+   */
+  app.get('/facturas/resumen-economico', requireAuth, validar(esquemaResumenEconomico, 'query'), async (req: AuthRequest, res) => {
+    try {
+      const { desde, hasta } = req.query as unknown as { desde: string; hasta: string };
+      res.json(await svc.resumenEconomico(req.usuarioId!, { desde, hasta }));
     } catch (err) { responderError(req, res, err); }
   });
 

@@ -269,10 +269,10 @@ export function Facturas({
                 <div className={resumen.balance >= 0 ? styles.kpiIconoChipVerde : styles.kpiIconoChipRojo} style={{ width: 32, height: 32, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4" /></svg>
                 </div>
-                <span className={styles.kpiLabel} style={{ textTransform: 'none', fontSize: '0.86rem', color: 'var(--topo-claro)' }}>Balance</span>
+                <span className={styles.kpiLabel} style={{ textTransform: 'none', fontSize: '0.86rem', color: 'var(--topo-claro)' }}>Resultado</span>
               </div>
               <span className={`${styles.kpiValor} ${resumen.balance >= 0 ? styles.valorVerde : styles.valorRojo}`}>{formatoEuroPrivado(resumen.balance, privado)}</span>
-              <span className={styles.kpiSub}>{resumen.numFacturas} factura{resumen.numFacturas !== 1 ? 's' : ''} en total</span>
+              <span className={styles.kpiSub}>histórico · {resumen.numFacturas} factura{resumen.numFacturas !== 1 ? 's' : ''}</span>
             </div>
           </div>
 

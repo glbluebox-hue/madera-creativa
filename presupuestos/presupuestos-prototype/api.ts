@@ -270,6 +270,52 @@ export async function obtenerResumenFacturas(): Promise<ResumenFacturas> {
   return res.json();
 }
 
+/**
+ * Una línea (ingresos o gastos) del resumen económico por período — misma
+ * forma que `LineaResumenEconomico` en el backend (`presupuestos-service.ts`).
+ * `base` es lo que entra en el Resultado; `cuotaImpuesto` queda calculado
+ * pero SIN USAR en la Fase 1 (es la puerta para la Fase 3 — IVA).
+ */
+export type LineaResumenEconomico = {
+  base: number;
+  conDesglose: number;
+  cuotaImpuesto: number;
+  importeSinDesglose: number;
+  total: number;
+  num: number;
+  numSinDesglose: number;
+};
+
+/**
+ * Resumen económico de un período (Fase 1 — "Períodos + Resultado").
+ * Fuente de verdad única de la zona económica del dashboard. No incluye
+ * ningún impuesto: solo ingresos, gastos y su diferencia ("Resultado"),
+ * filtrados por fecha de emisión.
+ */
+export type ResumenEconomico = {
+  periodo: { desde: string; hasta: string; criterio: 'devengo' };
+  ingresos: LineaResumenEconomico;
+  gastos: LineaResumenEconomico;
+  /** `ingresos.base − gastos.base`. Sin IVA cuando la factura lo desglosa. No es beneficio ni tesorería. */
+  resultado: number;
+  numIngresos: number;
+  numGastos: number;
+  /** `true` si alguna factura del período no trae desglose fiscal fiable (base + cuota) y se ha usado su importe registrado. */
+  hayFacturasSinDesglose: boolean;
+  fuente: 'facturas';
+};
+
+/**
+ * Resumen económico del período `[desde, hasta]` (ISO `AAAA-MM-DD`, fecha
+ * de emisión). Las fechas las calcula el frontend con `periodos.ts` de
+ * forma segura frente a zona horaria.
+ */
+export async function obtenerResumenEconomico(desde: string, hasta: string): Promise<ResumenEconomico> {
+  const res = await fetchConAuth(`/facturas/resumen-economico?desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`);
+  await comprobarRespuesta(res, 'No se pudo cargar el resumen económico');
+  return res.json();
+}
+
 /** Años para los que existe alguna factura, más recientes primero. */
 export async function obtenerAniosConFacturas(): Promise<number[]> {
   const res = await fetchConAuth('/facturas/anios');

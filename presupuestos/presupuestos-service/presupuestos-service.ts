@@ -391,6 +391,50 @@ export type EmpresaDoc = {
   margenObjetivoPorcentaje: number | null;
 };
 
+/**
+ * Una línea (ingresos o gastos) del resumen económico por período (Fase 1
+ * — "Períodos + Resultado"). `base` es lo que entra en el Resultado; el
+ * resto son datos de trazabilidad y, sobre todo, la puerta para que las
+ * fases fiscales posteriores (IVA/IGIC/REPEP) reutilicen el motor fiscal
+ * existente sin volver a leer las facturas — ver `resumenEconomico`.
+ */
+export type LineaResumenEconomico = {
+  /** Σ por factura de `baseImponible` (si hay desglose fiscal fiable) o `importe` (si no). Es lo que se resta para el Resultado. */
+  base: number;
+  /** Σ `baseImponible` solo de las facturas con desglose fiscal fiable (base + cuota numéricas). */
+  conDesglose: number;
+  /** Σ `importeImpuesto` de esas mismas facturas — RESERVADO para la Fase 3 (IVA repercutido/soportado); esta fase no lo usa. */
+  cuotaImpuesto: number;
+  /** Σ `importe` de las facturas SIN desglose fiscal fiable — se cuenta en `base` como respaldo, pero se expone aparte para poder avisar de que esa parte no es fiscalmente exacta. */
+  importeSinDesglose: number;
+  /** Σ `importe` bruto (con impuesto incluido) — informativo, no entra en el Resultado. */
+  total: number;
+  /** Nº de facturas del tipo en el período. */
+  num: number;
+  /** Nº de esas facturas que NO traen desglose fiscal fiable. */
+  numSinDesglose: number;
+};
+
+/**
+ * Resumen económico de un período — capa de "Actividad" (Fase 1). Fuente
+ * de verdad única para la zona económica del dashboard y, más adelante,
+ * para los informes trimestral/anual. NO calcula ningún impuesto: solo
+ * ingresos, gastos y su diferencia, con el desglose base/cuota preparado
+ * para que las fases fiscales enchufen encima.
+ */
+export type ResumenEconomico = {
+  periodo: { desde: string; hasta: string; criterio: 'devengo' };
+  ingresos: LineaResumenEconomico;
+  gastos: LineaResumenEconomico;
+  /** `ingresos.base − gastos.base`. Diferencia entre ingresos y gastos del período, sin IVA cuando la factura lo desglosa. NO es beneficio ni tesorería. */
+  resultado: number;
+  numIngresos: number;
+  numGastos: number;
+  /** `true` si alguna factura del período (ingreso o gasto) no trae desglose fiscal fiable — el frontend lo usa para avisar de que parte del Resultado se ha calculado con el importe registrado. */
+  hayFacturasSinDesglose: boolean;
+  fuente: 'facturas';
+};
+
 // ── Portal del cliente (enlace público de un presupuesto) ──────────────────────
 
 /**
@@ -1401,6 +1445,82 @@ export class PresupuestosService {
     const numIngresos = ingresos?.num ?? 0;
     const numGastos = gastos?.num ?? 0;
     return { totalIngresos, totalGastos, balance: totalIngresos - totalGastos, numIngresos, numGastos, numFacturas: numIngresos + numGastos };
+  }
+
+  /**
+   * Resumen económico de un período `[desde, hasta]` (Fase 1 — "Períodos +
+   * Resultado"). Es la fuente de verdad única de la zona económica del
+   * dashboard, y está pensada para que los futuros informes trimestral/anual
+   * consuman esta misma función en vez de recalcular por su cuenta (el
+   * cálculo de totales estaba triplicado: `resumenFacturas`, `trimestres.tsx`
+   * y `calcularResumen` — ver auditoría económica, sección B/C).
+   *
+   * Filtra por `fecha` de EMISIÓN (criterio de devengo) — nunca por
+   * cobro/pago, que llegan en la Fase 4 (Tesorería). Mismo criterio de
+   * comparación de fechas como texto `AAAA-MM-DD` que ya usan
+   * `listarFacturasPorAnio`/`listarFacturasPorTrimestre`.
+   *
+   * NO calcula ningún impuesto. "Resultado" = Σ base(ingreso) − Σ base(gasto),
+   * donde la `base` de cada factura es su `baseImponible` cuando trae un
+   * desglose fiscal fiable (base + cuota numéricas), o su `importe` como
+   * respaldo. Los dos conceptos viajan separados (`conDesglose` /
+   * `importeSinDesglose`) — nunca se mezclan en silencio, para que el
+   * frontend pueda avisar de que parte de la cifra no es exacta. El campo
+   * `cuotaImpuesto` queda calculado y expuesto pero SIN USAR en esta fase:
+   * es la puerta para que la Fase 3 (IVA/IGIC/REPEP) reutilice el motor
+   * fiscal existente (`trimestres.tsx`) sin rehacer esta consulta.
+   * @param usuarioId Propietario.
+   * @param periodo Rango `[desde, hasta]` en ISO `AAAA-MM-DD` (ya validado en la ruta).
+   */
+  async resumenEconomico(usuarioId: string, periodo: { desde: string; hasta: string }): Promise<ResumenEconomico> {
+    await conectar();
+    // Desglose fiscal "fiable" = la factura trae base imponible Y cuota de
+    // impuesto, ambas numéricas. `$isNumber` descarta null/ausente/no-número
+    // sin que un 0 legítimo cuente como "sin desglose".
+    const desgloseFiable = { $and: [{ $isNumber: '$baseImponible' }, { $isNumber: '$importeImpuesto' }] };
+    const filas = await FacturaModel.aggregate([
+      { $match: { usuarioId, fecha: { $gte: periodo.desde, $lte: periodo.hasta } } },
+      {
+        $group: {
+          _id: '$tipo',
+          total: { $sum: '$importe' },
+          num: { $sum: 1 },
+          conDesglose: { $sum: { $cond: [desgloseFiable, '$baseImponible', 0] } },
+          cuotaImpuesto: { $sum: { $cond: [desgloseFiable, '$importeImpuesto', 0] } },
+          numConDesglose: { $sum: { $cond: [desgloseFiable, 1, 0] } },
+          importeSinDesglose: { $sum: { $cond: [desgloseFiable, 0, '$importe'] } },
+        },
+      },
+    ]).exec();
+
+    const linea = (tipo: 'ingreso' | 'gasto'): LineaResumenEconomico => {
+      const f = (filas as Record<string, number>[]).find((x) => (x._id as unknown as string) === tipo) ?? {} as Record<string, number>;
+      const conDesglose = f.conDesglose ?? 0;
+      const importeSinDesglose = f.importeSinDesglose ?? 0;
+      const num = f.num ?? 0;
+      return {
+        base: conDesglose + importeSinDesglose,
+        conDesglose,
+        cuotaImpuesto: f.cuotaImpuesto ?? 0,
+        importeSinDesglose,
+        total: f.total ?? 0,
+        num,
+        numSinDesglose: num - (f.numConDesglose ?? 0),
+      };
+    };
+
+    const ingresos = linea('ingreso');
+    const gastos = linea('gasto');
+    return {
+      periodo: { desde: periodo.desde, hasta: periodo.hasta, criterio: 'devengo' },
+      ingresos,
+      gastos,
+      resultado: ingresos.base - gastos.base,
+      numIngresos: ingresos.num,
+      numGastos: gastos.num,
+      hayFacturasSinDesglose: ingresos.numSinDesglose + gastos.numSinDesglose > 0,
+      fuente: 'facturas',
+    };
   }
 
   /**

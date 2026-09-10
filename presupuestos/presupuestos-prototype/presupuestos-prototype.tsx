@@ -689,7 +689,7 @@ export function PresupuestosPrototype() {
             nombre={nombreParaMostrar}
             proyectos={proyectos}
             facturas={facturas}
-            resumen={resumenFacturas}
+            autenticado={listo}
             privado={privado}
             onAlternarPrivacidad={alternarPrivacidad}
             onAbrir={(id) => { cambiarSeccion('clientes'); abrirProyecto(id); }}

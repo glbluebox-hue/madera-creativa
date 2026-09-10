@@ -1118,6 +1118,18 @@ export const esquemaPaginacionFacturas = z.object({
   proveedorId: z.string().max(128).optional(),
 });
 
+/**
+ * Rango de un período para el resumen económico del dashboard (Fase 1 —
+ * "Períodos + Resultado"). Fechas ISO `YYYY-MM-DD` de emisión (criterio de
+ * devengo); el frontend las calcula de forma segura frente a zona horaria
+ * (`periodos.ts`), el backend solo las compara como texto — mismo criterio
+ * que `listarFacturasPorAnio`/`listarFacturasPorTrimestre`.
+ */
+export const esquemaResumenEconomico = z.object({
+  desde: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha esperado: AAAA-MM-DD'),
+  hasta: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha esperado: AAAA-MM-DD'),
+});
+
 // ── Empresa ───────────────────────────────────────────────────────────────────
 
 export const esquemaEmpresa = z.object({

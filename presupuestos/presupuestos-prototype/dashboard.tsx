@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react';
 import type { Factura } from './types.js';
-import type { ResumenFacturas } from './use-facturas.js';
 import type { PresupuestoMC } from './presupuestos-modelo.js';
 import type { ProyectoResumen } from './api.js';
 import { calcularMetricas } from './dashboard-calculos.js';
 import { formatoEuroPrivado, VALOR_OCULTO, formatoFecha } from './calculos.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
 import { obtenerTodosLosPresupuestos, obtenerNotas, guardarNota } from './api.js';
+import { useResumenEconomico } from './use-resumen-economico.js';
+import { PERIODOS, CLAVE_PERIODO_DEFECTO, type ClavePeriodo } from './periodos.js';
 import { generarId } from './mock.js';
 import { PRIORIDADES, ordenarItemsLista, type NotaMC, type PrioridadNota } from './notas-modelo.js';
 import styles from './styles.module.css';
@@ -23,8 +24,8 @@ export type DashboardProps = {
   proyectos: ProyectoResumen[];
   /** Facturas más recientes primero (ya vienen así del servidor). */
   facturas: Factura[];
-  /** Totales ya resueltos por el servidor sobre toda la colección de facturas. */
-  resumen: ResumenFacturas;
+  /** Sesión confirmada — cuando es `false`, la zona económica no pide su resumen (mismo criterio que `useFacturas`). */
+  autenticado?: boolean;
   /** Modo privacidad activo — oculta los importes (Inicio es donde vive el interruptor; ver `use-privacidad.ts`). */
   privado: boolean;
   /** Activa/desactiva el modo privacidad. */
@@ -40,7 +41,7 @@ export type DashboardProps = {
 const ICONOS: Record<string, ReactNode> = {
   ingreso: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /></svg>,
   gasto: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><polyline points="19 12 12 19 5 12" /></svg>,
-  balance: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4" /></svg>,
+  resultado: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4" /></svg>,
   presupuestos: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>,
   montaje: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /><rect x="2" y="7" width="20" height="14" rx="2" /></svg>,
   medicion: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /></svg>,
@@ -63,21 +64,46 @@ function Kpi({
 }
 
 /**
- * Panel principal: resumen visual del negocio (ingresos, gastos, balance,
- * presupuestos en curso), actividad reciente sobre facturas reales (con
- * borrado directo), y próximos montajes/mediciones a partir de las fechas
- * reales de cada cliente (con alta y borrado directo). Sin datos
- * inventados: lo que no hay todavía se muestra vacío, no relleno con
+ * Panel principal: zona económica "Tu actividad" (ingresos, gastos y
+ * Resultado del PERÍODO seleccionado — Fase 1, resuelto por el backend en
+ * `GET /facturas/resumen-economico`), presupuestos en curso, actividad
+ * reciente sobre facturas reales (con borrado directo), y próximos
+ * montajes/mediciones a partir de las fechas reales de cada cliente. Sin
+ * datos inventados: lo que no hay todavía se muestra vacío, no relleno con
  * ejemplos (Dirección Creativa).
+ *
+ * "Resultado" = ingresos − gastos del período, sin IVA cuando la factura
+ * lo desglosa. NO es beneficio ni dinero disponible — el beneficio
+ * estimado y la tesorería llegan en fases posteriores de la auditoría
+ * económica.
  */
 /** Un elemento de "Actividad reciente": una factura o un presupuesto recién aceptado. */
 type ItemActividad =
   | { tipo: 'factura'; fecha: string; factura: Factura }
   | { tipo: 'presupuestoAceptado'; fecha: string; presupuesto: PresupuestoMC };
 
-export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlternarPrivacidad, onAbrir, onBorrarFactura, onActualizarRecordatorio }: DashboardProps) {
+export function Dashboard({ nombre, proyectos, facturas, autenticado = true, privado, onAlternarPrivacidad, onAbrir, onBorrarFactura, onActualizarRecordatorio }: DashboardProps) {
   const m = calcularMetricas(proyectos);
   const primerNombre = (nombre || '').split(' ')[0];
+
+  /**
+   * Zona económica "Tu actividad" (Fase 1 — "Períodos + Resultado"). El
+   * período por defecto es "Este mes"; el cálculo lo hace SIEMPRE el
+   * backend (`useResumenEconomico` → `GET /facturas/resumen-economico`),
+   * nunca se recalcula aquí — es la fuente de verdad única que pide la
+   * auditoría económica.
+   */
+  const [clavePeriodo, setClavePeriodo] = useState<ClavePeriodo>(CLAVE_PERIODO_DEFECTO);
+  const { resumen: resumenEco, cargando: cargandoEco, recargar: recargarEco } = useResumenEconomico(clavePeriodo, autenticado);
+
+  /** Borra la factura y refresca la zona económica (el importe puede caer dentro del período mostrado). */
+  const borrarFacturaYRefrescar = (id: string) => {
+    onBorrarFactura(id);
+    recargarEco();
+  };
+
+  /** Valor de un KPI económico: `…` mientras carga la primera vez, si no el importe (respetando el modo privacidad). */
+  const valorEco = (n: number) => (cargandoEco ? '…' : formatoEuroPrivado(n, privado));
 
   /**
    * "Cosas por hacer" (26/08/2026, rediseñado el mismo día a petición
@@ -265,12 +291,36 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
         </button>
       </div>
 
+      {/* ── Tu actividad: ingresos, gastos y Resultado del período (Fase 1) ── */}
+      <div className={styles.barraSeccion} style={{ marginBottom: '0.75rem' }}>
+        <h3 className={styles.panelTitulo}>Tu actividad</h3>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>
+          Período
+          <select
+            className={styles.select}
+            value={clavePeriodo}
+            onChange={(e) => setClavePeriodo(e.target.value as ClavePeriodo)}
+            aria-label="Período de la actividad económica"
+          >
+            {PERIODOS.map((p) => <option key={p.clave} value={p.clave}>{p.etiqueta}</option>)}
+          </select>
+        </label>
+      </div>
+
       <div className={styles.kpiGrid}>
-        <Kpi icono="ingreso" color="verde" etiqueta="Ingresos" valor={formatoEuroPrivado(resumen.totalIngresos, privado)} sub={`${resumen.numIngresos} facturas`} />
-        <Kpi icono="gasto" color="rojo" etiqueta="Gastos" valor={formatoEuroPrivado(resumen.totalGastos, privado)} sub={`${resumen.numGastos} facturas`} />
-        <Kpi icono="balance" color={resumen.balance >= 0 ? 'verde' : 'rojo'} etiqueta="Balance" valor={formatoEuroPrivado(resumen.balance, privado)} sub={`${resumen.numFacturas} facturas`} />
+        <Kpi icono="ingreso" color="verde" etiqueta="Ingresos" valor={valorEco(resumenEco.ingresos.base)} sub={`${resumenEco.numIngresos} factura${resumenEco.numIngresos === 1 ? '' : 's'}`} />
+        <Kpi icono="gasto" color="rojo" etiqueta="Gastos" valor={valorEco(resumenEco.gastos.base)} sub={`${resumenEco.numGastos} factura${resumenEco.numGastos === 1 ? '' : 's'}`} />
+        <Kpi icono="resultado" color={resumenEco.resultado >= 0 ? 'verde' : 'rojo'} etiqueta="Resultado" valor={valorEco(resumenEco.resultado)} sub="Ingresos − gastos del período" />
         <Kpi icono="presupuestos" color="topo" etiqueta="Presupuestos" valor={privado ? VALOR_OCULTO : String(m.presupuestosPendientes + m.enCurso)} sub={m.enCurso > 0 ? `${m.enCurso} en curso` : `${m.presupuestosPendientes} pendientes`} />
       </div>
+
+      <p className={styles.dashboardSub} style={{ marginTop: '0.6rem', display: 'flex', alignItems: 'flex-start', gap: '0.4rem', maxWidth: '46rem' }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="8" /></svg>
+        <span>
+          El <strong>resultado</strong> es la diferencia entre tus ingresos y gastos del período (sin IVA cuando la factura lo desglosa). No representa tu beneficio final ni el dinero disponible.
+          {resumenEco.hayFacturasSinDesglose && ' Algunas facturas no tienen desglose fiscal y se han calculado con el importe registrado.'}
+        </span>
+      </p>
 
       <div className={styles.panel} style={{ marginBottom: '0.9rem' }}>
         <div className={styles.panelHeader}>
@@ -452,7 +502,7 @@ export function Dashboard({ nombre, proyectos, facturas, resumen, privado, onAlt
                       {item.factura.tipo === 'gasto' && !privado ? '-' : ''}{formatoEuroPrivado(item.factura.importe, privado)}
                     </span>
                   </div>
-                  <ConfirmarBorrado titulo="Borrar factura" onConfirmar={() => onBorrarFactura(item.factura.id)} />
+                  <ConfirmarBorrado titulo="Borrar factura" onConfirmar={() => borrarFacturaYRefrescar(item.factura.id)} />
                 </div>
               </div>
             ) : (
