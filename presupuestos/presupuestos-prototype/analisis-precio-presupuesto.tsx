@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import type { AnalisisPrecio, ResultadoComparables, TrabajoAnalizado } from './inteligencia-precios.js';
 import { interpretarAnalisis } from './inteligencia-precios.js';
 import { calcularMetricasPorTipo } from './metricas-por-tipo.js';
@@ -227,6 +228,14 @@ export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proye
   const [referenciasMercado, setReferenciasMercado] = useState<ReferenciaMercado[] | null>(null);
   const ubicacion = ubicacionEmpresa ?? UBICACION_VACIA;
 
+  // Solo cierto tras un commit real en un DOM de navegador — `useLayoutEffect`
+  // nunca se ejecuta en `renderToStaticMarkup` (usado en
+  // `analisis-precio-presupuesto.spec.tsx`), así que ese smoke test sigue
+  // recibiendo exactamente el mismo HTML de siempre, sin portal. En la app
+  // real esto se vuelve `true` antes de pintar, imperceptible para el usuario.
+  const [montadoEnNavegador, setMontadoEnNavegador] = useState(false);
+  useLayoutEffect(() => { setMontadoEnNavegador(true); }, []);
+
   // Corrección 30/08/2026: `Proyecto.tipoTrabajo` hoy solo se pregunta al
   // marcar el proyecto "Finalizado" (`pregunta-tipo-trabajo.tsx`) — un
   // proyecto todavía en curso (el caso normal mientras se presupuesta)
@@ -297,7 +306,7 @@ export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proye
   // trabajos propios, Consenso de Precio y el estado final) se ocultan sin ese dato; el
   // resto se muestra siempre.
   const cfg = analisis.disponible ? COLOR_ESTADO[analisis.estado] : null;
-  return (
+  const contenido = (
     <div className={styles.overlay} onClick={onCerrar}>
       <div className={styles.modal} style={{ maxWidth: 460, padding: '1.5rem' }} onClick={(e) => e.stopPropagation()}>
         <h2 className={styles.modalTitulo}>🧠 {analisis.disponible ? 'Análisis de precio' : 'Inteligencia de precios'}</h2>
@@ -390,6 +399,16 @@ export function AnalisisPrecioCompleto({ analisis, tipoTrabajo, excluirId, proye
       )}
     </div>
   );
+
+  // Portal a `document.body` (11/09/2026, bug real: "ventana dentro de la
+  // ventana" en la lista de presupuestos) — sin esto, cuando este modal se
+  // abre desde una fila con `transform` al hacer hover (`.filaListaClic`,
+  // `styles.module.css`), ese `transform` se convierte en el contenedor de
+  // este `position: fixed`, y el modal queda encogido dentro de la fila en
+  // vez de cubrir toda la pantalla. Mismo target que ya usa
+  // `editor-documento.tsx` para este mismo componente.
+  if (!montadoEnNavegador) return contenido;
+  return createPortal(contenido, document.querySelector(`.${styles.app}`) ?? document.body);
 }
 
 function Pregunta({ titulo, respuesta, nota, atenuado }: { titulo: string; respuesta: string; nota?: string; atenuado?: boolean }) {
