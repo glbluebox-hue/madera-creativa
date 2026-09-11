@@ -253,6 +253,21 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
     setConfianzaIA(null);
     setAvisoRevisarEmisor(false);
     try {
+      // Una página recién escaneada ya es un data URL en memoria; una
+      // página de una factura YA GUARDADA es una URL del servidor (el
+      // proxy de almacenamiento privado devuelve una ruta relativa,
+      // pensada para que la complete el navegador, no para que la
+      // descargue un servicio externo) — la IA no puede leerla tal cual,
+      // así que aquí se descarga y se convierte a base64 antes de
+      // enviarla (auditoría 11/09/2026, error real de OpenAI: "400 Failed
+      // to download file. File URL is invalid.").
+      const imagenesBase64 = await Promise.all(
+        paginasImagen.map(async (p) => {
+          if (p.dataUrl.startsWith('data:')) return p.dataUrl;
+          const blob = await (await fetch(p.dataUrl)).blob();
+          return leerArchivoComoBase64(blob);
+        })
+      );
       const resp = await api.generarRespuestaIA({
         capacidad: 'extraer-datos-factura',
         mensajes: [{
@@ -260,7 +275,7 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
           content: paginasImagen.length > 1
             ? `Extrae los datos de esta factura. Se adjuntan las ${paginasImagen.length} páginas de este mismo documento, en orden.`
             : 'Extrae los datos de esta factura.',
-          imagenes: paginasImagen.map((p) => p.dataUrl),
+          imagenes: imagenesBase64,
         }],
       });
       const limpio = resp.respuesta.trim().replace(/^```json\s*|```$/g, '');
