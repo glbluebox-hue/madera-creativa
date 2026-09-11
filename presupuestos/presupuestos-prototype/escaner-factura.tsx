@@ -240,8 +240,14 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
   }, [regionFiscal, facturaEditar]);
 
   const extraerConIA = async () => {
-    const paginaImagen = paginas.find((p) => p.tipo === 'imagen');
-    if (!paginaImagen) return;
+    // Todas las páginas de tipo imagen, en el mismo orden en que se
+    // capturaron — antes solo se enviaba `paginas.find(...)` (la primera),
+    // así que en un documento de varias páginas la IA nunca llegaba a ver
+    // el resumen fiscal si este no estaba en la primera hoja (auditoría
+    // 11/09/2026). Las páginas de tipo 'pdf' (subidas directamente) no se
+    // envían — el perfil `vision` solo puede leer imágenes.
+    const paginasImagen = paginas.filter((p) => p.tipo === 'imagen');
+    if (!paginasImagen.length) return;
     setExtrayendo(true);
     setErrorExtraccion(null);
     setConfianzaIA(null);
@@ -249,7 +255,13 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
     try {
       const resp = await api.generarRespuestaIA({
         capacidad: 'extraer-datos-factura',
-        mensajes: [{ role: 'user', content: 'Extrae los datos de esta factura.', imagenes: [paginaImagen.dataUrl] }],
+        mensajes: [{
+          role: 'user',
+          content: paginasImagen.length > 1
+            ? `Extrae los datos de esta factura. Se adjuntan las ${paginasImagen.length} páginas de este mismo documento, en orden.`
+            : 'Extrae los datos de esta factura.',
+          imagenes: paginasImagen.map((p) => p.dataUrl),
+        }],
       });
       const limpio = resp.respuesta.trim().replace(/^```json\s*|```$/g, '');
       const datos = JSON.parse(limpio);
