@@ -10,6 +10,7 @@ import { ConfirmarBorrado } from './confirmar-borrado.js';
 import { VisorFactura } from './visor-factura.js';
 import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
 import { CandadoPlan } from './candado-plan.js';
+import { trimestreDeFecha as trimestreDeFecha0 } from './motor-fiscal.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
 
@@ -18,9 +19,9 @@ type Vista = 'lista' | 'trimestres';
 const NOMBRES_TRIMESTRE = ['1.er trimestre', '2.º trimestre', '3.er trimestre', '4.º trimestre'];
 const MESES_TRIMESTRE = ['Ene – Mar', 'Abr – Jun', 'Jul – Sep', 'Oct – Dic'];
 
-/** Trimestre (1-4) al que pertenece una fecha ISO, para decidir si una factura editada/creada sigue perteneciendo a la carpeta abierta. */
+/** Trimestre (1-4) al que pertenece una fecha ISO, para decidir si una factura editada/creada sigue perteneciendo a la carpeta abierta — mismo cálculo que `motor-fiscal.ts` (que usa 0-3), solo desplazado a 1-4. */
 function trimestreDeFecha(fecha: string): number {
-  return Math.floor(new Date(fecha).getMonth() / 3) + 1;
+  return trimestreDeFecha0(fecha) + 1;
 }
 
 /** Props de la sección de facturas. */

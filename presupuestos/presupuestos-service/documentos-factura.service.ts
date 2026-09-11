@@ -2,6 +2,7 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import JSZip from 'jszip';
 import { almacenamiento } from './almacenamiento.service.js';
 import { verificarTokenArchivo } from './token.service.js';
+import type { ResumenImpuestosTrimestre } from './motor-fiscal.js';
 
 /**
  * Generación de PDF/ZIP para facturas (Fase Facturas Profesional). Antes no
@@ -205,6 +206,8 @@ export async function generarResumenPdf(datos: {
   ingresos: Record<string, unknown>[];
   gastos: Record<string, unknown>[];
   gastosPeriodicos?: { descripcion: string; importe: number; tipo: string }[];
+  /** IVA/IGIC repercutido y soportado, clasificado por el `tipoImpuesto` real de cada factura — nunca por región (subfase "Agregación trimestral IVA/IGIC"). Opcional: ausente en PDFs de tipos de documento sin facturas de por medio. */
+  impuestos?: ResumenImpuestosTrimestre;
   avisoFiscal: string[];
 }): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
@@ -260,6 +263,23 @@ export async function generarResumenPdf(datos: {
     escribir('GASTOS PERIÓDICOS / ESTIMADOS', { tam: 11, negrita: true, salto: 16 });
     for (const g of datos.gastosPeriodicos) {
       escribir(`${g.tipo.padEnd(14)}  ${g.descripcion.slice(0, 40).padEnd(42)}  ${formatoEuro(g.importe)}`, { tam: 8.5, salto: 12 });
+    }
+    y -= 8;
+  }
+
+  // IVA/IGIC — dato real por factura (`tipoImpuesto`), nunca decidido por
+  // la región fiscal de la empresa (ver `motor-fiscal.ts`).
+  if (datos.impuestos) {
+    const imp = datos.impuestos;
+    nuevaPaginaSiHaceFalta(16 + 5 * 12);
+    escribir('IVA / IGIC', { tam: 11, negrita: true, salto: 16 });
+    escribir(`IVA repercutido: ${formatoEuro(imp.ivaRepercutido)}      IVA soportado: ${formatoEuro(imp.ivaSoportado)}`, { tam: 9, salto: 13 });
+    escribir(`IGIC repercutido: ${formatoEuro(imp.igicRepercutido)}      IGIC soportado: ${formatoEuro(imp.igicSoportado)}`, { tam: 9, salto: 13 });
+    if (imp.noIdentificado.numFacturas > 0) {
+      escribir(
+        `Impuesto sin identificar: ${imp.noIdentificado.numFacturas} factura(s), ${formatoEuro(imp.noIdentificado.repercutido + imp.noIdentificado.soportado)} — revisar tipo de impuesto`,
+        { tam: 8.5, color: [0.61, 0.45, 0.1], salto: 13 }
+      );
     }
     y -= 8;
   }

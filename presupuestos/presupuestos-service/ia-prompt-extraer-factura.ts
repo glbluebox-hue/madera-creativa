@@ -35,6 +35,7 @@ export function construirSystemPromptExtraerFactura(contexto: { resumenParaPromp
     '  "numeroFactura": string | null,\n' +
     '  "fecha": string | null,  // formato YYYY-MM-DD\n' +
     '  "baseImponible": number | null,\n' +
+    '  "tipoImpuestoSugerido": "iva" | "igic" | "exento" | "sin_impuesto" | null,  // qué impuesto VES escrito o desglosado en el documento (p. ej. "IVA 21%" o "IGIC 7%" impreso literalmente); "exento" si el documento indica una operación exenta; "sin_impuesto" si no hay ningún impuesto indirecto aplicable; null si no lo puedes determinar con claridad\n' +
     '  "porcentajeImpuesto": number | null,  // p. ej. 7 para IGIC, 21 para IVA\n' +
     '  "importeImpuesto": number | null,\n' +
     '  "importe": number | null,  // total de la factura, con impuesto incluido\n' +
@@ -45,6 +46,7 @@ export function construirSystemPromptExtraerFactura(contexto: { resumenParaPromp
     '}\n\n' +
     'REGLAS ESTRICTAS:\n' +
     '- Describe SOLO lo que ves en el documento: quién emite y quién recibe, con su nombre y CIF/NIF si constan. No decidas tú quién de los dos es Madera Creativa — eso lo hace el código con datos objetivos, tú solo describes el documento.\n' +
+    '- `tipoImpuestoSugerido` es SOLO lo que el propio documento indica (la palabra "IVA" o "IGIC" impresa, o un desglose que la identifique). NUNCA lo deduzcas de dónde crees que está el negocio, ni de nada que no sea el propio documento — no conoces la región fiscal del usuario y no debes suponerla. Si no lo ves con claridad, pon `null`.\n' +
     '- El CIF/NIF del emisor es un dato importante y a menudo está escrito en letra muy pequeña — en tiendas grandes (Leroy Merlin, Bricomart, Bricodepot, ferreterías, etc.) suele ir en el pie del ticket, junto a la dirección del establecimiento, cerca del código de barras, o en una esquina del membrete, no siempre junto al nombre del emisor. Antes de poner `emisorCifNif` a `null`, revisa TODO el documento con atención (cabecera, pie, márgenes, letra pequeña), no solo la zona superior. Formato habitual español: una letra + 8 dígitos (p. ej. "A28217642"), o 8 dígitos + una letra al final si es autónomo.\n' +
     '- La dirección postal (calle, número y código postal) suele estar junto al nombre y CIF/NIF del emisor, en la cabecera o el pie — extráela con el mismo cuidado si es legible, separando el código postal (solo los dígitos) del resto de la dirección.\n' +
     '- NUNCA inventes un dato que no puedas leer en la imagen. Si un campo no aparece o no se distingue con claridad, ponlo a `null` — no rellenes con una suposición ni con un valor "típico".\n' +

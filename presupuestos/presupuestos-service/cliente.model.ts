@@ -944,10 +944,29 @@ const FacturaSchema = new Schema({
    */
   fechaVencimiento: { type: String, default: '' },
   baseImponible: { type: Number },
-  /** Impuesto indirecto — depende de la región fiscal de la empresa (Canarias→IGIC, Península→IVA). */
-  tipoImpuesto: { type: String, enum: ['igic', 'iva', ''], default: '' },
+  /**
+   * Naturaleza real del impuesto indirecto DE ESTA FACTURA (Fase 2, subfase
+   * IVA/IGIC, corrección del comentario anterior) — NUNCA se deriva de
+   * `regionFiscal` de la empresa: una compra en Península es IVA aunque la
+   * empresa sea de Canarias con REPEP. `regionFiscal`/`repepActivo` solo
+   * determinan el TRATAMIENTO fiscal posterior, no la naturaleza del
+   * impuesto que trae la factura. `''` = no configurado (la mayoría de
+   * facturas históricas, guardadas antes de que este campo tuviera UI).
+   */
+  tipoImpuesto: { type: String, enum: ['igic', 'iva', 'exento', 'sin_impuesto', ''], default: '' },
   porcentajeImpuesto: { type: Number },
   importeImpuesto: { type: Number },
+  /**
+   * Porcentaje (0-100) deducible en IRPF de este gasto (Fase 3A,
+   * infraestructura de tratamiento fiscal) — dato nuevo, separado del
+   * importe económico, que nunca se toca. Ausente = sin decidir; NUNCA se
+   * guarda `'por_revisar'`/`'no_aplica'`, se derivan al leer (ver
+   * `motor-fiscal.ts` → `estadoDeducibleIrpf`). `0`/`100` son decisiones
+   * reales.
+   */
+  deducibleIrpf: { type: Number, min: 0, max: 100 },
+  /** Porcentaje (0-100) deducible del IVA/IGIC soportado — mismo criterio que `deducibleIrpf`, separado de `importeImpuesto`. */
+  ivaIgicDeducible: { type: Number, min: 0, max: 100 },
   categoria: { type: String, default: '' },
   /** Proyecto/expediente al que pertenece — desde el incremento "Cliente ≠ Proyecto" (20/08/2026) es la clave real de aislamiento entre trabajos del mismo cliente; `clienteId` se mantiene apuntando a la identidad. */
   proyectoId: { type: String, default: '', index: true },

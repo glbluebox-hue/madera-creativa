@@ -33,7 +33,13 @@ export type Empresa = {
   validezDiasDefecto: number;
   /** Tema por defecto del Motor Documental (Incremento 3) — identidad corporativa; `null` hasta que se personalice. */
   temaPorDefecto: TemaMC | null;
-  /** Región fiscal (Fase Facturas Profesional) — determina si el Trimestral calcula IGIC (Canarias) o IVA (Península). Vacío hasta que se configura. */
+  /**
+   * Región fiscal (Fase Facturas Profesional). NO determina si una factura
+   * es IVA o IGIC — eso es `Factura.tipoImpuesto`, un dato real de cada
+   * factura (subfase "Agregación trimestral IVA/IGIC", Fase 2). La región
+   * solo estima el impuesto de facturas sin ese dato y sugiere un valor por
+   * defecto en el formulario. Vacío hasta que se configura.
+   */
   regionFiscal: 'canarias' | 'peninsula' | '';
   /**
    * Ubicación estructurada (Fase 2F, "Consenso de Precio", 29/08/2026) —

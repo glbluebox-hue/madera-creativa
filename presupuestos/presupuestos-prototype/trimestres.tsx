@@ -2,9 +2,13 @@ import { formatoEuroPrivado } from './calculos.js';
 import * as api from './api.js';
 import type { GastoPeriodico } from './types.js';
 import { GastosPeriodicos } from './gastos-periodicos.js';
-import { esGastoPeriodicoDeducible } from './gasto-periodico-fiscal.js';
 import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
 import { CandadoPlan } from './candado-plan.js';
+import {
+  NOMBRES_TRIMESTRE, MESES_TRIMESTRE, TIPO_MODELO, MODELO_INDIRECTO_MES,
+  calcularTrimestres,
+  type DatosTrimestre, type RegionFiscal,
+} from './motor-fiscal.js';
 import styles from './styles.module.css';
 
 /** Props del resumen trimestral. */
@@ -18,43 +22,6 @@ export type TrimestresProps = {
   /** Bypass administrativo — ver `puedeUsar()` en `planes.ts`. */
   esAdmin?: boolean;
 };
-
-type DatosTrimestre = {
-  nombre: string;
-  meses: string;
-  ingresos: number;
-  gastos: number;
-  gastosPeriodicos: number;
-  beneficio: number;
-  irpf: number;
-  impuestoIndirecto: number;
-  modeloIndirecto: string;
-  facturas: number;
-};
-
-const NOMBRES_TRIMESTRE = ['1.er Trimestre', '2.º Trimestre', '3.er Trimestre', '4.º Trimestre'];
-const MESES_TRIMESTRE = ['Ene – Mar', 'Abr – Jun', 'Jul – Sep', 'Oct – Dic'];
-const TIPO_MODELO = ['Modelo 130 (Abril)', 'Modelo 130 (Julio)', 'Modelo 130 (Octubre)', 'Modelo 130 (Enero)'];
-const MODELO_INDIRECTO_MES = ['Abril', 'Julio', 'Octubre', 'Enero'];
-
-/** Porcentaje de pago fraccionado de IRPF para autónomos (Modelo 130) — igual en toda España. */
-const TIPO_IRPF = 0.20;
-
-/**
- * Tipo general del impuesto indirecto por región fiscal (fuentes oficiales,
- * auditoría 11/08/2026): IGIC 7% (Agencia Tributaria Canaria) / IVA 21%
- * (AEAT). Sirve solo para ESTIMAR el impuesto embebido en el importe de
- * una factura cuando esta no tiene su propio desglose de impuesto — en
- * cuanto una factura sí lo tenga (`importeImpuesto`), se usa ese dato real
- * en vez de esta aproximación.
- */
-const TIPO_GENERAL_POR_REGION: Record<'canarias' | 'peninsula', number> = { canarias: 0.07, peninsula: 0.21 };
-
-/** Devuelve el trimestre (0-3) a partir de una fecha ISO. */
-function trimestre(fecha: string): number {
-  const mes = new Date(fecha).getMonth(); // 0-11
-  return Math.floor(mes / 3);
-}
 
 /**
  * Resumen por trimestres del año con cálculo de IRPF estimado (Modelo 130).
@@ -73,7 +40,7 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
   const [aniosDisponibles, setAniosDisponibles] = React.useState<number[]>([anioActual]);
   const [facturasFiltradas, setFacturasFiltradas] = React.useState<import('./types.js').Factura[]>([]);
   const [cargando, setCargando] = React.useState(true);
-  const [regionFiscal, setRegionFiscal] = React.useState<'canarias' | 'peninsula' | ''>('');
+  const [regionFiscal, setRegionFiscal] = React.useState<RegionFiscal>('');
   const [repepActivo, setRepepActivo] = React.useState(false);
   const [gastosPeriodicos, setGastosPeriodicos] = React.useState<GastoPeriodico[]>([]);
   const [descargandoAsesor, setDescargandoAsesor] = React.useState<number | null>(null);
@@ -96,45 +63,9 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
       .finally(() => setCargando(false));
   }, [anioSeleccionado]);
 
-  // El IGIC repercutido/soportado con REPEP activo no aplica: un negocio
-  // acogido no repercute IGIC en sus facturas ni se deduce el soportado en
-  // sus compras (investigación fiscal 11/08/2026) — así que en ese caso no
-  // se calcula ningún impuesto indirecto.
-  const calculaIndirecto = !!regionFiscal && !(regionFiscal === 'canarias' && repepActivo);
-  const tipoGeneral = regionFiscal ? TIPO_GENERAL_POR_REGION[regionFiscal] : 0;
-
-  /** Impuesto indirecto embebido en el importe de una factura: usa `importeImpuesto` si la factura lo tiene, si no lo estima al tipo general de la región. */
-  const impuestoDeFactura = (f: import('./types.js').Factura): number => {
-    if (typeof f.importeImpuesto === 'number') return f.importeImpuesto;
-    if (!calculaIndirecto) return 0;
-    return f.importe - f.importe / (1 + tipoGeneral);
-  };
-
-  const trimestresData: DatosTrimestre[] = [0, 1, 2, 3].map((t) => {
-    const del = facturasFiltradas.filter((f) => trimestre(f.fecha) === t);
-    const ingresos = del.filter((f) => f.tipo === 'ingreso').reduce((s, f) => s + f.importe, 0);
-    const gastos = del.filter((f) => f.tipo === 'gasto').reduce((s, f) => s + f.importe, 0);
-    const gastosPeriodicosTrimestre = gastosPeriodicos.filter((g) => g.activo && esGastoPeriodicoDeducible(g))
-      .reduce((s, g) => s + (g.periodicidad === 'mensual' ? g.importe * 3 : g.importe), 0);
-    const beneficio = ingresos - gastos - gastosPeriodicosTrimestre;
-    const irpf = beneficio > 0 ? beneficio * TIPO_IRPF : 0;
-    const impuestoIndirecto = calculaIndirecto
-      ? del.filter((f) => f.tipo === 'ingreso').reduce((s, f) => s + impuestoDeFactura(f), 0)
-        - del.filter((f) => f.tipo === 'gasto').reduce((s, f) => s + impuestoDeFactura(f), 0)
-      : 0;
-    return {
-      nombre: NOMBRES_TRIMESTRE[t],
-      meses: MESES_TRIMESTRE[t],
-      ingresos,
-      gastos,
-      gastosPeriodicos: gastosPeriodicosTrimestre,
-      beneficio,
-      irpf,
-      impuestoIndirecto,
-      modeloIndirecto: regionFiscal === 'canarias' ? `Modelo 420 (${MODELO_INDIRECTO_MES[t]})` : `Modelo 303 (${MODELO_INDIRECTO_MES[t]})`,
-      facturas: del.length,
-    };
-  });
+  // Cálculo fiscal (IRPF/IGIC/IVA) delegado en `motor-fiscal.ts` (Fase 2.0,
+  // extracción) — mismas fórmulas, ver ese fichero para el detalle.
+  const trimestresData: DatosTrimestre[] = calcularTrimestres(facturasFiltradas, gastosPeriodicos, { regionFiscal, repepActivo });
 
   const totalIngresos = trimestresData.reduce((s, t) => s + t.ingresos, 0);
   const totalGastos = trimestresData.reduce((s, t) => s + t.gastos, 0);
@@ -191,13 +122,13 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
         <div style={{ background: 'var(--ocre-bg)', border: '1px solid var(--ocre)', borderRadius: 8, padding: '0.85rem 1rem', marginBottom: '1.25rem', display: 'flex', alignItems: 'flex-start', gap: '0.6rem' }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ocre)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12" y2="17" /></svg>
           <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--ocre)' }}>
-            Sin región fiscal configurada — ve a <strong>Ajustes de empresa</strong> y elige Canarias o Península para que el Trimestral calcule también el IGIC/IVA (el IRPF ya se calcula igualmente).
+            Sin región fiscal configurada — el IVA/IGIC de tus facturas ya se calcula con el tipo real de cada una. Configura tu región en <strong>Ajustes de empresa</strong> solo para estimar el impuesto de las facturas que no traigan ese dato (el IRPF ya se calcula igualmente).
           </p>
         </div>
       )}
       {regionFiscal === 'canarias' && repepActivo && (
         <div style={{ background: 'var(--verde-bg)', border: '1px solid var(--verde)', borderRadius: 8, padding: '0.7rem 1rem', marginBottom: '1.25rem', fontSize: '0.78rem', color: 'var(--verde-dark)' }}>
-          REPEP activo — no repercutes IGIC en tus facturas ni te deduces el soportado en tus compras. No se calcula IGIC en este resumen.
+          REPEP activo — no repercutes IGIC en tus facturas ni te deduces el soportado en tus compras. El IGIC/IVA de cada trimestre, más abajo, muestra el dato real de tus facturas; su tratamiento fiscal bajo REPEP corresponde a tu asesor.
         </div>
       )}
 
@@ -344,26 +275,50 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
                 )}
               </div>
 
-              {/* Caja IGIC/IVA — solo si hay región fiscal configurada y no aplica REPEP */}
-              {calculaIndirecto && (
-                <div style={{
-                  marginTop: '0.6rem', background: 'var(--fondo-caja)', border: '1px solid var(--borde)', borderRadius: 6, padding: '0.75rem 1rem',
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <p style={{ margin: 0, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--topo-muy-claro)', fontWeight: 700 }}>
-                        {regionFiscal === 'canarias' ? 'IGIC' : 'IVA'} · {t.modeloIndirecto}
-                      </p>
-                      <p style={{ margin: '0.2rem 0 0', fontSize: '0.72rem', color: 'var(--topo-claro)' }}>
-                        Repercutido − soportado {t.facturas > 0 ? '(estimado al tipo general si la factura no desglosa impuesto)' : ''}
-                      </p>
-                    </div>
-                    <span style={{ fontSize: '1.05rem', fontWeight: 800, color: t.impuestoIndirecto >= 0 ? 'var(--topo)' : 'var(--verde)' }}>
-                      {formatoEuroPrivado(t.impuestoIndirecto, privado)}
-                    </span>
+              {/* IVA/IGIC repercutido y soportado — dato REAL de cada factura (tipoImpuesto), nunca decidido por la región de la empresa. Siempre visible, con o sin REPEP. */}
+              <div style={{
+                marginTop: '0.6rem', background: 'var(--fondo-caja)', border: '1px solid var(--borde)', borderRadius: 6, padding: '0.75rem 1rem',
+                display: 'flex', flexDirection: 'column', gap: '0.6rem',
+              }}>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                    <p style={{ margin: 0, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--topo-muy-claro)', fontWeight: 700 }}>
+                      IVA · Modelo 303 ({MODELO_INDIRECTO_MES[i]})
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginTop: '0.15rem' }}>
+                    <span style={{ color: 'var(--topo-claro)' }}>Repercutido</span>
+                    <span style={{ fontWeight: 600 }}>{formatoEuroPrivado(t.impuestos.ivaRepercutido, privado)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                    <span style={{ color: 'var(--topo-claro)' }}>Soportado</span>
+                    <span style={{ fontWeight: 600 }}>{formatoEuroPrivado(t.impuestos.ivaSoportado, privado)}</span>
                   </div>
                 </div>
-              )}
+
+                <div style={{ height: 1, background: 'var(--borde)' }} />
+
+                <div>
+                  <p style={{ margin: 0, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--topo-muy-claro)', fontWeight: 700 }}>
+                    IGIC · Modelo 420 ({MODELO_INDIRECTO_MES[i]})
+                  </p>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginTop: '0.15rem' }}>
+                    <span style={{ color: 'var(--topo-claro)' }}>Repercutido</span>
+                    <span style={{ fontWeight: 600 }}>{formatoEuroPrivado(t.impuestos.igicRepercutido, privado)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                    <span style={{ color: 'var(--topo-claro)' }}>Soportado</span>
+                    <span style={{ fontWeight: 600 }}>{formatoEuroPrivado(t.impuestos.igicSoportado, privado)}</span>
+                  </div>
+                </div>
+
+                {t.impuestos.noIdentificado.numFacturas > 0 && (
+                  <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--ocre)' }}>
+                    {t.impuestos.noIdentificado.numFacturas} factura{t.impuestos.noIdentificado.numFacturas !== 1 ? 's' : ''} con impuesto sin identificar
+                    ({formatoEuroPrivado(t.impuestos.noIdentificado.repercutido + t.impuestos.noIdentificado.soportado, privado)}) — revisa el tipo de impuesto.
+                  </p>
+                )}
+              </div>
 
               {t.facturas > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.75rem' }}>
@@ -403,7 +358,7 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
       }}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12" y2="17" /></svg>
         <span>Estimación orientativa basada en el <strong>Modelo 130</strong> (pago fraccionado IRPF autónomos, igual en toda España). Tipo aplicado: 20% sobre beneficio neto <strong>de cada trimestre por separado</strong> (incluye los gastos periódicos activos).
-        {calculaIndirecto && ` El ${regionFiscal === 'canarias' ? 'IGIC' : 'IVA'} se calcula con los datos reales de cada factura cuando están disponibles, o estimado al tipo general (${(tipoGeneral * 100).toFixed(0)}%) cuando no.`}
+        {' '}El IVA y el IGIC de cada trimestre se calculan con el tipo de impuesto real de cada factura (nunca según tu región fiscal) — las facturas sin ese dato identificado aparecen aparte, pendientes de revisión.
         {' '}El <strong>Modelo 130 oficial se calcula de forma acumulada desde el 1 de enero</strong>, restando lo ya pagado en trimestres anteriores del mismo año — este resumen no acumula entre trimestres, así que el resultado real puede ser distinto (especialmente si hay pérdidas en algún trimestre). Tampoco incluye retenciones previas, mínimo personal, ni deducciones específicas de tu situación. Esto es una estimación de apoyo, no una liquidación: la liquidación definitiva corresponde a tu asesor fiscal.</span>
       </p>
     </div>

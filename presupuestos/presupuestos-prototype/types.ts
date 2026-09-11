@@ -212,12 +212,37 @@ export type Factura = {
   cifNif?: string;
   /** Base imponible (importe sin impuesto). */
   baseImponible?: number;
-  /** Impuesto indirecto aplicado — depende de la región fiscal de la empresa. */
-  tipoImpuesto?: 'igic' | 'iva' | '';
+  /**
+   * Naturaleza real del impuesto indirecto DE ESTA FACTURA (Fase 2, subfase
+   * IVA/IGIC) — un dato de la factura, nunca derivado de `regionFiscal` de
+   * la empresa: una compra en Península es IVA aunque la empresa sea de
+   * Canarias con REPEP, y viceversa. `''` = no configurado (la mayoría de
+   * facturas históricas), distinto de `'exento'` (operación exenta, cuota
+   * cero por ley) y de `'sin_impuesto'` (no es una operación sujeta).
+   */
+  tipoImpuesto?: 'igic' | 'iva' | 'exento' | 'sin_impuesto' | '';
   /** Porcentaje del impuesto aplicado (p. ej. 7 para IGIC general, 21 para IVA general). */
   porcentajeImpuesto?: number;
   /** Cuota del impuesto en euros. */
   importeImpuesto?: number;
+  /**
+   * Porcentaje (0-100) deducible en IRPF de este gasto — dato NUEVO y
+   * separado del importe económico, nunca lo modifica (Fase 3A,
+   * infraestructura de tratamiento fiscal). Solo tiene sentido en
+   * facturas de gasto. Ausente = todavía no se ha decidido — NUNCA se
+   * escribe `'por_revisar'`/`'no_aplica'` aquí, esos estados se derivan
+   * al leer (ver `motor-fiscal.ts` → `estadoDeducibleIrpf`). `0` y `100`
+   * son decisiones reales, no "desconocido".
+   */
+  deducibleIrpf?: number;
+  /**
+   * Porcentaje (0-100) deducible del IVA/IGIC soportado de este gasto —
+   * dato NUEVO y separado de `importeImpuesto`, que nunca se modifica.
+   * Mismo criterio que `deducibleIrpf`: ausente = sin decidir, `0`/`100`
+   * son decisiones reales. Solo aplica cuando hay IVA/IGIC real con
+   * cuota calculable (ver `estadoIvaIgicDeducible` en `motor-fiscal.ts`).
+   */
+  ivaIgicDeducible?: number;
   /** Categoría libre del gasto/ingreso (materiales, herramientas, combustible…). */
   categoria?: string;
   /** Proyecto al que se asocia, si aplica. */

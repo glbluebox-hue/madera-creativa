@@ -9,6 +9,7 @@ import { urlImagenFiable } from './imagen-fallback.js';
 import { Z_DESPLEGABLE } from './z-index.js';
 import { etiquetaEstado } from './estado-utils.js';
 import { resolverEmisorReceptor, nombresCoinciden, type EmpresaIdentificacion } from './identificacion-factura.js';
+import { sugerirTipoImpuesto, estadoIvaIgicDeducible, type RegionFiscal, type TipoImpuestoFactura } from './motor-fiscal.js';
 import * as api from './api.js';
 import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
 import { CandadoPlan } from './candado-plan.js';
@@ -71,6 +72,53 @@ function uid(): string {
 const IA_FACTURA_DISPONIBLE = true;
 
 /**
+ * Selector de tratamiento fiscal (Fase 3B) — 4 botones (Por revisar / 100% /
+ * Parcial / 0%), reutilizado para IRPF e IVA/IGIC. `valor` es exactamente
+ * `Factura.deducibleIrpf`/`ivaIgicDeducible`: `undefined` = por revisar,
+ * un número = decisión real ya tomada (`0`/`100` incluidos). "Parcial"
+ * siempre exige escribir un número nuevo — nunca deja un valor previo (p.
+ * ej. un 100% ya elegido) guardado en silencio bajo el botón "Parcial".
+ */
+function SelectorDeducibilidad({ etiqueta, valor, onCambiar }: { etiqueta: string; valor: number | undefined; onCambiar: (v: number | undefined) => void }) {
+  const [parcialAbierto, setParcialAbierto] = useState(valor !== undefined && valor !== 0 && valor !== 100);
+  const [textoParcial, setTextoParcial] = useState(parcialAbierto ? String(valor) : '');
+
+  const elegirFijo = (v: number | undefined) => { setParcialAbierto(false); onCambiar(v); };
+  const abrirParcial = () => { setParcialAbierto(true); setTextoParcial(''); onCambiar(undefined); };
+  const cambiarParcial = (texto: string) => {
+    setTextoParcial(texto);
+    const n = parseFloat(texto.replace(',', '.'));
+    onCambiar(Number.isFinite(n) && n >= 0 && n <= 100 ? n : undefined);
+  };
+
+  const activo = (v: number | undefined) => !parcialAbierto && valor === v;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+      <span style={{ fontSize: '0.82rem', color: 'var(--topo)' }}>{etiqueta}</span>
+      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+        <button type="button" className={`${styles.btn} ${activo(undefined) ? styles.btnPrimario : styles.btnSecundario}`} style={{ fontSize: '0.76rem', flex: '1 1 90px' }} onClick={() => elegirFijo(undefined)}>Por revisar</button>
+        <button type="button" className={`${styles.btn} ${activo(100) ? styles.btnPrimario : styles.btnSecundario}`} style={{ fontSize: '0.76rem', flex: '1 1 70px' }} onClick={() => elegirFijo(100)}>100%</button>
+        <button type="button" className={`${styles.btn} ${parcialAbierto ? styles.btnPrimario : styles.btnSecundario}`} style={{ fontSize: '0.76rem', flex: '1 1 80px' }} onClick={abrirParcial}>Parcial</button>
+        <button type="button" className={`${styles.btn} ${activo(0) ? styles.btnPrimario : styles.btnSecundario}`} style={{ fontSize: '0.76rem', flex: '1 1 70px' }} onClick={() => elegirFijo(0)}>0%</button>
+      </div>
+      {parcialAbierto && (
+        <div>
+          <input
+            className={styles.input} style={{ width: '100%', maxWidth: 110, boxSizing: 'border-box' }}
+            type="number" min={0} max={100} placeholder="%"
+            value={textoParcial} onChange={(e) => cambiarParcial(e.target.value)}
+          />
+          {textoParcial !== '' && valor === undefined && (
+            <p style={{ margin: '0.3rem 0 0', fontSize: '0.72rem', color: 'var(--rojo)' }}>El porcentaje debe estar entre 0 y 100.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * Modal para añadir facturas manualmente o con captura de imagen.
  * Soporta múltiples hojas/páginas que se combinan como un único documento.
  */
@@ -131,8 +179,20 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
   const [cifNif, setCifNif] = useState(facturaEditar?.cifNif ?? '');
   const [categoria, setCategoria] = useState(facturaEditar?.categoria ?? '');
   const [baseImponible, setBaseImponible] = useState(facturaEditar?.baseImponible ? String(facturaEditar.baseImponible) : '');
+  /** Naturaleza real del impuesto DE ESTA FACTURA — nunca se deriva de `regionFiscal` de la empresa, solo se sugiere como valor por defecto en facturas nuevas sin dato todavía (ver `motor-fiscal.ts` → `sugerirTipoImpuesto`). */
+  const [tipoImpuesto, setTipoImpuesto] = useState<TipoImpuestoFactura>(facturaEditar?.tipoImpuesto ?? '');
   const [porcentajeImpuesto, setPorcentajeImpuesto] = useState(facturaEditar?.porcentajeImpuesto ? String(facturaEditar.porcentajeImpuesto) : '');
   const [importeImpuesto, setImporteImpuesto] = useState(facturaEditar?.importeImpuesto ? String(facturaEditar.importeImpuesto) : '');
+  /**
+   * Tratamiento fiscal (Fase 3B) — decisión humana explícita, nunca
+   * calculada. `undefined` = por revisar (también el estado de toda
+   * factura histórica, sin migración). Separado de `importeImpuesto`, que
+   * nunca se toca.
+   */
+  const [deducibleIrpf, setDeducibleIrpf] = useState<number | undefined>(facturaEditar?.deducibleIrpf);
+  const [ivaIgicDeducible, setIvaIgicDeducible] = useState<number | undefined>(facturaEditar?.ivaIgicDeducible);
+  /** Solo para la sugerencia de `tipoImpuesto` en facturas nuevas — nunca se usa para calcular ni para sobrescribir un dato ya presente. */
+  const [regionFiscal, setRegionFiscal] = useState<RegionFiscal>('');
   const [datosFiscalesAbierto, setDatosFiscalesAbierto] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const camaraRef = useRef<HTMLInputElement>(null);
@@ -167,9 +227,17 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
   const [codigoPostalDetectado, setCodigoPostalDetectado] = useState('');
   useEffect(() => {
     api.obtenerEmpresa()
-      .then((e) => setEmpresa({ nombre: e.nombre ?? '', titular: e.titular ?? '', nifCif: e.nifCif ?? '' }))
+      .then((e) => { setEmpresa({ nombre: e.nombre ?? '', titular: e.titular ?? '', nifCif: e.nifCif ?? '' }); setRegionFiscal(e.regionFiscal ?? ''); })
       .catch(() => setEmpresa({ nombre: '', titular: '', nifCif: '' }));
   }, []);
+
+  // Sugerencia de tipo de impuesto SOLO en facturas nuevas y SOLO si el
+  // campo sigue vacío cuando llega la región — nunca sobrescribe un valor
+  // ya elegido a mano o detectado por la IA (ver `sugerirTipoImpuesto`).
+  useEffect(() => {
+    if (facturaEditar || !regionFiscal) return;
+    setTipoImpuesto((actual) => (actual ? actual : sugerirTipoImpuesto(regionFiscal) ?? ''));
+  }, [regionFiscal, facturaEditar]);
 
   const extraerConIA = async () => {
     const paginaImagen = paginas.find((p) => p.tipo === 'imagen');
@@ -235,12 +303,19 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
       if (datos.numeroFactura) setNumeroFactura(datos.numeroFactura);
       if (datos.fecha) setFecha(datos.fecha);
       if (typeof datos.baseImponible === 'number') setBaseImponible(String(datos.baseImponible));
+      // Lo que la IA dice haber leído en el propio documento manda sobre la
+      // sugerencia por región, pero JAMÁS sobre un tipo que el usuario ya
+      // hubiera elegido a mano — se aplica solo si el campo sigue vacío.
+      const tiposValidos: TipoImpuestoFactura[] = ['iva', 'igic', 'exento', 'sin_impuesto'];
+      if (tiposValidos.includes(datos.tipoImpuestoSugerido)) {
+        setTipoImpuesto((actual) => (actual ? actual : datos.tipoImpuestoSugerido));
+      }
       if (typeof datos.porcentajeImpuesto === 'number') setPorcentajeImpuesto(String(datos.porcentajeImpuesto));
       if (typeof datos.importeImpuesto === 'number') setImporteImpuesto(String(datos.importeImpuesto));
       if (typeof datos.importe === 'number') setImporte(String(datos.importe));
       if (datos.concepto) setConcepto(datos.concepto);
       if (datos.categoria) setCategoria(datos.categoria);
-      if (datos.baseImponible || datos.porcentajeImpuesto) setDatosFiscalesAbierto(true);
+      if (datos.baseImponible || datos.porcentajeImpuesto || tiposValidos.includes(datos.tipoImpuestoSugerido)) setDatosFiscalesAbierto(true);
       setConfianzaIA(resuelto.confianza);
       setAvisoRevisarEmisor(resuelto.revisar);
     } catch {
@@ -358,8 +433,11 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
       cifNif: cifNif.trim(),
       categoria: categoria.trim(),
       baseImponible: baseImponible ? parseFloat(baseImponible.replace(',', '.')) : undefined,
+      tipoImpuesto,
       porcentajeImpuesto: porcentajeImpuesto ? parseFloat(porcentajeImpuesto.replace(',', '.')) : undefined,
       importeImpuesto: importeImpuesto ? parseFloat(importeImpuesto.replace(',', '.')) : undefined,
+      deducibleIrpf,
+      ivaIgicDeducible,
       creado: facturaEditar?.creado ?? new Date().toISOString(),
     };
   };
@@ -780,13 +858,71 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
                 <label className={styles.label} style={{ flex: '1 1 90px', minWidth: 0 }}>Base imponible (€)
                   <input className={styles.input} style={{ width: '100%', boxSizing: 'border-box' }} type="number" value={baseImponible} onChange={(e) => setBaseImponible(e.target.value)} />
                 </label>
-                <label className={styles.label} style={{ flex: '1 1 90px', minWidth: 0 }}>Impuesto (%)
-                  <input className={styles.input} style={{ width: '100%', boxSizing: 'border-box' }} type="number" value={porcentajeImpuesto} onChange={(e) => setPorcentajeImpuesto(e.target.value)} />
-                </label>
-                <label className={styles.label} style={{ flex: '1 1 90px', minWidth: 0 }}>Cuota impuesto (€)
-                  <input className={styles.input} style={{ width: '100%', boxSizing: 'border-box' }} type="number" value={importeImpuesto} onChange={(e) => setImporteImpuesto(e.target.value)} />
+                <label className={styles.label} style={{ flex: '1 1 120px', minWidth: 0 }}>Tipo de impuesto
+                  <select
+                    className={styles.select}
+                    style={{ width: '100%', boxSizing: 'border-box' }}
+                    value={tipoImpuesto}
+                    onChange={(e) => {
+                      const nuevo = e.target.value as TipoImpuestoFactura;
+                      setTipoImpuesto(nuevo);
+                      // Exenta/sin impuesto no llevan porcentaje ni cuota — se limpian al elegirlas, nunca al revés.
+                      if (nuevo === 'exento' || nuevo === 'sin_impuesto') { setPorcentajeImpuesto(''); setImporteImpuesto('0'); }
+                    }}
+                  >
+                    <option value="">Sin especificar</option>
+                    <option value="iva">IVA</option>
+                    <option value="igic">IGIC</option>
+                    <option value="exento">Exento</option>
+                    <option value="sin_impuesto">Sin impuesto</option>
+                  </select>
                 </label>
               </div>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <label className={styles.label} style={{ flex: '1 1 90px', minWidth: 0 }}>Impuesto (%)
+                  <input
+                    className={styles.input} style={{ width: '100%', boxSizing: 'border-box' }} type="number"
+                    value={porcentajeImpuesto} onChange={(e) => setPorcentajeImpuesto(e.target.value)}
+                    disabled={tipoImpuesto === 'exento' || tipoImpuesto === 'sin_impuesto'}
+                  />
+                </label>
+                <label className={styles.label} style={{ flex: '1 1 90px', minWidth: 0 }}>Cuota impuesto (€)
+                  <input
+                    className={styles.input} style={{ width: '100%', boxSizing: 'border-box' }} type="number"
+                    value={importeImpuesto} onChange={(e) => setImporteImpuesto(e.target.value)}
+                    disabled={tipoImpuesto === 'exento' || tipoImpuesto === 'sin_impuesto'}
+                  />
+                </label>
+              </div>
+              {(() => {
+                const b = parseFloat(baseImponible.replace(',', '.'));
+                const c = parseFloat(importeImpuesto.replace(',', '.'));
+                const t = parseFloat(String(importe).replace(',', '.'));
+                if (!Number.isFinite(b) || !Number.isFinite(c) || !Number.isFinite(t)) return null;
+                return Math.abs(b + c - t) > 0.01 ? (
+                  <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--ocre, #a67c00)' }}>
+                    La base imponible + la cuota del impuesto ({(b + c).toFixed(2)}€) no coincide con el importe total ({t.toFixed(2)}€) — revisa los datos.
+                  </p>
+                ) : null;
+              })()}
+
+              {/* Tratamiento fiscal (Fase 3B) — solo gastos; decisión humana explícita, nunca una regla automática por región/REPEP. */}
+              {tipo === 'gasto' && (
+                <div style={{ marginTop: '0.2rem', paddingTop: '0.65rem', borderTop: '1px solid var(--borde)', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                  <p style={{ margin: 0, fontSize: '0.78rem', fontWeight: 700, color: 'var(--negro)' }}>Tratamiento fiscal</p>
+                  <SelectorDeducibilidad etiqueta="¿Este gasto es deducible en IRPF?" valor={deducibleIrpf} onCambiar={setDeducibleIrpf} />
+                  {estadoIvaIgicDeducible({
+                    tipo,
+                    tipoImpuesto,
+                    importeImpuesto: importeImpuesto ? parseFloat(importeImpuesto.replace(',', '.')) : undefined,
+                    baseImponible: baseImponible ? parseFloat(baseImponible.replace(',', '.')) : undefined,
+                    porcentajeImpuesto: porcentajeImpuesto ? parseFloat(porcentajeImpuesto.replace(',', '.')) : undefined,
+                    ivaIgicDeducible,
+                  }) !== 'no_aplica' && (
+                    <SelectorDeducibilidad etiqueta="¿El IVA/IGIC soportado es deducible?" valor={ivaIgicDeducible} onCambiar={setIvaIgicDeducible} />
+                  )}
+                </div>
+              )}
             </div>
           )}
 

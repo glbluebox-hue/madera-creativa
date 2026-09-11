@@ -369,7 +369,14 @@ export type EmpresaDoc = {
   validezDiasDefecto: number;
   /** Tema por defecto del Motor Documental (Incremento 3) — `null` hasta que el usuario personalice uno. */
   temaPorDefecto: TemaMC | null;
-  /** Región fiscal (Fase Facturas Profesional) — determina si el Trimestral calcula IGIC (Canarias) o IVA (Península). */
+  /**
+   * Región fiscal (Fase Facturas Profesional). NO determina si una factura
+   * es IVA o IGIC — eso es `Factura.tipoImpuesto`, un dato real de cada
+   * factura (subfase "Agregación trimestral IVA/IGIC", Fase 2). La región
+   * solo se usa para estimar el impuesto de facturas sin ese dato y para
+   * sugerir un valor por defecto en el formulario — nunca para reclasificar
+   * una factura ya identificada.
+   */
   regionFiscal: 'canarias' | 'peninsula' | '';
   /** Ubicación estructurada (Fase 2F, "Consenso de Precio") — determina qué mercado local investigar. `isla` solo aplica a Canarias/Baleares. Vacíos hasta que el usuario los configura. */
   comunidadAutonoma: string;
@@ -395,15 +402,22 @@ export type EmpresaDoc = {
  * Una línea (ingresos o gastos) del resumen económico por período (Fase 1
  * — "Períodos + Resultado"). `base` es lo que entra en el Resultado; el
  * resto son datos de trazabilidad y, sobre todo, la puerta para que las
- * fases fiscales posteriores (IVA/IGIC/REPEP) reutilicen el motor fiscal
- * existente sin volver a leer las facturas — ver `resumenEconomico`.
+ * fases fiscales posteriores (tratamiento fiscal/deducibilidad de
+ * IVA-IGIC, REPEP) reutilicen el motor fiscal existente sin volver a leer
+ * las facturas — ver `resumenEconomico`.
  */
 export type LineaResumenEconomico = {
   /** Σ por factura de `baseImponible` (si hay desglose fiscal fiable) o `importe` (si no). Es lo que se resta para el Resultado. */
   base: number;
   /** Σ `baseImponible` solo de las facturas con desglose fiscal fiable (base + cuota numéricas). */
   conDesglose: number;
-  /** Σ `importeImpuesto` de esas mismas facturas — RESERVADO para la Fase 3 (IVA repercutido/soportado); esta fase no lo usa. */
+  /**
+   * Σ `importeImpuesto` de esas mismas facturas — dato bruto sin separar
+   * por tipo. La separación real de IVA/IGIC repercutido/soportado ya se
+   * implementó en la Fase 2 (`motor-fiscal.ts` → `calcularImpuestosPorTipo`,
+   * usado en el Trimestral y el PDF del asesor); esta cifra sigue sin usarse
+   * en el dashboard de Inicio, que no mezcla impuesto con el Resultado.
+   */
   cuotaImpuesto: number;
   /** Σ `importe` de las facturas SIN desglose fiscal fiable — se cuenta en `base` como respaldo, pero se expone aparte para poder avisar de que esa parte no es fiscalmente exacta. */
   importeSinDesglose: number;
@@ -2126,10 +2140,12 @@ export class PresupuestosService {
     ];
 
     const { generarResumenPdf, generarZipFacturas } = await import('./documentos-factura.service.js');
+    const { calcularImpuestosPorTipo } = await import('./motor-fiscal.js');
     const resumenBytes = await generarResumenPdf({
       empresaNombre: empresa?.nombre || 'Empresa',
       periodoLabel,
       ingresos, gastos, gastosPeriodicos: gastosPeriodicosDelTrimestre, avisoFiscal,
+      impuestos: calcularImpuestosPorTipo(facturas as any[]),
     });
     return generarZipFacturas(facturas, {
       agruparPorTipo: true,

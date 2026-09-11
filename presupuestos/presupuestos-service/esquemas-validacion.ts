@@ -600,9 +600,13 @@ export const esquemaFactura = z.object({
   numeroFactura: z.string().max(100).optional().default(''),
   cifNif: z.string().max(20).optional().default(''),
   baseImponible: z.number().finite().optional(),
-  tipoImpuesto: z.enum(['igic', 'iva', '']).optional().default(''),
+  tipoImpuesto: z.enum(['igic', 'iva', 'exento', 'sin_impuesto', '']).optional().default(''),
   porcentajeImpuesto: z.number().finite().optional(),
   importeImpuesto: z.number().finite().optional(),
+  /** Porcentaje (0-100) deducible en IRPF (Fase 3A) — ausente = sin decidir, nunca `'por_revisar'`/`'no_aplica'` almacenados. */
+  deducibleIrpf: z.number().min(0).max(100).optional(),
+  /** Porcentaje (0-100) deducible del IVA/IGIC soportado (Fase 3A) — separado de `importeImpuesto`, que no se modifica. */
+  ivaIgicDeducible: z.number().min(0).max(100).optional(),
   categoria: z.string().max(100).optional().default(''),
   proyectoId: z.string().max(128).optional().default(''),
   proveedorId: z.string().max(128).optional().default(''),
