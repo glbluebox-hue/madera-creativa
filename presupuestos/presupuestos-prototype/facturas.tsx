@@ -10,7 +10,7 @@ import { ConfirmarBorrado } from './confirmar-borrado.js';
 import { VisorFactura } from './visor-factura.js';
 import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
 import { CandadoPlan } from './candado-plan.js';
-import { trimestreDeFecha as trimestreDeFecha0 } from './motor-fiscal.js';
+import { trimestreDeFecha as trimestreDeFecha0, detectarProblemaFiscal } from './motor-fiscal.js';
 import { RevisionTratamientoFiscalHistorico } from './revision-tratamiento-fiscal-historico.js';
 import { RevisionDesglosefiscalIncorrecto } from './revision-desglose-fiscal-incorrecto.js';
 import * as api from './api.js';
@@ -435,7 +435,11 @@ export function Facturas({
                 </tr>
               </thead>
               <tbody>
-                {facturasFiltradas.map((f) => (
+                {facturasFiltradas.map((f) => {
+                  // Aviso de posible desglose fiscal incorrecto (auditoría 12/09/2026) — solo lectura,
+                  // calculado aquí mismo con los datos ya cargados, sin ninguna llamada adicional.
+                  const problemaFiscal = detectarProblemaFiscal(f);
+                  return (
                   <tr key={f.id}>
                     <td className={styles.colOcultarMovil}>
                       <input type="checkbox" checked={seleccionadas.has(f.id)} onChange={() => alternarSeleccion(f.id)} aria-label={`Seleccionar factura de ${f.proveedor || f.concepto || f.fecha}`} />
@@ -453,7 +457,14 @@ export function Facturas({
                       </span>
                     </td>
                     <td>
-                      <strong>{f.proveedor || '—'}</strong>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <strong>{f.proveedor || '—'}</strong>
+                        {problemaFiscal && (
+                          <span title={problemaFiscal.explicacion} aria-label={`Aviso: ${problemaFiscal.explicacion}`} style={{ display: 'inline-flex', color: 'var(--ocre, #a67c00)', cursor: 'help' }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2 1 21h22L12 2zm0 6a1.5 1.5 0 0 1 1.5 1.5v4a1.5 1.5 0 0 1-3 0v-4A1.5 1.5 0 0 1 12 8zm0 9.5a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5z" /></svg>
+                          </span>
+                        )}
+                      </span>
                       {f.concepto && <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>{f.concepto}</span>}
                     </td>
                     <td className={styles.colOcultarMovil} style={{ fontSize: '0.82rem', color: 'var(--topo-claro)' }}>
@@ -487,7 +498,8 @@ export function Facturas({
                       </span>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
             </div>
@@ -526,6 +538,7 @@ export function Facturas({
         <RevisionDesglosefiscalIncorrecto
           onCerrar={() => setRevisionDesglosesAbierta(false)}
           onAbrirFactura={(f) => { setFacturaEditar(f); setEscaner(true); setRevisionDesglosesAbierta(false); }}
+          onAplicado={onRecargar}
         />
       )}
 

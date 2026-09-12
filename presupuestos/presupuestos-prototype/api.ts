@@ -1187,6 +1187,9 @@ async function sondearTrabajoIA<T>(trabajoId: string, ruta = '/ia/generar'): Pro
  * El sondeo ocurre dentro de esta función — el contrato externo (una
  * promesa que resuelve con la respuesta) no cambia para quien la llama.
  */
+/** Se lanza cuando `POST /ia/generar` responde 429 (`limitadorIA`: 60 peticiones/15 min) — distinta de un fallo genérico para que el llamante pueda distinguir "está saturado, reintenta más tarde" de un error real (usado por la corrección masiva de facturas, auditoría 12/09/2026). */
+export class ErrorLimiteIA extends Error {}
+
 export async function generarRespuestaIA(params: {
   capacidad: string;
   mensajes: MensajeChatIA[];
@@ -1197,6 +1200,7 @@ export async function generarRespuestaIA(params: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
+  if (res.status === 429) throw new ErrorLimiteIA('Demasiadas peticiones a la IA. Inténtalo de nuevo en unos minutos.');
   await comprobarRespuesta(res, 'No se pudo generar la respuesta de IA');
   const { trabajoId } = await res.json();
   return sondearTrabajoIA<RespuestaGenerarIA>(trabajoId);
