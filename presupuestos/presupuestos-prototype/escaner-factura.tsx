@@ -472,14 +472,25 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
       if (tiposValidos.includes(datos.tipoImpuestoSugerido)) {
         setTipoImpuesto((actual) => (actual ? actual : datos.tipoImpuestoSugerido));
       }
-      // Desglose fiscal por tramos (auditoría 12/09/2026) — la IA devuelve UNA
-      // entrada por cada tramo real del resumen fiscal (nunca se resume a una
-      // sola); igual que el resto de sugerencias de la IA, nunca sobrescribe
-      // líneas que el usuario ya hubiera revisado o escrito a mano.
+      // Desglose fiscal por tramos (auditoría 12/09/2026, corrección 12/09/2026-b)
+      // — la IA devuelve UNA entrada por cada tramo real del resumen fiscal
+      // (nunca se resume a una sola). Antes esto nunca se aplicaba si ya
+      // había alguna línea, aunque esa línea viniera de una extracción
+      // anterior incompleta (p. ej. solo el tramo del 7%, con el aviso de
+      // descuadre encendido) — una nueva extracción se quedaba bloqueada
+      // para siempre y el usuario tenía que añadir el tramo que faltaba a
+      // mano (reporte real del usuario, 12/09/2026). Ahora solo se
+      // protegen las líneas ya presentes si de verdad CUADRAN con el
+      // importe actual (mismo criterio que el aviso de descuadre del
+      // formulario) — eso sí es una decisión ya confirmada, humana o de una
+      // extracción anterior completa. Si no cuadran, es la señal de que
+      // nada quedó confirmado todavía, y una nueva extracción puede
+      // sustituirlas enteras por la lectura de ahora.
       const tiposLineaValidos: TipoLineaFiscal[] = ['iva', 'igic', 'exento', 'sin_impuesto'];
       if (Array.isArray(datos.lineasFiscales) && datos.lineasFiscales.length > 0) {
+        const importeActual = parseFloat(String(importe).replace(',', '.')) || 0;
         setLineasFiscales((actual) => {
-          if (actual.length > 0) return actual;
+          if (actual.length > 0 && validarLineasFiscales(actual, importeActual).valido) return actual;
           return datos.lineasFiscales
             .filter((l: any) => l && tiposLineaValidos.includes(l.tipo) && typeof l.baseImponible === 'number' && typeof l.cuota === 'number')
             .map((l: any) => ({ id: uid(), tipo: l.tipo, porcentaje: typeof l.porcentaje === 'number' ? l.porcentaje : 0, baseImponible: l.baseImponible, cuota: l.cuota }));
