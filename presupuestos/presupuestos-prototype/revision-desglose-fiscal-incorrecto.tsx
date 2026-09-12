@@ -67,6 +67,10 @@ export function RevisionDesglosefiscalIncorrecto({ onCerrar, onAbrirFactura, onA
   const [aplicando, setAplicando] = useState(false);
   const [resumenAplicado, setResumenAplicado] = useState<{ aplicadas: number; fallidas: number } | null>(null);
 
+  // ── Sincronización de tipoImpuesto (bug real detectado 12/09/2026) ──
+  const [sincronizando, setSincronizando] = useState(false);
+  const [resultadoSync, setResultadoSync] = useState<{ corregidas: number; revisadas: number } | null>(null);
+
   useEffect(() => {
     let cancelado = false;
     api.detectarDesglosesFiscalesIncorrectos()
@@ -75,6 +79,28 @@ export function RevisionDesglosefiscalIncorrecto({ onCerrar, onAbrirFactura, onA
       .finally(() => { if (!cancelado) setCargando(false); });
     return () => { cancelado = true; };
   }, []);
+
+  /**
+   * Resincroniza `tipoImpuesto` con `lineasFiscales` en TODAS las facturas
+   * (no solo las de este panel) — corrige el trimestral marcando "impuesto
+   * sin identificar" facturas cuyo desglose por tramos ya es correcto.
+   * Aplica directamente porque es una resincronización mecánica entre dos
+   * campos que ya estaban guardados, no una reextracción ni una decisión
+   * nueva sobre la factura.
+   */
+  const sincronizarTipoImpuesto = async () => {
+    setSincronizando(true);
+    setError(null);
+    try {
+      const r = await api.sincronizarTipoImpuesto();
+      setResultadoSync(r);
+      onAplicado();
+    } catch {
+      setError('No se pudo sincronizar el tipo de impuesto — inténtalo de nuevo.');
+    } finally {
+      setSincronizando(false);
+    }
+  };
 
   const abrir = async (id: string) => {
     setAbriendoId(id);
@@ -191,6 +217,30 @@ export function RevisionDesglosefiscalIncorrecto({ onCerrar, onAbrirFactura, onA
         <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           {cargando && <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--topo-claro)' }}>Analizando el desglose fiscal de tus facturas…</p>}
           {error && <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--rojo)' }}>{error}</p>}
+
+          {!cargando && (
+            <div style={{ border: '1px solid var(--borde)', borderRadius: 8, padding: '0.6rem 0.75rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--topo)' }}>
+                Bug corregido (12/09/2026): una factura con el desglose por tramos ya correcto podía seguir apareciendo en el trimestral como "impuesto sin identificar" si el campo antiguo no se había resincronizado. Esto lo arregla sin necesidad de IA — es un cálculo directo, no reextrae ni cambia ningún importe.
+              </p>
+              {resultadoSync ? (
+                <p style={{ margin: 0, fontSize: '0.8rem', color: resultadoSync.corregidas > 0 ? 'var(--verde, #2e7d32)' : 'var(--topo-claro)' }}>
+                  {resultadoSync.corregidas > 0
+                    ? `✓ Se ha sincronizado el tipo de impuesto de ${resultadoSync.corregidas} factura${resultadoSync.corregidas !== 1 ? 's' : ''}.`
+                    : 'No había ninguna factura por sincronizar — todo correcto.'}
+                </p>
+              ) : (
+                <button
+                  type="button" className={`${styles.btn} ${styles.btnSecundario}`}
+                  style={{ alignSelf: 'flex-start', fontSize: '0.78rem' }}
+                  onClick={sincronizarTipoImpuesto}
+                  disabled={sincronizando}
+                >
+                  {sincronizando ? 'Sincronizando…' : 'Sincronizar tipo de impuesto'}
+                </button>
+              )}
+            </div>
+          )}
 
           {resultado && !propuestas && (
             <>

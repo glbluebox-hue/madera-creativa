@@ -329,6 +329,26 @@ export function agregarLineasFiscales(lineas: LineaFiscal[]): { baseImponible: n
 }
 
 /**
+ * Tipo de impuesto real (a efectos de `Factura.tipoImpuesto`, y por tanto de
+ * `clasificarImpuestoFactura`/el agregado trimestral de IVA e IGIC) de un
+ * desglose por tramos — bug real detectado 12/09/2026: `lineasFiscales` se
+ * guardaba correctamente pero `tipoImpuesto` (el único campo que usa el
+ * trimestral para clasificar) se quedaba en `''` si nadie tocaba el
+ * desplegable a mano, así que la factura aparecía "con impuesto sin
+ * identificar" aunque su desglose ya cuadrara. Con líneas de IVA o de IGIC
+ * (nunca ambas a la vez, ya lo impide `validarLineasFiscales`) devuelve ese
+ * tipo; con solo exentas/sin impuesto, devuelve el de la primera; sin
+ * líneas, `''` (nada que derivar).
+ */
+export function tipoRealDeLineas(lineas: LineaFiscal[]): TipoImpuestoFactura {
+  if (lineas.length === 0) return '';
+  const tiposReales = new Set(lineas.filter((l) => l.tipo === 'iva' || l.tipo === 'igic').map((l) => l.tipo));
+  if (tiposReales.size === 1) return [...tiposReales][0] as TipoImpuestoFactura;
+  if (tiposReales.size > 1) return ''; // mezcla — no debería llegar aquí si ya se validó antes de guardar
+  return lineas[0].tipo;
+}
+
+/**
  * Resultado de validar el desglose fiscal — `motivo` es un aviso en
  * lenguaje llano para mostrar en el formulario, nunca un código interno.
  */

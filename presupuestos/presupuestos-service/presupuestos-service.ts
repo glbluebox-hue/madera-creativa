@@ -18,7 +18,7 @@ import { esGastoPeriodicoDeducible } from './gasto-periodico-fiscal.js';
 import { resolverTratamientoFiscal } from './motor-resolucion-fiscal.js';
 import type { OrigenDecisionFiscal } from './motor-resolucion-fiscal.js';
 import { fusionarDecisionFiscal } from './fusion-decision-fiscal.js';
-import { agregarLineasFiscales, validarLineasFiscales, detectarProblemaFiscal } from './motor-fiscal.js';
+import { agregarLineasFiscales, validarLineasFiscales, detectarProblemaFiscal, tipoRealDeLineas } from './motor-fiscal.js';
 import { subirORecuperarRecurso } from './documento-recursos-biblioteca.js';
 import type { DocumentoMC, TemaMC, RecursoMC } from './documento-modelo.js';
 import { analizarPrecioPresupuesto, calcularMargenRealProyecto } from './inteligencia-precios.js';
@@ -1887,6 +1887,15 @@ export class PresupuestosService {
       const agregado = agregarLineasFiscales(lineasFiscalesEntrantes);
       (factura as any).baseImponible = agregado.baseImponible;
       (factura as any).importeImpuesto = agregado.importeImpuesto;
+      // Bug real detectado 12/09/2026: `tipoImpuesto` (el único campo que usa
+      // el agregado trimestral de IVA/IGIC para clasificar) no se derivaba
+      // de `lineasFiscales`, así que una factura con desglose correcto podía
+      // seguir apareciendo como "con impuesto sin identificar" si nadie
+      // tocaba el desplegable a mano. Se deriva aquí, igual que la base y la
+      // cuota — mismo criterio que ya usa `validarLineasFiscales` (nunca
+      // mezcla IVA/IGIC en una factura válida).
+      const tipoDerivado = tipoRealDeLineas(lineasFiscalesEntrantes);
+      if (tipoDerivado) (factura as any).tipoImpuesto = tipoDerivado;
     }
 
     let cifNif = (factura as any).cifNif;
@@ -2165,6 +2174,35 @@ export class PresupuestosService {
     for (const d of detalle) porCategoria[d.categoria] = (porCategoria[d.categoria] ?? 0) + 1;
 
     return { total: detalle.length, porCategoria, facturas: detalle };
+  }
+
+  /**
+   * Corrige `tipoImpuesto` de las facturas cuyo `lineasFiscales` ya es
+   * correcto pero cuyo campo agregado se quedó desincronizado — bug real
+   * detectado 12/09/2026: hasta este arreglo, `guardarFactura` derivaba
+   * `baseImponible`/`importeImpuesto` de las líneas pero no `tipoImpuesto`,
+   * así que una factura con un desglose perfecto podía seguir contándose
+   * como "con impuesto sin identificar" en el trimestral si nadie tocaba el
+   * desplegable a mano (p. ej. al corregirla con el detector de desglose
+   * incorrecto, o al editarla solo para arreglar los tramos). No es una
+   * reextracción ni una decisión nueva — es una simple resincronización
+   * mecánica de un dato ya guardado y correcto (`lineasFiscales`) hacia
+   * otro (`tipoImpuesto`), sin ninguna inferencia: por eso se aplica
+   * directamente, sin paso de revisión previo, igual que ya se hace con
+   * `baseImponible`/`importeImpuesto` en cada guardado.
+   */
+  async sincronizarTipoImpuestoDesdeLineasFiscales(usuarioId: string): Promise<{ corregidas: number; revisadas: number }> {
+    await conectar();
+    const facturas = await FacturaModel.find({ usuarioId, 'lineasFiscales.0': { $exists: true } }).lean().exec() as any[];
+    let corregidas = 0;
+    for (const f of facturas) {
+      const tipoDerivado = tipoRealDeLineas(f.lineasFiscales);
+      if (tipoDerivado && tipoDerivado !== f.tipoImpuesto) {
+        await FacturaModel.updateOne({ id: f.id, usuarioId }, { $set: { tipoImpuesto: tipoDerivado } }).exec();
+        corregidas += 1;
+      }
+    }
+    return { corregidas, revisadas: facturas.length };
   }
 
   /**

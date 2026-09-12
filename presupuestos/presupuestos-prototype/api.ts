@@ -456,6 +456,19 @@ export async function detectarDesglosesFiscalesIncorrectos(): Promise<{ total: n
   return res.json();
 }
 
+/**
+ * Resincroniza `tipoImpuesto` con `lineasFiscales` en todas las facturas del
+ * usuario (auditoría 12/09/2026: el trimestral las contaba como "con
+ * impuesto sin identificar" aunque su desglose ya cuadrara). Aplica
+ * directamente, sin paso de revisión — es una resincronización mecánica
+ * entre dos campos ya guardados, no una reextracción ni una decisión nueva.
+ */
+export async function sincronizarTipoImpuesto(): Promise<{ corregidas: number; revisadas: number }> {
+  const res = await fetchConAuth('/facturas/sincronizar-tipo-impuesto', { method: 'POST' });
+  await comprobarRespuesta(res, 'No se pudo sincronizar el tipo de impuesto');
+  return res.json();
+}
+
 /** Nombre de archivo sugerido por el servidor, leído de `Content-Disposition`. */
 function nombreDesdeContentDisposition(res: Response, porDefecto: string): string {
   const cabecera = res.headers.get('Content-Disposition') ?? '';

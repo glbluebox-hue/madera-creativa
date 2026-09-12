@@ -2006,6 +2006,12 @@ export function run() {
     catch (err) { responderError(req, res, err); }
   });
 
+  /** Resincroniza `tipoImpuesto` con `lineasFiscales` — ver el comentario de `sincronizarTipoImpuestoDesdeLineasFiscales`. */
+  app.post('/facturas/sincronizar-tipo-impuesto', requireAuth, async (req: AuthRequest, res) => {
+    try { res.json(await svc.sincronizarTipoImpuestoDesdeLineasFiscales(req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
   app.get('/facturas/:id', requireAuth, async (req: AuthRequest, res) => {
     try {
       const f = await svc.obtenerFactura(req.params.id, req.usuarioId!);
