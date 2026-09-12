@@ -81,10 +81,24 @@ export function RevisionTratamientoFiscalHistorico({ onCerrar, onAplicado }: { o
           )}
 
           {resultado && (
-            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--verde, #2e7d32)' }}>
-              ✓ Aplicado: {resultado.resueltas} factura{resultado.resueltas !== 1 ? 's' : ''} resuelta{resultado.resueltas !== 1 ? 's' : ''} automáticamente
-              {resultado.conPregunta > 0 && `, ${resultado.conPregunta} con una pregunta lista para cuando las abras`}.
-            </p>
+            <>
+              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--verde, #2e7d32)' }}>
+                ✓ Aplicado: {resultado.resueltas} factura{resultado.resueltas !== 1 ? 's' : ''} resuelta{resultado.resueltas !== 1 ? 's' : ''} automáticamente
+                {resultado.conPregunta > 0 && `, ${resultado.conPregunta} con una pregunta lista para cuando las abras`}.
+              </p>
+              {resultado.conPregunta > 0 && (
+                <>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--topo-claro)' }}>
+                    Estas son las facturas con una pregunta pendiente — también las verás marcadas con <strong style={{ color: 'var(--azul, #2b6cb0)' }}>?</strong> en la lista de Facturas:
+                  </p>
+                  <ul style={{ margin: 0, paddingLeft: '1.2rem', fontSize: '0.78rem', color: 'var(--topo-claro)', display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                    {resumen?.detalle.filter((d) => d.resultado === 'pregunta').map((d) => (
+                      <li key={d.id}>{d.proveedor || d.concepto || 'Sin nombre'} — {d.importe.toFixed(2)}€</li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </>
           )}
 
           <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>

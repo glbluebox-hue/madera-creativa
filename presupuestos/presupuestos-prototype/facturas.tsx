@@ -439,6 +439,10 @@ export function Facturas({
                   // Aviso de posible desglose fiscal incorrecto (auditoría 12/09/2026) — solo lectura,
                   // calculado aquí mismo con los datos ya cargados, sin ninguna llamada adicional.
                   const problemaFiscal = detectarProblemaFiscal(f);
+                  // Pregunta factual pendiente del tratamiento fiscal histórico (Fase 3C.3) — antes
+                  // no tenía ningún aviso en la lista, había que abrir cada factura para saberlo
+                  // (detectado 12/09/2026 tras aplicar el tratamiento a las facturas antiguas).
+                  const preguntaPendiente = f.preguntasFiscalesPendientes?.[0];
                   return (
                   <tr key={f.id}>
                     <td className={styles.colOcultarMovil}>
@@ -462,6 +466,11 @@ export function Facturas({
                         {problemaFiscal && (
                           <span title={problemaFiscal.explicacion} aria-label={`Aviso: ${problemaFiscal.explicacion}`} style={{ display: 'inline-flex', color: 'var(--ocre, #a67c00)', cursor: 'help' }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2 1 21h22L12 2zm0 6a1.5 1.5 0 0 1 1.5 1.5v4a1.5 1.5 0 0 1-3 0v-4A1.5 1.5 0 0 1 12 8zm0 9.5a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5z" /></svg>
+                          </span>
+                        )}
+                        {preguntaPendiente && (
+                          <span title={`Pregunta pendiente: ${preguntaPendiente.pregunta}`} aria-label={`Pregunta pendiente: ${preguntaPendiente.pregunta}`} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: '50%', background: 'var(--azul, #2b6cb0)', color: '#fff', fontSize: '0.62rem', fontWeight: 700, cursor: 'help' }}>
+                            ?
                           </span>
                         )}
                       </span>
