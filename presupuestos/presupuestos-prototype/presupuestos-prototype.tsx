@@ -90,7 +90,7 @@ export function PresupuestosPrototype() {
   const {
     facturas, resumen: resumenFacturas, cargandoMas: facturasCargandoMas, hayMas: facturasHayMas,
     filtro: filtroFacturas, establecerFiltro: establecerFiltroFacturas,
-    guardar: guardarFactura, borrar: borrarFactura, cargarMas: facturasCargarMas,
+    guardar: guardarFactura, borrar: borrarFactura, cargarMas: facturasCargarMas, recargar: recargarFacturas,
   } = useFacturas(listo);
   // Solo id+nombre de todos los clientes (no solo la página cargada) — para
   // resolver nombres y selectores (Incremento 1.5).
@@ -757,6 +757,7 @@ export function PresupuestosPrototype() {
             hayMas={facturasHayMas}
             cargandoMas={facturasCargandoMas}
             onCargarMas={facturasCargarMas}
+            onRecargar={recargarFacturas}
             clientes={nombresClientes}
             proveedores={proveedores}
             onGuardar={guardarFactura}

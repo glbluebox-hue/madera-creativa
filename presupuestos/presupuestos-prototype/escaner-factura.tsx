@@ -10,6 +10,10 @@ import { Z_DESPLEGABLE } from './z-index.js';
 import { etiquetaEstado } from './estado-utils.js';
 import { resolverEmisorReceptor, nombresCoinciden, type EmpresaIdentificacion } from './identificacion-factura.js';
 import { sugerirTipoImpuesto, estadoIvaIgicDeducible, type RegionFiscal, type TipoImpuestoFactura } from './motor-fiscal.js';
+import { aplicarSugerenciaCategoriaFiscal, type CategoriaFiscal } from './categoria-fiscal.js';
+import { resolverTratamientoFiscal } from './motor-resolucion-fiscal.js';
+import type { HechosFiscales, OrigenDecisionFiscal } from './types.js';
+import type { HechoFiscalRequerido } from './identificacion-gasto.js';
 import * as api from './api.js';
 import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
 import { CandadoPlan } from './candado-plan.js';
@@ -119,6 +123,94 @@ function SelectorDeducibilidad({ etiqueta, valor, onCambiar }: { etiqueta: strin
 }
 
 /**
+ * Bloque de tratamiento fiscal de un eje (IRPF o IVA/IGIC) — Fase 3C.3.
+ * El usuario NUNCA elige aquí un porcentaje de deducibilidad a ciegas: si el
+ * motor puede resolverlo, se muestra el resultado ya calculado; si falta un
+ * hecho concreto, se pregunta ESE hecho (nunca "¿qué porcentaje?"); el
+ * selector manual de siempre (`SelectorDeducibilidad`) queda como última
+ * opción, para un valor ya decidido a mano o para corregir expresamente un
+ * resultado automático. `resolucion` es un cálculo EN VIVO con los datos
+ * actuales del formulario (`resolverTratamientoFiscal`, sin persistir nada
+ * desde aquí) — la resolución real y definitiva solo la escribe el backend
+ * al guardar (`guardarFactura()`), que es quien de verdad decide `origen`.
+ */
+function TratamientoFiscalEje({
+  etiqueta, valor, origen, resolucion, pregunta, onCambiarValor, onResponderHecho,
+}: {
+  etiqueta: string;
+  valor: number | undefined;
+  origen: OrigenDecisionFiscal | undefined;
+  resolucion: { estado: string; porcentaje?: number; explicacion: string; fuenteOficial?: { organismo: string; referencia: string } } | null;
+  pregunta: { pregunta: string } | undefined;
+  onCambiarValor: (v: number | undefined) => void;
+  onResponderHecho: (respuesta: boolean) => void;
+}) {
+  const [corregirAMano, setCorregirAMano] = useState(false);
+  const [porQueAbierto, setPorQueAbierto] = useState(false);
+
+  if (corregirAMano || typeof valor === 'number') {
+    // Valor ya decidido (automático o humano) — o el usuario ha pedido decidirlo él mismo.
+    if (typeof valor === 'number' && !corregirAMano) {
+      const esAutomatico = origen === 'automatico';
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+          <span style={{ fontSize: '0.82rem', color: 'var(--topo)' }}>{etiqueta}</span>
+          <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: 600, color: esAutomatico ? 'var(--verde, #2e7d32)' : 'var(--negro)' }}>
+            {esAutomatico ? '✓ ' : ''}{valor}%
+            {esAutomatico && <span style={{ fontWeight: 400, fontSize: '0.76rem', color: 'var(--topo-claro)' }}> — calculado automáticamente según los datos de la factura.</span>}
+          </p>
+          <div style={{ display: 'flex', gap: '0.6rem' }}>
+            {esAutomatico && resolucion?.explicacion && (
+              <button type="button" className={styles.btn} style={{ fontSize: '0.72rem', padding: '0.2rem 0' }} onClick={() => setPorQueAbierto((v) => !v)}>
+                {porQueAbierto ? 'Ocultar' : '¿Por qué?'}
+              </button>
+            )}
+            <button type="button" className={styles.btn} style={{ fontSize: '0.72rem', padding: '0.2rem 0' }} onClick={() => setCorregirAMano(true)}>Corregir a mano</button>
+          </div>
+          {porQueAbierto && resolucion && (
+            <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--topo-claro)', background: 'var(--fondo-caja)', padding: '0.5rem', borderRadius: 6 }}>
+              {resolucion.explicacion}
+              {resolucion.fuenteOficial && <><br /><em>Fuente: {resolucion.fuenteOficial.organismo} — {resolucion.fuenteOficial.referencia}</em></>}
+            </p>
+          )}
+        </div>
+      );
+    }
+    return <SelectorDeducibilidad etiqueta={etiqueta} valor={valor} onCambiar={onCambiarValor} />;
+  }
+
+  if (pregunta) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+        <span style={{ fontSize: '0.82rem', color: 'var(--topo)' }}>{etiqueta}</span>
+        <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: 600 }}>{pregunta.pregunta}</p>
+        <div style={{ display: 'flex', gap: '0.4rem' }}>
+          <button type="button" className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.76rem', flex: 1 }} onClick={() => onResponderHecho(true)}>Sí</button>
+          <button type="button" className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.76rem', flex: 1 }} onClick={() => onResponderHecho(false)}>No</button>
+        </div>
+        <button type="button" className={styles.btn} style={{ fontSize: '0.72rem', alignSelf: 'flex-start', padding: '0.2rem 0' }} onClick={() => setCorregirAMano(true)}>Prefiero decidirlo yo mismo</button>
+      </div>
+    );
+  }
+
+  if (resolucion?.estado === 'resuelto_automatico') {
+    // Todavía no guardado (nada persistido ni por el usuario ni por el motor) pero, con los
+    // datos actuales del formulario, así es como quedaría al pulsar "Guardar" — aviso, no un hecho consumado.
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+        <span style={{ fontSize: '0.82rem', color: 'var(--topo)' }}>{etiqueta}</span>
+        <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--topo-claro)' }}>
+          Se calculará automáticamente al guardar: <strong>{resolucion.porcentaje}%</strong>
+        </p>
+        <button type="button" className={styles.btn} style={{ fontSize: '0.72rem', alignSelf: 'flex-start', padding: '0.2rem 0' }} onClick={() => setCorregirAMano(true)}>Decidirlo yo mismo</button>
+      </div>
+    );
+  }
+
+  return <SelectorDeducibilidad etiqueta={etiqueta} valor={valor} onCambiar={onCambiarValor} />;
+}
+
+/**
  * Modal para añadir facturas manualmente o con captura de imagen.
  * Soporta múltiples hojas/páginas que se combinan como un único documento.
  */
@@ -178,6 +270,14 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
   const [numeroFactura, setNumeroFactura] = useState(facturaEditar?.numeroFactura ?? '');
   const [cifNif, setCifNif] = useState(facturaEditar?.cifNif ?? '');
   const [categoria, setCategoria] = useState(facturaEditar?.categoria ?? '');
+  /**
+   * Clasificación fiscal interna (Fase 3C.1) — "qué tipo de gasto es",
+   * nunca si es deducible. Separada de `categoria` (texto libre, sin
+   * cambios). `undefined` = nunca clasificada — sin selector manual
+   * todavía en esta fase, solo llega vía sugerencia de IA (ver
+   * `extraerConIA`, más abajo).
+   */
+  const [categoriaFiscal, setCategoriaFiscal] = useState<CategoriaFiscal | undefined>(facturaEditar?.categoriaFiscal);
   const [baseImponible, setBaseImponible] = useState(facturaEditar?.baseImponible ? String(facturaEditar.baseImponible) : '');
   /** Naturaleza real del impuesto DE ESTA FACTURA — nunca se deriva de `regionFiscal` de la empresa, solo se sugiere como valor por defecto en facturas nuevas sin dato todavía (ver `motor-fiscal.ts` → `sugerirTipoImpuesto`). */
   const [tipoImpuesto, setTipoImpuesto] = useState<TipoImpuestoFactura>(facturaEditar?.tipoImpuesto ?? '');
@@ -191,8 +291,21 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
    */
   const [deducibleIrpf, setDeducibleIrpf] = useState<number | undefined>(facturaEditar?.deducibleIrpf);
   const [ivaIgicDeducible, setIvaIgicDeducible] = useState<number | undefined>(facturaEditar?.ivaIgicDeducible);
-  /** Solo para la sugerencia de `tipoImpuesto` en facturas nuevas — nunca se usa para calcular ni para sobrescribir un dato ya presente. */
+  /**
+   * Origen de la decisión (Fase 3C.3) — quién puso el número de arriba:
+   * ausente = decisión humana histórica (de antes de esta fase) o nunca
+   * decidido; `'automatico'` = lo puso el motor la última vez que se
+   * guardó. Se actualiza a `'usuario'` en cuanto el propio usuario toca el
+   * selector manual — el backend es quien decide esto de verdad al
+   * guardar, esto solo mantiene la UI coherente mientras se edita.
+   */
+  const [deducibleIrpfOrigen, setDeducibleIrpfOrigen] = useState<OrigenDecisionFiscal | undefined>(facturaEditar?.deducibleIrpfOrigen);
+  const [ivaIgicDeducibleOrigen, setIvaIgicDeducibleOrigen] = useState<OrigenDecisionFiscal | undefined>(facturaEditar?.ivaIgicDeducibleOrigen);
+  /** Hechos factuales ya confirmados por el usuario (Fase 3C.3) — el HECHO, nunca el porcentaje resultante; lo traduce el motor. */
+  const [hechosFiscales, setHechosFiscales] = useState<HechosFiscales | undefined>(facturaEditar?.hechosFiscales);
+  /** Solo para la sugerencia de `tipoImpuesto` en facturas nuevas y para el motor fiscal (Fase 3C.3) — nunca se usa para sobrescribir un dato ya presente. */
   const [regionFiscal, setRegionFiscal] = useState<RegionFiscal>('');
+  const [repepActivo, setRepepActivo] = useState(false);
   const [datosFiscalesAbierto, setDatosFiscalesAbierto] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const camaraRef = useRef<HTMLInputElement>(null);
@@ -227,7 +340,7 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
   const [codigoPostalDetectado, setCodigoPostalDetectado] = useState('');
   useEffect(() => {
     api.obtenerEmpresa()
-      .then((e) => { setEmpresa({ nombre: e.nombre ?? '', titular: e.titular ?? '', nifCif: e.nifCif ?? '' }); setRegionFiscal(e.regionFiscal ?? ''); })
+      .then((e) => { setEmpresa({ nombre: e.nombre ?? '', titular: e.titular ?? '', nifCif: e.nifCif ?? '' }); setRegionFiscal(e.regionFiscal ?? ''); setRepepActivo(!!e.repepActivo); })
       .catch(() => setEmpresa({ nombre: '', titular: '', nifCif: '' }));
   }, []);
 
@@ -342,6 +455,13 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
       if (typeof datos.importe === 'number') setImporte(String(datos.importe));
       if (datos.concepto) setConcepto(datos.concepto);
       if (datos.categoria) setCategoria(datos.categoria);
+      // categoriaFiscal (Fase 3C.1) solo tiene sentido en gastos — el
+      // prompt ya le pide a la IA devolver `null` en ingresos, se refuerza
+      // aquí para no depender solo de eso. Mismo criterio que
+      // tipoImpuesto: nunca sobrescribe un valor ya presente.
+      if ((resuelto.tipo || tipo) === 'gasto') {
+        setCategoriaFiscal((actual) => aplicarSugerenciaCategoriaFiscal(actual, datos.categoriaFiscalSugerida));
+      }
       if (datos.baseImponible || datos.porcentajeImpuesto || tiposValidos.includes(datos.tipoImpuestoSugerido)) setDatosFiscalesAbierto(true);
       setConfianzaIA(resuelto.confianza);
       setAvisoRevisarEmisor(resuelto.revisar);
@@ -464,9 +584,46 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
       porcentajeImpuesto: porcentajeImpuesto ? parseFloat(porcentajeImpuesto.replace(',', '.')) : undefined,
       importeImpuesto: importeImpuesto ? parseFloat(importeImpuesto.replace(',', '.')) : undefined,
       deducibleIrpf,
+      deducibleIrpfOrigen,
       ivaIgicDeducible,
+      ivaIgicDeducibleOrigen,
+      hechosFiscales,
+      categoriaFiscal,
       creado: facturaEditar?.creado ?? new Date().toISOString(),
     };
+  };
+
+  /**
+   * Previsualización EN VIVO del tratamiento fiscal (Fase 3C.3) — con los
+   * datos actuales del formulario, sin guardar nada: solo para que el
+   * bloque "Tratamiento fiscal" pueda mostrar de inmediato lo que el motor
+   * resolvería al pulsar "Guardar". La resolución real y definitiva la
+   * escribe únicamente el backend, dentro de `guardarFactura()`.
+   */
+  const previsualizacionFiscal = tipo === 'gasto'
+    ? resolverTratamientoFiscal(
+      {
+        tipo, categoriaFiscal,
+        baseImponible: baseImponible ? parseFloat(baseImponible.replace(',', '.')) : undefined,
+        importe: parseFloat(String(importe).replace(',', '.')) || 0,
+        tipoImpuesto,
+        importeImpuesto: importeImpuesto ? parseFloat(importeImpuesto.replace(',', '.')) : undefined,
+        porcentajeImpuesto: porcentajeImpuesto ? parseFloat(porcentajeImpuesto.replace(',', '.')) : undefined,
+        proveedor, concepto, categoria, hechosFiscales,
+      },
+      { repepActivo }
+    )
+    : null;
+  const preguntaIrpf = previsualizacionFiscal?.preguntasFiscalesPendientes.find((p) => p.eje === 'irpf');
+  const ejeIndirectoActivo = previsualizacionFiscal
+    ? (previsualizacionFiscal.iva.estado !== 'no_aplica' ? previsualizacionFiscal.iva : previsualizacionFiscal.igic)
+    : null;
+  const preguntaIndirecto = previsualizacionFiscal?.preguntasFiscalesPendientes.find((p) => p.eje === 'iva' || p.eje === 'igic');
+
+  /** Responde un hecho factual (Fase 3C.3) — se guarda el HECHO, nunca un porcentaje: lo traduce el motor al guardar. */
+  const responderHechoFiscal = (hecho: HechoFiscalRequerido | undefined, respuesta: boolean) => {
+    if (!hecho) return;
+    setHechosFiscales((prev) => ({ ...prev, [hecho]: respuesta }));
   };
 
   /** `forzar: true` = el usuario ya vio el aviso de duplicado y quiere guardar igual. */
@@ -933,11 +1090,21 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
                 ) : null;
               })()}
 
-              {/* Tratamiento fiscal (Fase 3B) — solo gastos; decisión humana explícita, nunca una regla automática por región/REPEP. */}
+              {/* Tratamiento fiscal (Fase 3B, automatizado en 3C.3) — solo gastos. El motor resuelve lo que puede con
+                  seguridad; si falta un hecho, se pregunta ESE hecho, nunca un porcentaje; el selector manual de
+                  siempre queda como último recurso, nunca como paso obligatorio. */}
               {tipo === 'gasto' && (
                 <div style={{ marginTop: '0.2rem', paddingTop: '0.65rem', borderTop: '1px solid var(--borde)', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
                   <p style={{ margin: 0, fontSize: '0.78rem', fontWeight: 700, color: 'var(--negro)' }}>Tratamiento fiscal</p>
-                  <SelectorDeducibilidad etiqueta="¿Este gasto es deducible en IRPF?" valor={deducibleIrpf} onCambiar={setDeducibleIrpf} />
+                  <TratamientoFiscalEje
+                    etiqueta="¿Este gasto es deducible en IRPF?"
+                    valor={deducibleIrpf}
+                    origen={deducibleIrpfOrigen}
+                    resolucion={previsualizacionFiscal?.irpf ?? null}
+                    pregunta={preguntaIrpf}
+                    onCambiarValor={(v) => { setDeducibleIrpf(v); setDeducibleIrpfOrigen(v === undefined ? undefined : 'usuario'); }}
+                    onResponderHecho={(respuesta) => responderHechoFiscal(previsualizacionFiscal?.irpf.preguntaId, respuesta)}
+                  />
                   {estadoIvaIgicDeducible({
                     tipo,
                     tipoImpuesto,
@@ -946,7 +1113,15 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
                     porcentajeImpuesto: porcentajeImpuesto ? parseFloat(porcentajeImpuesto.replace(',', '.')) : undefined,
                     ivaIgicDeducible,
                   }) !== 'no_aplica' && (
-                    <SelectorDeducibilidad etiqueta="¿El IVA/IGIC soportado es deducible?" valor={ivaIgicDeducible} onCambiar={setIvaIgicDeducible} />
+                    <TratamientoFiscalEje
+                      etiqueta="¿El IVA/IGIC soportado es deducible?"
+                      valor={ivaIgicDeducible}
+                      origen={ivaIgicDeducibleOrigen}
+                      resolucion={ejeIndirectoActivo}
+                      pregunta={preguntaIndirecto}
+                      onCambiarValor={(v) => { setIvaIgicDeducible(v); setIvaIgicDeducibleOrigen(v === undefined ? undefined : 'usuario'); }}
+                      onResponderHecho={(respuesta) => responderHechoFiscal(ejeIndirectoActivo?.preguntaId, respuesta)}
+                    />
                   )}
                 </div>
               )}

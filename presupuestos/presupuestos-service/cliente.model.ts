@@ -967,6 +967,54 @@ const FacturaSchema = new Schema({
   deducibleIrpf: { type: Number, min: 0, max: 100 },
   /** Porcentaje (0-100) deducible del IVA/IGIC soportado — mismo criterio que `deducibleIrpf`, separado de `importeImpuesto`. */
   ivaIgicDeducible: { type: Number, min: 0, max: 100 },
+  /**
+   * Origen de `deducibleIrpf` (Fase 3C.3) — ausente + número presente =
+   * decisión humana (incluye TODO lo guardado antes de esta fase, por
+   * compatibilidad); ausente + número ausente = nunca decidido;
+   * `'automatico'` = lo puso el motor y puede revisarse en un guardado
+   * posterior sin que eso sea "sobrescribir a un humano".
+   */
+  deducibleIrpfOrigen: { type: String, enum: ['automatico', 'usuario'] },
+  /** Ver `deducibleIrpfOrigen` — mismo criterio para el eje IVA/IGIC. */
+  ivaIgicDeducibleOrigen: { type: String, enum: ['automatico', 'usuario'] },
+  /**
+   * Hechos factuales confirmados por el usuario (Fase 3C.3) — se guarda el
+   * HECHO, nunca la consecuencia fiscal ya calculada.
+   */
+  hechosFiscales: {
+    vehiculoUsoExclusivo: { type: Boolean },
+    dispositivoUsoExclusivo: { type: Boolean },
+    gestoriaSoloActividad: { type: Boolean },
+  },
+  /**
+   * Preguntas factuales pendientes de respuesta (Fase 3C.3) — se generan
+   * cuando se identifica el tipo de gasto pero falta un hecho que solo el
+   * usuario puede confirmar; se retiran al responder.
+   */
+  preguntasFiscalesPendientes: {
+    type: [{ id: String, pregunta: String, eje: { type: String, enum: ['irpf', 'iva', 'igic'] } }],
+    default: [],
+  },
+  /**
+   * Clasificación fiscal interna del gasto (Fase 3C.1) — responde
+   * ÚNICAMENTE a "qué tipo de gasto es", nunca a si es deducible ni a
+   * `regionFiscal`/REPEP/`tipoImpuesto`. Sin `default`: ausente = nunca
+   * clasificada (todo el histórico), a propósito, para no inventar una
+   * categoría solo por rellenar el campo. `'por_clasificar'` = se analizó
+   * y no quedó claro; `'otros'` = se sabe qué es, no encaja en ninguna
+   * categoría específica. Separado de `categoria` (texto libre, sin
+   * cambios).
+   */
+  categoriaFiscal: {
+    type: String,
+    enum: [
+      'materiales', 'herramienta_pequena', 'maquinaria_inversion', 'mantenimiento',
+      'vehiculo', 'combustible', 'seguros', 'telefono_internet', 'suministros_taller',
+      'suministros_vivienda', 'alquiler', 'servicios_profesionales', 'software',
+      'publicidad', 'formacion', 'ropa_trabajo_epi', 'comidas', 'viajes',
+      'alojamiento', 'bancos', 'material_oficina', 'otros', 'por_clasificar',
+    ],
+  },
   categoria: { type: String, default: '' },
   /** Proyecto/expediente al que pertenece — desde el incremento "Cliente ≠ Proyecto" (20/08/2026) es la clave real de aislamiento entre trabajos del mismo cliente; `clienteId` se mantiene apuntando a la identidad. */
   proyectoId: { type: String, default: '', index: true },

@@ -607,6 +607,29 @@ export const esquemaFactura = z.object({
   deducibleIrpf: z.number().min(0).max(100).optional(),
   /** Porcentaje (0-100) deducible del IVA/IGIC soportado (Fase 3A) — separado de `importeImpuesto`, que no se modifica. */
   ivaIgicDeducible: z.number().min(0).max(100).optional(),
+  /** Origen de `deducibleIrpf`/`ivaIgicDeducible` (Fase 3C.3) — ausente + número presente = decisión humana; `'automatico'` = lo puso el motor. */
+  deducibleIrpfOrigen: z.enum(['automatico', 'usuario']).optional(),
+  ivaIgicDeducibleOrigen: z.enum(['automatico', 'usuario']).optional(),
+  /** Hechos factuales confirmados por el usuario (Fase 3C.3) — el hecho, nunca la consecuencia fiscal ya calculada. */
+  hechosFiscales: z.object({
+    vehiculoUsoExclusivo: z.boolean().optional(),
+    dispositivoUsoExclusivo: z.boolean().optional(),
+    gestoriaSoloActividad: z.boolean().optional(),
+  }).optional(),
+  /** Preguntas factuales pendientes de respuesta (Fase 3C.3) — se retiran al responder. */
+  preguntasFiscalesPendientes: z.array(z.object({
+    id: z.string(),
+    pregunta: z.string(),
+    eje: z.enum(['irpf', 'iva', 'igic']),
+  })).optional(),
+  /** Clasificación fiscal interna del gasto (Fase 3C.1) — "qué tipo de gasto es", nunca si es deducible. Sin `.default()`: ausente = nunca clasificada. */
+  categoriaFiscal: z.enum([
+    'materiales', 'herramienta_pequena', 'maquinaria_inversion', 'mantenimiento',
+    'vehiculo', 'combustible', 'seguros', 'telefono_internet', 'suministros_taller',
+    'suministros_vivienda', 'alquiler', 'servicios_profesionales', 'software',
+    'publicidad', 'formacion', 'ropa_trabajo_epi', 'comidas', 'viajes',
+    'alojamiento', 'bancos', 'material_oficina', 'otros', 'por_clasificar',
+  ]).optional(),
   categoria: z.string().max(100).optional().default(''),
   proyectoId: z.string().max(128).optional().default(''),
   proveedorId: z.string().max(128).optional().default(''),

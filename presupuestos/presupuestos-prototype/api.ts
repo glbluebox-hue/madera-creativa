@@ -419,6 +419,28 @@ export async function borrarFactura(id: string): Promise<void> {
   await comprobarRespuesta(res, 'No se pudo borrar la factura');
 }
 
+/** Resumen de solo lectura de las facturas históricas de gasto sin tratamiento fiscal (Fase 3C.3) — no modifica nada. */
+export type ResumenTratamientoFiscalHistorico = {
+  total: number;
+  resolublesAutomaticamente: number;
+  necesitanPregunta: number;
+  revisionManual: number;
+  detalle: { id: string; proveedor: string; concepto: string; importe: number; resultado: 'automatico' | 'pregunta' | 'revision_manual'; categoriaFiscalSugerida?: string }[];
+};
+
+export async function analizarTratamientoFiscalHistorico(): Promise<ResumenTratamientoFiscalHistorico> {
+  const res = await fetchConAuth('/facturas/tratamiento-fiscal-historico');
+  await comprobarRespuesta(res, 'No se pudo analizar el tratamiento fiscal de las facturas históricas');
+  return res.json();
+}
+
+/** Aplica el tratamiento fiscal automático a las facturas históricas — requiere confirmación explícita del usuario antes de llamarla. */
+export async function aplicarTratamientoFiscalHistorico(): Promise<{ resueltas: number; conPregunta: number; sinCambios: number }> {
+  const res = await fetchConAuth('/facturas/tratamiento-fiscal-historico/aplicar', { method: 'POST' });
+  await comprobarRespuesta(res, 'No se pudo aplicar el tratamiento fiscal automático');
+  return res.json();
+}
+
 /** Nombre de archivo sugerido por el servidor, leído de `Content-Disposition`. */
 function nombreDesdeContentDisposition(res: Response, porDefecto: string): string {
   const cabecera = res.headers.get('Content-Disposition') ?? '';

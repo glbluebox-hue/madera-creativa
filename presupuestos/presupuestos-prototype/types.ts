@@ -2,6 +2,7 @@
  * Tipos de dominio para la app de presupuestos de cliente.
  */
 import type { FotoProyecto } from './galeria-fotos.js';
+import type { CategoriaFiscal } from './categoria-fiscal.js';
 
 /** Una estancia con dimensiones para el despiece. */
 export type Estancia = {
@@ -180,6 +181,23 @@ export type RegistroHorasAyudante = {
   tarifaHora: number;
 };
 
+/** Origen de una decisión de deducibilidad (Fase 3C.3) — ver `Factura.deducibleIrpfOrigen`. */
+export type OrigenDecisionFiscal = 'automatico' | 'usuario';
+
+/**
+ * Hechos factuales fiscales confirmados por el usuario (Fase 3C.3) — un
+ * HECHO verificable cada uno, nunca una consecuencia fiscal ya calculada
+ * (ver `Factura.hechosFiscales`).
+ */
+export type HechosFiscales = {
+  vehiculoUsoExclusivo?: boolean;
+  dispositivoUsoExclusivo?: boolean;
+  gestoriaSoloActividad?: boolean;
+};
+
+/** Una pregunta factual pendiente de respuesta (Fase 3C.3) — ver `Factura.preguntasFiscalesPendientes`. */
+export type PreguntaFiscalPendienteFactura = { id: string; pregunta: string; eje: 'irpf' | 'iva' | 'igic' };
+
 /** Una factura escaneada o añadida manualmente. */
 export type Factura = {
   /** Identificador único. */
@@ -243,6 +261,43 @@ export type Factura = {
    * cuota calculable (ver `estadoIvaIgicDeducible` en `motor-fiscal.ts`).
    */
   ivaIgicDeducible?: number;
+  /**
+   * Origen de `deducibleIrpf`/`ivaIgicDeducible` (Fase 3C.3) — imprescindible
+   * para saber si una futura ejecución del motor puede revisar el valor
+   * (lo puso él mismo) o debe respetarlo para siempre (lo puso una
+   * persona). Ausente + campo numérico presente = decisión humana (incluye
+   * TODO lo guardado antes de esta fase, por compatibilidad); ausente +
+   * campo numérico ausente = nunca se ha decidido nada. `0` sigue siendo
+   * una decisión real en ambos casos, nunca "vacío".
+   */
+  deducibleIrpfOrigen?: OrigenDecisionFiscal;
+  /** Ver `deducibleIrpfOrigen` — mismo criterio para el eje IVA/IGIC. */
+  ivaIgicDeducibleOrigen?: OrigenDecisionFiscal;
+  /**
+   * Hechos factuales que el usuario ha confirmado (Fase 3C.3) — se guarda
+   * el HECHO, nunca la consecuencia fiscal (nunca `deducibleIrpf` aquí):
+   * es el motor quien traduce el hecho en un tratamiento cada vez que se
+   * reevalúa la factura, para poder recalcular si cambian otros datos sin
+   * tener que volver a preguntar lo mismo.
+   */
+  hechosFiscales?: HechosFiscales;
+  /**
+   * Preguntas factuales pendientes de respuesta (Fase 3C.3) — se generan
+   * cuando el motor identifica el tipo de gasto pero falta un hecho que
+   * solo el usuario puede confirmar; se retiran al responder. Nunca
+   * contienen una pregunta de deducibilidad, solo de hechos verificables.
+   */
+  preguntasFiscalesPendientes?: PreguntaFiscalPendienteFactura[];
+  /**
+   * Clasificación fiscal interna del gasto (Fase 3C.1) — responde
+   * ÚNICAMENTE a "¿qué tipo de gasto es?", nunca a si es deducible ni a
+   * nada de impuesto/región (ver `categoria-fiscal.ts`). Dato NUEVO y
+   * separado de `categoria` (texto libre de siempre, sin cambios). Ausente
+   * = nunca clasificada (todo el histórico); `'por_clasificar'` = se
+   * intentó y no quedó claro; `'otros'` = se sabe qué es, no encaja en
+   * ninguna categoría específica.
+   */
+  categoriaFiscal?: CategoriaFiscal;
   /** Categoría libre del gasto/ingreso (materiales, herramientas, combustible…). */
   categoria?: string;
   /** Proyecto al que se asocia, si aplica. */

@@ -1517,3 +1517,26 @@
 2026-09-10T20:48:58.925Z 5864 compile, succeeded
 2026-09-10T20:52:52.096Z 19448 compile, started
 2026-09-10T20:53:08.582Z 19448 compile, succeeded
+2026-09-10T21:04:18.749Z 7424 status, started
+2026-09-10T21:04:31.003Z 7424 status, succeeded
+2026-09-10T21:05:42.483Z 8384 compile, started
+2026-09-10T21:06:01.063Z 8384 compile, succeeded
+2026-09-10T21:58:14.190Z 12672 compile, started
+2026-09-10T21:58:32.663Z 12672 compile, succeeded
+2026-09-10T21:58:45.833Z 16256 check-types presupuestos/**, started
+2026-09-10T21:58:46.174Z 16256 check-types presupuestos/**, failed
+2026-09-10T21:58:51.576Z 24420 list, started
+2026-09-10T21:58:51.947Z 24420 list, succeeded
+2026-09-10T21:58:57.712Z 6032 check-types madera-creativa.presupuestos/presupuestos-prototype madera-creativa.presupuestos/presupuestos-service, started
+2026-09-10T21:59:02.947Z 20708 check-types madera-creativa.presupuestos/*, started
+2026-09-10T22:00:43.435Z 20708 check-types madera-creativa.presupuestos/*, succeeded
+2026-09-10T22:00:54.973Z 9784 check-types madera-creativa.presupuestos/*, started
+2026-09-10T22:02:20.470Z 9784 check-types madera-creativa.presupuestos/*, succeeded
+2026-09-10T22:02:29.912Z 11388 check-types madera-creativa.presupuestos/*, started
+2026-09-10T22:03:55.879Z 11388 check-types madera-creativa.presupuestos/*, succeeded
+2026-09-10T22:04:11.664Z 3980 run presupuestos-platform, started
+2026-09-12T08:48:28.202Z 12016 list, started
+2026-09-12T08:48:29.259Z 12016 list, succeeded
+2026-09-12T08:48:37.908Z 11544 app list, started
+2026-09-12T08:50:02.323Z 11544 app list, succeeded
+2026-09-12T08:53:44.776Z 11080 run presupuestos-prototype, started

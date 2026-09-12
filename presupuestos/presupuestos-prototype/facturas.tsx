@@ -11,6 +11,7 @@ import { VisorFactura } from './visor-factura.js';
 import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
 import { CandadoPlan } from './candado-plan.js';
 import { trimestreDeFecha as trimestreDeFecha0 } from './motor-fiscal.js';
+import { RevisionTratamientoFiscalHistorico } from './revision-tratamiento-fiscal-historico.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
 
@@ -37,6 +38,8 @@ export type FacturasProps = {
   hayMas: boolean;
   cargandoMas: boolean;
   onCargarMas: () => void;
+  /** Vuelve a pedir la lista/el resumen al servidor — Fase 3C.3, para reflejar los cambios tras revisar el tratamiento fiscal de facturas históricas. */
+  onRecargar: () => void;
   /** Solo id+nombre de todos los clientes, para resolver nombres y para el selector del escáner. */
   clientes: { id: string; nombre: string }[];
   proveedores?: Proveedor[];
@@ -54,7 +57,7 @@ export type FacturasProps = {
  * Sección principal de facturas: lista de facturas + vista trimestral Hacienda.
  */
 export function Facturas({
-  facturas, resumen, privado, filtro, onFiltroChange, hayMas, cargandoMas, onCargarMas,
+  facturas, resumen, privado, filtro, onFiltroChange, hayMas, cargandoMas, onCargarMas, onRecargar,
   clientes, proveedores = [], onGuardar, onBorrar, onCrearProveedor, onActualizarProveedor, plan, esAdmin,
 }: FacturasProps) {
   // Exportación de informes y PDF de facturas — solo PRO (05/09/2026):
@@ -67,6 +70,7 @@ export function Facturas({
   const [escaner, setEscaner] = useState(false);
   const [facturaEditar, setFacturaEditar] = useState<Factura | undefined>(undefined);
   const [vista, setVista] = useState<Vista>('lista');
+  const [revisionHistoricoAbierta, setRevisionHistoricoAbierta] = useState(false);
   const avisoGuardado = useAvisoGuardado();
   const [seleccionadas, setSeleccionadas] = useState<Set<string>>(new Set());
   const [descargando, setDescargando] = useState(false);
@@ -341,6 +345,14 @@ export function Facturas({
                 style={{ minWidth: 220 }}
                 aria-label="Buscar facturas por proveedor o concepto"
               />
+              <button
+                className={`${styles.btn} ${styles.btnSecundario}`}
+                onClick={() => setRevisionHistoricoAbierta(true)}
+                title="Revisa qué facturas de gasto todavía no tienen tratamiento fiscal y aplica el automático de forma segura"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
+                Tratamiento fiscal de facturas antiguas
+              </button>
             </div>
             {facturasBase.length > 0 && (
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -490,6 +502,13 @@ export function Facturas({
           facturaEditar={facturaEditar}
           plan={plan}
           esAdmin={esAdmin}
+        />
+      )}
+
+      {revisionHistoricoAbierta && (
+        <RevisionTratamientoFiscalHistorico
+          onCerrar={() => setRevisionHistoricoAbierta(false)}
+          onAplicado={onRecargar}
         />
       )}
 

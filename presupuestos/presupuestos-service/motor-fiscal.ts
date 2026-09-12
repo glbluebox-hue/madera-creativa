@@ -35,17 +35,22 @@ export type ResumenImpuestosTrimestre = {
   noCalculable: { numFacturas: number };
 };
 
-type ClasificacionImpuesto = 'iva' | 'igic' | 'exento' | 'sin_impuesto' | 'no_identificado';
+export type ClasificacionImpuesto = 'iva' | 'igic' | 'exento' | 'sin_impuesto' | 'no_identificado';
 
-function clasificarImpuestoFactura(f: Pick<FacturaImpuesto, 'tipoImpuesto'>): ClasificacionImpuesto {
+/**
+ * Exportada desde Fase 3C.3 (antes privada de este archivo) — el nuevo
+ * `motor-resolucion-fiscal.ts` (backend) la necesita para no duplicarla una
+ * tercera vez. Sin cambio de comportamiento: mismo cuerpo que antes.
+ */
+export function clasificarImpuestoFactura(f: Pick<FacturaImpuesto, 'tipoImpuesto'>): ClasificacionImpuesto {
   if (f.tipoImpuesto === 'iva' || f.tipoImpuesto === 'igic' || f.tipoImpuesto === 'exento' || f.tipoImpuesto === 'sin_impuesto') {
     return f.tipoImpuesto;
   }
   return 'no_identificado';
 }
 
-/** `null` = sin dato suficiente para saber la cuota (distinto de una cuota real de 0€). */
-function cuotaRealDeFactura(f: Pick<FacturaImpuesto, 'importeImpuesto' | 'baseImponible' | 'porcentajeImpuesto'>): number | null {
+/** `null` = sin dato suficiente para saber la cuota (distinto de una cuota real de 0€). Exportada desde Fase 3C.3, mismo motivo que `clasificarImpuestoFactura`. */
+export function cuotaRealDeFactura(f: Pick<FacturaImpuesto, 'importeImpuesto' | 'baseImponible' | 'porcentajeImpuesto'>): number | null {
   if (typeof f.importeImpuesto === 'number') return f.importeImpuesto;
   if (typeof f.baseImponible === 'number' && typeof f.porcentajeImpuesto === 'number') {
     return f.baseImponible * f.porcentajeImpuesto / 100;

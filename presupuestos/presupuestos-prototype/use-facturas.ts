@@ -21,6 +21,8 @@ export type UseFacturas = {
   guardar: (f: Factura) => Promise<void>;
   borrar: (id: string) => Promise<void>;
   cargarMas: () => void;
+  /** Vuelve a pedir la página 1 con el filtro actual — para cuando algo ha cambiado facturas por fuera de `guardar`/`borrar` (Fase 3C.3: aplicar tratamiento fiscal a históricos). */
+  recargar: () => void;
 };
 
 const RESUMEN_VACIO: ResumenFacturas = {
@@ -49,6 +51,15 @@ export function useFacturas(autenticado = true): UseFacturas {
   const cargarResumen = useCallback(() => {
     api.obtenerResumenFacturas().then(setResumen).catch((e) => setError(String(e)));
   }, []);
+
+  const cargarPrimeraPagina = useCallback(() => {
+    setCargando(true);
+    return api
+      .obtenerFacturas(1, undefined, filtro)
+      .then((datos) => { setFacturas(datos.items); setPagina(datos.pagina); setTotalPaginas(datos.totalPaginas); })
+      .catch((e) => setError(String(e)))
+      .finally(() => setCargando(false));
+  }, [filtro]);
 
   // Recarga desde la página 1 cada vez que cambia el filtro.
   useEffect(() => {
@@ -86,7 +97,14 @@ export function useFacturas(autenticado = true): UseFacturas {
       const existe = prev.find((x) => x.id === f.id);
       return existe ? prev.map((x) => (x.id === f.id ? f : x)) : [f, ...prev];
     });
-    await api.guardarFactura(f);
+    // Actualización optimista arriba (respuesta inmediata en la UI); en
+    // cuanto vuelve la respuesta REAL del servidor se sustituye por ella
+    // (Fase 3C.3) — es la única fuente de verdad para el tratamiento fiscal
+    // resuelto en `guardarFactura()` (backend): un resultado automático, una
+    // pregunta factual pendiente, o cualquier otro campo que el backend
+    // calcule nunca sería visible si nos quedáramos con el optimista `f`.
+    const guardada = await api.guardarFactura(f);
+    setFacturas((prev) => prev.map((x) => (x.id === guardada.id ? guardada : x)));
     cargarResumen();
   }, [cargarResumen]);
 
@@ -96,8 +114,13 @@ export function useFacturas(autenticado = true): UseFacturas {
     cargarResumen();
   }, [cargarResumen]);
 
+  const recargar = useCallback(() => {
+    cargarPrimeraPagina();
+    cargarResumen();
+  }, [cargarPrimeraPagina, cargarResumen]);
+
   return {
     facturas, resumen, cargando, cargandoMas, hayMas: pagina < totalPaginas,
-    filtro, establecerFiltro: setFiltro, error, guardar, borrar, cargarMas,
+    filtro, establecerFiltro: setFiltro, error, guardar, borrar, cargarMas, recargar,
   };
 }

@@ -1976,6 +1976,26 @@ export function run() {
     } catch (err) { responderError(req, res, err); }
   });
 
+  /**
+   * Facturas históricas de gasto sin tratamiento fiscal (Fase 3C.3) —
+   * análisis de SOLO LECTURA, no escribe nada. Debe registrarse antes de
+   * `/facturas/:id` para no colisionar con él.
+   */
+  app.get('/facturas/tratamiento-fiscal-historico', requireAuth, async (req: AuthRequest, res) => {
+    try { res.json(await svc.analizarTratamientoFiscalHistorico(req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  /**
+   * Aplica el tratamiento fiscal automático a las facturas históricas
+   * pendientes (Fase 3C.3) — acción explícita del usuario, nunca
+   * automática. Debe registrarse antes de `/facturas/:id`.
+   */
+  app.post('/facturas/tratamiento-fiscal-historico/aplicar', requireAuth, async (req: AuthRequest, res) => {
+    try { res.json(await svc.aplicarTratamientoFiscalHistoricoAutomatico(req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
   app.get('/facturas/:id', requireAuth, async (req: AuthRequest, res) => {
     try {
       const f = await svc.obtenerFactura(req.params.id, req.usuarioId!);

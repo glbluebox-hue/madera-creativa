@@ -15,6 +15,9 @@ import type { PushSub } from './push.service.js';
 import { logger } from './logger.service.js';
 import { procesarRecursosDocumento, borrarRecursosDocumentoHuerfanos } from './documento-procesar-recursos.js';
 import { esGastoPeriodicoDeducible } from './gasto-periodico-fiscal.js';
+import { resolverTratamientoFiscal } from './motor-resolucion-fiscal.js';
+import type { OrigenDecisionFiscal } from './motor-resolucion-fiscal.js';
+import { fusionarDecisionFiscal } from './fusion-decision-fiscal.js';
 import { subirORecuperarRecurso } from './documento-recursos-biblioteca.js';
 import type { DocumentoMC, TemaMC, RecursoMC } from './documento-modelo.js';
 import { analizarPrecioPresupuesto, calcularMargenRealProyecto } from './inteligencia-precios.js';
@@ -1872,17 +1875,56 @@ export class PresupuestosService {
     // Se comprueba aquí (al guardar), no solo en la propuesta de la IA, para
     // que la protección cubra cualquier origen del dato, presente o futuro.
     let cifNif = (factura as any).cifNif;
-    if ((factura as any).tipo === 'gasto' && cifNif) {
-      const empresa = await EmpresaModel.findOne({ usuarioId }).lean().exec() as any;
-      const nifPropio = (empresa?.nifCif || '').trim().toUpperCase();
-      if (nifPropio && String(cifNif).trim().toUpperCase() === nifPropio) {
-        cifNif = '';
+    // Se consulta una única vez, tanto para la comprobación de CIF como para el
+    // motor fiscal de más abajo (necesita `repepActivo`) — evita una segunda
+    // consulta a `EmpresaModel` para lo mismo.
+    let empresa: any = null;
+    if ((factura as any).tipo === 'gasto') {
+      empresa = await EmpresaModel.findOne({ usuarioId }).lean().exec();
+      if (cifNif) {
+        const nifPropio = (empresa?.nifCif || '').trim().toUpperCase();
+        if (nifPropio && String(cifNif).trim().toUpperCase() === nifPropio) {
+          cifNif = '';
+        }
       }
+    }
+
+    // ── Motor de resolución fiscal automática (Fase 3C.3) ──────────────────
+    // Se ejecuta aquí, no en el frontend: es el único punto de guardado real
+    // (sirve tanto a facturas nuevas como editadas, desde cualquier pantalla),
+    // y ya tiene disponible `anterior` (para respetar decisiones humanas
+    // previas y poder reevaluar las automáticas) y `empresa` (para
+    // `repepActivo`, sin consultas adicionales). La IA nunca decide aquí
+    // nada de esto — solo ha podido sugerir `categoriaFiscal`, si acaso.
+    let deducibleIrpf = (factura as any).deducibleIrpf as number | undefined;
+    let deducibleIrpfOrigen = (factura as any).deducibleIrpfOrigen as OrigenDecisionFiscal | undefined;
+    let ivaIgicDeducible = (factura as any).ivaIgicDeducible as number | undefined;
+    let ivaIgicDeducibleOrigen = (factura as any).ivaIgicDeducibleOrigen as OrigenDecisionFiscal | undefined;
+    let categoriaFiscal = (factura as any).categoriaFiscal;
+    let preguntasFiscalesPendientes: { id: string; pregunta: string; eje: 'irpf' | 'iva' | 'igic' }[] = (factura as any).preguntasFiscalesPendientes ?? [];
+
+    if ((factura as any).tipo === 'gasto') {
+      const resultado = resolverTratamientoFiscal(factura as any, { repepActivo: !!empresa?.repepActivo });
+      if (resultado.categoriaFiscalSugerida) categoriaFiscal = resultado.categoriaFiscalSugerida;
+
+      const fusionIrpf = fusionarDecisionFiscal(anterior?.deducibleIrpf, anterior?.deducibleIrpfOrigen, deducibleIrpf, resultado.irpf);
+      deducibleIrpf = fusionIrpf.numero;
+      deducibleIrpfOrigen = fusionIrpf.origen;
+
+      const ejeIndirectoActivo = resultado.iva.estado !== 'no_aplica' ? resultado.iva : resultado.igic;
+      const fusionIndirecto = fusionarDecisionFiscal(anterior?.ivaIgicDeducible, anterior?.ivaIgicDeducibleOrigen, ivaIgicDeducible, ejeIndirectoActivo);
+      ivaIgicDeducible = fusionIndirecto.numero;
+      ivaIgicDeducibleOrigen = fusionIndirecto.origen;
+
+      preguntasFiscalesPendientes = resultado.preguntasFiscalesPendientes;
     }
 
     const doc = await FacturaModel.findOneAndUpdate(
       { id: factura.id, usuarioId },
-      { ...factura, imagen, imagenClave, imagenTamano, imagenes, imagenesClaves, imagenesTamanos, pdfOriginalUrl, pdfOriginalClave, pdfOriginalTamano, paginas, cifNif, usuarioId },
+      {
+        ...factura, imagen, imagenClave, imagenTamano, imagenes, imagenesClaves, imagenesTamanos, pdfOriginalUrl, pdfOriginalClave, pdfOriginalTamano, paginas, cifNif, usuarioId,
+        categoriaFiscal, deducibleIrpf, deducibleIrpfOrigen, ivaIgicDeducible, ivaIgicDeducibleOrigen, preguntasFiscalesPendientes,
+      },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     ).lean().exec();
 
@@ -1970,6 +2012,93 @@ export class PresupuestosService {
     }
 
     return resolverUrlsFactura(this.limpiar(doc as Record<string, unknown>));
+  }
+
+  /**
+   * Facturas históricas de gasto sin tratamiento fiscal decidido
+   * (`deducibleIrpf` ausente) — Fase 3C.3, apartado "facturas históricas".
+   * Consulta de SOLO LECTURA: ejecuta el motor en memoria sobre cada una,
+   * sin escribir nada, para poder mostrarle al usuario un resumen real
+   * antes de pedirle confirmación de nada. Nunca se llama automáticamente
+   * — solo cuando el usuario entra a revisar sus históricos.
+   */
+  async analizarTratamientoFiscalHistorico(usuarioId: string): Promise<{
+    total: number;
+    resolublesAutomaticamente: number;
+    necesitanPregunta: number;
+    revisionManual: number;
+    detalle: { id: string; proveedor: string; concepto: string; importe: number; resultado: 'automatico' | 'pregunta' | 'revision_manual'; categoriaFiscalSugerida?: string }[];
+  }> {
+    await conectar();
+    const [empresa, facturas] = await Promise.all([
+      EmpresaModel.findOne({ usuarioId }).lean().exec() as Promise<any>,
+      FacturaModel.find({ usuarioId, tipo: 'gasto', deducibleIrpf: { $exists: false } }).lean().exec() as Promise<any[]>,
+    ]);
+    const repepActivo = !!empresa?.repepActivo;
+
+    const detalle = facturas.map((f) => {
+      const resultado = resolverTratamientoFiscal(f, { repepActivo });
+      const ejeIndirectoActivo = resultado.iva.estado !== 'no_aplica' ? resultado.iva : resultado.igic;
+      const tieneAutomatico = resultado.irpf.estado === 'resuelto_automatico' || ejeIndirectoActivo.estado === 'resuelto_automatico';
+      const tienePregunta = resultado.preguntasFiscalesPendientes.length > 0;
+      const clasificacion: 'automatico' | 'pregunta' | 'revision_manual' = tieneAutomatico ? 'automatico' : tienePregunta ? 'pregunta' : 'revision_manual';
+      return {
+        id: String(f.id), proveedor: String(f.proveedor || ''), concepto: String(f.concepto || ''), importe: Number(f.importe) || 0,
+        resultado: clasificacion,
+        categoriaFiscalSugerida: resultado.categoriaFiscalSugerida,
+      };
+    });
+
+    return {
+      total: detalle.length,
+      resolublesAutomaticamente: detalle.filter((d) => d.resultado === 'automatico').length,
+      necesitanPregunta: detalle.filter((d) => d.resultado === 'pregunta').length,
+      revisionManual: detalle.filter((d) => d.resultado === 'revision_manual').length,
+      detalle,
+    };
+  }
+
+  /**
+   * Aplica el tratamiento fiscal automático a las facturas históricas
+   * pendientes — Fase 3C.3. Requiere una llamada explícita del usuario
+   * (nunca se dispara sola): escribe SOLO los campos fiscales calculados
+   * (`categoriaFiscal` sugerida, `deducibleIrpf`/`ivaIgicDeducible` cuando
+   * el motor resuelve con seguridad, o `preguntasFiscalesPendientes` cuando
+   * falta un hecho) — nunca toca imagen/documento/proveedor/importe ni
+   * ningún otro dato de la factura, y nunca escribe un porcentaje en la
+   * que quede en `revision_manual`.
+   */
+  async aplicarTratamientoFiscalHistoricoAutomatico(usuarioId: string): Promise<{ resueltas: number; conPregunta: number; sinCambios: number }> {
+    await conectar();
+    const [empresa, facturas] = await Promise.all([
+      EmpresaModel.findOne({ usuarioId }).lean().exec() as Promise<any>,
+      FacturaModel.find({ usuarioId, tipo: 'gasto', deducibleIrpf: { $exists: false } }).lean().exec() as Promise<any[]>,
+    ]);
+    const repepActivo = !!empresa?.repepActivo;
+
+    let resueltas = 0, conPregunta = 0, sinCambios = 0;
+    for (const f of facturas) {
+      const resultado = resolverTratamientoFiscal(f, { repepActivo });
+      const ejeIndirectoActivo = resultado.iva.estado !== 'no_aplica' ? resultado.iva : resultado.igic;
+      const cambios: Record<string, unknown> = {};
+      if (resultado.categoriaFiscalSugerida) cambios.categoriaFiscal = resultado.categoriaFiscalSugerida;
+      if (resultado.irpf.estado === 'resuelto_automatico') {
+        cambios.deducibleIrpf = resultado.irpf.porcentaje;
+        cambios.deducibleIrpfOrigen = 'automatico';
+      }
+      if (ejeIndirectoActivo.estado === 'resuelto_automatico') {
+        cambios.ivaIgicDeducible = ejeIndirectoActivo.porcentaje;
+        cambios.ivaIgicDeducibleOrigen = 'automatico';
+      }
+      if (resultado.preguntasFiscalesPendientes.length > 0) {
+        cambios.preguntasFiscalesPendientes = resultado.preguntasFiscalesPendientes;
+      }
+      if (Object.keys(cambios).length === 0) { sinCambios += 1; continue; }
+      await FacturaModel.updateOne({ id: f.id, usuarioId }, { $set: cambios }).exec();
+      if (typeof cambios.deducibleIrpf === 'number' || typeof cambios.ivaIgicDeducible === 'number') resueltas += 1;
+      else conPregunta += 1;
+    }
+    return { resueltas, conPregunta, sinCambios };
   }
 
   /**
