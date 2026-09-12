@@ -177,3 +177,96 @@ export function validarLineasFiscales(lineas: LineaFiscal[], importeTotal: numbe
   }
   return { valido: true };
 }
+
+// ── Detector de facturas con posible desglose fiscal incorrecto (12/09/2026, puerto backend) ──
+// Ver el archivo del frontend para el razonamiento completo. Solo lectura, nunca corrige nada.
+
+export type CategoriaProblemaFiscal = 'descuadre_total' | 'datos_fiscales_incompletos' | 'tipo_exento_con_cuota' | 'mezcla_iva_igic';
+
+export type ProblemaFiscalDetectado = {
+  categoria: CategoriaProblemaFiscal;
+  baseUtilizada: number | null;
+  cuotaUtilizada: number | null;
+  diferencia: number | null;
+  explicacion: string;
+};
+
+type FacturaParaDetectar = {
+  importe: number;
+  baseImponible?: number;
+  importeImpuesto?: number;
+  tipoImpuesto?: 'igic' | 'iva' | 'exento' | 'sin_impuesto' | '';
+  lineasFiscales?: LineaFiscal[];
+};
+
+function esLineaFiscalValida(l: LineaFiscal): boolean {
+  return (l.tipo === 'iva' || l.tipo === 'igic' || l.tipo === 'exento' || l.tipo === 'sin_impuesto')
+    && typeof l.baseImponible === 'number' && Number.isFinite(l.baseImponible)
+    && typeof l.cuota === 'number' && Number.isFinite(l.cuota)
+    && typeof l.porcentaje === 'number' && Number.isFinite(l.porcentaje);
+}
+
+export function detectarProblemaFiscal(f: FacturaParaDetectar): ProblemaFiscalDetectado | null {
+  const lineas = Array.isArray(f.lineasFiscales) ? f.lineasFiscales : [];
+
+  if (lineas.length > 0) {
+    if (!lineas.every(esLineaFiscalValida)) {
+      return {
+        categoria: 'datos_fiscales_incompletos', baseUtilizada: null, cuotaUtilizada: null, diferencia: null,
+        explicacion: 'El desglose guardado tiene tramos incompletos o con datos no válidos — revísalo a mano.',
+      };
+    }
+    const tiposReales = new Set(lineas.filter((l) => l.tipo === 'iva' || l.tipo === 'igic').map((l) => l.tipo));
+    if (tiposReales.size > 1) {
+      return {
+        categoria: 'mezcla_iva_igic', baseUtilizada: null, cuotaUtilizada: null, diferencia: null,
+        explicacion: 'El desglose mezcla tramos de IVA y de IGIC en la misma factura — una factura solo puede llevar uno de los dos.',
+      };
+    }
+    const lineaExentaConCuota = lineas.find((l) => (l.tipo === 'exento' || l.tipo === 'sin_impuesto') && l.cuota !== 0);
+    if (lineaExentaConCuota) {
+      return {
+        categoria: 'tipo_exento_con_cuota', baseUtilizada: null, cuotaUtilizada: null, diferencia: null,
+        explicacion: `Un tramo marcado como "${lineaExentaConCuota.tipo === 'exento' ? 'exento' : 'sin impuesto'}" tiene una cuota de ${lineaExentaConCuota.cuota.toFixed(2)}€ — debería ser 0€.`,
+      };
+    }
+    const { baseImponible, importeImpuesto } = agregarLineasFiscales(lineas);
+    const diferencia = redondearEuros(baseImponible + importeImpuesto - f.importe);
+    if (Math.abs(diferencia) > 0.01) {
+      return {
+        categoria: 'descuadre_total', baseUtilizada: baseImponible, cuotaUtilizada: importeImpuesto, diferencia,
+        explicacion: `La suma de las bases (${baseImponible.toFixed(2)}€) más los impuestos (${importeImpuesto.toFixed(2)}€) no coincide con el importe total (${f.importe.toFixed(2)}€).`,
+      };
+    }
+    return null;
+  }
+
+  const tieneBase = typeof f.baseImponible === 'number';
+  const tieneCuota = typeof f.importeImpuesto === 'number';
+  if (!tieneBase && !tieneCuota) return null;
+  if (tieneBase !== tieneCuota) {
+    return {
+      categoria: 'datos_fiscales_incompletos',
+      baseUtilizada: tieneBase ? (f.baseImponible as number) : null,
+      cuotaUtilizada: tieneCuota ? (f.importeImpuesto as number) : null,
+      diferencia: null,
+      explicacion: tieneBase ? 'Tiene base imponible pero falta la cuota del impuesto.' : 'Tiene cuota de impuesto pero falta la base imponible.',
+    };
+  }
+  const base = f.baseImponible as number;
+  const cuota = f.importeImpuesto as number;
+  if ((f.tipoImpuesto === 'exento' || f.tipoImpuesto === 'sin_impuesto') && cuota !== 0) {
+    return {
+      categoria: 'tipo_exento_con_cuota', baseUtilizada: base, cuotaUtilizada: cuota, diferencia: redondearEuros(base + cuota - f.importe),
+      explicacion: `Está marcada como "${f.tipoImpuesto === 'exento' ? 'exenta' : 'sin impuesto'}" pero tiene una cuota de ${cuota.toFixed(2)}€ — debería ser 0€.`,
+    };
+  }
+  const diferencia = redondearEuros(base + cuota - f.importe);
+  if (Math.abs(diferencia) > 0.01) {
+    return {
+      categoria: 'descuadre_total', baseUtilizada: base, cuotaUtilizada: cuota, diferencia,
+      explicacion: `La suma de la base (${base.toFixed(2)}€) más la cuota (${cuota.toFixed(2)}€) no coincide con el importe total (${f.importe.toFixed(2)}€).`,
+    };
+  }
+  return null;
+}

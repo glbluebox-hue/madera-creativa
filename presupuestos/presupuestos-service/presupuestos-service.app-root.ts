@@ -1996,6 +1996,16 @@ export function run() {
     catch (err) { responderError(req, res, err); }
   });
 
+  /**
+   * Detector de facturas con posible desglose fiscal incorrecto (auditoría
+   * 12/09/2026) — SOLO LECTURA, no corrige ni reextrae ni escribe nada. Debe
+   * registrarse antes de `/facturas/:id` para no colisionar con él.
+   */
+  app.get('/facturas/desglose-fiscal-incorrecto', requireAuth, async (req: AuthRequest, res) => {
+    try { res.json(await svc.detectarFacturasConDesglosefiscalIncorrecto(req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
   app.get('/facturas/:id', requireAuth, async (req: AuthRequest, res) => {
     try {
       const f = await svc.obtenerFactura(req.params.id, req.usuarioId!);

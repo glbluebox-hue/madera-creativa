@@ -441,6 +441,21 @@ export async function aplicarTratamientoFiscalHistorico(): Promise<{ resueltas: 
   return res.json();
 }
 
+/** Una factura con un problema detectado en su desglose fiscal (auditoría 12/09/2026) — ver `detectarDesglosesFiscalesIncorrectos`. */
+export type FacturaConProblemaFiscal = {
+  id: string; proveedor: string; concepto: string; fecha: string; importe: number;
+  baseUtilizada: number | null; cuotaUtilizada: number | null; diferencia: number | null;
+  categoria: 'descuadre_total' | 'datos_fiscales_incompletos' | 'tipo_exento_con_cuota' | 'mezcla_iva_igic';
+  explicacion: string;
+};
+
+/** Detector de solo lectura de facturas con posible desglose fiscal incorrecto — nunca corrige, nunca reextrae, nunca guarda nada. */
+export async function detectarDesglosesFiscalesIncorrectos(): Promise<{ total: number; porCategoria: Record<string, number>; facturas: FacturaConProblemaFiscal[] }> {
+  const res = await fetchConAuth('/facturas/desglose-fiscal-incorrecto');
+  await comprobarRespuesta(res, 'No se pudo analizar el desglose fiscal de las facturas');
+  return res.json();
+}
+
 /** Nombre de archivo sugerido por el servidor, leído de `Content-Disposition`. */
 function nombreDesdeContentDisposition(res: Response, porDefecto: string): string {
   const cabecera = res.headers.get('Content-Disposition') ?? '';

@@ -3,7 +3,7 @@ import {
   trimestreDeFecha, calculaIndirecto, tipoGeneralDeRegion, impuestoDeFactura, calcularTrimestres,
   sugerirTipoImpuesto, clasificarImpuestoFactura, cuotaRealDeFactura, calcularImpuestosPorTipo,
   estadoDeducibleIrpf, estadoIvaIgicDeducible, gastoDeducible, cuotaDeducible,
-  agregarLineasFiscales, validarLineasFiscales,
+  agregarLineasFiscales, validarLineasFiscales, detectarProblemaFiscal,
 } from './motor-fiscal.js';
 import type { Factura, GastoPeriodico, LineaFiscal } from './types.js';
 
@@ -580,5 +580,95 @@ describe('validarLineasFiscales — Fase desglose fiscal por tramos (12/09/2026)
   it('una diferencia real (no de redondeo) sí se marca', () => {
     const r = validarLineasFiscales([LINEA_3, LINEA_7], 150.00);
     expect(r.valido).toBe(false);
+  });
+});
+
+describe('detectarProblemaFiscal — detector de desglose fiscal incorrecto (12/09/2026)', () => {
+  it('factura correcta con campos antiguos (un único tramo) → null, sin problema', () => {
+    const r = detectarProblemaFiscal({ importe: 121, baseImponible: 100, importeImpuesto: 21, tipoImpuesto: 'iva' });
+    expect(r).toBe(null);
+  });
+
+  it('factura con descuadre usando campos antiguos → descuadre_total', () => {
+    // El bug real: solo se guardó el primer tramo (25,08 base / 0,75 cuota) de una factura de 146,61€ total.
+    const r = detectarProblemaFiscal({ importe: 146.61, baseImponible: 25.08, importeImpuesto: 0.75, tipoImpuesto: 'igic' });
+    expect(r).not.toBe(null);
+    expect(r!.categoria).toBe('descuadre_total');
+    expect(r!.baseUtilizada).toBe(25.08);
+    expect(r!.cuotaUtilizada).toBe(0.75);
+  });
+
+  it('factura correcta con varias lineasFiscales (el caso real ya arreglado) → null', () => {
+    const r = detectarProblemaFiscal({
+      importe: 146.61,
+      lineasFiscales: [LINEA_3, LINEA_7],
+    });
+    expect(r).toBe(null);
+  });
+
+  it('factura con descuadre usando lineasFiscales (falta un tramo) → descuadre_total, usa la suma de las líneas', () => {
+    const r = detectarProblemaFiscal({ importe: 146.61, lineasFiscales: [LINEA_3] }); // solo el tramo del 3%, falta el del 7%
+    expect(r).not.toBe(null);
+    expect(r!.categoria).toBe('descuadre_total');
+    expect(r!.baseUtilizada).toBe(25.08);
+    expect(r!.cuotaUtilizada).toBe(0.75);
+  });
+
+  it('factura antigua sin lineasFiscales y sin ningún dato fiscal → null, no es un problema (nunca se rellenó nada)', () => {
+    const r = detectarProblemaFiscal({ importe: 74.90 });
+    expect(r).toBe(null);
+  });
+
+  it('factura con solo base o solo cuota (falta el otro) → datos_fiscales_incompletos', () => {
+    const soloBase = detectarProblemaFiscal({ importe: 100, baseImponible: 100 });
+    expect(soloBase!.categoria).toBe('datos_fiscales_incompletos');
+    const soloCuota = detectarProblemaFiscal({ importe: 100, importeImpuesto: 10 });
+    expect(soloCuota!.categoria).toBe('datos_fiscales_incompletos');
+  });
+
+  it('lineasFiscales con una línea corrupta (sin cuota) → datos_fiscales_incompletos', () => {
+    const r = detectarProblemaFiscal({ importe: 100, lineasFiscales: [{ id: 'x', tipo: 'igic', porcentaje: 7 } as LineaFiscal] });
+    expect(r!.categoria).toBe('datos_fiscales_incompletos');
+  });
+
+  it('factura con mezcla IVA/IGIC en las líneas → mezcla_iva_igic', () => {
+    const mezcla: LineaFiscal[] = [
+      { id: 'a', tipo: 'iva', porcentaje: 21, baseImponible: 100, cuota: 21 },
+      LINEA_7,
+    ];
+    const r = detectarProblemaFiscal({ importe: 100 + 21 + 112.88 + 7.90, lineasFiscales: mezcla });
+    expect(r!.categoria).toBe('mezcla_iva_igic');
+  });
+
+  it('factura exenta con cuota distinta de cero (campos antiguos) → tipo_exento_con_cuota', () => {
+    const r = detectarProblemaFiscal({ importe: 100, baseImponible: 100, importeImpuesto: 5, tipoImpuesto: 'exento' });
+    expect(r!.categoria).toBe('tipo_exento_con_cuota');
+  });
+
+  it('línea exenta con cuota distinta de cero (lineasFiscales) → tipo_exento_con_cuota', () => {
+    const lineas: LineaFiscal[] = [{ id: 'a', tipo: 'exento', porcentaje: 0, baseImponible: 50, cuota: 3 }];
+    const r = detectarProblemaFiscal({ importe: 50, lineasFiscales: lineas });
+    expect(r!.categoria).toBe('tipo_exento_con_cuota');
+  });
+
+  it('campos antiguos contradictorios frente a lineasFiscales → se ignoran los campos antiguos, solo cuentan las líneas', () => {
+    // baseImponible/importeImpuesto sueltos dicen otra cosa completamente distinta a las líneas reales.
+    const r = detectarProblemaFiscal({
+      importe: 146.61,
+      baseImponible: 999, importeImpuesto: 999, tipoImpuesto: 'iva',
+      lineasFiscales: [LINEA_3, LINEA_7], // suman exactamente el total real
+    });
+    expect(r).toBe(null); // correcta, porque las líneas sí cuadran — los campos antiguos no se miran
+  });
+
+  it('diferencia de exactamente 0,01€ → no se marca (margen de redondeo)', () => {
+    const r = detectarProblemaFiscal({ importe: 146.62, lineasFiscales: [LINEA_3, LINEA_7] });
+    expect(r).toBe(null);
+  });
+
+  it('diferencia superior a 0,01€ → sí se marca', () => {
+    const r = detectarProblemaFiscal({ importe: 146.63, lineasFiscales: [LINEA_3, LINEA_7] });
+    expect(r).not.toBe(null);
+    expect(r!.categoria).toBe('descuadre_total');
   });
 });

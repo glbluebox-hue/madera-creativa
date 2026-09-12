@@ -18,7 +18,7 @@ import { esGastoPeriodicoDeducible } from './gasto-periodico-fiscal.js';
 import { resolverTratamientoFiscal } from './motor-resolucion-fiscal.js';
 import type { OrigenDecisionFiscal } from './motor-resolucion-fiscal.js';
 import { fusionarDecisionFiscal } from './fusion-decision-fiscal.js';
-import { agregarLineasFiscales, validarLineasFiscales } from './motor-fiscal.js';
+import { agregarLineasFiscales, validarLineasFiscales, detectarProblemaFiscal } from './motor-fiscal.js';
 import { subirORecuperarRecurso } from './documento-recursos-biblioteca.js';
 import type { DocumentoMC, TemaMC, RecursoMC } from './documento-modelo.js';
 import { analizarPrecioPresupuesto, calcularMargenRealProyecto } from './inteligencia-precios.js';
@@ -2125,6 +2125,46 @@ export class PresupuestosService {
       else conPregunta += 1;
     }
     return { resueltas, conPregunta, sinCambios };
+  }
+
+  /**
+   * Detector de facturas con posible desglose fiscal incorrecto (auditoría
+   * 12/09/2026) — consulta de SOLO LECTURA, nunca corrige nada, nunca
+   * reextrae con IA, nunca escribe en Mongo. Sirve para localizar facturas
+   * afectadas por el bug real de extracción con varios tramos de IGIC/IVA
+   * (p. ej. 25,08€ al 3% + 112,88€ al 7% de la misma factura, guardadas
+   * antes de que existiera `lineasFiscales`), y cualquier otra factura cuyo
+   * desglose ya no cuadre. El usuario decide, factura a factura, si la abre
+   * y la corrige — este método no toca ninguna.
+   */
+  async detectarFacturasConDesglosefiscalIncorrecto(usuarioId: string): Promise<{
+    total: number;
+    porCategoria: Record<string, number>;
+    facturas: {
+      id: string; proveedor: string; concepto: string; fecha: string; importe: number;
+      baseUtilizada: number | null; cuotaUtilizada: number | null; diferencia: number | null;
+      categoria: string; explicacion: string;
+    }[];
+  }> {
+    await conectar();
+    const facturas = await FacturaModel.find({ usuarioId }).lean().exec() as any[];
+
+    const detalle: { id: string; proveedor: string; concepto: string; fecha: string; importe: number; baseUtilizada: number | null; cuotaUtilizada: number | null; diferencia: number | null; categoria: string; explicacion: string }[] = [];
+    for (const f of facturas) {
+      const problema = detectarProblemaFiscal(f);
+      if (!problema) continue;
+      detalle.push({
+        id: String(f.id), proveedor: String(f.proveedor || ''), concepto: String(f.concepto || ''),
+        fecha: String(f.fecha || ''), importe: Number(f.importe) || 0,
+        baseUtilizada: problema.baseUtilizada, cuotaUtilizada: problema.cuotaUtilizada, diferencia: problema.diferencia,
+        categoria: problema.categoria, explicacion: problema.explicacion,
+      });
+    }
+
+    const porCategoria: Record<string, number> = {};
+    for (const d of detalle) porCategoria[d.categoria] = (porCategoria[d.categoria] ?? 0) + 1;
+
+    return { total: detalle.length, porCategoria, facturas: detalle };
   }
 
   /**
