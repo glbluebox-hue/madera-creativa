@@ -1,6 +1,6 @@
 import { desdeFechaISO } from './calendario-modelo.js';
 import { esGastoPeriodicoDeducible } from './gasto-periodico-fiscal.js';
-import type { Factura, GastoPeriodico } from './types.js';
+import type { Factura, GastoPeriodico, LineaFiscal } from './types.js';
 
 /**
  * Motor fiscal (Fase 2.0, extracción) — mismas fórmulas y comportamiento
@@ -299,4 +299,63 @@ export function cuotaDeducible(
   const cuota = cuotaRealDeFactura(f);
   if (cuota === null) return null; // defensivo — estadoIvaIgicDeducible ya lo garantiza como 'no_aplica'
   return cuota * estado / 100;
+}
+
+// ── Desglose fiscal por tramos (auditoría 12/09/2026) ───────────────────────
+//
+// Una factura real puede tener varias bases/cuotas de IGIC o IVA a distinto
+// porcentaje (p. ej. un albarán con partidas al 3% y al 7% de IGIC) — antes
+// el formulario y la IA solo podían representar un único tramo, así que
+// cualquier factura con más de uno perdía datos en silencio. `lineasFiscales`
+// guarda el detalle real; estas funciones son las únicas que sabe sumarlo o
+// validarlo, para no duplicar esa lógica en el formulario y en el backend.
+
+/** Redondeo a céntimos — para que sumar varias líneas nunca arrastre errores de coma flotante (p. ej. 0.1 + 0.2). */
+function redondearEuros(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * Suma las bases y las cuotas de todas las líneas — nunca recalcula la
+ * cuota de una línea a partir de su base y porcentaje, usa el importe real
+ * de cada línea tal cual. Es la única fuente para `Factura.baseImponible`/
+ * `importeImpuesto` cuando hay más de un tramo.
+ */
+export function agregarLineasFiscales(lineas: LineaFiscal[]): { baseImponible: number; importeImpuesto: number } {
+  return {
+    baseImponible: redondearEuros(lineas.reduce((s, l) => s + l.baseImponible, 0)),
+    importeImpuesto: redondearEuros(lineas.reduce((s, l) => s + l.cuota, 0)),
+  };
+}
+
+/**
+ * Resultado de validar el desglose fiscal — `motivo` es un aviso en
+ * lenguaje llano para mostrar en el formulario, nunca un código interno.
+ */
+export type ValidacionLineasFiscales = { valido: boolean; motivo?: string };
+
+/**
+ * Comprueba el desglose fiscal de una factura: (1) todas las líneas con un
+ * impuesto real (no exentas/sin impuesto) deben compartir la misma
+ * naturaleza — nunca IVA y IGIC a la vez en la misma factura (auditoría
+ * Fase 2); (2) la suma de bases + la suma de cuotas debe coincidir con el
+ * importe total, con un margen de 1 céntimo para redondeos. Sin líneas
+ * (factura sin desglose fiscal todavía) se considera válido — esta función
+ * no obliga a rellenar nada, solo avisa cuando lo que YA hay no cuadra.
+ */
+export function validarLineasFiscales(lineas: LineaFiscal[], importeTotal: number): ValidacionLineasFiscales {
+  if (lineas.length === 0) return { valido: true };
+  const tiposReales = new Set(lineas.filter((l) => l.tipo === 'iva' || l.tipo === 'igic').map((l) => l.tipo));
+  if (tiposReales.size > 1) {
+    return { valido: false, motivo: 'Esta factura mezcla tramos de IVA y de IGIC — revísala a mano, una factura solo puede llevar uno de los dos.' };
+  }
+  const { baseImponible, importeImpuesto } = agregarLineasFiscales(lineas);
+  const diferencia = redondearEuros(baseImponible + importeImpuesto - importeTotal);
+  if (Math.abs(diferencia) > 0.01) {
+    return {
+      valido: false,
+      motivo: `La suma de las bases (${baseImponible.toFixed(2)}€) más los impuestos (${importeImpuesto.toFixed(2)}€) no coincide con el importe total (${importeTotal.toFixed(2)}€) — revisa si falta o sobra algún tramo.`,
+    };
+  }
+  return { valido: true };
 }

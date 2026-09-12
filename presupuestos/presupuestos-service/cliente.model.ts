@@ -957,6 +957,24 @@ const FacturaSchema = new Schema({
   porcentajeImpuesto: { type: Number },
   importeImpuesto: { type: Number },
   /**
+   * Desglose fiscal por tramos (auditoría 12/09/2026) — una factura puede
+   * tener varias bases/cuotas a distinto porcentaje del mismo impuesto
+   * (p. ej. partidas al 3% y al 7% de IGIC en el mismo documento).
+   * `baseImponible`/`importeImpuesto` de arriba son la suma de estas
+   * líneas, recalculada al guardar — el detalle real vive aquí. Ausente o
+   * con una sola línea = factura de un único tramo, sin cambios.
+   */
+  lineasFiscales: {
+    type: [{
+      id: String,
+      tipo: { type: String, enum: ['igic', 'iva', 'exento', 'sin_impuesto'] },
+      porcentaje: Number,
+      baseImponible: Number,
+      cuota: Number,
+    }],
+    default: [],
+  },
+  /**
    * Porcentaje (0-100) deducible en IRPF de este gasto (Fase 3A,
    * infraestructura de tratamiento fiscal) — dato nuevo, separado del
    * importe económico, que nunca se toca. Ausente = sin decidir; NUNCA se

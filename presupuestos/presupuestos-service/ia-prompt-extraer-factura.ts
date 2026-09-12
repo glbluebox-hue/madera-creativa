@@ -27,6 +27,16 @@
  * páginas; este prompt ahora es explícito sobre que puede recibir varias
  * imágenes del mismo documento y sobre cómo priorizar el resumen fiscal
  * real frente a importes parciales — ver REGLAS ESTRICTAS.
+ *
+ * Corrección (12/09/2026, auditoría desglose fiscal por tramos): antes se
+ * pedía un ÚNICO `baseImponible`/`porcentajeImpuesto`/`importeImpuesto` —
+ * una factura real con varios tramos del mismo impuesto a distinto
+ * porcentaje (p. ej. una tabla "Base IGIC / % IGIC / Importe" con una fila
+ * al 3% y otra al 7%) solo podía representarse con uno de los dos, y el
+ * otro se perdía en silencio (reporte real del usuario: factura de
+ * 146,61€ con tramos al 3% y al 7%, la IA solo devolvía el del 3%). Ahora
+ * se pide `lineasFiscales`, un array con UNA entrada por cada fila real
+ * del desglose — ver REGLAS ESTRICTAS.
  */
 export function construirSystemPromptExtraerFactura(contexto: { resumenParaPrompt: string }): string {
   return (
@@ -45,10 +55,8 @@ export function construirSystemPromptExtraerFactura(contexto: { resumenParaPromp
     '  "receptorCodigoPostal": string | null,  // código postal del receptor, si consta\n' +
     '  "numeroFactura": string | null,\n' +
     '  "fecha": string | null,  // formato YYYY-MM-DD\n' +
-    '  "baseImponible": number | null,  // del RESUMEN FISCAL final del documento completo (ver REGLAS ESTRICTAS) — nunca el importe de una línea, partida o subtotal parcial\n' +
     '  "tipoImpuestoSugerido": "iva" | "igic" | "exento" | "sin_impuesto" | null,  // qué impuesto VES escrito o desglosado en el documento (p. ej. "IVA 21%" o "IGIC 7%" impreso literalmente); "exento" si el documento indica una operación exenta; "sin_impuesto" si no hay ningún impuesto indirecto aplicable; null si no lo puedes determinar con claridad\n' +
-    '  "porcentajeImpuesto": number | null,  // p. ej. 7 para IGIC, 21 para IVA — del resumen fiscal final, no de una línea parcial\n' +
-    '  "importeImpuesto": number | null,  // la cuota del RESUMEN FISCAL final — no la cuota de una línea, partida o importe parcial\n' +
+    '  "lineasFiscales": [ { "tipo": "iva" | "igic" | "exento" | "sin_impuesto", "porcentaje": number, "baseImponible": number, "cuota": number }, ... ] | null,  // TODOS los tramos del RESUMEN FISCAL final (ver REGLAS ESTRICTAS) — si el documento tiene una sola base/tipo/cuota, esto es un array de UN solo elemento; null solo si no hay ningún resumen fiscal identificable\n' +
     '  "importe": number | null,  // total FINAL de la factura completa, con impuesto incluido — no un subtotal ni un importe parcial\n' +
     '  "concepto": string | null,\n' +
     '  "tipo": "ingreso" | "gasto" | null,  // tu mejor estimación: "gasto" si crees que Madera Creativa es quien paga, "ingreso" si crees que es quien cobra — es solo una pista, no hace falta que estés seguro\n' +
@@ -58,8 +66,10 @@ export function construirSystemPromptExtraerFactura(contexto: { resumenParaPromp
     '}\n\n' +
     'REGLAS ESTRICTAS:\n' +
     '- Si has recibido varias imágenes, son páginas del MISMO documento — revísalas TODAS antes de decidir cualquier dato, no solo la primera. Un dato puede constar en cualquiera de las páginas, no asumas que todo está en la primera.\n' +
-    '- Busca en el documento completo (en cualquiera de las páginas, no necesariamente la última) el RESUMEN FISCAL de la factura: la sección donde constan juntos la base imponible, el tipo/cuota de IVA o IGIC y el total final — normalmente al pie del documento o de su última página, pero puede estar en cualquier página según cómo esté maquetado. Cuando ese resumen exista, `baseImponible`/`porcentajeImpuesto`/`importeImpuesto`/`importe` deben venir de ahí.\n' +
-    '- NUNCA tomes el importe de una línea, partida, subtotal parcial (p. ej. "total mano de obra", "total recambios", un descuento, un anticipo) como si fuera la base imponible o el total de la factura completa — esos son datos intermedios, no el resumen fiscal final. Si el documento solo muestra importes parciales y no hay ningún resumen fiscal identificable, pon `baseImponible`/`porcentajeImpuesto`/`importeImpuesto` a `null` en vez de adivinar con un importe parcial, y bájalo a `"confianza": "baja"`.\n' +
+    '- Busca en el documento completo (en cualquiera de las páginas, no necesariamente la última) el RESUMEN FISCAL de la factura: la sección donde constan juntos la base imponible, el tipo/cuota de IVA o IGIC y el total final — normalmente al pie del documento o de su última página, pero puede estar en cualquier página según cómo esté maquetado. `lineasFiscales`/`importe` deben venir de ahí, nunca de una línea de producto suelta.\n' +
+    '- MUY IMPORTANTE — varios tramos del mismo impuesto: algunas facturas tienen el resumen fiscal desglosado en VARIAS filas, cada una con su propia base y su propia cuota a un porcentaje distinto (p. ej. una tabla "Base IGIC / % IGIC / Importe" con una fila "25,08 / 3 / 0,75" y otra fila "112,88 / 7 / 7,90"). Cuando eso ocurra, DEBES devolver una entrada en `lineasFiscales` por CADA fila de esa tabla, nunca resumirlas en una sola ni quedarte solo con la primera — omitir un tramo es el error más grave que puedes cometer aquí. Antes de responder, suma tú mismo todas las bases y todas las cuotas que vas a devolver y comprueba que (suma de bases + suma de cuotas) coincide con `importe`; si no coincide, revisa si te falta alguna fila del desglose.\n' +
+    '- NUNCA tomes el importe de una línea de PRODUCTO, partida, subtotal parcial (p. ej. "total mano de obra", "total recambios", un descuento, un anticipo) como si fuera una línea de `lineasFiscales` o el total de la factura completa — eso son datos intermedios, no el resumen fiscal final; el resumen fiscal es SIEMPRE la tabla de bases/tipos/cuotas de impuesto, no la lista de artículos. Si el documento solo muestra importes parciales y no hay ningún resumen fiscal identificable, pon `lineasFiscales` a `null` en vez de adivinar con un importe parcial, y bájalo a `"confianza": "baja"`.\n' +
+    '- Todas las líneas de `lineasFiscales` de una misma factura deben ser del mismo `tipo` real (todas "iva" o todas "igic"; "exento"/"sin_impuesto" pueden convivir con cualquiera de los dos si el documento las distingue) — una factura nunca lleva IVA e IGIC a la vez. Si de verdad ves ambos en el mismo documento, es que has confundido una línea de producto con el resumen fiscal: vuelve a mirar y quédate solo con el resumen fiscal real.\n' +
     '- Describe SOLO lo que ves en el documento: quién emite y quién recibe, con su nombre y CIF/NIF si constan. No decidas tú quién de los dos es Madera Creativa — eso lo hace el código con datos objetivos, tú solo describes el documento.\n' +
     '- `tipoImpuestoSugerido` es SOLO lo que el propio documento indica (la palabra "IVA" o "IGIC" impresa, o un desglose que la identifique). NUNCA lo deduzcas de dónde crees que está el negocio, ni de nada que no sea el propio documento — no conoces la región fiscal del usuario y no debes suponerla. Si no lo ves con claridad, pon `null`.\n' +
     '- `categoriaFiscalSugerida` responde SOLO a "qué tipo de gasto es" — analiza proveedor, concepto y el texto completo del documento. Si está claro, sugiere la categoría. Si sabes qué es el gasto pero no encaja en ninguna categoría específica, usa "otros". Si no hay información suficiente para estar razonablemente seguro, usa "por_clasificar" — nunca inventes ni fuerces una categoría que no encaje bien. Un seguro de un vehículo concreto es siempre "vehiculo", nunca "seguros" — "seguros" es solo para responsabilidad civil, seguro del local/taller, u otros seguros de la actividad que no sean de un vehículo. Una reparación, mantenimiento o ITV de un vehículo también es "vehiculo", nunca "mantenimiento" (esa es solo para maquinaria/equipo que no sea un vehículo). NUNCA uses la región fiscal, REPEP, ni si la factura tiene IVA o IGIC para decidir esta categoría — son cosas completamente distintas. NUNCA sugieras ningún porcentaje de deducibilidad ni nada parecido: tu única función aquí es identificar qué tipo de gasto es, no su tratamiento fiscal.\n' +

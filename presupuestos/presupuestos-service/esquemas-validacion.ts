@@ -603,6 +603,14 @@ export const esquemaFactura = z.object({
   tipoImpuesto: z.enum(['igic', 'iva', 'exento', 'sin_impuesto', '']).optional().default(''),
   porcentajeImpuesto: z.number().finite().optional(),
   importeImpuesto: z.number().finite().optional(),
+  /** Desglose fiscal por tramos (auditoría 12/09/2026) — ver `LineaFiscal`. `baseImponible`/`importeImpuesto` de arriba son la suma, recalculada al guardar. */
+  lineasFiscales: z.array(z.object({
+    id: z.string(),
+    tipo: z.enum(['igic', 'iva', 'exento', 'sin_impuesto']),
+    porcentaje: z.number().finite(),
+    baseImponible: z.number().finite(),
+    cuota: z.number().finite(),
+  })).optional(),
   /** Porcentaje (0-100) deducible en IRPF (Fase 3A) — ausente = sin decidir, nunca `'por_revisar'`/`'no_aplica'` almacenados. */
   deducibleIrpf: z.number().min(0).max(100).optional(),
   /** Porcentaje (0-100) deducible del IVA/IGIC soportado (Fase 3A) — separado de `importeImpuesto`, que no se modifica. */

@@ -3,8 +3,9 @@ import {
   trimestreDeFecha, calculaIndirecto, tipoGeneralDeRegion, impuestoDeFactura, calcularTrimestres,
   sugerirTipoImpuesto, clasificarImpuestoFactura, cuotaRealDeFactura, calcularImpuestosPorTipo,
   estadoDeducibleIrpf, estadoIvaIgicDeducible, gastoDeducible, cuotaDeducible,
+  agregarLineasFiscales, validarLineasFiscales,
 } from './motor-fiscal.js';
-import type { Factura, GastoPeriodico } from './types.js';
+import type { Factura, GastoPeriodico, LineaFiscal } from './types.js';
 
 const factura = (over: Partial<Factura>): Factura => ({
   id: 'f1', tipo: 'ingreso', fecha: '2026-01-15', concepto: '', importe: 0,
@@ -489,5 +490,95 @@ describe('Regresión: el resultado económico/trimestral existente no cambia con
     const [sinTratamiento] = calcularTrimestres(base, [], config);
     const [conTratamientoResultado] = calcularTrimestres(conTratamiento, [], config);
     expect(conTratamientoResultado).toEqual(sinTratamiento);
+  });
+});
+
+// Caso real reportado por el usuario (12/09/2026): factura de 146,61€ con
+// DOS tramos de IGIC — 25,08€ al 3% (cuota 0,75€) y 112,88€ al 7% (cuota
+// 7,90€) — que la extracción con IA solo leía como un único tramo.
+const LINEA_3: LineaFiscal = { id: 'l1', tipo: 'igic', porcentaje: 3, baseImponible: 25.08, cuota: 0.75 };
+const LINEA_7: LineaFiscal = { id: 'l2', tipo: 'igic', porcentaje: 7, baseImponible: 112.88, cuota: 7.90 };
+
+describe('agregarLineasFiscales — Fase desglose fiscal por tramos (12/09/2026)', () => {
+  it('caso real del usuario: dos tramos de IGIC (3% y 7%) suman exactamente 137,96€ de base y 8,65€ de IGIC', () => {
+    const r = agregarLineasFiscales([LINEA_3, LINEA_7]);
+    expect(r.baseImponible).toBeCloseTo(137.96);
+    expect(r.importeImpuesto).toBeCloseTo(8.65);
+  });
+
+  it('una sola línea → la suma es exactamente esa línea', () => {
+    const r = agregarLineasFiscales([LINEA_7]);
+    expect(r.baseImponible).toBeCloseTo(112.88);
+    expect(r.importeImpuesto).toBeCloseTo(7.90);
+  });
+
+  it('sin líneas → suma 0, nunca undefined ni NaN', () => {
+    const r = agregarLineasFiscales([]);
+    expect(r.baseImponible).toBe(0);
+    expect(r.importeImpuesto).toBe(0);
+  });
+
+  it('nunca recalcula la cuota de una línea a partir de base×porcentaje — usa el importe real de la línea', () => {
+    // 25.08 * 3% = 0.7524, que redondearía a 0.75 igualmente aquí, así que probamos
+    // con un caso donde el cálculo y el dato real difieren para comprobar que se
+    // respeta el dato real de la línea, no un recálculo.
+    const lineaConCuotaReal: LineaFiscal = { id: 'l3', tipo: 'igic', porcentaje: 7, baseImponible: 100, cuota: 7.02 }; // cuota real distinta de 100*7%=7.00
+    const r = agregarLineasFiscales([lineaConCuotaReal]);
+    expect(r.importeImpuesto).toBe(7.02);
+  });
+
+  it('redondea a céntimos para evitar arrastrar errores de coma flotante', () => {
+    const lineas: LineaFiscal[] = [
+      { id: 'a', tipo: 'igic', porcentaje: 7, baseImponible: 0.1, cuota: 0.01 },
+      { id: 'b', tipo: 'igic', porcentaje: 7, baseImponible: 0.2, cuota: 0.01 },
+    ];
+    const r = agregarLineasFiscales(lineas);
+    expect(r.baseImponible).toBe(0.3); // 0.1 + 0.2 en JS puro da 0.30000000000000004
+  });
+});
+
+describe('validarLineasFiscales — Fase desglose fiscal por tramos (12/09/2026)', () => {
+  it('caso real del usuario: dos tramos de IGIC que sí cuadran con el total (146,61€) → válido', () => {
+    const r = validarLineasFiscales([LINEA_3, LINEA_7], 146.61);
+    expect(r.valido).toBe(true);
+  });
+
+  it('si al extraer solo se detecta el primer tramo (el bug real reportado) → no cuadra, queda marcado para revisar', () => {
+    const r = validarLineasFiscales([LINEA_3], 146.61); // solo el tramo del 3%, como hacía la IA antes de esta corrección
+    expect(r.valido).toBe(false);
+    expect(r.motivo).toContain('no coincide');
+  });
+
+  it('sin líneas → válido (no hay desglose que validar todavía, no es un error)', () => {
+    expect(validarLineasFiscales([], 100).valido).toBe(true);
+  });
+
+  it('mezclar IVA e IGIC en la misma factura → inválido, nunca se acepta', () => {
+    const mezcla: LineaFiscal[] = [
+      { id: 'a', tipo: 'iva', porcentaje: 21, baseImponible: 100, cuota: 21 },
+      { id: 'b', tipo: 'igic', porcentaje: 7, baseImponible: 50, cuota: 3.5 },
+    ];
+    const r = validarLineasFiscales(mezcla, 174.5);
+    expect(r.valido).toBe(false);
+    expect(r.motivo).toContain('mezcla');
+  });
+
+  it('un tramo exento conviviendo con un tramo de IGIC no cuenta como mezcla de impuestos', () => {
+    const lineas: LineaFiscal[] = [
+      { id: 'a', tipo: 'exento', porcentaje: 0, baseImponible: 20, cuota: 0 },
+      LINEA_7,
+    ];
+    const r = validarLineasFiscales(lineas, 20 + 112.88 + 7.90);
+    expect(r.valido).toBe(true);
+  });
+
+  it('margen de 1 céntimo por redondeo — no marca error por una diferencia mínima', () => {
+    const r = validarLineasFiscales([LINEA_3, LINEA_7], 146.62); // 1 céntimo de diferencia
+    expect(r.valido).toBe(true);
+  });
+
+  it('una diferencia real (no de redondeo) sí se marca', () => {
+    const r = validarLineasFiscales([LINEA_3, LINEA_7], 150.00);
+    expect(r.valido).toBe(false);
   });
 });

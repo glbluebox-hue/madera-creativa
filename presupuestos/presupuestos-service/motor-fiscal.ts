@@ -133,3 +133,47 @@ export function cuotaDeducible(
   if (cuota === null) return null;
   return cuota * estado / 100;
 }
+
+// ── Desglose fiscal por tramos (auditoría 12/09/2026) — ver el archivo del frontend para el razonamiento completo. ──
+
+export type TipoLineaFiscal = 'igic' | 'iva' | 'exento' | 'sin_impuesto';
+
+export type LineaFiscal = {
+  id: string;
+  tipo: TipoLineaFiscal;
+  porcentaje: number;
+  baseImponible: number;
+  cuota: number;
+};
+
+function redondearEuros(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+/** Suma bases y cuotas de todas las líneas — nunca recalcula una cuota a partir de base×porcentaje, usa el importe real de cada línea. */
+export function agregarLineasFiscales(lineas: LineaFiscal[]): { baseImponible: number; importeImpuesto: number } {
+  return {
+    baseImponible: redondearEuros(lineas.reduce((s, l) => s + l.baseImponible, 0)),
+    importeImpuesto: redondearEuros(lineas.reduce((s, l) => s + l.cuota, 0)),
+  };
+}
+
+export type ValidacionLineasFiscales = { valido: boolean; motivo?: string };
+
+/** Mismo criterio que la versión del frontend: ninguna mezcla de IVA/IGIC en una misma factura, y la suma de bases+cuotas debe coincidir con el total (margen de 1 céntimo). */
+export function validarLineasFiscales(lineas: LineaFiscal[], importeTotal: number): ValidacionLineasFiscales {
+  if (lineas.length === 0) return { valido: true };
+  const tiposReales = new Set(lineas.filter((l) => l.tipo === 'iva' || l.tipo === 'igic').map((l) => l.tipo));
+  if (tiposReales.size > 1) {
+    return { valido: false, motivo: 'Esta factura mezcla tramos de IVA y de IGIC — revísala a mano, una factura solo puede llevar uno de los dos.' };
+  }
+  const { baseImponible, importeImpuesto } = agregarLineasFiscales(lineas);
+  const diferencia = redondearEuros(baseImponible + importeImpuesto - importeTotal);
+  if (Math.abs(diferencia) > 0.01) {
+    return {
+      valido: false,
+      motivo: `La suma de las bases (${baseImponible.toFixed(2)}€) más los impuestos (${importeImpuesto.toFixed(2)}€) no coincide con el importe total (${importeTotal.toFixed(2)}€) — revisa si falta o sobra algún tramo.`,
+    };
+  }
+  return { valido: true };
+}

@@ -184,6 +184,25 @@ export type RegistroHorasAyudante = {
 /** Origen de una decisión de deducibilidad (Fase 3C.3) — ver `Factura.deducibleIrpfOrigen`. */
 export type OrigenDecisionFiscal = 'automatico' | 'usuario';
 
+/** Naturaleza del impuesto de UNA línea del desglose fiscal — mismos valores que `Factura.tipoImpuesto`, sin `''` (una línea siempre tiene un tipo elegido). */
+export type TipoLineaFiscal = 'igic' | 'iva' | 'exento' | 'sin_impuesto';
+
+/**
+ * Un tramo del desglose fiscal de una factura (auditoría 12/09/2026) — ver
+ * `Factura.lineasFiscales`. `cuota` es el dato REAL impreso en la factura,
+ * nunca recalculado como `baseImponible × porcentaje / 100` (mismo
+ * principio que `importeImpuesto` desde la Fase 2: el redondeo por línea
+ * de una factura real no siempre coincide exactamente con ese cálculo).
+ */
+export type LineaFiscal = {
+  /** Identificador local de la línea, solo para poder editarla/eliminarla en el formulario — no tiene significado fiscal. */
+  id: string;
+  tipo: TipoLineaFiscal;
+  porcentaje: number;
+  baseImponible: number;
+  cuota: number;
+};
+
 /**
  * Hechos factuales fiscales confirmados por el usuario (Fase 3C.3) — un
  * HECHO verificable cada uno, nunca una consecuencia fiscal ya calculada
@@ -239,10 +258,35 @@ export type Factura = {
    * cero por ley) y de `'sin_impuesto'` (no es una operación sujeta).
    */
   tipoImpuesto?: 'igic' | 'iva' | 'exento' | 'sin_impuesto' | '';
-  /** Porcentaje del impuesto aplicado (p. ej. 7 para IGIC general, 21 para IVA general). */
+  /**
+   * Porcentaje del impuesto aplicado — SOLO tiene sentido como dato directo
+   * cuando la factura tiene un único tramo (`lineasFiscales` ausente o con
+   * una sola línea). Con varios tramos (p. ej. una factura con partidas al
+   * 3% y al 7% de IGIC, auditoría 12/09/2026) no hay un único porcentaje
+   * que la represente — se deja sin definir, nunca se inventa un "tipo
+   * medio". El detalle real vive en `lineasFiscales`.
+   */
   porcentajeImpuesto?: number;
-  /** Cuota del impuesto en euros. */
+  /**
+   * Cuota TOTAL del impuesto en euros — con varios tramos, es la SUMA de
+   * la cuota de cada línea de `lineasFiscales` (nunca una línea suelta).
+   * Se recalcula cada vez que se guarda la factura, para que todo lo que
+   * ya lee este campo (motor fiscal, trimestres, PDF del asesor) siga
+   * funcionando sin cambios, viendo siempre el total correcto.
+   */
   importeImpuesto?: number;
+  /**
+   * Desglose fiscal por tramos (auditoría 12/09/2026) — una factura puede
+   * tener varias bases/cuotas de IGIC o IVA a distinto porcentaje (p. ej.
+   * un albarán de ferretería con partidas al 3% y al 7%). Es el dato REAL
+   * de la factura; `baseImponible`/`importeImpuesto` de arriba son solo la
+   * suma de estas líneas, mantenida en sincronía al guardar — nunca al
+   * revés. Ausente o con una sola línea = factura de un único tramo (el
+   * caso de siempre, sin cambios). Todas las líneas deben compartir la
+   * misma naturaleza de impuesto (todas IVA o todas IGIC, exento/sin
+   * impuesto aparte) — nunca se mezclan IVA e IGIC en una misma factura.
+   */
+  lineasFiscales?: LineaFiscal[];
   /**
    * Porcentaje (0-100) deducible en IRPF de este gasto — dato NUEVO y
    * separado del importe económico, nunca lo modifica (Fase 3A,

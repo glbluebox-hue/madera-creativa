@@ -23,3 +23,25 @@ describe('construirSystemPromptExtraerFactura — categoriaFiscalSugerida (Fase 
     expect(reglaCategoria.toLowerCase()).toContain('porcentaje de deducibilidad');
   });
 });
+
+describe('construirSystemPromptExtraerFactura — desglose fiscal por tramos (12/09/2026)', () => {
+  it('pide lineasFiscales, ya no un único campo "baseImponible" suelto a nivel de factura', () => {
+    expect(prompt).toContain('"lineasFiscales"');
+    // El campo suelto de antes tenía su propia entrada de nivel superior con esta forma exacta — ya no debe estar.
+    expect(prompt).not.toContain('"baseImponible": number | null');
+  });
+
+  it('instruye explícitamente a no resumir varios tramos en uno solo', () => {
+    expect(prompt.toLowerCase()).toContain('varios tramos');
+    expect(prompt).toContain('nunca resumirlas en una sola');
+  });
+
+  it('instruye a comprobar que la suma de bases+cuotas coincide con el importe antes de responder', () => {
+    expect(prompt.toLowerCase()).toContain('suma');
+    expect(prompt).toContain('importe');
+  });
+
+  it('prohíbe mezclar IVA e IGIC en las líneas de una misma factura', () => {
+    expect(prompt.toLowerCase()).toContain('nunca lleva iva e igic a la vez');
+  });
+});

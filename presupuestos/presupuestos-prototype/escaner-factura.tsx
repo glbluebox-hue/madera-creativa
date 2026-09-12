@@ -9,10 +9,10 @@ import { urlImagenFiable } from './imagen-fallback.js';
 import { Z_DESPLEGABLE } from './z-index.js';
 import { etiquetaEstado } from './estado-utils.js';
 import { resolverEmisorReceptor, nombresCoinciden, type EmpresaIdentificacion } from './identificacion-factura.js';
-import { sugerirTipoImpuesto, estadoIvaIgicDeducible, type RegionFiscal, type TipoImpuestoFactura } from './motor-fiscal.js';
+import { sugerirTipoImpuesto, estadoIvaIgicDeducible, agregarLineasFiscales, validarLineasFiscales, type RegionFiscal, type TipoImpuestoFactura } from './motor-fiscal.js';
 import { aplicarSugerenciaCategoriaFiscal, type CategoriaFiscal } from './categoria-fiscal.js';
 import { resolverTratamientoFiscal } from './motor-resolucion-fiscal.js';
-import type { HechosFiscales, OrigenDecisionFiscal } from './types.js';
+import type { HechosFiscales, OrigenDecisionFiscal, LineaFiscal, TipoLineaFiscal } from './types.js';
 import type { HechoFiscalRequerido } from './identificacion-gasto.js';
 import * as api from './api.js';
 import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
@@ -278,11 +278,34 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
    * `extraerConIA`, más abajo).
    */
   const [categoriaFiscal, setCategoriaFiscal] = useState<CategoriaFiscal | undefined>(facturaEditar?.categoriaFiscal);
-  const [baseImponible, setBaseImponible] = useState(facturaEditar?.baseImponible ? String(facturaEditar.baseImponible) : '');
   /** Naturaleza real del impuesto DE ESTA FACTURA — nunca se deriva de `regionFiscal` de la empresa, solo se sugiere como valor por defecto en facturas nuevas sin dato todavía (ver `motor-fiscal.ts` → `sugerirTipoImpuesto`). */
   const [tipoImpuesto, setTipoImpuesto] = useState<TipoImpuestoFactura>(facturaEditar?.tipoImpuesto ?? '');
-  const [porcentajeImpuesto, setPorcentajeImpuesto] = useState(facturaEditar?.porcentajeImpuesto ? String(facturaEditar.porcentajeImpuesto) : '');
-  const [importeImpuesto, setImporteImpuesto] = useState(facturaEditar?.importeImpuesto ? String(facturaEditar.importeImpuesto) : '');
+  /**
+   * Desglose fiscal por tramos (auditoría 12/09/2026) — una factura puede
+   * traer varias bases/cuotas del mismo impuesto a distinto porcentaje
+   * (p. ej. partidas al 3% y al 7% de IGIC en el mismo documento); antes
+   * solo había sitio para una, así que la extracción con IA se quedaba con
+   * un tramo y descartaba el resto en silencio. `baseImponible`/
+   * `porcentajeImpuesto`/`importeImpuesto` de `Factura` pasan a ser SOLO
+   * la suma/resumen derivado de estas líneas — nunca se editan sueltos.
+   * Migración de facturas antiguas de un único tramo: si no hay
+   * `lineasFiscales` pero sí los campos sueltos de siempre, se muestran
+   * como una única línea, editable igual que las demás.
+   */
+  const [lineasFiscales, setLineasFiscales] = useState<LineaFiscal[]>(() => {
+    if (facturaEditar?.lineasFiscales?.length) return facturaEditar.lineasFiscales;
+    if (facturaEditar && (facturaEditar.baseImponible || facturaEditar.importeImpuesto || facturaEditar.porcentajeImpuesto)) {
+      const tipoValido = facturaEditar.tipoImpuesto === 'iva' || facturaEditar.tipoImpuesto === 'igic' || facturaEditar.tipoImpuesto === 'exento' || facturaEditar.tipoImpuesto === 'sin_impuesto';
+      return [{
+        id: uid(),
+        tipo: tipoValido ? (facturaEditar.tipoImpuesto as TipoLineaFiscal) : 'igic',
+        porcentaje: facturaEditar.porcentajeImpuesto ?? 0,
+        baseImponible: facturaEditar.baseImponible ?? 0,
+        cuota: facturaEditar.importeImpuesto ?? 0,
+      }];
+    }
+    return [];
+  });
   /**
    * Tratamiento fiscal (Fase 3B) — decisión humana explícita, nunca
    * calculada. `undefined` = por revisar (también el estado de toda
@@ -442,7 +465,6 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
       if (resuelto.tipo) setTipo(resuelto.tipo);
       if (datos.numeroFactura) setNumeroFactura(datos.numeroFactura);
       if (datos.fecha) setFecha(datos.fecha);
-      if (typeof datos.baseImponible === 'number') setBaseImponible(String(datos.baseImponible));
       // Lo que la IA dice haber leído en el propio documento manda sobre la
       // sugerencia por región, pero JAMÁS sobre un tipo que el usuario ya
       // hubiera elegido a mano — se aplica solo si el campo sigue vacío.
@@ -450,8 +472,19 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
       if (tiposValidos.includes(datos.tipoImpuestoSugerido)) {
         setTipoImpuesto((actual) => (actual ? actual : datos.tipoImpuestoSugerido));
       }
-      if (typeof datos.porcentajeImpuesto === 'number') setPorcentajeImpuesto(String(datos.porcentajeImpuesto));
-      if (typeof datos.importeImpuesto === 'number') setImporteImpuesto(String(datos.importeImpuesto));
+      // Desglose fiscal por tramos (auditoría 12/09/2026) — la IA devuelve UNA
+      // entrada por cada tramo real del resumen fiscal (nunca se resume a una
+      // sola); igual que el resto de sugerencias de la IA, nunca sobrescribe
+      // líneas que el usuario ya hubiera revisado o escrito a mano.
+      const tiposLineaValidos: TipoLineaFiscal[] = ['iva', 'igic', 'exento', 'sin_impuesto'];
+      if (Array.isArray(datos.lineasFiscales) && datos.lineasFiscales.length > 0) {
+        setLineasFiscales((actual) => {
+          if (actual.length > 0) return actual;
+          return datos.lineasFiscales
+            .filter((l: any) => l && tiposLineaValidos.includes(l.tipo) && typeof l.baseImponible === 'number' && typeof l.cuota === 'number')
+            .map((l: any) => ({ id: uid(), tipo: l.tipo, porcentaje: typeof l.porcentaje === 'number' ? l.porcentaje : 0, baseImponible: l.baseImponible, cuota: l.cuota }));
+        });
+      }
       if (typeof datos.importe === 'number') setImporte(String(datos.importe));
       if (datos.concepto) setConcepto(datos.concepto);
       if (datos.categoria) setCategoria(datos.categoria);
@@ -462,7 +495,7 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
       if ((resuelto.tipo || tipo) === 'gasto') {
         setCategoriaFiscal((actual) => aplicarSugerenciaCategoriaFiscal(actual, datos.categoriaFiscalSugerida));
       }
-      if (datos.baseImponible || datos.porcentajeImpuesto || tiposValidos.includes(datos.tipoImpuestoSugerido)) setDatosFiscalesAbierto(true);
+      if ((Array.isArray(datos.lineasFiscales) && datos.lineasFiscales.length > 0) || tiposValidos.includes(datos.tipoImpuestoSugerido)) setDatosFiscalesAbierto(true);
       setConfianzaIA(resuelto.confianza);
       setAvisoRevisarEmisor(resuelto.revisar);
     } catch {
@@ -548,6 +581,11 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
     });
   };
 
+  /** Suma en vivo de `lineasFiscales` — nunca se guarda por separado, se recalcula aquí cada vez que cambia una línea. */
+  const agregadoFiscal = agregarLineasFiscales(lineasFiscales);
+  /** Aviso claro cuando el desglose no cuadra con el importe total (auditoría 12/09/2026) — nunca se guarda silenciosamente algo incompleto. */
+  const validacionFiscal = validarLineasFiscales(lineasFiscales, parseFloat(String(importe).replace(',', '.')) || 0);
+
   const construirFactura = (): Factura => {
     const paginasImagen = paginas.filter(p => p.tipo === 'imagen');
     // Un único PDF subido directamente se conserva como el original de la
@@ -579,10 +617,15 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
       numeroFactura: numeroFactura.trim(),
       cifNif: cifNif.trim(),
       categoria: categoria.trim(),
-      baseImponible: baseImponible ? parseFloat(baseImponible.replace(',', '.')) : undefined,
+      // Desglose fiscal por tramos (auditoría 12/09/2026) — `baseImponible`/
+      // `importeImpuesto` son SIEMPRE la suma de `lineasFiscales` cuando hay
+      // alguna; `porcentajeImpuesto` solo tiene sentido con un único tramo
+      // (con varios, ningún porcentaje suelto representa la factura entera).
+      baseImponible: lineasFiscales.length > 0 ? agregadoFiscal.baseImponible : undefined,
       tipoImpuesto,
-      porcentajeImpuesto: porcentajeImpuesto ? parseFloat(porcentajeImpuesto.replace(',', '.')) : undefined,
-      importeImpuesto: importeImpuesto ? parseFloat(importeImpuesto.replace(',', '.')) : undefined,
+      porcentajeImpuesto: lineasFiscales.length === 1 ? lineasFiscales[0].porcentaje : undefined,
+      importeImpuesto: lineasFiscales.length > 0 ? agregadoFiscal.importeImpuesto : undefined,
+      lineasFiscales: lineasFiscales.length > 0 ? lineasFiscales : undefined,
       deducibleIrpf,
       deducibleIrpfOrigen,
       ivaIgicDeducible,
@@ -604,11 +647,11 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
     ? resolverTratamientoFiscal(
       {
         tipo, categoriaFiscal,
-        baseImponible: baseImponible ? parseFloat(baseImponible.replace(',', '.')) : undefined,
+        baseImponible: lineasFiscales.length > 0 ? agregadoFiscal.baseImponible : undefined,
         importe: parseFloat(String(importe).replace(',', '.')) || 0,
         tipoImpuesto,
-        importeImpuesto: importeImpuesto ? parseFloat(importeImpuesto.replace(',', '.')) : undefined,
-        porcentajeImpuesto: porcentajeImpuesto ? parseFloat(porcentajeImpuesto.replace(',', '.')) : undefined,
+        importeImpuesto: lineasFiscales.length > 0 ? agregadoFiscal.importeImpuesto : undefined,
+        porcentajeImpuesto: lineasFiscales.length === 1 ? lineasFiscales[0].porcentaje : undefined,
         proveedor, concepto, categoria, hechosFiscales,
       },
       { repepActivo }
@@ -1038,57 +1081,89 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
               <label className={styles.label}>Categoría
                 <input className={styles.input} value={categoria} onChange={(e) => setCategoria(e.target.value)} placeholder="materiales, herramientas, combustible…" />
               </label>
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <label className={styles.label} style={{ flex: '1 1 90px', minWidth: 0 }}>Base imponible (€)
-                  <input className={styles.input} style={{ width: '100%', boxSizing: 'border-box' }} type="number" value={baseImponible} onChange={(e) => setBaseImponible(e.target.value)} />
-                </label>
-                <label className={styles.label} style={{ flex: '1 1 120px', minWidth: 0 }}>Tipo de impuesto
-                  <select
-                    className={styles.select}
-                    style={{ width: '100%', boxSizing: 'border-box' }}
-                    value={tipoImpuesto}
-                    onChange={(e) => {
-                      const nuevo = e.target.value as TipoImpuestoFactura;
-                      setTipoImpuesto(nuevo);
-                      // Exenta/sin impuesto no llevan porcentaje ni cuota — se limpian al elegirlas, nunca al revés.
-                      if (nuevo === 'exento' || nuevo === 'sin_impuesto') { setPorcentajeImpuesto(''); setImporteImpuesto('0'); }
-                    }}
-                  >
-                    <option value="">Sin especificar</option>
-                    <option value="iva">IVA</option>
-                    <option value="igic">IGIC</option>
-                    <option value="exento">Exento</option>
-                    <option value="sin_impuesto">Sin impuesto</option>
-                  </select>
-                </label>
-              </div>
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <label className={styles.label} style={{ flex: '1 1 90px', minWidth: 0 }}>Impuesto (%)
-                  <input
-                    className={styles.input} style={{ width: '100%', boxSizing: 'border-box' }} type="number"
-                    value={porcentajeImpuesto} onChange={(e) => setPorcentajeImpuesto(e.target.value)}
-                    disabled={tipoImpuesto === 'exento' || tipoImpuesto === 'sin_impuesto'}
-                  />
-                </label>
-                <label className={styles.label} style={{ flex: '1 1 90px', minWidth: 0 }}>Cuota impuesto (€)
-                  <input
-                    className={styles.input} style={{ width: '100%', boxSizing: 'border-box' }} type="number"
-                    value={importeImpuesto} onChange={(e) => setImporteImpuesto(e.target.value)}
-                    disabled={tipoImpuesto === 'exento' || tipoImpuesto === 'sin_impuesto'}
-                  />
-                </label>
-              </div>
-              {(() => {
-                const b = parseFloat(baseImponible.replace(',', '.'));
-                const c = parseFloat(importeImpuesto.replace(',', '.'));
-                const t = parseFloat(String(importe).replace(',', '.'));
-                if (!Number.isFinite(b) || !Number.isFinite(c) || !Number.isFinite(t)) return null;
-                return Math.abs(b + c - t) > 0.01 ? (
-                  <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--ocre, #a67c00)' }}>
-                    La base imponible + la cuota del impuesto ({(b + c).toFixed(2)}€) no coincide con el importe total ({t.toFixed(2)}€) — revisa los datos.
+              <label className={styles.label}>Tipo de impuesto (general de la factura)
+                <select
+                  className={styles.select}
+                  style={{ width: '100%', boxSizing: 'border-box' }}
+                  value={tipoImpuesto}
+                  onChange={(e) => setTipoImpuesto(e.target.value as TipoImpuestoFactura)}
+                >
+                  <option value="">Sin especificar</option>
+                  <option value="iva">IVA</option>
+                  <option value="igic">IGIC</option>
+                  <option value="exento">Exento</option>
+                  <option value="sin_impuesto">Sin impuesto</option>
+                </select>
+              </label>
+
+              {/* Desglose por tramos (auditoría 12/09/2026) — una factura puede tener varias bases/cuotas del
+                  mismo impuesto a distinto porcentaje (p. ej. 3% y 7% de IGIC en el mismo documento); cada
+                  tramo se edita, añade y elimina por separado, nunca se colapsan en un único campo. */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                <span style={{ fontSize: '0.82rem', color: 'var(--topo)' }}>Desglose de IVA/IGIC</span>
+                {lineasFiscales.map((linea) => (
+                  <div key={linea.id} style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                    <label className={styles.label} style={{ flex: '1 1 100px', minWidth: 0 }}>Tipo
+                      <select
+                        className={styles.select} style={{ width: '100%', boxSizing: 'border-box' }}
+                        value={linea.tipo}
+                        onChange={(e) => setLineasFiscales((prev) => prev.map((l) => (l.id === linea.id ? { ...l, tipo: e.target.value as TipoLineaFiscal } : l)))}
+                      >
+                        <option value="iva">IVA</option>
+                        <option value="igic">IGIC</option>
+                        <option value="exento">Exento</option>
+                        <option value="sin_impuesto">Sin impuesto</option>
+                      </select>
+                    </label>
+                    <label className={styles.label} style={{ flex: '1 1 70px', minWidth: 0 }}>%
+                      <input
+                        className={styles.input} style={{ width: '100%', boxSizing: 'border-box' }} type="number"
+                        value={linea.porcentaje} onChange={(e) => setLineasFiscales((prev) => prev.map((l) => (l.id === linea.id ? { ...l, porcentaje: parseFloat(e.target.value.replace(',', '.')) || 0 } : l)))}
+                        disabled={linea.tipo === 'exento' || linea.tipo === 'sin_impuesto'}
+                      />
+                    </label>
+                    <label className={styles.label} style={{ flex: '1 1 90px', minWidth: 0 }}>Base (€)
+                      <input
+                        className={styles.input} style={{ width: '100%', boxSizing: 'border-box' }} type="number"
+                        value={linea.baseImponible} onChange={(e) => setLineasFiscales((prev) => prev.map((l) => (l.id === linea.id ? { ...l, baseImponible: parseFloat(e.target.value.replace(',', '.')) || 0 } : l)))}
+                      />
+                    </label>
+                    <label className={styles.label} style={{ flex: '1 1 90px', minWidth: 0 }}>Cuota (€)
+                      <input
+                        className={styles.input} style={{ width: '100%', boxSizing: 'border-box' }} type="number"
+                        value={linea.cuota} onChange={(e) => setLineasFiscales((prev) => prev.map((l) => (l.id === linea.id ? { ...l, cuota: parseFloat(e.target.value.replace(',', '.')) || 0 } : l)))}
+                        disabled={linea.tipo === 'exento' || linea.tipo === 'sin_impuesto'}
+                      />
+                    </label>
+                    <button
+                      type="button" className={styles.btnIcono} title="Quitar este tramo" aria-label="Quitar este tramo"
+                      style={{ color: 'var(--rojo)', marginBottom: '0.35rem' }}
+                      onClick={() => setLineasFiscales((prev) => prev.filter((l) => l.id !== linea.id))}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button" className={`${styles.btn} ${styles.btnSecundario}`}
+                  style={{ alignSelf: 'flex-start', fontSize: '0.76rem' }}
+                  onClick={() => setLineasFiscales((prev) => [...prev, {
+                    id: uid(),
+                    tipo: (tipoImpuesto === 'iva' || tipoImpuesto === 'igic' || tipoImpuesto === 'exento' || tipoImpuesto === 'sin_impuesto') ? tipoImpuesto : 'igic',
+                    porcentaje: 0, baseImponible: 0, cuota: 0,
+                  }])}
+                >
+                  + Añadir tramo
+                </button>
+                {lineasFiscales.length > 0 && (
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--topo)' }}>
+                    Base total: <strong>{agregadoFiscal.baseImponible.toFixed(2)}€</strong> · Impuesto total: <strong>{agregadoFiscal.importeImpuesto.toFixed(2)}€</strong>
                   </p>
-                ) : null;
-              })()}
+                )}
+                {!validacionFiscal.valido && (
+                  <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--ocre, #a67c00)' }}>{validacionFiscal.motivo}</p>
+                )}
+              </div>
 
               {/* Tratamiento fiscal (Fase 3B, automatizado en 3C.3) — solo gastos. El motor resuelve lo que puede con
                   seguridad; si falta un hecho, se pregunta ESE hecho, nunca un porcentaje; el selector manual de
@@ -1108,9 +1183,9 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
                   {estadoIvaIgicDeducible({
                     tipo,
                     tipoImpuesto,
-                    importeImpuesto: importeImpuesto ? parseFloat(importeImpuesto.replace(',', '.')) : undefined,
-                    baseImponible: baseImponible ? parseFloat(baseImponible.replace(',', '.')) : undefined,
-                    porcentajeImpuesto: porcentajeImpuesto ? parseFloat(porcentajeImpuesto.replace(',', '.')) : undefined,
+                    importeImpuesto: lineasFiscales.length > 0 ? agregadoFiscal.importeImpuesto : undefined,
+                    baseImponible: lineasFiscales.length > 0 ? agregadoFiscal.baseImponible : undefined,
+                    porcentajeImpuesto: lineasFiscales.length === 1 ? lineasFiscales[0].porcentaje : undefined,
                     ivaIgicDeducible,
                   }) !== 'no_aplica' && (
                     <TratamientoFiscalEje

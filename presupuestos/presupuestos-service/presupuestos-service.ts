@@ -18,6 +18,7 @@ import { esGastoPeriodicoDeducible } from './gasto-periodico-fiscal.js';
 import { resolverTratamientoFiscal } from './motor-resolucion-fiscal.js';
 import type { OrigenDecisionFiscal } from './motor-resolucion-fiscal.js';
 import { fusionarDecisionFiscal } from './fusion-decision-fiscal.js';
+import { agregarLineasFiscales, validarLineasFiscales } from './motor-fiscal.js';
 import { subirORecuperarRecurso } from './documento-recursos-biblioteca.js';
 import type { DocumentoMC, TemaMC, RecursoMC } from './documento-modelo.js';
 import { analizarPrecioPresupuesto, calcularMargenRealProyecto } from './inteligencia-precios.js';
@@ -1874,6 +1875,20 @@ export class PresupuestosService {
     // IA del escáner como un despiste al escribir a mano pueden confundirlos.
     // Se comprueba aquí (al guardar), no solo en la propuesta de la IA, para
     // que la protección cubra cualquier origen del dato, presente o futuro.
+    // Desglose fiscal por tramos (auditoría 12/09/2026) — si la factura trae
+    // `lineasFiscales` (2+ tramos de IGIC/IVA a distinto porcentaje, p. ej.
+    // partidas al 3% y al 7%), `baseImponible`/`importeImpuesto` SIEMPRE se
+    // recalculan aquí como la suma real de las líneas, nunca se confía en lo
+    // que el cliente haya podido enviar suelto — así el resto del backend
+    // (motor fiscal, agregación trimestral) sigue viendo un total correcto
+    // sin tener que saber que existen varios tramos.
+    const lineasFiscalesEntrantes = Array.isArray((factura as any).lineasFiscales) ? (factura as any).lineasFiscales : [];
+    if (lineasFiscalesEntrantes.length > 0) {
+      const agregado = agregarLineasFiscales(lineasFiscalesEntrantes);
+      (factura as any).baseImponible = agregado.baseImponible;
+      (factura as any).importeImpuesto = agregado.importeImpuesto;
+    }
+
     let cifNif = (factura as any).cifNif;
     // Se consulta una única vez, tanto para la comprobación de CIF como para el
     // motor fiscal de más abajo (necesita `repepActivo`) — evita una segunda
@@ -1911,7 +1926,18 @@ export class PresupuestosService {
       deducibleIrpf = fusionIrpf.numero;
       deducibleIrpfOrigen = fusionIrpf.origen;
 
-      const ejeIndirectoActivo = resultado.iva.estado !== 'no_aplica' ? resultado.iva : resultado.igic;
+      let ejeIndirectoActivo = resultado.iva.estado !== 'no_aplica' ? resultado.iva : resultado.igic;
+      // Desglose fiscal inconsistente (tramos mezclando IVA/IGIC, o que no
+      // cuadran con el importe total) — nunca se resuelve automáticamente
+      // sobre un dato que no cuadra, por mucho que la categoría lo
+      // permitiera; queda en revisión con el motivo exacto (auditoría
+      // 12/09/2026, requisito explícito de no dar alta confianza en falso).
+      if (lineasFiscalesEntrantes.length > 0) {
+        const validacion = validarLineasFiscales(lineasFiscalesEntrantes, (factura as any).importe);
+        if (!validacion.valido && ejeIndirectoActivo.estado === 'resuelto_automatico') {
+          ejeIndirectoActivo = { estado: 'revision_manual', confianza: 'insuficiente', explicacion: validacion.motivo ?? 'El desglose fiscal no cuadra — revísalo a mano.' };
+        }
+      }
       const fusionIndirecto = fusionarDecisionFiscal(anterior?.ivaIgicDeducible, anterior?.ivaIgicDeducibleOrigen, ivaIgicDeducible, ejeIndirectoActivo);
       ivaIgicDeducible = fusionIndirecto.numero;
       ivaIgicDeducibleOrigen = fusionIndirecto.origen;

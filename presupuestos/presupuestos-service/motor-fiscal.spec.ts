@@ -1,4 +1,4 @@
-import { calcularImpuestosPorTipo, estadoDeducibleIrpf, estadoIvaIgicDeducible, gastoDeducible, cuotaDeducible } from './motor-fiscal.js';
+import { calcularImpuestosPorTipo, estadoDeducibleIrpf, estadoIvaIgicDeducible, gastoDeducible, cuotaDeducible, agregarLineasFiscales, validarLineasFiscales, type LineaFiscal } from './motor-fiscal.js';
 
 describe('calcularImpuestosPorTipo (backend, mismo criterio que el frontend)', () => {
   it('IVA repercutido / soportado', () => {
@@ -107,5 +107,42 @@ describe('Tratamiento fiscal (backend, Fase 3A) — mismo criterio que el fronte
 
   it('factura histórica sin los campos nuevos se comporta igual que una sin decidir', () => {
     expect(estadoDeducibleIrpf({ tipo: 'gasto' })).toBe('por_revisar');
+  });
+});
+
+// Caso real reportado por el usuario (12/09/2026), verificado también en backend:
+// factura de 146,61€ con dos tramos de IGIC — 25,08€ al 3% (cuota 0,75€) y
+// 112,88€ al 7% (cuota 7,90€).
+const LINEA_3: LineaFiscal = { id: 'l1', tipo: 'igic', porcentaje: 3, baseImponible: 25.08, cuota: 0.75 };
+const LINEA_7: LineaFiscal = { id: 'l2', tipo: 'igic', porcentaje: 7, baseImponible: 112.88, cuota: 7.90 };
+
+describe('agregarLineasFiscales (backend) — Fase desglose fiscal por tramos (12/09/2026)', () => {
+  it('caso real del usuario: 137,96€ de base y 8,65€ de IGIC', () => {
+    const r = agregarLineasFiscales([LINEA_3, LINEA_7]);
+    expect(r.baseImponible).toBeCloseTo(137.96);
+    expect(r.importeImpuesto).toBeCloseTo(8.65);
+  });
+
+  it('sin líneas → 0, nunca NaN', () => {
+    expect(agregarLineasFiscales([])).toEqual({ baseImponible: 0, importeImpuesto: 0 });
+  });
+});
+
+describe('validarLineasFiscales (backend) — Fase desglose fiscal por tramos (12/09/2026)', () => {
+  it('el caso real completo (dos tramos) cuadra con el total de la factura', () => {
+    expect(validarLineasFiscales([LINEA_3, LINEA_7], 146.61).valido).toBe(true);
+  });
+
+  it('el bug real reportado — solo se detecta el primer tramo — se marca como inválido', () => {
+    const r = validarLineasFiscales([LINEA_3], 146.61);
+    expect(r.valido).toBe(false);
+  });
+
+  it('mezclar IVA e IGIC en la misma factura se rechaza siempre', () => {
+    const r = validarLineasFiscales(
+      [{ id: 'a', tipo: 'iva', porcentaje: 21, baseImponible: 100, cuota: 21 }, LINEA_7],
+      100 + 21 + 112.88 + 7.90
+    );
+    expect(r.valido).toBe(false);
   });
 });
