@@ -510,11 +510,11 @@ export async function descargarZipFacturas(opciones: { ids?: string[]; anio?: nu
   descargarBlobDelNavegador(await res.blob(), nombreDesdeContentDisposition(res, 'facturas.zip'));
 }
 
-/** Descarga la documentación completa para el asesor de un trimestre (resumen PDF + facturas en ZIP). */
+/** Descarga la documentación completa para el asesor de un trimestre — un único PDF con el resumen y todas las facturas. */
 export async function descargarDocumentacionAsesor(anio: number, trimestre: number): Promise<void> {
   const res = await fetchConAuth(`/facturas/documentacion-asesor?anio=${anio}&trimestre=${trimestre}`);
   await comprobarRespuesta(res, 'No se pudo generar la documentación para el asesor');
-  descargarBlobDelNavegador(await res.blob(), nombreDesdeContentDisposition(res, `documentacion-T${trimestre}-${anio}.zip`));
+  descargarBlobDelNavegador(await res.blob(), nombreDesdeContentDisposition(res, `documentacion-T${trimestre}-${anio}.pdf`));
 }
 
 /** Descarga un único PDF con las páginas de las facturas de un año/trimestre — solo las facturas, sin resumen ni ZIP. */

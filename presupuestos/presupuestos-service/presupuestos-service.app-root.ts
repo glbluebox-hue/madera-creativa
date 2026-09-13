@@ -1936,8 +1936,10 @@ export function run() {
   });
 
   /**
-   * Documentación completa para el asesor de un trimestre (resumen + ZIP
-   * de facturas organizadas). Debe registrarse antes de `/facturas/:id`.
+   * Documentación completa para el asesor de un trimestre — un único PDF
+   * con el resumen seguido de todas las facturas (auditoría 13/09/2026,
+   * ver el comentario de `obtenerDocumentacionAsesor`). Debe registrarse
+   * antes de `/facturas/:id`.
    *
    * Solo PRO+ (05/09/2026) — ver el comentario de `/facturas/descargar-zip`.
    */
@@ -1946,10 +1948,10 @@ export function run() {
       const anio = Number(req.query.anio);
       const trimestre = Number(req.query.trimestre);
       if (!anio || !trimestre || trimestre < 1 || trimestre > 4) { res.status(400).json({ error: 'anio y trimestre (1-4) son obligatorios' }); return; }
-      const zip = await svc.obtenerDocumentacionAsesor(req.usuarioId!, anio, trimestre);
-      res.setHeader('Content-Type', 'application/zip');
-      res.setHeader('Content-Disposition', `attachment; filename="documentacion-T${trimestre}-${anio}.zip"`);
-      res.send(Buffer.from(zip));
+      const pdf = await svc.obtenerDocumentacionAsesor(req.usuarioId!, anio, trimestre);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="documentacion-T${trimestre}-${anio}.pdf"`);
+      res.send(Buffer.from(pdf));
     } catch (err) { responderError(req, res, err); }
   });
 

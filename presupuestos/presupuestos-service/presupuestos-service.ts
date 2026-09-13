@@ -2333,9 +2333,15 @@ export class PresupuestosService {
   }
 
   /**
-   * Documentación completa para el asesor de un trimestre: RESUMEN.pdf
-   * (empresa, período, totales, listados) + carpetas Ingresos/Gastos con el
-   * PDF de cada factura, todo en un único ZIP.
+   * Documentación completa para el asesor de un trimestre: un ÚNICO PDF
+   * con el resumen (tabla real de ingresos/gastos/IVA-IGIC) seguido de las
+   * páginas de todas las facturas del trimestre, en el mismo orden
+   * (ingresos primero, luego gastos) — auditoría Facturas/Trimestral
+   * 13/09/2026, petición explícita del usuario: "en el informe general
+   * tiene que venir informe y facturas", un solo archivo que se abre y ya
+   * está todo dentro, no un ZIP con piezas sueltas. Si ninguna factura
+   * tiene un documento adjunto (todas creadas a mano, sin foto/PDF), se
+   * devuelve solo el resumen — nunca falla por eso.
    */
   async obtenerDocumentacionAsesor(usuarioId: string, anio: number, trimestre: number): Promise<Uint8Array> {
     await conectar();
@@ -2372,7 +2378,7 @@ export class PresupuestosService {
       'Requiere revisión y confirmación de un asesor fiscal antes de presentar cualquier modelo ante la Agencia Tributaria.',
     ];
 
-    const { generarResumenPdf, generarZipFacturas } = await import('./documentos-factura.service.js');
+    const { generarResumenPdf, generarPdfCombinadoFacturas, combinarPdfs } = await import('./documentos-factura.service.js');
     const { calcularImpuestosPorTipo } = await import('./motor-fiscal.js');
     const resumenBytes = await generarResumenPdf({
       empresaNombre: empresa?.nombre || 'Empresa',
@@ -2380,10 +2386,13 @@ export class PresupuestosService {
       ingresos, gastos, gastosPeriodicos: gastosPeriodicosDelTrimestre, avisoFiscal,
       impuestos: calcularImpuestosPorTipo(facturas as any[]),
     });
-    return generarZipFacturas(facturas, {
-      agruparPorTipo: true,
-      archivoExtra: { nombre: `RESUMEN_${periodoLabel.replace(/\s+/g, '_')}.pdf`, datos: resumenBytes },
-    });
+    try {
+      const facturasBytes = await generarPdfCombinadoFacturas([...ingresos, ...gastos]);
+      return await combinarPdfs([resumenBytes, facturasBytes]);
+    } catch {
+      // Ninguna factura del trimestre tiene un documento adjunto — el informe se queda solo con el resumen.
+      return resumenBytes;
+    }
   }
 
   // ── Gastos periódicos/estimados (Fase Facturas Profesional) ──

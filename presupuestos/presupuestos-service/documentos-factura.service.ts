@@ -193,12 +193,30 @@ export async function generarZipFacturas(
 const formatoEuro = (n: number) => `${n.toFixed(2).replace('.', ',')} €`;
 
 /**
+ * Fusiona varios PDF ya generados en uno solo, uno detrás de otro en el
+ * orden dado (auditoría Facturas/Trimestral, 13/09/2026: petición explícita
+ * de que "en el informe general tiene que venir informe y facturas" en un
+ * único archivo, no un ZIP con piezas sueltas). Copia páginas tal cual, sin
+ * recomprimir ni perder calidad.
+ */
+export async function combinarPdfs(partes: Uint8Array[]): Promise<Uint8Array> {
+  const combinado = await PDFDocument.create();
+  for (const parte of partes) {
+    const origen = await PDFDocument.load(parte, { ignoreEncryption: true });
+    const copiadas = await combinado.copyPages(origen, origen.getPageIndices());
+    for (const p of copiadas) combinado.addPage(p);
+  }
+  return combinado.save();
+}
+
+/**
  * Genera el PDF de resumen de un período (trimestre) para el asesor:
  * empresa, período, totales de ingresos/gastos/beneficio, número de
- * documentos, y el listado completo con fecha/proveedor/importe de cada
- * factura. Deliberadamente sobrio (una fuente estándar, sin maquetación
- * compleja) — es un documento de trabajo para un asesor fiscal, no una
- * pieza de diseño.
+ * documentos, y una tabla real (columnas alineadas por posición, no texto
+ * con espacios — una fuente proporcional como Helvetica nunca alinea con
+ * espacios) con fecha/nº factura/proveedor-cliente/importe de cada
+ * factura. Rediseño 13/09/2026: la versión anterior, con columnas
+ * simuladas por `padEnd`, no se veía alineada en absoluto con esta fuente.
  */
 export async function generarResumenPdf(datos: {
   empresaNombre: string;
@@ -231,6 +249,86 @@ export async function generarResumenPdf(datos: {
     y -= opciones.salto ?? tam + 6;
   };
 
+  const COLOR_GRIS = rgb(0.45, 0.4, 0.35);
+  const COLOR_TEXTO = rgb(0.09, 0.08, 0.06);
+  const COLOR_LINEA = rgb(0.82, 0.8, 0.76);
+
+  /** Recorta `texto` a lo que quepa en `anchoMax` puntos con `font`/`tam`, añadiendo "…" — nunca cuenta caracteres, mide el ancho real (una fuente proporcional no tiene un ancho fijo por letra). */
+  const truncarTexto = (font: typeof fuente, texto: string, tam: number, anchoMax: number): string => {
+    if (font.widthOfTextAtSize(texto, tam) <= anchoMax) return texto;
+    let recortado = texto;
+    while (recortado.length > 1 && font.widthOfTextAtSize(`${recortado}…`, tam) > anchoMax) recortado = recortado.slice(0, -1);
+    return `${recortado}…`;
+  };
+
+  /** Dibuja `texto` terminando exactamente en `xFin` (para la columna de importe, siempre alineada a la derecha). */
+  const escribirAlineadoDerecha = (texto: string, xFin: number, opciones: { tam: number; negrita?: boolean; color?: ReturnType<typeof rgb> }) => {
+    const font = opciones.negrita ? fuenteNegrita : fuente;
+    const ancho = font.widthOfTextAtSize(texto, opciones.tam);
+    pagina.drawText(texto, { x: xFin - ancho, y, size: opciones.tam, font, color: opciones.color ?? COLOR_TEXTO });
+  };
+
+  // Columnas de la tabla de facturas — posiciones fijas, nunca espacios: la
+  // única forma real de alinear con una fuente proporcional.
+  const COL_FECHA = margen;
+  const COL_NUMERO = margen + 62;
+  const COL_NOMBRE = margen + 150;
+  const COL_IMPORTE_FIN = ANCHO - margen;
+
+  /**
+   * Tabla real de facturas (fecha/nº factura/proveedor o cliente/importe),
+   * con cabecera repetida en cada página nueva y fila de total — sustituye
+   * a la versión anterior con `padEnd` sobre una fuente proporcional, que
+   * nunca llegaba a alinear nada (auditoría 13/09/2026). `columnaFecha`
+   * permite reutilizarla para gastos periódicos (sin nº de documento):
+   * la 1ª columna pasa a ser un tipo/etiqueta corta y la de nombre empieza
+   * antes, ocupando el hueco de la columna de nº de factura.
+   */
+  const tablaFacturas = (
+    titulo: string, columnaNombre: string, filas: Record<string, unknown>[],
+    opciones: { columnaFecha?: string; conNumero?: boolean } = {}
+  ) => {
+    if (!filas.length) return;
+    const conNumero = opciones.conNumero ?? true;
+    const colNombreInicio = conNumero ? COL_NOMBRE : COL_NUMERO;
+    escribir(titulo, { tam: 11, negrita: true, salto: 16 });
+
+    const dibujarCabecera = () => {
+      nuevaPaginaSiHaceFalta(20);
+      pagina.drawText((opciones.columnaFecha ?? 'FECHA').toUpperCase(), { x: COL_FECHA, y, size: 7.5, font: fuenteNegrita, color: COLOR_GRIS });
+      if (conNumero) pagina.drawText('Nº FACTURA', { x: COL_NUMERO, y, size: 7.5, font: fuenteNegrita, color: COLOR_GRIS });
+      pagina.drawText(columnaNombre.toUpperCase(), { x: colNombreInicio, y, size: 7.5, font: fuenteNegrita, color: COLOR_GRIS });
+      escribirAlineadoDerecha('IMPORTE', COL_IMPORTE_FIN, { tam: 7.5, negrita: true, color: COLOR_GRIS });
+      y -= 6;
+      pagina.drawLine({ start: { x: margen, y }, end: { x: ANCHO - margen, y }, thickness: 0.6, color: COLOR_LINEA });
+      y -= 12;
+    };
+    dibujarCabecera();
+
+    for (const f of filas) {
+      if (y - 13 < 55) { pagina = pdf.addPage([ANCHO, ALTO]); y = ALTO - 50; dibujarCabecera(); }
+      const tam = 8.5;
+      const importeTexto = formatoEuro(Number(f.importe || 0));
+      pagina.drawText(truncarTexto(fuente, String(f.fecha || '—'), tam, COL_NUMERO - COL_FECHA - 6), { x: COL_FECHA, y, size: tam, font: fuente, color: COLOR_TEXTO });
+      if (conNumero) pagina.drawText(truncarTexto(fuente, String(f.numeroFactura || '—'), tam, COL_NOMBRE - COL_NUMERO - 6), { x: COL_NUMERO, y, size: tam, font: fuente, color: COLOR_TEXTO });
+      const anchoImporte = fuente.widthOfTextAtSize(importeTexto, tam);
+      pagina.drawText(
+        truncarTexto(fuente, String(f.proveedor || f.concepto || '—'), tam, COL_IMPORTE_FIN - anchoImporte - 10 - colNombreInicio),
+        { x: colNombreInicio, y, size: tam, font: fuente, color: COLOR_TEXTO }
+      );
+      pagina.drawText(importeTexto, { x: COL_IMPORTE_FIN - anchoImporte, y, size: tam, font: fuente, color: COLOR_TEXTO });
+      y -= 13;
+    }
+
+    nuevaPaginaSiHaceFalta(20);
+    y -= 3;
+    pagina.drawLine({ start: { x: colNombreInicio, y: y + 10 }, end: { x: ANCHO - margen, y: y + 10 }, thickness: 0.6, color: COLOR_LINEA });
+    const total = filas.reduce((s, f) => s + Number(f.importe || 0), 0);
+    pagina.drawText('TOTAL', { x: colNombreInicio, y, size: 9, font: fuenteNegrita, color: COLOR_TEXTO });
+    escribirAlineadoDerecha(formatoEuro(total), COL_IMPORTE_FIN, { tam: 9, negrita: true });
+    y -= 22;
+  };
+
   escribir(datos.empresaNombre, { tam: 18, negrita: true, salto: 24 });
   escribir(`Resumen ${datos.periodoLabel}`, { tam: 13, negrita: true, salto: 22 });
   escribir(`Generado el ${new Date().toLocaleDateString('es-ES')}`, { tam: 8.5, color: [0.45, 0.4, 0.35], salto: 20 });
@@ -246,25 +344,15 @@ export async function generarResumenPdf(datos: {
   if (totalPeriodicos > 0) escribir(`Gastos periódicos/estimados: ${formatoEuro(totalPeriodicos)}`, { color: [0.61, 0.27, 0.21] });
   escribir(`Resultado: ${formatoEuro(beneficio)}`, { negrita: true, salto: 20 });
 
-  const tablaFacturas = (titulo: string, filas: Record<string, unknown>[]) => {
-    if (!filas.length) return;
-    escribir(titulo, { tam: 11, negrita: true, salto: 16 });
-    for (const f of filas) {
-      nuevaPaginaSiHaceFalta(12);
-      const linea = `${String(f.fecha || '').padEnd(12)}  ${String(f.numeroFactura || '').padEnd(14)}  ${String(f.proveedor || f.concepto || '—').slice(0, 40).padEnd(42)}  ${formatoEuro(Number(f.importe || 0))}`;
-      escribir(linea, { tam: 8.5, salto: 12 });
-    }
-    y -= 8;
-  };
-  tablaFacturas('INGRESOS', datos.ingresos);
-  tablaFacturas('GASTOS', datos.gastos);
+  tablaFacturas('INGRESOS', 'Cliente', datos.ingresos);
+  tablaFacturas('GASTOS', 'Proveedor', datos.gastos);
 
   if (datos.gastosPeriodicos?.length) {
-    escribir('GASTOS PERIÓDICOS / ESTIMADOS', { tam: 11, negrita: true, salto: 16 });
-    for (const g of datos.gastosPeriodicos) {
-      escribir(`${g.tipo.padEnd(14)}  ${g.descripcion.slice(0, 40).padEnd(42)}  ${formatoEuro(g.importe)}`, { tam: 8.5, salto: 12 });
-    }
-    y -= 8;
+    tablaFacturas(
+      'GASTOS PERIÓDICOS / ESTIMADOS', 'Descripción',
+      datos.gastosPeriodicos.map((g) => ({ fecha: g.tipo, proveedor: g.descripcion, importe: g.importe })),
+      { columnaFecha: 'Tipo', conNumero: false }
+    );
   }
 
   // IVA/IGIC — dato real por factura (`tipoImpuesto`), nunca decidido por
