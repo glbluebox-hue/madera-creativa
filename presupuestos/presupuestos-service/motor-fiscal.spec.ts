@@ -27,13 +27,31 @@ describe('calcularImpuestosPorTipo (backend, mismo criterio que el frontend)', (
     expect(r.igicSoportado).toBe(0);
   });
 
+  // Petición explícita del usuario 14/09/2026: el informe debe dar base imponible, cuota Y el
+  // resultado a pagar/compensar de cada impuesto, no solo la cuota suelta.
+  it('agrega la base imponible repercutida/soportada, y calcula el resultado (repercutido − soportado)', () => {
+    const r = calcularImpuestosPorTipo([
+      { tipo: 'ingreso', tipoImpuesto: 'igic', baseImponible: 1000, porcentajeImpuesto: 7, importeImpuesto: 70 },
+      { tipo: 'gasto', tipoImpuesto: 'igic', baseImponible: 400, porcentajeImpuesto: 7, importeImpuesto: 28 },
+    ]);
+    expect(r.igicBaseRepercutida).toBeCloseTo(1000, 2);
+    expect(r.igicBaseSoportada).toBeCloseTo(400, 2);
+    expect(r.igicResultado).toBeCloseTo(42, 2); // 70 - 28, a ingresar
+  });
+
+  it('resultado negativo (a compensar) cuando lo soportado supera lo repercutido — nunca se fuerza a 0', () => {
+    const r = calcularImpuestosPorTipo([{ tipo: 'gasto', tipoImpuesto: 'iva', baseImponible: 6000, porcentajeImpuesto: 21, importeImpuesto: 1260 }]);
+    expect(r.ivaResultado).toBeCloseTo(-1260, 2);
+  });
+
   it('exento y sin_impuesto no aportan cuota a ningún contador', () => {
     const r = calcularImpuestosPorTipo([
       { tipo: 'ingreso', tipoImpuesto: 'exento' },
       { tipo: 'gasto', tipoImpuesto: 'sin_impuesto' },
     ]);
     expect(r).toEqual({
-      ivaRepercutido: 0, ivaSoportado: 0, igicRepercutido: 0, igicSoportado: 0,
+      ivaBaseRepercutida: 0, ivaRepercutido: 0, ivaBaseSoportada: 0, ivaSoportado: 0, ivaResultado: 0,
+      igicBaseRepercutida: 0, igicRepercutido: 0, igicBaseSoportada: 0, igicSoportado: 0, igicResultado: 0,
       noIdentificado: { repercutido: 0, soportado: 0, numFacturas: 0 }, noCalculable: { numFacturas: 0 },
     });
   });

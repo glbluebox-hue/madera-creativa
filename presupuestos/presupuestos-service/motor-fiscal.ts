@@ -25,10 +25,19 @@ type FacturaImpuesto = {
 };
 
 export type ResumenImpuestosTrimestre = {
+  /** Base imponible agregada — solo cuenta cuando `baseImponible` consta en la factura (14/09/2026). */
+  ivaBaseRepercutida: number;
   ivaRepercutido: number;
+  ivaBaseSoportada: number;
   ivaSoportado: number;
+  /** Repercutido − soportado del período — positivo es lo que hay que ingresar en el Modelo 303, negativo lo que queda a compensar (14/09/2026). */
+  ivaResultado: number;
+  igicBaseRepercutida: number;
   igicRepercutido: number;
+  igicBaseSoportada: number;
   igicSoportado: number;
+  /** Ver `ivaResultado` — mismo cálculo para el Modelo 420. */
+  igicResultado: number;
   /** Factura con importe de impuesto real pero sin `tipoImpuesto` clasificado (`''`) — nunca asignada a IVA/IGIC por región, queda pendiente de revisión. */
   noIdentificado: { repercutido: number; soportado: number; numFacturas: number };
   /** Factura con `tipoImpuesto` real (`'iva'`/`'igic'`) pero sin dato suficiente para calcular su cuota — NO se cuenta como 0€, distinto de una cuota real de 0. */
@@ -58,10 +67,16 @@ export function cuotaRealDeFactura(f: Pick<FacturaImpuesto, 'importeImpuesto' | 
   return null;
 }
 
-/** Agrega IVA/IGIC repercutido y soportado de un conjunto de facturas (p. ej. las de un trimestre) — mismas reglas que la versión del frontend. */
+/**
+ * Agrega IVA/IGIC repercutido y soportado de un conjunto de facturas (p. ej.
+ * las de un trimestre) — mismas reglas que la versión del frontend, incluida
+ * la base imponible agregada y `ivaResultado`/`igicResultado` (repercutido
+ * − soportado, 14/09/2026).
+ */
 export function calcularImpuestosPorTipo(facturas: FacturaImpuesto[]): ResumenImpuestosTrimestre {
   const resumen: ResumenImpuestosTrimestre = {
-    ivaRepercutido: 0, ivaSoportado: 0, igicRepercutido: 0, igicSoportado: 0,
+    ivaBaseRepercutida: 0, ivaRepercutido: 0, ivaBaseSoportada: 0, ivaSoportado: 0, ivaResultado: 0,
+    igicBaseRepercutida: 0, igicRepercutido: 0, igicBaseSoportada: 0, igicSoportado: 0, igicResultado: 0,
     noIdentificado: { repercutido: 0, soportado: 0, numFacturas: 0 },
     noCalculable: { numFacturas: 0 },
   };
@@ -79,12 +94,25 @@ export function calcularImpuestosPorTipo(facturas: FacturaImpuesto[]): ResumenIm
       resumen.noCalculable.numFacturas += 1;
       continue;
     }
+    const base = typeof f.baseImponible === 'number' ? f.baseImponible : 0;
     if (clasificacion === 'iva') {
-      if (f.tipo === 'ingreso') resumen.ivaRepercutido += cuota; else resumen.ivaSoportado += cuota;
+      if (f.tipo === 'ingreso') { resumen.ivaRepercutido += cuota; resumen.ivaBaseRepercutida += base; }
+      else { resumen.ivaSoportado += cuota; resumen.ivaBaseSoportada += base; }
     } else {
-      if (f.tipo === 'ingreso') resumen.igicRepercutido += cuota; else resumen.igicSoportado += cuota;
+      if (f.tipo === 'ingreso') { resumen.igicRepercutido += cuota; resumen.igicBaseRepercutida += base; }
+      else { resumen.igicSoportado += cuota; resumen.igicBaseSoportada += base; }
     }
   }
+  resumen.ivaBaseRepercutida = redondearEuros(resumen.ivaBaseRepercutida);
+  resumen.ivaRepercutido = redondearEuros(resumen.ivaRepercutido);
+  resumen.ivaBaseSoportada = redondearEuros(resumen.ivaBaseSoportada);
+  resumen.ivaSoportado = redondearEuros(resumen.ivaSoportado);
+  resumen.ivaResultado = redondearEuros(resumen.ivaRepercutido - resumen.ivaSoportado);
+  resumen.igicBaseRepercutida = redondearEuros(resumen.igicBaseRepercutida);
+  resumen.igicRepercutido = redondearEuros(resumen.igicRepercutido);
+  resumen.igicBaseSoportada = redondearEuros(resumen.igicBaseSoportada);
+  resumen.igicSoportado = redondearEuros(resumen.igicSoportado);
+  resumen.igicResultado = redondearEuros(resumen.igicRepercutido - resumen.igicSoportado);
   return resumen;
 }
 

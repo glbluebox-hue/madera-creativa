@@ -332,13 +332,27 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
                       IVA · Modelo 303 ({MODELO_INDIRECTO_MES[i]})
                     </p>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginTop: '0.15rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', marginTop: '0.2rem' }}>
+                    <span style={{ color: 'var(--topo-claro)' }}>Base repercutida</span>
+                    <span>{formatoEuroPrivado(t.impuestos.ivaBaseRepercutida, privado)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
                     <span style={{ color: 'var(--topo-claro)' }}>Repercutido</span>
                     <span style={{ fontWeight: 600 }}>{formatoEuroPrivado(t.impuestos.ivaRepercutido, privado)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', marginTop: '0.3rem' }}>
+                    <span style={{ color: 'var(--topo-claro)' }}>Base soportada</span>
+                    <span>{formatoEuroPrivado(t.impuestos.ivaBaseSoportada, privado)}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
                     <span style={{ color: 'var(--topo-claro)' }}>Soportado</span>
                     <span style={{ fontWeight: 600 }}>{formatoEuroPrivado(t.impuestos.ivaSoportado, privado)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginTop: '0.35rem', paddingTop: '0.35rem', borderTop: '1px dashed var(--borde)' }}>
+                    <span style={{ fontWeight: 700 }}>{t.impuestos.ivaResultado >= 0 ? 'A ingresar' : 'A compensar'}</span>
+                    <span style={{ fontWeight: 700, color: t.impuestos.ivaResultado > 0 ? 'var(--ocre)' : 'var(--topo)' }}>
+                      {formatoEuroPrivado(Math.abs(t.impuestos.ivaResultado), privado)}
+                    </span>
                   </div>
                 </div>
 
@@ -348,13 +362,27 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
                   <p style={{ margin: 0, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--topo-muy-claro)', fontWeight: 700 }}>
                     IGIC · Modelo 420 ({MODELO_INDIRECTO_MES[i]})
                   </p>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginTop: '0.15rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', marginTop: '0.2rem' }}>
+                    <span style={{ color: 'var(--topo-claro)' }}>Base repercutida</span>
+                    <span>{formatoEuroPrivado(t.impuestos.igicBaseRepercutida, privado)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
                     <span style={{ color: 'var(--topo-claro)' }}>Repercutido</span>
                     <span style={{ fontWeight: 600 }}>{formatoEuroPrivado(t.impuestos.igicRepercutido, privado)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', marginTop: '0.3rem' }}>
+                    <span style={{ color: 'var(--topo-claro)' }}>Base soportada</span>
+                    <span>{formatoEuroPrivado(t.impuestos.igicBaseSoportada, privado)}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
                     <span style={{ color: 'var(--topo-claro)' }}>Soportado</span>
                     <span style={{ fontWeight: 600 }}>{formatoEuroPrivado(t.impuestos.igicSoportado, privado)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginTop: '0.35rem', paddingTop: '0.35rem', borderTop: '1px dashed var(--borde)' }}>
+                    <span style={{ fontWeight: 700 }}>{t.impuestos.igicResultado >= 0 ? 'A ingresar' : 'A compensar'}</span>
+                    <span style={{ fontWeight: 700, color: t.impuestos.igicResultado > 0 ? 'var(--ocre)' : 'var(--topo)' }}>
+                      {formatoEuroPrivado(Math.abs(t.impuestos.igicResultado), privado)}
+                    </span>
                   </div>
                 </div>
 

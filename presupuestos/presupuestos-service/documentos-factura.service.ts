@@ -356,13 +356,41 @@ export async function generarResumenPdf(datos: {
   }
 
   // IVA/IGIC — dato real por factura (`tipoImpuesto`), nunca decidido por
-  // la región fiscal de la empresa (ver `motor-fiscal.ts`).
+  // la región fiscal de la empresa (ver `motor-fiscal.ts`). Base + cuota +
+  // resultado a ingresar/compensar (petición explícita del usuario,
+  // 14/09/2026: "el informe tiene que decir qué tienes que pagar", no solo
+  // repercutido/soportado sueltos) — misma tabla de columnas por posición
+  // que INGRESOS/GASTOS, nunca texto con espacios.
   if (datos.impuestos) {
     const imp = datos.impuestos;
-    nuevaPaginaSiHaceFalta(16 + 5 * 12);
+    const COL_BASE_FIN = COL_IMPORTE_FIN - 95;
+    nuevaPaginaSiHaceFalta(20 + 8 * 13);
     escribir('IVA / IGIC', { tam: 11, negrita: true, salto: 16 });
-    escribir(`IVA repercutido: ${formatoEuro(imp.ivaRepercutido)}      IVA soportado: ${formatoEuro(imp.ivaSoportado)}`, { tam: 9, salto: 13 });
-    escribir(`IGIC repercutido: ${formatoEuro(imp.igicRepercutido)}      IGIC soportado: ${formatoEuro(imp.igicSoportado)}`, { tam: 9, salto: 13 });
+
+    pagina.drawText('CONCEPTO', { x: margen, y, size: 7.5, font: fuenteNegrita, color: COLOR_GRIS });
+    escribirAlineadoDerecha('BASE', COL_BASE_FIN, { tam: 7.5, negrita: true, color: COLOR_GRIS });
+    escribirAlineadoDerecha('CUOTA', COL_IMPORTE_FIN, { tam: 7.5, negrita: true, color: COLOR_GRIS });
+    y -= 6;
+    pagina.drawLine({ start: { x: margen, y }, end: { x: ANCHO - margen, y }, thickness: 0.6, color: COLOR_LINEA });
+    y -= 12;
+
+    const filaImpuesto = (etiqueta: string, base: number | null, cuota: number, negrita = false) => {
+      nuevaPaginaSiHaceFalta(13);
+      pagina.drawText(etiqueta, { x: margen, y, size: 8.5, font: negrita ? fuenteNegrita : fuente, color: COLOR_TEXTO });
+      if (base !== null) escribirAlineadoDerecha(formatoEuro(base), COL_BASE_FIN, { tam: 8.5, negrita, color: COLOR_TEXTO });
+      escribirAlineadoDerecha(formatoEuro(cuota), COL_IMPORTE_FIN, { tam: 8.5, negrita, color: COLOR_TEXTO });
+      y -= 13;
+    };
+
+    filaImpuesto('IVA repercutido', imp.ivaBaseRepercutida, imp.ivaRepercutido);
+    filaImpuesto('IVA soportado', imp.ivaBaseSoportada, imp.ivaSoportado);
+    filaImpuesto(imp.ivaResultado >= 0 ? 'IVA — a ingresar' : 'IVA — a compensar', null, Math.abs(imp.ivaResultado), true);
+    y -= 6;
+    filaImpuesto('IGIC repercutido', imp.igicBaseRepercutida, imp.igicRepercutido);
+    filaImpuesto('IGIC soportado', imp.igicBaseSoportada, imp.igicSoportado);
+    filaImpuesto(imp.igicResultado >= 0 ? 'IGIC — a ingresar' : 'IGIC — a compensar', null, Math.abs(imp.igicResultado), true);
+    y -= 6;
+
     if (imp.noIdentificado.numFacturas > 0) {
       escribir(
         `Impuesto sin identificar: ${imp.noIdentificado.numFacturas} factura(s), ${formatoEuro(imp.noIdentificado.repercutido + imp.noIdentificado.soportado)} — revisar tipo de impuesto`,
