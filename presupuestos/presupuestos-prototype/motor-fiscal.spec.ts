@@ -3,7 +3,7 @@ import {
   trimestreDeFecha, calculaIndirecto, tipoGeneralDeRegion, impuestoDeFactura, calcularTrimestres,
   sugerirTipoImpuesto, clasificarImpuestoFactura, cuotaRealDeFactura, calcularImpuestosPorTipo,
   estadoDeducibleIrpf, estadoIvaIgicDeducible, gastoDeducible, cuotaDeducible,
-  agregarLineasFiscales, validarLineasFiscales, detectarProblemaFiscal,
+  agregarLineasFiscales, validarLineasFiscales, detectarProblemaFiscal, detectarDatosIdentificacionFaltantes,
 } from './motor-fiscal.js';
 import type { Factura, GastoPeriodico, LineaFiscal } from './types.js';
 
@@ -723,5 +723,46 @@ describe('detectarProblemaFiscal — detector de desglose fiscal incorrecto (12/
     const r = detectarProblemaFiscal({ importe: 146.63, lineasFiscales: [LINEA_3, LINEA_7] });
     expect(r).not.toBe(null);
     expect(r!.categoria).toBe('descuadre_total');
+  });
+});
+
+describe('detectarDatosIdentificacionFaltantes — detector de datos de identificación incompletos (13/09/2026)', () => {
+  const COMPLETA = { proveedor: 'Maderas Santana, S.L.', numeroFactura: 'F26-13252', cifNif: 'B38045868' };
+
+  it('con los tres datos presentes → null, no falta nada', () => {
+    expect(detectarDatosIdentificacionFaltantes(COMPLETA)).toBe(null);
+  });
+
+  it('falta solo el número de factura → un único motivo, nombrado explícitamente', () => {
+    const r = detectarDatosIdentificacionFaltantes({ ...COMPLETA, numeroFactura: '' });
+    expect(r).not.toBe(null);
+    expect(r!.faltantes).toEqual(['numero_factura']);
+    expect(r!.explicacion).toBe('Falta el número de factura.');
+  });
+
+  it('falta solo el CIF/NIF → un único motivo, nombrado explícitamente', () => {
+    const r = detectarDatosIdentificacionFaltantes({ ...COMPLETA, cifNif: undefined });
+    expect(r).not.toBe(null);
+    expect(r!.faltantes).toEqual(['cif_nif']);
+    expect(r!.explicacion).toBe('Falta el CIF/NIF.');
+  });
+
+  it('falta solo el nombre (razón social) → un único motivo, nombrado explícitamente', () => {
+    const r = detectarDatosIdentificacionFaltantes({ ...COMPLETA, proveedor: '   ' }); // solo espacios cuenta como vacío
+    expect(r).not.toBe(null);
+    expect(r!.faltantes).toEqual(['razon_social']);
+    expect(r!.explicacion).toBe('Falta el nombre (razón social).');
+  });
+
+  it('faltan dos datos a la vez → los nombra los dos, unidos con "y"', () => {
+    const r = detectarDatosIdentificacionFaltantes({ proveedor: 'Maderas Santana, S.L.', numeroFactura: '', cifNif: undefined });
+    expect(r!.faltantes).toEqual(['numero_factura', 'cif_nif']);
+    expect(r!.explicacion).toBe('Faltan el número de factura y el CIF/NIF.');
+  });
+
+  it('faltan los tres a la vez → los nombra los tres, con comas y "y" antes del último', () => {
+    const r = detectarDatosIdentificacionFaltantes({ proveedor: '', numeroFactura: '', cifNif: '' });
+    expect(r!.faltantes).toEqual(['numero_factura', 'cif_nif', 'razon_social']);
+    expect(r!.explicacion).toBe('Faltan el número de factura, el CIF/NIF y el nombre (razón social).');
   });
 });

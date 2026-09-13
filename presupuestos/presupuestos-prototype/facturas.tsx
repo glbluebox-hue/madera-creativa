@@ -10,7 +10,7 @@ import { ConfirmarBorrado } from './confirmar-borrado.js';
 import { VisorFactura } from './visor-factura.js';
 import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
 import { CandadoPlan } from './candado-plan.js';
-import { trimestreDeFecha as trimestreDeFecha0, detectarProblemaFiscal } from './motor-fiscal.js';
+import { trimestreDeFecha as trimestreDeFecha0, detectarProblemaFiscal, detectarDatosIdentificacionFaltantes } from './motor-fiscal.js';
 import { RevisionTratamientoFiscalHistorico } from './revision-tratamiento-fiscal-historico.js';
 import { RevisionDesglosefiscalIncorrecto } from './revision-desglose-fiscal-incorrecto.js';
 import * as api from './api.js';
@@ -445,6 +445,9 @@ export function Facturas({
                   // no tenía ningún aviso en la lista, había que abrir cada factura para saberlo
                   // (detectado 12/09/2026 tras aplicar el tratamiento a las facturas antiguas).
                   const preguntaPendiente = f.preguntasFiscalesPendientes?.[0];
+                  // Datos de identificación incompletos (número de factura/CIF-NIF/razón social) —
+                  // petición explícita del usuario 13/09/2026: marcar y decir exactamente qué falta.
+                  const identificacionIncompleta = detectarDatosIdentificacionFaltantes(f);
                   return (
                   <tr key={f.id}>
                     <td className={styles.colOcultarMovil}>
@@ -473,6 +476,11 @@ export function Facturas({
                         {preguntaPendiente && (
                           <span title={`Pregunta pendiente: ${preguntaPendiente.pregunta}`} aria-label={`Pregunta pendiente: ${preguntaPendiente.pregunta}`} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: '50%', background: 'var(--azul, #2b6cb0)', color: '#fff', fontSize: '0.62rem', fontWeight: 700, cursor: 'help' }}>
                             ?
+                          </span>
+                        )}
+                        {identificacionIncompleta && (
+                          <span title={identificacionIncompleta.explicacion} aria-label={`Aviso: ${identificacionIncompleta.explicacion}`} style={{ display: 'inline-flex', color: 'var(--topo-claro, #8a8072)', cursor: 'help' }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" /><line x1="6" y1="9" x2="10" y2="9" /><line x1="6" y1="13" x2="14" y2="13" /><line x1="16" y1="17" x2="16" y2="17" /></svg>
                           </span>
                         )}
                       </span>

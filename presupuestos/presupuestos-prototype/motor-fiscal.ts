@@ -401,6 +401,49 @@ export function validarLineasFiscales(lineas: LineaFiscal[], importeTotal: numbe
   return { valido: true };
 }
 
+// ── Detector de datos de identificación incompletos (13/09/2026) ───────────
+//
+// Petición explícita del usuario: marcar en la lista de Facturas cualquiera
+// a la que le falte el número de factura, el CIF/NIF o el nombre (razón
+// social) del proveedor/cliente — y que el aviso diga EXACTAMENTE qué dato
+// falta, nunca un genérico "revisar". Solo detecta, de solo lectura, igual
+// que `detectarProblemaFiscal` — no corrige ni completa nada por su cuenta.
+
+export type DatoIdentificacionFaltante = 'numero_factura' | 'cif_nif' | 'razon_social';
+
+const ETIQUETA_DATO_FALTANTE: Record<DatoIdentificacionFaltante, string> = {
+  numero_factura: 'el número de factura',
+  cif_nif: 'el CIF/NIF',
+  razon_social: 'el nombre (razón social)',
+};
+
+export type ProblemaIdentificacionDetectado = {
+  faltantes: DatoIdentificacionFaltante[];
+  /** En lenguaje llano, nombrando explícitamente cada dato que falta — nunca un aviso genérico. */
+  explicacion: string;
+};
+
+/**
+ * `null` si no falta nada. Con algo que falta, devuelve la lista exacta de
+ * qué campos son (para poder tratarlos por separado si hiciera falta más
+ * adelante) y una frase ya construida con todos ellos nombrados.
+ */
+export function detectarDatosIdentificacionFaltantes(
+  f: Pick<Factura, 'proveedor' | 'numeroFactura' | 'cifNif'>
+): ProblemaIdentificacionDetectado | null {
+  const faltantes: DatoIdentificacionFaltante[] = [];
+  if (!f.numeroFactura?.trim()) faltantes.push('numero_factura');
+  if (!f.cifNif?.trim()) faltantes.push('cif_nif');
+  if (!f.proveedor?.trim()) faltantes.push('razon_social');
+  if (faltantes.length === 0) return null;
+
+  const etiquetas = faltantes.map((d) => ETIQUETA_DATO_FALTANTE[d]);
+  const explicacion = etiquetas.length === 1
+    ? `Falta ${etiquetas[0]}.`
+    : `Faltan ${etiquetas.slice(0, -1).join(', ')} y ${etiquetas[etiquetas.length - 1]}.`;
+  return { faltantes, explicacion };
+}
+
 // ── Detector de facturas con posible desglose fiscal incorrecto (12/09/2026) ──
 //
 // Auditoría de SOLO LECTURA sobre facturas ya guardadas (nuevas o de antes de
