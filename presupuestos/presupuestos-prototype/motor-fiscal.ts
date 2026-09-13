@@ -28,6 +28,8 @@ export type DatosTrimestre = {
   irpf: number;
   /** Neto repercutido−soportado, agnóstico al tipo (compatibilidad, ver auditoría subfase IVA/IGIC) — se mantiene sin cambios; usar `impuestos` para el detalle real por tipo. */
   impuestoIndirecto: number;
+  /** Beneficio acumulado desde el 1 de enero hasta el final de este trimestre (auditoría 13/09/2026) — base real sobre la que Hacienda calcula el Modelo 130 de este trimestre, ver `irpf`. */
+  beneficioAcumulado: number;
   modeloIndirecto: string;
   facturas: number;
   /** Detalle real de IVA/IGIC por tipo de factura (subfase "Agregación trimestral IVA/IGIC") — nunca deriva del `impuestoIndirecto` de arriba ni de la región fiscal. */
@@ -190,6 +192,18 @@ export function calcularImpuestosPorTipo(facturas: Factura[]): ResumenImpuestosT
  * Resumen por trimestres del año con cálculo de IRPF estimado (Modelo 130)
  * e impuesto indirecto (IGIC/IVA) — mismo cálculo que hacía `Trimestres`
  * directamente. `facturas` debe ser el año completo del período a calcular.
+ *
+ * IRPF acumulado (auditoría 13/09/2026): el Modelo 130 real de Hacienda no
+ * se calcula trimestre a trimestre por separado — se calcula el 20% del
+ * beneficio ACUMULADO desde el 1 de enero hasta el final de ese trimestre,
+ * y se resta lo ya calculado (por este mismo resumen) en los trimestres
+ * anteriores del año. Antes cada trimestre se calculaba de forma aislada,
+ * lo que daba un resultado distinto al real en cuanto había una pérdida en
+ * algún trimestre. El resultado de cada trimestre nunca baja de 0€ (si el
+ * acumulado teórico es menor que lo ya "pagado" según este resumen, no se
+ * resta ni se devuelve nada aquí — el ajuste real ocurre en la declaración
+ * anual de la Renta, fuera del alcance de este resumen). Sigue sin incluir
+ * retenciones soportadas, mínimo personal, ni deducciones específicas.
  */
 export function calcularTrimestres(
   facturas: Factura[],
@@ -199,6 +213,9 @@ export function calcularTrimestres(
   const indirectoActivo = calculaIndirecto(config.regionFiscal, config.repepActivo);
   const tipoGeneral = tipoGeneralDeRegion(config.regionFiscal);
 
+  let beneficioAcumulado = 0;
+  let irpfYaCalculado = 0;
+
   return [0, 1, 2, 3].map((t) => {
     const del = facturas.filter((f) => trimestreDeFecha(f.fecha) === t);
     const ingresos = del.filter((f) => f.tipo === 'ingreso').reduce((s, f) => s + f.importe, 0);
@@ -206,7 +223,10 @@ export function calcularTrimestres(
     const gastosPeriodicosTrimestre = gastosPeriodicos.filter((g) => g.activo && esGastoPeriodicoDeducible(g))
       .reduce((s, g) => s + (g.periodicidad === 'mensual' ? g.importe * 3 : g.importe), 0);
     const beneficio = ingresos - gastos - gastosPeriodicosTrimestre;
-    const irpf = beneficio > 0 ? beneficio * TIPO_IRPF : 0;
+    beneficioAcumulado = redondearEuros(beneficioAcumulado + beneficio);
+    const irpfTeoricoAcumulado = beneficioAcumulado > 0 ? redondearEuros(beneficioAcumulado * TIPO_IRPF) : 0;
+    const irpf = Math.max(0, redondearEuros(irpfTeoricoAcumulado - irpfYaCalculado));
+    irpfYaCalculado = redondearEuros(irpfYaCalculado + irpf);
     const impuestoIndirecto = indirectoActivo
       ? del.filter((f) => f.tipo === 'ingreso').reduce((s, f) => s + impuestoDeFactura(f, indirectoActivo, tipoGeneral), 0)
         - del.filter((f) => f.tipo === 'gasto').reduce((s, f) => s + impuestoDeFactura(f, indirectoActivo, tipoGeneral), 0)
@@ -219,6 +239,7 @@ export function calcularTrimestres(
       gastosPeriodicos: gastosPeriodicosTrimestre,
       beneficio,
       irpf,
+      beneficioAcumulado,
       impuestoIndirecto,
       modeloIndirecto: config.regionFiscal === 'canarias' ? `Modelo 420 (${MODELO_INDIRECTO_MES[t]})` : `Modelo 303 (${MODELO_INDIRECTO_MES[t]})`,
       facturas: del.length,

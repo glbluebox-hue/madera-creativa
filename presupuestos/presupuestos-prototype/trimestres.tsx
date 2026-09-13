@@ -253,7 +253,7 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
                       Hacienda · {TIPO_MODELO[i]}
                     </p>
                     <p style={{ margin: '0.2rem 0 0', fontSize: '0.72rem', color: 'var(--topo-claro)' }}>
-                      IRPF 20% sobre beneficio
+                      IRPF 20% sobre beneficio acumulado
                     </p>
                   </div>
                   <span style={{
@@ -263,9 +263,19 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
                     {pagado ? formatoEuroPrivado(t.irpf, privado) : '—'}
                   </span>
                 </div>
-                {!pagado && t.beneficio <= 0 && (
+                {pagado && (
+                  <p style={{ margin: '0.3rem 0 0', fontSize: '0.7rem', color: 'var(--topo-claro)' }}>
+                    Sobre {formatoEuroPrivado(t.beneficioAcumulado, privado)} acumulados desde enero
+                  </p>
+                )}
+                {!pagado && t.beneficioAcumulado <= 0 && (
                   <p style={{ margin: '0.4rem 0 0', fontSize: '0.72rem', color: 'var(--topo-muy-claro)' }}>
-                    Sin beneficio → no se paga IRPF este trimestre
+                    Sin beneficio acumulado desde enero → no se paga IRPF este trimestre
+                  </p>
+                )}
+                {!pagado && t.beneficioAcumulado > 0 && (
+                  <p style={{ margin: '0.4rem 0 0', fontSize: '0.72rem', color: 'var(--topo-muy-claro)' }}>
+                    Ya cubierto por lo calculado en trimestres anteriores de este año
                   </p>
                 )}
                 {!pagado && t.ingresos === 0 && t.gastos === 0 && (
@@ -318,6 +328,12 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
                     ({formatoEuroPrivado(t.impuestos.noIdentificado.repercutido + t.impuestos.noIdentificado.soportado, privado)}) — revisa el tipo de impuesto.
                   </p>
                 )}
+                {t.impuestos.noCalculable.numFacturas > 0 && (
+                  <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--ocre)' }}>
+                    {t.impuestos.noCalculable.numFacturas} factura{t.impuestos.noCalculable.numFacturas !== 1 ? 's' : ''} con IVA/IGIC identificado pero sin importe de impuesto calculable
+                    — no {t.impuestos.noCalculable.numFacturas !== 1 ? 'están sumadas' : 'está sumada'} arriba, revísa{t.impuestos.noCalculable.numFacturas !== 1 ? 'las' : 'la'} y completa la base y el importe del impuesto.
+                  </p>
+                )}
               </div>
 
               {t.facturas > 0 && (
@@ -357,9 +373,9 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
         display: 'flex', alignItems: 'flex-start', gap: '0.5rem',
       }}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12" y2="17" /></svg>
-        <span>Estimación orientativa basada en el <strong>Modelo 130</strong> (pago fraccionado IRPF autónomos, igual en toda España). Tipo aplicado: 20% sobre beneficio neto <strong>de cada trimestre por separado</strong> (incluye los gastos periódicos activos).
-        {' '}El IVA y el IGIC de cada trimestre se calculan con el tipo de impuesto real de cada factura (nunca según tu región fiscal) — las facturas sin ese dato identificado aparecen aparte, pendientes de revisión.
-        {' '}El <strong>Modelo 130 oficial se calcula de forma acumulada desde el 1 de enero</strong>, restando lo ya pagado en trimestres anteriores del mismo año — este resumen no acumula entre trimestres, así que el resultado real puede ser distinto (especialmente si hay pérdidas en algún trimestre). Tampoco incluye retenciones previas, mínimo personal, ni deducciones específicas de tu situación. Esto es una estimación de apoyo, no una liquidación: la liquidación definitiva corresponde a tu asesor fiscal.</span>
+        <span>Estimación orientativa basada en el <strong>Modelo 130</strong> (pago fraccionado IRPF autónomos, igual en toda España). Tipo aplicado: 20% sobre el beneficio neto <strong>acumulado desde el 1 de enero</strong>, restando lo ya calculado por este mismo resumen en los trimestres anteriores del año (incluye los gastos periódicos activos) — igual que hace Hacienda, así que si hay una pérdida en algún trimestre, no pagas de más en el siguiente.
+        {' '}El IVA y el IGIC de cada trimestre se calculan con el tipo de impuesto real de cada factura (nunca según tu región fiscal) — las facturas sin ese dato identificado, o con el tipo identificado pero sin importe calculable, aparecen aparte, pendientes de revisión.
+        {' '}No incluye retenciones soportadas, mínimo personal, ni deducciones específicas de tu situación. Esto es una estimación de apoyo, no una liquidación: la liquidación definitiva corresponde a tu asesor fiscal.</span>
       </p>
     </div>
   );

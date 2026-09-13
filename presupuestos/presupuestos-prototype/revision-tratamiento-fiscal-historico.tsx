@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import * as api from './api.js';
 import type { ResumenTratamientoFiscalHistorico } from './api.js';
+import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
+import { CandadoPlan } from './candado-plan.js';
 import styles from './styles.module.css';
 
 /**
@@ -13,7 +15,8 @@ import styles from './styles.module.css';
  * (esas se responden abriendo la factura normalmente, con el bloque
  * "Tratamiento fiscal" ya actualizado en `escaner-factura.tsx`).
  */
-export function RevisionTratamientoFiscalHistorico({ onCerrar, onAplicado }: { onCerrar: () => void; onAplicado: () => void }) {
+export function RevisionTratamientoFiscalHistorico({ onCerrar, onAplicado, plan, esAdmin }: { onCerrar: () => void; onAplicado: () => void; plan?: PlanAcceso; esAdmin?: boolean }) {
+  const tienePlanPro = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [resumen, setResumen] = useState<ResumenTratamientoFiscalHistorico | null>(null);
@@ -30,6 +33,7 @@ export function RevisionTratamientoFiscalHistorico({ onCerrar, onAplicado }: { o
   }, []);
 
   const aplicar = async () => {
+    if (!tienePlanPro) return;
     setAplicando(true);
     setError(null);
     try {
@@ -106,8 +110,13 @@ export function RevisionTratamientoFiscalHistorico({ onCerrar, onAplicado }: { o
               {resultado ? 'Cerrar' : 'Cancelar'}
             </button>
             {resumen && !resultado && resumen.total > 0 && (
-              <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={aplicar} disabled={aplicando} style={{ flex: 2, justifyContent: 'center' }}>
-                {aplicando ? 'Aplicando…' : 'Aplicar tratamiento automático'}
+              <button
+                className={`${styles.btn} ${styles.btnPrimario}`} onClick={aplicar}
+                disabled={aplicando || !tienePlanPro}
+                title={tienePlanPro ? undefined : 'Aplicar tratamiento automático es una función PRO'}
+                style={{ flex: 2, justifyContent: 'center' }}
+              >
+                {aplicando ? 'Aplicando…' : 'Aplicar tratamiento automático'} {!tienePlanPro && <CandadoPlan planMinimo="PRO" compacto />}
               </button>
             )}
           </div>

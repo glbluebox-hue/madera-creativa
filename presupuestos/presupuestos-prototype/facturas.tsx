@@ -67,7 +67,7 @@ export function Facturas({
   // (`/facturas/:id/pdf`, `/facturas/descargar-zip`,
   // `/facturas/documentacion-asesor`, `/facturas/pdf-trimestre`) — esto
   // solo añade el reflejo visual.
-  const tienePlanDescarga = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
+  const tienePlanPro = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
   const [escaner, setEscaner] = useState(false);
   const [facturaEditar, setFacturaEditar] = useState<Factura | undefined>(undefined);
   const [vista, setVista] = useState<Vista>('lista');
@@ -185,13 +185,13 @@ export function Facturas({
   };
 
   const descargarPdf = async (id: string) => {
-    if (!tienePlanDescarga) return;
+    if (!tienePlanPro) return;
     setDescargando(true);
     try { await api.descargarPdfFactura(id); } finally { setDescargando(false); }
   };
 
   const descargarSeleccionadas = async () => {
-    if (!seleccionadas.size || !tienePlanDescarga) return;
+    if (!seleccionadas.size || !tienePlanPro) return;
     setDescargando(true);
     try {
       await api.descargarZipFacturas({ ids: [...seleccionadas] });
@@ -202,7 +202,7 @@ export function Facturas({
   };
 
   const descargarTodas = async () => {
-    if (!tienePlanDescarga) return;
+    if (!tienePlanPro) return;
     setDescargando(true);
     try {
       await api.descargarZipFacturas({
@@ -350,18 +350,20 @@ export function Facturas({
               <button
                 className={`${styles.btn} ${styles.btnSecundario}`}
                 onClick={() => setRevisionHistoricoAbierta(true)}
-                title="Revisa qué facturas de gasto todavía no tienen tratamiento fiscal y aplica el automático de forma segura"
+                disabled={!tienePlanPro}
+                title={tienePlanPro ? 'Revisa qué facturas de gasto todavía no tienen tratamiento fiscal y aplica el automático de forma segura' : 'Herramienta de automatización — función PRO'}
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
-                Tratamiento fiscal de facturas antiguas
+                Tratamiento fiscal de facturas antiguas {!tienePlanPro && <CandadoPlan planMinimo="PRO" compacto />}
               </button>
               <button
                 className={`${styles.btn} ${styles.btnSecundario}`}
                 onClick={() => setRevisionDesglosesAbierta(true)}
-                title="Detecta facturas cuyo desglose de IVA/IGIC no cuadra con el importe total — solo lectura, no corrige nada"
+                disabled={!tienePlanPro}
+                title={tienePlanPro ? 'Detecta facturas cuyo desglose de IVA/IGIC no cuadra con el importe total — solo lectura, no corrige nada' : 'Herramienta de automatización — función PRO'}
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
-                Revisar desglose fiscal
+                Revisar desglose fiscal {!tienePlanPro && <CandadoPlan planMinimo="PRO" compacto />}
               </button>
             </div>
             {facturasBase.length > 0 && (
@@ -370,21 +372,21 @@ export function Facturas({
                   <button
                     className={`${styles.btn} ${styles.btnPrimario}`}
                     onClick={descargarSeleccionadas}
-                    disabled={descargando || !tienePlanDescarga}
-                    title={tienePlanDescarga ? undefined : 'Descargar/exportar facturas es una función PRO'}
+                    disabled={descargando || !tienePlanPro}
+                    title={tienePlanPro ? undefined : 'Descargar/exportar facturas es una función PRO'}
                   >
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                    Descargar {seleccionadas.size} seleccionada{seleccionadas.size !== 1 ? 's' : ''} {!tienePlanDescarga && <CandadoPlan planMinimo="PRO" compacto />}
+                    Descargar {seleccionadas.size} seleccionada{seleccionadas.size !== 1 ? 's' : ''} {!tienePlanPro && <CandadoPlan planMinimo="PRO" compacto />}
                   </button>
                 )}
                 <button
                   className={`${styles.btn} ${styles.btnSecundario}`}
                   onClick={descargarTodas}
-                  disabled={descargando || !tienePlanDescarga}
-                  title={tienePlanDescarga ? 'Descarga un ZIP con el PDF de todas las facturas del filtro actual' : 'Descargar/exportar facturas es una función PRO'}
+                  disabled={descargando || !tienePlanPro}
+                  title={tienePlanPro ? 'Descarga un ZIP con el PDF de todas las facturas del filtro actual' : 'Descargar/exportar facturas es una función PRO'}
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                  Descargar todas {!tienePlanDescarga && <CandadoPlan planMinimo="PRO" compacto />}
+                  Descargar todas {!tienePlanPro && <CandadoPlan planMinimo="PRO" compacto />}
                 </button>
               </div>
             )}
@@ -492,10 +494,10 @@ export function Facturas({
                         {(f.tieneDocumento || f.paginas?.length || f.imagen || f.pdfOriginalUrl) ? (
                           <button
                             className={styles.btnIcono}
-                            title={tienePlanDescarga ? 'Descargar PDF' : 'Descargar PDF — función PRO'}
+                            title={tienePlanPro ? 'Descargar PDF' : 'Descargar PDF — función PRO'}
                             aria-label="Descargar PDF"
                             onClick={() => descargarPdf(f.id)}
-                            disabled={descargando || !tienePlanDescarga}
+                            disabled={descargando || !tienePlanPro}
                           >
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                           </button>
@@ -540,6 +542,8 @@ export function Facturas({
         <RevisionTratamientoFiscalHistorico
           onCerrar={() => setRevisionHistoricoAbierta(false)}
           onAplicado={onRecargar}
+          plan={plan}
+          esAdmin={esAdmin}
         />
       )}
 
@@ -548,6 +552,8 @@ export function Facturas({
           onCerrar={() => setRevisionDesglosesAbierta(false)}
           onAbrirFactura={(f) => { setFacturaEditar(f); setEscaner(true); setRevisionDesglosesAbierta(false); }}
           onAplicado={onRecargar}
+          plan={plan}
+          esAdmin={esAdmin}
         />
       )}
 

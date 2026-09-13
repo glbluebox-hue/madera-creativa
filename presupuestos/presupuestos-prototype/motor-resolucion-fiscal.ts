@@ -349,9 +349,20 @@ export type ResultadoResolucionCompleta = {
  * El "hecho requerido" de la identificación solo se aplica cuando la
  * categoría vigente de la factura (la ya guardada, o la recién sugerida)
  * coincide con la identificada aquí, o cuando esa categoría es `'vehiculo'`
- * — una categoría `vehiculo` elegida de cualquier forma (IA, identificación
- * automática o el propio usuario) exige siempre el hecho de exclusividad,
- * estructuralmente, sin depender de qué texto la sugirió.
+ * o `'combustible'` — una categoría `vehiculo`/`combustible` elegida de
+ * cualquier forma (IA, identificación automática o el propio usuario) exige
+ * siempre el hecho de exclusividad, estructuralmente, sin depender de qué
+ * texto la sugirió.
+ *
+ * `'combustible'` reutiliza la MISMA pregunta y la MISMA regla que
+ * `'vehiculo'` (auditoría Facturas/Trimestral, 13/09/2026: era la categoría
+ * más repetida en revisión manual real de un usuario, sin ninguna regla
+ * propia) — el combustible de un vehículo no afecto en exclusiva a la
+ * actividad tampoco es deducible (mismo art. 22.4 RIRPF: un gasto asociado
+ * a un elemento patrimonial no afecto sigue sin afectar), y si el vehículo
+ * SÍ es de uso exclusivo, su combustible lo es igual de plenamente. No es
+ * una regla nueva ni un porcentaje inventado, es la consecuencia directa de
+ * la misma regla del vehículo aplicada a su gasto asociado.
  */
 export function resolverTratamientoFiscal(
   f: Pick<
@@ -371,7 +382,7 @@ export function resolverTratamientoFiscal(
   const categoriaFiscalSugerida = categoriaFinal !== f.categoriaFiscal ? categoriaFinal : undefined;
 
   const hechoRequerido =
-    categoriaFinal === 'vehiculo'
+    categoriaFinal === 'vehiculo' || categoriaFinal === 'combustible'
       ? 'vehiculoUsoExclusivo'
       : categoriaFinal === identificacion.categoriaFiscal
         ? identificacion.hechoRequerido

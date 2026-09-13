@@ -11,7 +11,7 @@ export type EjeFiscal = 'irpf' | 'iva' | 'igic';
 export type PreguntaFiscalPendiente = { id: string; pregunta: string; eje: EjeFiscal };
 
 const TEXTO_PREGUNTA: Record<HechoFiscalRequerido, string> = {
-  vehiculoUsoExclusivo: '¿Este vehículo se utiliza exclusivamente para la actividad profesional, sin uso particular?',
+  vehiculoUsoExclusivo: '¿El vehículo al que corresponde este gasto se utiliza exclusivamente para la actividad profesional, sin uso particular?',
   dispositivoUsoExclusivo: '¿Este dispositivo se utiliza exclusivamente para la actividad?',
   gestoriaSoloActividad: '¿Esta factura corresponde solo a la gestión de tu actividad, o también incluye tu declaración personal completa?',
 };

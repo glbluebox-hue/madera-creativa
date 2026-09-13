@@ -249,8 +249,9 @@ export function resolverTratamientoFiscal(
   const categoriaFinal = aplicarSugerenciaCategoriaFiscal(categoriaValida, identificacion.categoriaFiscal) ?? 'por_clasificar';
   const categoriaFiscalSugerida = categoriaFinal !== f.categoriaFiscal ? categoriaFinal : undefined;
 
+  // 'combustible' reutiliza la misma pregunta/regla que 'vehiculo' (13/09/2026) — ver el comentario en la versión de presupuestos-prototype.
   const hechoRequerido =
-    categoriaFinal === 'vehiculo'
+    categoriaFinal === 'vehiculo' || categoriaFinal === 'combustible'
       ? 'vehiculoUsoExclusivo'
       : categoriaFinal === identificacion.categoriaFiscal
         ? identificacion.hechoRequerido

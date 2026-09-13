@@ -4,6 +4,8 @@ import type { FacturaConProblemaFiscal } from './api.js';
 import type { Factura, LineaFiscal, TipoLineaFiscal } from './types.js';
 import { agregarLineasFiscales, validarLineasFiscales } from './motor-fiscal.js';
 import { imagenesDeFacturaComoBase64 } from './archivos.js';
+import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
+import { CandadoPlan } from './candado-plan.js';
 import styles from './styles.module.css';
 
 /**
@@ -52,7 +54,8 @@ function limpiarJSON(texto: string): string {
   return texto.trim().replace(/^```json\s*|```$/g, '');
 }
 
-export function RevisionDesglosefiscalIncorrecto({ onCerrar, onAbrirFactura, onAplicado }: { onCerrar: () => void; onAbrirFactura: (f: Factura) => void; onAplicado: () => void }) {
+export function RevisionDesglosefiscalIncorrecto({ onCerrar, onAbrirFactura, onAplicado, plan, esAdmin }: { onCerrar: () => void; onAbrirFactura: (f: Factura) => void; onAplicado: () => void; plan?: PlanAcceso; esAdmin?: boolean }) {
+  const tienePlanPro = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [resultado, setResultado] = useState<{ total: number; porCategoria: Record<string, number>; facturas: FacturaConProblemaFiscal[] } | null>(null);
@@ -89,6 +92,7 @@ export function RevisionDesglosefiscalIncorrecto({ onCerrar, onAbrirFactura, onA
    * nueva sobre la factura.
    */
   const sincronizarTipoImpuesto = async () => {
+    if (!tienePlanPro) return;
     setSincronizando(true);
     setError(null);
     try {
@@ -121,7 +125,7 @@ export function RevisionDesglosefiscalIncorrecto({ onCerrar, onAbrirFactura, onA
    * resto como "error" sin explicación.
    */
   const corregirConIA = async () => {
-    if (!resultado) return;
+    if (!resultado || !tienePlanPro) return;
     setCorrigiendo(true);
     setError(null);
     setAvisoLimiteIA(false);
@@ -234,9 +238,10 @@ export function RevisionDesglosefiscalIncorrecto({ onCerrar, onAbrirFactura, onA
                   type="button" className={`${styles.btn} ${styles.btnSecundario}`}
                   style={{ alignSelf: 'flex-start', fontSize: '0.78rem' }}
                   onClick={sincronizarTipoImpuesto}
-                  disabled={sincronizando}
+                  disabled={sincronizando || !tienePlanPro}
+                  title={tienePlanPro ? undefined : 'Sincronizar tipo de impuesto es una función PRO'}
                 >
-                  {sincronizando ? 'Sincronizando…' : 'Sincronizar tipo de impuesto'}
+                  {sincronizando ? 'Sincronizando…' : 'Sincronizar tipo de impuesto'} {!tienePlanPro && <CandadoPlan planMinimo="PRO" compacto />}
                 </button>
               )}
             </div>
@@ -261,8 +266,10 @@ export function RevisionDesglosefiscalIncorrecto({ onCerrar, onAbrirFactura, onA
                   type="button" className={`${styles.btn} ${styles.btnPrimario}`}
                   style={{ alignSelf: 'flex-start' }}
                   onClick={corregirConIA}
+                  disabled={!tienePlanPro}
+                  title={tienePlanPro ? undefined : 'Corregir con IA es una función PRO'}
                 >
-                  Corregir con IA (revisar antes de guardar)
+                  Corregir con IA (revisar antes de guardar) {!tienePlanPro && <CandadoPlan planMinimo="PRO" compacto />}
                 </button>
               )}
               {corrigiendo && progreso && (

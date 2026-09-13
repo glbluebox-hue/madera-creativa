@@ -193,6 +193,59 @@ describe('calcularTrimestres — snapshot/regresión del cálculo actual', () =>
   });
 });
 
+describe('calcularTrimestres — IRPF acumulado desde enero (auditoría 13/09/2026, como el Modelo 130 real)', () => {
+  const gastosPeriodicos: GastoPeriodico[] = [];
+
+  it('un solo trimestre con beneficio: igual que antes, el acumulado es el propio beneficio del trimestre', () => {
+    const facturas: Factura[] = [
+      factura({ id: 'i1', tipo: 'ingreso', fecha: '2026-01-10', importe: 10000 }),
+      factura({ id: 'g1', tipo: 'gasto', fecha: '2026-02-10', importe: 4000 }),
+    ];
+    const [q1] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(q1.beneficioAcumulado).toBe(6000);
+    expect(q1.irpf).toBeCloseTo(1200, 6);
+  });
+
+  it('dos trimestres con beneficio: Q2 paga el 20% del acumulado MENOS lo ya calculado en Q1, no el 20% de su propio beneficio aislado', () => {
+    const facturas: Factura[] = [
+      factura({ id: 'i1', tipo: 'ingreso', fecha: '2026-01-10', importe: 6000 }), // Q1 beneficio 6000 → IRPF 1200
+      factura({ id: 'i2', tipo: 'ingreso', fecha: '2026-04-10', importe: 4000 }), // Q2 beneficio 4000, acumulado 10000
+    ];
+    const [q1, q2] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(q1.irpf).toBeCloseTo(1200, 6);
+    expect(q2.beneficioAcumulado).toBe(10000);
+    // 20% de 10000 = 2000, menos los 1200 ya calculados en Q1 = 800 — NUNCA 20% de 4000 (=800 por casualidad coincide aquí, se comprueba con otro reparto más abajo).
+    expect(q2.irpf).toBeCloseTo(800, 6);
+  });
+
+  it('pérdida en Q2 tras beneficio en Q1: Q2 no paga nada (nunca negativo) y Q3 no paga de más hasta recuperar el acumulado', () => {
+    const facturas: Factura[] = [
+      factura({ id: 'i1', tipo: 'ingreso', fecha: '2026-01-10', importe: 5000 }), // Q1 beneficio 5000 → IRPF 1000
+      factura({ id: 'g1', tipo: 'gasto', fecha: '2026-04-10', importe: 8000 }), // Q2 beneficio -8000, acumulado -3000
+      factura({ id: 'i2', tipo: 'ingreso', fecha: '2026-07-10', importe: 2000 }), // Q3 beneficio +2000, acumulado -1000 (sigue negativo)
+    ];
+    const [q1, q2, q3] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(q1.irpf).toBeCloseTo(1000, 6);
+    expect(q2.beneficioAcumulado).toBe(-3000);
+    expect(q2.irpf).toBe(0);
+    expect(q3.beneficioAcumulado).toBe(-1000);
+    expect(q3.irpf).toBe(0); // acumulado sigue siendo negativo — no se paga nada, y nunca se "devuelve" lo pagado en Q1 aquí
+  });
+
+  it('el reparto por trimestre nunca suma más del 20% del acumulado final del año (verificación con importes que NO coinciden por casualidad)', () => {
+    const facturas: Factura[] = [
+      factura({ id: 'i1', tipo: 'ingreso', fecha: '2026-01-10', importe: 7000 }), // Q1: 7000 → IRPF 1400
+      factura({ id: 'i2', tipo: 'ingreso', fecha: '2026-04-10', importe: 1000 }), // Q2: acumulado 8000 → teórico 1600, pagado 200
+      factura({ id: 'i3', tipo: 'ingreso', fecha: '2026-07-10', importe: 3000 }), // Q3: acumulado 11000 → teórico 2200, pagado 600
+    ];
+    const [q1, q2, q3] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(q1.irpf).toBeCloseTo(1400, 6);
+    expect(q2.irpf).toBeCloseTo(200, 6);
+    expect(q3.irpf).toBeCloseTo(600, 6);
+    expect(q1.irpf + q2.irpf + q3.irpf).toBeCloseTo(q3.beneficioAcumulado * TIPO_IRPF, 6);
+  });
+});
+
 describe('clasificarImpuestoFactura (solo por tipoImpuesto, nunca por región)', () => {
   it('iva / igic / exento / sin_impuesto se reconocen tal cual', () => {
     expect(clasificarImpuestoFactura({ tipoImpuesto: 'iva' })).toBe('iva');

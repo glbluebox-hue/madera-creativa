@@ -45,3 +45,11 @@ describe('construirSystemPromptExtraerFactura — desglose fiscal por tramos (12
     expect(prompt.toLowerCase()).toContain('nunca lleva iva e igic a la vez');
   });
 });
+
+describe('construirSystemPromptExtraerFactura — exención frente a tipo real al 0% (13/09/2026)', () => {
+  it('instruye a usar "exento" cuando el documento indica una exención, aunque la tasa impresa sea 0,00%', () => {
+    expect(prompt).toContain('EXENCIÓN frente a tipo real al 0%');
+    expect(prompt).toContain('"tipo": "exento"');
+    expect(prompt.toLowerCase()).toContain('un "0,00%" ahí no significa por sí solo que sea un tipo real al 0%');
+  });
+});

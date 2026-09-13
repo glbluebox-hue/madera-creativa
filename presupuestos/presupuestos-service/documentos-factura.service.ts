@@ -281,6 +281,12 @@ export async function generarResumenPdf(datos: {
         { tam: 8.5, color: [0.61, 0.45, 0.1], salto: 13 }
       );
     }
+    if (imp.noCalculable.numFacturas > 0) {
+      escribir(
+        `IVA/IGIC identificado sin importe calculable: ${imp.noCalculable.numFacturas} factura(s) — NO incluida(s) en los totales de arriba, revisar antes de declarar`,
+        { tam: 8.5, color: [0.61, 0.45, 0.1], salto: 13 }
+      );
+    }
     y -= 8;
   }
 

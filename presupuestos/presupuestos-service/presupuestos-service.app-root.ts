@@ -1979,9 +1979,12 @@ export function run() {
   /**
    * Facturas históricas de gasto sin tratamiento fiscal (Fase 3C.3) —
    * análisis de SOLO LECTURA, no escribe nada. Debe registrarse antes de
-   * `/facturas/:id` para no colisionar con él.
+   * `/facturas/:id` para no colisionar con él. PRO+ (13/09/2026, decisión
+   * explícita del usuario): son herramientas de automatización, mismo
+   * criterio que el escáner de facturas con IA — nunca solo un candado de
+   * interfaz, el plan se exige aquí igual que en cualquier capacidad de IA.
    */
-  app.get('/facturas/tratamiento-fiscal-historico', requireAuth, async (req: AuthRequest, res) => {
+  app.get('/facturas/tratamiento-fiscal-historico', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
     try { res.json(await svc.analizarTratamientoFiscalHistorico(req.usuarioId!)); }
     catch (err) { responderError(req, res, err); }
   });
@@ -1989,9 +1992,10 @@ export function run() {
   /**
    * Aplica el tratamiento fiscal automático a las facturas históricas
    * pendientes (Fase 3C.3) — acción explícita del usuario, nunca
-   * automática. Debe registrarse antes de `/facturas/:id`.
+   * automática. Debe registrarse antes de `/facturas/:id`. PRO+, ver el
+   * comentario de la ruta GET de arriba.
    */
-  app.post('/facturas/tratamiento-fiscal-historico/aplicar', requireAuth, async (req: AuthRequest, res) => {
+  app.post('/facturas/tratamiento-fiscal-historico/aplicar', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
     try { res.json(await svc.aplicarTratamientoFiscalHistoricoAutomatico(req.usuarioId!)); }
     catch (err) { responderError(req, res, err); }
   });
@@ -1999,15 +2003,16 @@ export function run() {
   /**
    * Detector de facturas con posible desglose fiscal incorrecto (auditoría
    * 12/09/2026) — SOLO LECTURA, no corrige ni reextrae ni escribe nada. Debe
-   * registrarse antes de `/facturas/:id` para no colisionar con él.
+   * registrarse antes de `/facturas/:id` para no colisionar con él. PRO+,
+   * mismo criterio que el resto de herramientas de esta auditoría.
    */
-  app.get('/facturas/desglose-fiscal-incorrecto', requireAuth, async (req: AuthRequest, res) => {
+  app.get('/facturas/desglose-fiscal-incorrecto', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
     try { res.json(await svc.detectarFacturasConDesglosefiscalIncorrecto(req.usuarioId!)); }
     catch (err) { responderError(req, res, err); }
   });
 
-  /** Resincroniza `tipoImpuesto` con `lineasFiscales` — ver el comentario de `sincronizarTipoImpuestoDesdeLineasFiscales`. */
-  app.post('/facturas/sincronizar-tipo-impuesto', requireAuth, async (req: AuthRequest, res) => {
+  /** Resincroniza `tipoImpuesto` con `lineasFiscales` — ver el comentario de `sincronizarTipoImpuestoDesdeLineasFiscales`. PRO+, mismo criterio. */
+  app.post('/facturas/sincronizar-tipo-impuesto', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
     try { res.json(await svc.sincronizarTipoImpuestoDesdeLineasFiscales(req.usuarioId!)); }
     catch (err) { responderError(req, res, err); }
   });

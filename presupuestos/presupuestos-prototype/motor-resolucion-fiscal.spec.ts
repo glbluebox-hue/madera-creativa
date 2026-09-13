@@ -314,4 +314,53 @@ describe('resolverTratamientoFiscal — orquestación identificación + reglas +
     expect(r.irpf.estado).toBe('resuelto_automatico');
     expect(r.preguntasFiscalesPendientes).toHaveLength(0);
   });
+
+  // Auditoría Facturas/Trimestral 13/09/2026: 'combustible' era la categoría más repetida en revisión
+  // manual real de un usuario, sin ninguna regla propia — reutiliza la misma pregunta/regla que 'vehiculo'.
+  it('combustible (gasolinera) sin hecho respondido → genera la misma pregunta de exclusividad que vehiculo, nunca resuelve sola', () => {
+    const r = resolverTratamientoFiscal(
+      {
+        tipo: 'gasto', proveedor: 'GASOLINERA CEPSA ADEJE', concepto: 'combustible', categoria: '',
+        categoriaFiscal: 'combustible', baseImponible: 60, importe: 68.4,
+        tipoImpuesto: 'igic', importeImpuesto: 4.2, porcentajeImpuesto: 7,
+      },
+      { repepActivo: false }
+    );
+    expect(r.irpf.estado).toBe('pendiente_respuesta');
+    expect(r.irpf.preguntaId).toBe('vehiculoUsoExclusivo');
+    expect(r.igic.estado).toBe('pendiente_respuesta');
+    expect(r.preguntasFiscalesPendientes).toHaveLength(2);
+  });
+
+  it('combustible con uso exclusivo del vehículo confirmado (true) → IRPF e IGIC resueltos automáticamente al 100%, igual que vehiculo', () => {
+    const r = resolverTratamientoFiscal(
+      {
+        tipo: 'gasto', proveedor: 'GASOLINERA CEPSA ADEJE', concepto: 'combustible', categoria: '',
+        categoriaFiscal: 'combustible', baseImponible: 60, importe: 68.4,
+        tipoImpuesto: 'igic', importeImpuesto: 4.2, porcentajeImpuesto: 7,
+        hechosFiscales: { vehiculoUsoExclusivo: true },
+      },
+      { repepActivo: false }
+    );
+    expect(r.irpf.estado).toBe('resuelto_automatico');
+    expect(r.irpf.porcentaje).toBe(100);
+    expect(r.igic.estado).toBe('resuelto_automatico');
+    expect(r.igic.porcentaje).toBe(100);
+    expect(r.preguntasFiscalesPendientes).toHaveLength(0);
+  });
+
+  it('combustible con uso NO exclusivo confirmado (false) → IRPF 0% igual que vehiculo, IGIC revision_manual (sin prorrata inventada)', () => {
+    const r = resolverTratamientoFiscal(
+      {
+        tipo: 'gasto', proveedor: 'GASOLINERA CEPSA ADEJE', concepto: 'combustible', categoria: '',
+        categoriaFiscal: 'combustible', baseImponible: 60, importe: 68.4,
+        tipoImpuesto: 'igic', importeImpuesto: 4.2, porcentajeImpuesto: 7,
+        hechosFiscales: { vehiculoUsoExclusivo: false },
+      },
+      { repepActivo: false }
+    );
+    expect(r.irpf.estado).toBe('resuelto_automatico');
+    expect(r.irpf.porcentaje).toBe(0);
+    expect(r.igic.estado).toBe('revision_manual');
+  });
 });

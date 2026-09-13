@@ -19,7 +19,7 @@ export type PreguntaFiscalPendiente = {
 
 /** Un hecho por cada `HechoFiscalRequerido` — la MISMA pregunta puede dejar pendientes varios ejes de una misma factura (p. ej. IRPF e IVA de un vehículo); responderla una vez resuelve todos. */
 const TEXTO_PREGUNTA: Record<HechoFiscalRequerido, string> = {
-  vehiculoUsoExclusivo: '¿Este vehículo se utiliza exclusivamente para la actividad profesional, sin uso particular?',
+  vehiculoUsoExclusivo: '¿El vehículo al que corresponde este gasto se utiliza exclusivamente para la actividad profesional, sin uso particular?',
   dispositivoUsoExclusivo: '¿Este dispositivo se utiliza exclusivamente para la actividad?',
   gestoriaSoloActividad: '¿Esta factura corresponde solo a la gestión de tu actividad, o también incluye tu declaración personal completa?',
 };
