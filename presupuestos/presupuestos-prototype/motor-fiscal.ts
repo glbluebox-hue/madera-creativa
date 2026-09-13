@@ -204,17 +204,24 @@ export function calcularImpuestosPorTipo(facturas: Factura[]): ResumenImpuestosT
  * resta ni se devuelve nada aquí — el ajuste real ocurre en la declaración
  * anual de la Renta, fuera del alcance de este resumen). Sigue sin incluir
  * retenciones soportadas, mínimo personal, ni deducciones específicas.
+ *
+ * `saldoInicial` (auditoría 13/09/2026): para un negocio que ya facturaba
+ * antes de empezar a usar la app, el acumulado no puede empezar en 0 — solo
+ * ve las facturas que están dentro de la app. Quien llama decide si aplica
+ * (comparando el año que se está mostrando contra el año guardado del saldo,
+ * ver `Empresa.saldoInicialAnio`); esta función solo sabe sumarlo como punto
+ * de partida, nunca decide a qué año pertenece.
  */
 export function calcularTrimestres(
   facturas: Factura[],
   gastosPeriodicos: GastoPeriodico[],
-  config: { regionFiscal: RegionFiscal; repepActivo: boolean }
+  config: { regionFiscal: RegionFiscal; repepActivo: boolean; saldoInicial?: { beneficio: number; irpf: number } }
 ): DatosTrimestre[] {
   const indirectoActivo = calculaIndirecto(config.regionFiscal, config.repepActivo);
   const tipoGeneral = tipoGeneralDeRegion(config.regionFiscal);
 
-  let beneficioAcumulado = 0;
-  let irpfYaCalculado = 0;
+  let beneficioAcumulado = config.saldoInicial?.beneficio ?? 0;
+  let irpfYaCalculado = config.saldoInicial?.irpf ?? 0;
 
   return [0, 1, 2, 3].map((t) => {
     const del = facturas.filter((f) => trimestreDeFecha(f.fecha) === t);

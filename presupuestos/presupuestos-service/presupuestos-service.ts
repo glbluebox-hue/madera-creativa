@@ -388,6 +388,19 @@ export type EmpresaDoc = {
   isla: string;
   /** REPEP activo (exención de IGIC por bajo volumen, solo Canarias) — decisión del usuario, nunca inferida. */
   repepActivo: boolean;
+  /**
+   * Saldo de partida del IRPF acumulado (auditoría Facturas/Trimestral,
+   * 13/09/2026) — para un negocio que ya facturaba antes de empezar a usar
+   * la app: sin esto, el Trimestral calcularía el acumulado desde enero
+   * solo con las facturas que están dentro de la app, dando un resultado
+   * irreal si el usuario se da de alta a mitad de año. `saldoInicialAnio`
+   * fija a qué año natural se aplica — nunca al siguiente, el acumulado
+   * real vuelve a 0 cada 1 de enero. Los otros dos, `null` hasta que el
+   * usuario los rellena a propósito.
+   */
+  saldoInicialAnio: number | null;
+  saldoInicialBeneficio: number | null;
+  saldoInicialIrpf: number | null;
   /** Ancho en píxeles del logo en la barra lateral — ajustable a mano por el usuario. */
   logoTamano: number;
   /** Enlace de Google My Business — destino de "Pedir reseña". Vacío hasta que el negocio lo configura. */
@@ -1186,6 +1199,9 @@ export class PresupuestosService {
       provincia: (doc as any).provincia || '',
       isla: (doc as any).isla || '',
       repepActivo: !!(doc as any).repepActivo,
+      saldoInicialAnio: (doc as any).saldoInicialAnio ?? null,
+      saldoInicialBeneficio: (doc as any).saldoInicialBeneficio ?? null,
+      saldoInicialIrpf: (doc as any).saldoInicialIrpf ?? null,
       logoTamano: (doc as any).logoTamano || 187,
       enlaceResenaGoogle: (doc as any).enlaceResenaGoogle || '',
       imagenResena: (doc as any).imagenResena || '',
@@ -1224,6 +1240,9 @@ export class PresupuestosService {
       provincia: (doc as any).provincia || '',
       isla: (doc as any).isla || '',
       repepActivo: !!(doc as any).repepActivo,
+      saldoInicialAnio: (doc as any).saldoInicialAnio ?? null,
+      saldoInicialBeneficio: (doc as any).saldoInicialBeneficio ?? null,
+      saldoInicialIrpf: (doc as any).saldoInicialIrpf ?? null,
       logoTamano: (doc as any).logoTamano || 187,
       enlaceResenaGoogle: (doc as any).enlaceResenaGoogle || '',
       imagenResena: (doc as any).imagenResena || '',

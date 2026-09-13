@@ -1186,6 +1186,10 @@ export const esquemaEmpresa = z.object({
   provincia: z.string().max(100).optional().default(''),
   isla: z.string().max(100).optional().default(''),
   repepActivo: z.boolean().optional().default(false),
+  /** Saldo de partida del IRPF acumulado (auditoría Facturas/Trimestral, 13/09/2026) — ver `EmpresaSchema.saldoInicialAnio/Beneficio/Irpf` en `cliente.model.ts`. */
+  saldoInicialAnio: z.number().int().min(2000).max(2100).nullable().optional().default(null),
+  saldoInicialBeneficio: z.number().nullable().optional().default(null),
+  saldoInicialIrpf: z.number().nullable().optional().default(null),
   /** Ancho en píxeles del logo en la barra lateral — ajustable a mano por el usuario, ver `sidebarLogoImg`. */
   logoTamano: z.number().min(40).max(400).optional().default(187),
   /** Minutos de inactividad antes de cerrar sesión sola — `null` = nunca. Ver `EmpresaSchema.tiempoInactividadMin` en `cliente.model.ts`. */

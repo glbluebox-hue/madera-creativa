@@ -371,6 +371,22 @@ const EmpresaSchema = new Schema({
    * `regionFiscal === 'canarias'`. Decisión del usuario, nunca inferida.
    */
   repepActivo: { type: Boolean, default: false },
+  /**
+   * Saldo de partida del IRPF acumulado (auditoría Facturas/Trimestral,
+   * 13/09/2026) — para un negocio que ya facturaba antes de empezar a usar
+   * Madera Creativa: el Trimestral calcula el IRPF sobre el beneficio
+   * acumulado desde el 1 de enero, pero solo conoce las facturas que están
+   * dentro de la app. Sin este saldo, alguien que se da de alta a mitad de
+   * año vería un acumulado incompleto (le faltarían los meses de antes) y
+   * el cálculo sería irreal. `saldoInicialAnio` fija a qué año natural se
+   * aplica — nunca se arrastra al año siguiente, el acumulado real vuelve a
+   * empezar en 0 cada 1 de enero, igual que hace Hacienda. Los otros dos
+   * quedan `null` (no 0) hasta que el usuario los rellena a propósito, para
+   * no asumir un negocio nuevo cuando en realidad no se ha configurado nada.
+   */
+  saldoInicialAnio: { type: Number, default: null },
+  saldoInicialBeneficio: { type: Number, default: null },
+  saldoInicialIrpf: { type: Number, default: null },
   /** Tema por defecto del Motor Documental (Incremento 3) — identidad corporativa: todo documento nuevo sin tema propio hereda este. `null` hasta que el usuario personalice uno. */
   temaPorDefecto: { type: Schema.Types.Mixed, default: null },
   /** Ancho en píxeles del logo en la barra lateral — ajustable a mano por el usuario (antes fijo a 187px en CSS). */

@@ -244,6 +244,26 @@ describe('calcularTrimestres — IRPF acumulado desde enero (auditoría 13/09/20
     expect(q3.irpf).toBeCloseTo(600, 6);
     expect(q1.irpf + q2.irpf + q3.irpf).toBeCloseTo(q3.beneficioAcumulado * TIPO_IRPF, 6);
   });
+
+  it('saldoInicial (auditoría 13/09/2026): un negocio dado de alta a mitad de año arrastra su beneficio/IRPF previos, no empieza en 0', () => {
+    const facturas: Factura[] = [
+      factura({ id: 'i1', tipo: 'ingreso', fecha: '2026-07-10', importe: 3000 }), // único trimestre dentro de la app: Q3, beneficio 3000
+    ];
+    const [, , q3] = calcularTrimestres(facturas, gastosPeriodicos, {
+      regionFiscal: '', repepActivo: false,
+      saldoInicial: { beneficio: 5000, irpf: 1000 }, // ya facturaba 5000€ (pagó 1000€) antes de usar la app
+    });
+    expect(q3.beneficioAcumulado).toBe(8000); // 5000 de antes + 3000 de este trimestre
+    // 20% de 8000 = 1600, menos los 1000 ya pagados antes de usar la app = 600.
+    expect(q3.irpf).toBeCloseTo(600, 6);
+  });
+
+  it('sin saldoInicial, el comportamiento es idéntico a antes (empieza en 0)', () => {
+    const facturas: Factura[] = [factura({ id: 'i1', tipo: 'ingreso', fecha: '2026-07-10', importe: 3000 })];
+    const [, , q3] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(q3.beneficioAcumulado).toBe(3000);
+    expect(q3.irpf).toBeCloseTo(600, 6); // 20% de 3000
+  });
 });
 
 describe('clasificarImpuestoFactura (solo por tipoImpuesto, nunca por región)', () => {

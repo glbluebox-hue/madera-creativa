@@ -53,6 +53,21 @@ export type Empresa = {
   isla: string;
   /** REPEP activo (exención de IGIC por bajo volumen, solo relevante en Canarias) — decisión del usuario, nunca inferida. */
   repepActivo: boolean;
+  /**
+   * Saldo de partida del IRPF acumulado (auditoría Facturas/Trimestral,
+   * 13/09/2026) — para un negocio que ya facturaba antes de empezar a usar
+   * la app: el Trimestral calcula el IRPF sobre el beneficio acumulado
+   * desde el 1 de enero, pero solo ve las facturas que están dentro de la
+   * app. Sin este saldo, alguien dado de alta a mitad de año vería un
+   * acumulado incompleto e irreal. Se edita desde el propio Resumen
+   * trimestral (Facturación), no desde Ajustes de empresa — es un dato del
+   * cálculo fiscal, no de la marca. `saldoInicialAnio` fija a qué año
+   * natural se aplica; los otros dos, `null` hasta que el usuario los
+   * rellena a propósito.
+   */
+  saldoInicialAnio: number | null;
+  saldoInicialBeneficio: number | null;
+  saldoInicialIrpf: number | null;
   /** Ancho en píxeles del logo en la barra lateral — ajustable a mano por el usuario (Ajustes de empresa). */
   logoTamano: number;
   /** Enlace de Google My Business — destino de "Pedir reseña". Vacío hasta que el negocio lo configura en Ajustes de empresa; sin él, ese botón no se ofrece. */
@@ -91,6 +106,9 @@ const EMPRESA_ADMIN: Empresa = {
   provincia: 'Santa Cruz de Tenerife',
   isla: 'Tenerife',
   repepActivo: true,
+  saldoInicialAnio: null,
+  saldoInicialBeneficio: null,
+  saldoInicialIrpf: null,
   logoTamano: 187,
   enlaceResenaGoogle: 'https://g.page/r/CdtYE6HZ9ap5EBM/review',
   imagenResena: cartelResenaMadera,
@@ -120,6 +138,9 @@ const EMPRESA_USUARIO: Empresa = {
   provincia: '',
   isla: '',
   repepActivo: false,
+  saldoInicialAnio: null,
+  saldoInicialBeneficio: null,
+  saldoInicialIrpf: null,
   logoTamano: 187,
   enlaceResenaGoogle: '',
   imagenResena: null,
@@ -192,6 +213,9 @@ export function useEmpresa(autenticado = false, esAdmin = false): {
           provincia: datos.provincia || inicial.provincia,
           isla: datos.isla || inicial.isla,
           repepActivo: datos.repepActivo ?? inicial.repepActivo,
+          saldoInicialAnio: datos.saldoInicialAnio ?? null,
+          saldoInicialBeneficio: datos.saldoInicialBeneficio ?? null,
+          saldoInicialIrpf: datos.saldoInicialIrpf ?? null,
           logoTamano: datos.logoTamano ?? inicial.logoTamano,
           enlaceResenaGoogle: datos.enlaceResenaGoogle || inicial.enlaceResenaGoogle,
           imagenResena: datos.imagenResena || inicial.imagenResena,

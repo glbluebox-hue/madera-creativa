@@ -2,6 +2,7 @@ import { formatoEuroPrivado } from './calculos.js';
 import * as api from './api.js';
 import type { GastoPeriodico } from './types.js';
 import { GastosPeriodicos } from './gastos-periodicos.js';
+import { SaldoInicialAnio } from './saldo-inicial-anio.js';
 import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
 import { CandadoPlan } from './candado-plan.js';
 import {
@@ -42,16 +43,29 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
   const [cargando, setCargando] = React.useState(true);
   const [regionFiscal, setRegionFiscal] = React.useState<RegionFiscal>('');
   const [repepActivo, setRepepActivo] = React.useState(false);
+  // Saldo de partida del IRPF acumulado (auditoría 13/09/2026) — ver `SaldoInicialAnio`.
+  const [saldoInicialAnio, setSaldoInicialAnio] = React.useState<number | null>(null);
+  const [saldoInicialBeneficio, setSaldoInicialBeneficio] = React.useState<number | null>(null);
+  const [saldoInicialIrpf, setSaldoInicialIrpf] = React.useState<number | null>(null);
+  const [saldoInicialAbierto, setSaldoInicialAbierto] = React.useState(false);
   const [gastosPeriodicos, setGastosPeriodicos] = React.useState<GastoPeriodico[]>([]);
   const [descargandoAsesor, setDescargandoAsesor] = React.useState<number | null>(null);
   const [descargandoPdf, setDescargandoPdf] = React.useState<number | null>(null);
+
+  const recargarEmpresa = React.useCallback(() => {
+    api.obtenerEmpresa().then((e) => {
+      setRegionFiscal(e.regionFiscal); setRepepActivo(e.repepActivo);
+      setSaldoInicialAnio(e.saldoInicialAnio); setSaldoInicialBeneficio(e.saldoInicialBeneficio); setSaldoInicialIrpf(e.saldoInicialIrpf);
+    });
+  }, []);
 
   React.useEffect(() => {
     api.obtenerAniosConFacturas().then((anios) => {
       setAniosDisponibles(anios.includes(anioActual) ? anios : [anioActual, ...anios].sort((a, b) => b - a));
     });
-    api.obtenerEmpresa().then((e) => { setRegionFiscal(e.regionFiscal); setRepepActivo(e.repepActivo); });
+    recargarEmpresa();
     api.obtenerGastosPeriodicos().then(setGastosPeriodicos);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [anioActual]);
 
   const recargarGastosPeriodicos = React.useCallback(() => { api.obtenerGastosPeriodicos().then(setGastosPeriodicos); }, []);
@@ -63,9 +77,15 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
       .finally(() => setCargando(false));
   }, [anioSeleccionado]);
 
+  // Solo se aplica al año exacto al que corresponde — el acumulado real
+  // vuelve a 0 cada 1 de enero, nunca se arrastra de un año a otro.
+  const saldoInicialAplicable = saldoInicialAnio === anioSeleccionado && saldoInicialBeneficio !== null && saldoInicialIrpf !== null
+    ? { beneficio: saldoInicialBeneficio, irpf: saldoInicialIrpf }
+    : undefined;
+
   // Cálculo fiscal (IRPF/IGIC/IVA) delegado en `motor-fiscal.ts` (Fase 2.0,
   // extracción) — mismas fórmulas, ver ese fichero para el detalle.
-  const trimestresData: DatosTrimestre[] = calcularTrimestres(facturasFiltradas, gastosPeriodicos, { regionFiscal, repepActivo });
+  const trimestresData: DatosTrimestre[] = calcularTrimestres(facturasFiltradas, gastosPeriodicos, { regionFiscal, repepActivo, saldoInicial: saldoInicialAplicable });
 
   const totalIngresos = trimestresData.reduce((s, t) => s + t.ingresos, 0);
   const totalGastos = trimestresData.reduce((s, t) => s + t.gastos, 0);
@@ -103,16 +123,32 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
             Pago fraccionado de IRPF · Modelo 130 · Tipo estimado: 20% sobre beneficio neto
           </p>
         </div>
-        <select
-          className={styles.select}
-          value={anioSeleccionado}
-          onChange={(e) => setAnioSeleccionado(Number(e.target.value))}
-        >
-          {aniosDisponibles.map((a) => (
-            <option key={a} value={a}>{a}</option>
-          ))}
-        </select>
+        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+          <button
+            className={`${styles.btn} ${styles.btnSecundario}`}
+            onClick={() => setSaldoInicialAbierto(true)}
+            title="Si ya facturabas antes de empezar a usar la app este año, indica tu beneficio e IRPF acumulados hasta ese momento para que el cálculo trimestral sea correcto"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
+            Saldo inicial del año
+          </button>
+          <select
+            className={styles.select}
+            value={anioSeleccionado}
+            onChange={(e) => setAnioSeleccionado(Number(e.target.value))}
+          >
+            {aniosDisponibles.map((a) => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+        </div>
       </div>
+
+      {saldoInicialAplicable && (
+        <p style={{ margin: '-1rem 0 1.25rem', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>
+          Aplicando saldo de partida de {anioSeleccionado}: {formatoEuroPrivado(saldoInicialAplicable.beneficio, privado)} de beneficio y {formatoEuroPrivado(saldoInicialAplicable.irpf, privado)} de IRPF ya acumulados antes de usar la app.
+        </p>
+      )}
 
       {cargando && (
         <p style={{ fontSize: '0.85rem', color: 'var(--topo-claro)', marginBottom: '1rem' }}>Cargando facturas del año…</p>
@@ -377,6 +413,14 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
         {' '}El IVA y el IGIC de cada trimestre se calculan con el tipo de impuesto real de cada factura (nunca según tu región fiscal) — las facturas sin ese dato identificado, o con el tipo identificado pero sin importe calculable, aparecen aparte, pendientes de revisión.
         {' '}No incluye retenciones soportadas, mínimo personal, ni deducciones específicas de tu situación. Esto es una estimación de apoyo, no una liquidación: la liquidación definitiva corresponde a tu asesor fiscal.</span>
       </p>
+
+      {saldoInicialAbierto && (
+        <SaldoInicialAnio
+          anioSeleccionado={anioSeleccionado}
+          onCerrar={() => setSaldoInicialAbierto(false)}
+          onGuardado={() => { setSaldoInicialAbierto(false); recargarEmpresa(); }}
+        />
+      )}
     </div>
   );
 }
