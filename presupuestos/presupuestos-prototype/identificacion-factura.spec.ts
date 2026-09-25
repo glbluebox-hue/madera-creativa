@@ -220,4 +220,52 @@ describe('resolverEmisorReceptor (auditoría emisor/receptor, 23/08/2026)', () =
     expect(r.revisar).toBe(true);
     expect(r.confianza).toBe('baja');
   });
+
+  it('15. Red de seguridad por NOMBRE: si emisor Y receptor coinciden a la vez con el nombre propio (ambiguo, cae al fallback), el proveedor nunca puede quedar puesto al propio titular', () => {
+    // Motivado por un bug real de producción (25/09/2026, factura de Leroy
+    // Merlin acabó con el proveedor puesto al propio titular y el tipo
+    // invertido a "ingreso"). Estructuralmente, `resultado.proveedor` solo
+    // puede terminar siendo el nombre de la propia empresa cuando NINGÚN
+    // bloque de `resolverInterno` puede decidir por nombre de forma
+    // exclusiva — es decir, cuando emisor Y receptor coinciden los dos a
+    // la vez con el nombre/titular (mismo caso límite que el test 14 ya
+    // cubre para el NIF, pero aplicado al nombre): al caer al bloque 3
+    // (fallback puro por el `tipo` que propone la IA), el nombre del
+    // propio titular se copia sin más al campo `proveedor`. Es exactamente
+    // el tipo de documento confuso (recogida en tienda a nombre propio,
+    // nombre del cliente y de la empresa mezclados) que puede darse en la
+    // práctica. Esta red de seguridad, simétrica a la del CIF, lo detecta
+    // sin necesidad de acertar el motivo exacto del documento real.
+    const r = resolverEmisorReceptor(datos({
+      emisorNombre: 'Juan García Pérez', emisorCifNif: null,
+      receptorNombre: 'Juan García Pérez', receptorCifNif: null, // ambos = EMPRESA.titular
+      tipo: 'ingreso', // la IA se equivoca de dirección
+    }), EMPRESA);
+    expect(r.proveedor).toBe('');
+    expect(r.tipo).toBeNull();
+    expect(r.revisar).toBe(true);
+  });
+
+  it('16. Red de seguridad por NOMBRE: mismo caso ambiguo pero coincidiendo con el nombre comercial en vez del titular', () => {
+    const r = resolverEmisorReceptor(datos({
+      emisorNombre: 'Madera Creativa', emisorCifNif: null,
+      receptorNombre: 'Madera Creativa', receptorCifNif: null,
+      tipo: 'gasto',
+    }), EMPRESA);
+    expect(r.proveedor).toBe('');
+    expect(r.tipo).toBeNull();
+    expect(r.revisar).toBe(true);
+  });
+
+  it('17. Caso normal (sin coincidencia con la propia empresa) sigue funcionando exactamente igual tras añadir la red de seguridad por nombre', () => {
+    const r = resolverEmisorReceptor(datos({
+      emisorNombre: 'Leroy Merlin', emisorCifNif: 'B98765432',
+      receptorNombre: 'Madera Creativa', receptorCifNif: 'B12345678',
+      tipo: 'gasto',
+    }), EMPRESA);
+    expect(r.tipo).toBe('gasto');
+    expect(r.proveedor).toBe('Leroy Merlin');
+    expect(r.cifNif).toBe('B98765432');
+    expect(r.revisar).toBe(false);
+  });
 });

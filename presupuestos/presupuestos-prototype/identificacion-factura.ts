@@ -131,7 +131,7 @@ export function nombresCoinciden(a: string | null | undefined, b: string | null 
  * tener que repetir la comprobación en cada `return`.
  */
 export function resolverEmisorReceptor(datos: DatosExtraidosFactura, empresa: EmpresaIdentificacion): ResultadoIdentificacion {
-  const resultado = resolverInterno(datos, empresa);
+  let resultado = resolverInterno(datos, empresa);
 
   // Red de seguridad final (petición explícita del usuario, 27/08/2026,
   // caso real: el CIF de MONTÓ estaba escrito en letra tan pequeña que la
@@ -148,8 +148,32 @@ export function resolverEmisorReceptor(datos: DatosExtraidosFactura, empresa: Em
   // fuera incorrecto) ahora se calla, y el usuario debe rellenarlo a mano
   // si lo necesita.
   if (empresa.nifCif && nifsCoinciden(resultado.cifNif, empresa.nifCif)) {
-    return { ...resultado, cifNif: '', revisar: true };
+    resultado = { ...resultado, cifNif: '', revisar: true };
   }
+
+  // Segunda red de seguridad, simétrica a la de arriba pero para el NOMBRE
+  // (bug real de producción, 25/09/2026: una factura de Leroy Merlin —
+  // proveedor de gasto real, ya dado de alta con su propio CIF guardado —
+  // se guardó con `proveedor` igual al propio titular de la empresa y
+  // `tipo:'ingreso'` en vez de `'gasto'`; el documento debió traer
+  // impreso, en algún campo que la IA leyó como la otra parte, el nombre
+  // del propio titular — p. ej. un pedido/recogida en tienda hecho a su
+  // nombre — y la red de seguridad de arriba, al mirar solo el CIF/NIF,
+  // nunca lo detectó). El proveedor/cliente de una factura JAMÁS puede ser
+  // la propia empresa: si el nombre resuelto coincide con el nombre
+  // comercial o el titular, ni ese nombre ni el `tipo` derivado de la
+  // misma asignación son fiables — se vacían los dos (a diferencia del
+  // caso del CIF, aquí SÍ se toca `tipo`, porque fue precisamente esa
+  // asignación errónea de quién es quién la que lo puso al revés) y se
+  // exige revisión manual.
+  if (
+    resultado.proveedor &&
+    ((empresa.nombre && nombresCoinciden(resultado.proveedor, empresa.nombre)) ||
+      (empresa.titular && nombresCoinciden(resultado.proveedor, empresa.titular)))
+  ) {
+    resultado = { ...resultado, proveedor: '', tipo: null, revisar: true };
+  }
+
   return resultado;
 }
 
