@@ -154,6 +154,25 @@ export function calculaIndirecto(regionFiscal: RegionFiscal, repepActivo: boolea
   return !!regionFiscal && !(regionFiscal === 'canarias' && repepActivo);
 }
 
+/**
+ * Si el IGIC repercutido/soportado de una factura debe entrar en el
+ * agregado real del Modelo 420 (`calcularImpuestosPorTipo`) — bug real
+ * detectado 25/09/2026: esa función clasifica cada factura únicamente por
+ * su propio `tipoImpuesto`, sin mirar nunca REPEP, así que una factura de
+ * gasto con `tipoImpuesto:'igic'` se sumaba como soportado "a compensar"
+ * aunque la empresa estuviera en REPEP — donde ese IGIC pagado NO es un
+ * crédito fiscal, ya es GASTO íntegro (vía `Factura.importe`, en
+ * `calcularTrimestres`, que no cambia). A diferencia de `calculaIndirecto`
+ * (pensada solo para la estimación antigua por región, `impuestoIndirecto`),
+ * esta función NUNCA depende de que `regionFiscal` esté vacía — el IVA/IGIC
+ * real de una factura con `tipoImpuesto` propio siempre se calcula, tenga
+ * la empresa la región que tenga; `false` únicamente con Canarias+REPEP.
+ * El IVA nunca se ve afectado por REPEP (régimen exclusivo de IGIC).
+ */
+export function igicDeclarable(regionFiscal: RegionFiscal, repepActivo: boolean): boolean {
+  return !(regionFiscal === 'canarias' && repepActivo);
+}
+
 /** Tipo general del impuesto indirecto de la región (0 si no hay región configurada). */
 export function tipoGeneralDeRegion(regionFiscal: RegionFiscal): number {
   return regionFiscal ? TIPO_GENERAL_POR_REGION[regionFiscal] : 0;
@@ -237,8 +256,18 @@ export function cuotaRealDeFactura(f: Pick<Factura, 'importeImpuesto' | 'baseImp
  * suma cuando `baseImponible` consta en la factura — con una cuota derivada
  * directamente de `importeImpuesto` sin `baseImponible` (caso raro), esa
  * factura no aporta a la base agregada, aunque sí a la cuota.
+ *
+ * `igicActivo` (25/09/2026, fix REPEP): si es `false` (empresa en REPEP),
+ * ninguna factura con `tipoImpuesto:'igic'` aporta nada a este resumen —
+ * ni repercutido, ni soportado, ni base, ni siquiera a `noCalculable` — se
+ * ignora por completo, porque bajo REPEP esa cuota no se declara en el
+ * Modelo 420 en absoluto (ver `igicDeclarable`). El gasto/ingreso económico
+ * de esas facturas no cambia — sigue contándose con normalidad en otro
+ * sitio (`calcularTrimestres`, vía `Factura.importe`). Por defecto `true`
+ * (comportamiento de siempre) para no romper llamadas que solo quieren
+ * probar la agregación en sí, sin régimen fiscal de por medio.
  */
-export function calcularImpuestosPorTipo(facturas: Factura[]): ResumenImpuestosTrimestre {
+export function calcularImpuestosPorTipo(facturas: Factura[], igicActivo: boolean = true): ResumenImpuestosTrimestre {
   const resumen: ResumenImpuestosTrimestre = {
     ivaBaseRepercutida: 0, ivaRepercutido: 0, ivaBaseSoportada: 0, ivaSoportado: 0, ivaResultado: 0,
     igicBaseRepercutida: 0, igicRepercutido: 0, igicBaseSoportada: 0, igicSoportado: 0, igicResultado: 0,
@@ -248,6 +277,10 @@ export function calcularImpuestosPorTipo(facturas: Factura[]): ResumenImpuestosT
   for (const f of facturas) {
     const clasificacion = clasificarImpuestoFactura(f);
     if (clasificacion === 'exento' || clasificacion === 'sin_impuesto') continue;
+    // REPEP (25/09/2026) — ver `igicActivo` arriba: esta factura ya está
+    // bien contada como gasto/ingreso económico en otro sitio, aquí no debe
+    // entrar en el Modelo 420 en absoluto. Nunca afecta al IVA.
+    if (clasificacion === 'igic' && !igicActivo) continue;
     const cuota = cuotaRealDeFactura(f);
     // Signo por naturaleza (25/09/2026) — una rectificativa resta de la
     // cuota/base de SU MISMO impuesto real (IVA resta de IVA, IGIC resta de
@@ -408,13 +441,17 @@ export function calcularTrimestres(
       ? del.filter((f) => f.tipo === 'ingreso').reduce((s, f) => s + impuestoDeFactura(f, indirectoActivo, tipoGeneral) * signoPorNaturaleza(f), 0)
         - del.filter((f) => f.tipo === 'gasto').reduce((s, f) => s + impuestoDeFactura(f, indirectoActivo, tipoGeneral) * signoPorNaturaleza(f), 0)
       : 0;
-    const impuestos = calcularImpuestosPorTipo(del);
+    const impuestos = calcularImpuestosPorTipo(del, igicDeclarable(config.regionFiscal, config.repepActivo));
     // Arrastre IVA/IGIC (Fase A-C) — circuitos completamente independientes,
     // cada uno con su propia variable de estado; nunca se compensa uno con
-    // otro. Si REPEP deja el resultado del trimestre en 0 (sin facturas de
-    // IGIC real, caso normal bajo REPEP), el arrastre no genera ni consume
-    // saldo — no hace falta ninguna condición especial aquí, sale solo de la
-    // aritmética (ver test "REPEP no genera arrastre indebido").
+    // otro. Con REPEP activo, `impuestos.igicResultado` ya viene en 0 desde
+    // `calcularImpuestosPorTipo` (que ignora las facturas de IGIC por completo
+    // en ese caso, ver `igicDeclarable` — bug real corregido 25/09/2026: antes
+    // esas facturas SÍ se sumaban como soportado "a compensar" aunque bajo
+    // REPEP ese IGIC ya es gasto, nunca un crédito fiscal), así que el
+    // arrastre tampoco genera ni consume saldo — no hace falta ninguna
+    // condición especial aquí, sale solo de la aritmética (ver test "REPEP no
+    // genera arrastre indebido").
     const ivaArrastre = aplicarArrastreImpuesto(impuestos.ivaResultado, saldoIvaPendiente);
     saldoIvaPendiente = ivaArrastre.saldoPendiente;
     const igicArrastre = aplicarArrastreImpuesto(impuestos.igicResultado, saldoIgicPendiente);

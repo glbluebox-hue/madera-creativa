@@ -466,9 +466,24 @@ describe('calcularTrimestres — impuestos por tipo integrados, e impuestoIndire
       factura({ id: 'i1', tipo: 'ingreso', fecha: '2026-01-10', tipoImpuesto: 'iva', importe: 1210, importeImpuesto: 210 }),
       factura({ id: 'g1', tipo: 'gasto', fecha: '2026-02-10', tipoImpuesto: 'igic', importe: 107, importeImpuesto: 7 }),
     ];
-    const [q1] = calcularTrimestres(facturas, [], { regionFiscal: 'canarias', repepActivo: true });
+    // repepActivo:false — sin REPEP de por medio, para no mezclar esta prueba (agregación
+    // real por tipo) con el fix de REPEP de más abajo, que sí usa repepActivo:true a propósito.
+    const [q1] = calcularTrimestres(facturas, [], { regionFiscal: 'canarias', repepActivo: false });
     expect(q1.impuestos.ivaRepercutido).toBe(210);
     expect(q1.impuestos.igicSoportado).toBe(7);
+  });
+
+  it('fix REPEP (25/09/2026): factura de gasto con IGIC real bajo REPEP no aporta nada al Modelo 420, pero el gasto económico no cambia', () => {
+    const facturas: Factura[] = [
+      factura({ id: 'g1', tipo: 'gasto', fecha: '2026-02-10', tipoImpuesto: 'igic', importe: 107, importeImpuesto: 7 }),
+    ];
+    const [q1] = calcularTrimestres(facturas, [], { regionFiscal: 'canarias', repepActivo: true });
+    expect(q1.impuestos.igicSoportado).toBe(0);
+    expect(q1.impuestos.igicRepercutido).toBe(0);
+    expect(q1.impuestos.igicResultado).toBe(0);
+    expect(q1.igicArrastre.saldoPendiente).toBe(0);
+    // El gasto económico (importe completo, impuesto incluido) sigue contando con normalidad.
+    expect(q1.gastos).toBe(107);
   });
 
   it('CASO FUNDAMENTAL a nivel trimestral: Canarias + REPEP + factura IVA de Península → nunca se convierte en IGIC', () => {
