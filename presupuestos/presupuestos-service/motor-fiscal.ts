@@ -48,6 +48,24 @@ export type ResumenImpuestosTrimestre = {
 
 export type ClasificacionImpuesto = 'iva' | 'igic' | 'exento' | 'sin_impuesto' | 'no_identificado';
 
+/** Región fiscal de la Empresa — mismo criterio que el frontend (`presupuestos-prototype/motor-fiscal.ts`). */
+export type RegionFiscal = 'canarias' | 'peninsula' | '';
+
+/**
+ * Si el IGIC repercutido/soportado de una factura debe entrar en el
+ * agregado del Modelo 420 (25/09/2026, fix REPEP) — `false` únicamente con
+ * Canarias+REPEP, donde ese IGIC ya es coste/gasto, nunca un crédito fiscal
+ * a compensar; con cualquier otra combinación, `true` (comportamiento de
+ * siempre, se declara con la región que tenga la empresa). El IVA nunca se
+ * ve afectado por REPEP (régimen exclusivo de IGIC). Mismo criterio exacto
+ * que `igicDeclarable` del frontend — mantenido separado porque backend y
+ * frontend son paquetes Bit aislados sin import cruzado (mismo patrón de
+ * duplicación ya aceptado en este archivo, ver comentario de cabecera).
+ */
+export function igicDeclarable(regionFiscal: RegionFiscal, repepActivo: boolean): boolean {
+  return !(regionFiscal === 'canarias' && repepActivo);
+}
+
 // ── Rectificativas/devoluciones (25/09/2026) ── mismo criterio que la
 // versión del frontend (`motor-fiscal.ts` en `presupuestos-prototype`):
 // una rectificativa es `Factura.naturaleza`, nunca un tercer `tipo` ni un
@@ -194,8 +212,22 @@ export function cuotaRealDeFactura(f: Pick<FacturaImpuesto, 'importeImpuesto' | 
  * las de un trimestre) — mismas reglas que la versión del frontend, incluida
  * la base imponible agregada y `ivaResultado`/`igicResultado` (repercutido
  * − soportado, 14/09/2026).
+ *
+ * `igicActivo` (25/09/2026, fix REPEP): si es `false` (empresa en REPEP),
+ * ninguna factura con `tipoImpuesto:'igic'` aporta nada a este resumen — ni
+ * repercutido, ni soportado, ni base, ni siquiera a `noCalculable` — se
+ * ignora por completo, porque bajo REPEP esa cuota no se declara en el
+ * Modelo 420 en absoluto (ver `igicDeclarable`). El gasto/ingreso económico
+ * de esas facturas no cambia — sigue contándose con normalidad en otro
+ * sitio (`Factura.importe`, fuera de este archivo). Por defecto `true`
+ * (comportamiento de siempre) para no romper llamadas que solo quieren
+ * probar la agregación en sí, sin régimen fiscal de por medio — bug real:
+ * antes de este fix, `obtenerDocumentacionAsesor()` sumaba el IGIC soportado
+ * de compras como si fuera deducible/compensable aunque el negocio tuviera
+ * REPEP activo, mostrando en el PDF del asesor un "IGIC a compensar" que un
+ * negocio en REPEP nunca declara (el IGIC pagado ya es gasto, no crédito).
  */
-export function calcularImpuestosPorTipo(facturas: FacturaImpuesto[]): ResumenImpuestosTrimestre {
+export function calcularImpuestosPorTipo(facturas: FacturaImpuesto[], igicActivo: boolean = true): ResumenImpuestosTrimestre {
   const resumen: ResumenImpuestosTrimestre = {
     ivaBaseRepercutida: 0, ivaRepercutido: 0, ivaBaseSoportada: 0, ivaSoportado: 0, ivaResultado: 0,
     igicBaseRepercutida: 0, igicRepercutido: 0, igicBaseSoportada: 0, igicSoportado: 0, igicResultado: 0,
@@ -205,6 +237,10 @@ export function calcularImpuestosPorTipo(facturas: FacturaImpuesto[]): ResumenIm
   for (const f of facturas) {
     const clasificacion = clasificarImpuestoFactura(f);
     if (clasificacion === 'exento' || clasificacion === 'sin_impuesto') continue;
+    // REPEP (25/09/2026) — ver `igicActivo` arriba: esta factura ya está bien
+    // contada como gasto/ingreso económico en otro sitio, aquí no debe entrar
+    // en el Modelo 420 en absoluto. Nunca afecta al IVA.
+    if (clasificacion === 'igic' && !igicActivo) continue;
     const cuota = cuotaRealDeFactura(f);
     // Signo por naturaleza (25/09/2026) — ver comentario junto a `signoPorNaturaleza`.
     const signo = signoPorNaturaleza(f);

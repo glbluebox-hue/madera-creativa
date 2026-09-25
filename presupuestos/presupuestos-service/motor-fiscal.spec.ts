@@ -1,4 +1,4 @@
-import { calcularImpuestosPorTipo, estadoDeducibleIrpf, estadoIvaIgicDeducible, gastoDeducible, cuotaDeducible, agregarLineasFiscales, validarLineasFiscales, detectarProblemaFiscal, signoPorNaturaleza, validarRectificativa, SIGNO_NATURALEZA_MONGO, type LineaFiscal } from './motor-fiscal.js';
+import { calcularImpuestosPorTipo, estadoDeducibleIrpf, estadoIvaIgicDeducible, gastoDeducible, cuotaDeducible, agregarLineasFiscales, validarLineasFiscales, detectarProblemaFiscal, signoPorNaturaleza, validarRectificativa, SIGNO_NATURALEZA_MONGO, igicDeclarable, type LineaFiscal } from './motor-fiscal.js';
 
 describe('calcularImpuestosPorTipo (backend, mismo criterio que el frontend)', () => {
   it('IVA repercutido / soportado', () => {
@@ -287,6 +287,60 @@ describe('calcularImpuestosPorTipo — IVA/IGIC nunca se mezclan (cierre del rie
     // explícitamente que no existe ningún total mezclado.
     expect((r as any).impuestoIndirectoTotal).toBeUndefined();
     expect((r as any).total).toBeUndefined();
+  });
+});
+
+describe('calcularImpuestosPorTipo — REPEP (fix 25/09/2026, documento del asesor)', () => {
+  it('con igicActivo=false, una factura de gasto con IGIC real no aporta nada al resumen', () => {
+    const r = calcularImpuestosPorTipo(
+      [{ tipo: 'gasto', tipoImpuesto: 'igic', baseImponible: 1000, importeImpuesto: 70 }],
+      false
+    );
+    expect(r.igicSoportado).toBe(0);
+    expect(r.igicRepercutido).toBe(0);
+    expect(r.igicResultado).toBe(0);
+    expect(r.igicBaseSoportada).toBe(0);
+    expect(r.noCalculable.numFacturas).toBe(0); // se ignora por completo, ni siquiera cuenta como "no calculable"
+  });
+
+  it('con igicActivo=false, una factura de ingreso con IGIC repercutido tampoco se agrega', () => {
+    const r = calcularImpuestosPorTipo([{ tipo: 'ingreso', tipoImpuesto: 'igic', importeImpuesto: 50 }], false);
+    expect(r.igicRepercutido).toBe(0);
+    expect(r.igicResultado).toBe(0);
+  });
+
+  it('con igicActivo=false, el IVA de la misma tanda de facturas se sigue calculando con normalidad', () => {
+    const r = calcularImpuestosPorTipo(
+      [
+        { tipo: 'gasto', tipoImpuesto: 'igic', importeImpuesto: 70 },
+        { tipo: 'gasto', tipoImpuesto: 'iva', importeImpuesto: 210 },
+      ],
+      false
+    );
+    expect(r.igicSoportado).toBe(0);
+    expect(r.ivaSoportado).toBe(210);
+  });
+
+  it('con igicActivo=true (o sin pasar el argumento), el IGIC se sigue calculando igual que antes del fix', () => {
+    const r = calcularImpuestosPorTipo([{ tipo: 'gasto', tipoImpuesto: 'igic', baseImponible: 1000, importeImpuesto: 70 }]);
+    expect(r.igicSoportado).toBe(70);
+    expect(r.igicBaseSoportada).toBe(1000);
+  });
+});
+
+describe('igicDeclarable — cuándo el IGIC entra en el Modelo 420 (backend, mismo criterio que el frontend)', () => {
+  it('Canarias + REPEP activo → false (el IGIC soportado ya es gasto, nunca crédito fiscal)', () => {
+    expect(igicDeclarable('canarias', true)).toBe(false);
+  });
+  it('Canarias sin REPEP → true', () => {
+    expect(igicDeclarable('canarias', false)).toBe(true);
+  });
+  it('Península (con o sin repepActivo, REPEP es exclusivo de Canarias) → true', () => {
+    expect(igicDeclarable('peninsula', true)).toBe(true);
+    expect(igicDeclarable('peninsula', false)).toBe(true);
+  });
+  it('región sin configurar → true (se declara con la región que tenga la empresa, nunca se apaga por defecto)', () => {
+    expect(igicDeclarable('', true)).toBe(true);
   });
 });
 

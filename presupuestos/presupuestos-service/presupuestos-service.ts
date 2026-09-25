@@ -2542,12 +2542,15 @@ export class PresupuestosService {
     ];
 
     const { generarResumenPdf, generarPdfCombinadoFacturas, combinarPdfs } = await import('./documentos-factura.service.js');
-    const { calcularImpuestosPorTipo } = await import('./motor-fiscal.js');
+    const { calcularImpuestosPorTipo, igicDeclarable } = await import('./motor-fiscal.js');
+    // REPEP (25/09/2026, fix): sin esto, el PDF del asesor sumaba el IGIC
+    // soportado como "a compensar" aunque el negocio tuviera REPEP activo
+    // (donde ese IGIC ya es gasto, nunca crédito fiscal) — ver `igicDeclarable`.
     const resumenBytes = await generarResumenPdf({
       empresaNombre: empresa?.nombre || 'Empresa',
       periodoLabel,
       ingresos, gastos, gastosPeriodicos: gastosPeriodicosDelTrimestre, avisoFiscal,
-      impuestos: calcularImpuestosPorTipo(facturas as any[]),
+      impuestos: calcularImpuestosPorTipo(facturas as any[], igicDeclarable(empresa?.regionFiscal ?? '', !!empresa?.repepActivo)),
     });
     try {
       const facturasBytes = await generarPdfCombinadoFacturas([...ingresos, ...gastos]);

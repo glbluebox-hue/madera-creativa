@@ -1609,3 +1609,7 @@
 2026-09-25T20:09:33.672Z 19132 test presupuestos-prototype, failed
 2026-09-25T20:09:40.618Z 10888 check-types presupuestos-prototype, started
 2026-09-25T20:10:07.808Z 10888 check-types presupuestos-prototype, succeeded
+2026-09-25T20:24:04.282Z 3060 test presupuestos-service, started
+2026-09-25T20:24:32.082Z 3060 test presupuestos-service, failed
+2026-09-25T20:24:39.700Z 27468 check-types presupuestos-service, started
+2026-09-25T20:25:04.411Z 27468 check-types presupuestos-service, succeeded
