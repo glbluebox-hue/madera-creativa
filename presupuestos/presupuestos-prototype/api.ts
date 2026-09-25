@@ -360,6 +360,33 @@ export async function obtenerFacturasDeProveedor(nombreProveedor: string, provee
   return datos.items;
 }
 
+/**
+ * Busca candidatas a "factura original" para una rectificativa, en TODO
+ * el histórico del usuario (no solo la página cargada) — por número de
+ * factura, proveedor, importe o fecha. `excluirId` evita que la propia
+ * factura que se está editando pueda ofrecerse a sí misma como original.
+ */
+export async function buscarFacturasOriginalCandidatas(termino: string, excluirId?: string): Promise<Factura[]> {
+  const query = new URLSearchParams({ busqueda: termino });
+  if (excluirId) query.set('excluirId', excluirId);
+  const res = await fetchConAuth(`/facturas?${query.toString()}`);
+  await comprobarRespuesta(res, 'No se pudo buscar la factura original');
+  const datos: Pagina<Factura> = await res.json();
+  return datos.items;
+}
+
+/**
+ * Todas las rectificativas asociadas a una factura original, en TODO el
+ * histórico del usuario — conteo/listado real, no acotado a lo cargado en
+ * la página actual del listado de facturas.
+ */
+export async function obtenerFacturasRectificativas(facturaOriginalId: string): Promise<Factura[]> {
+  const res = await fetchConAuth(`/facturas?facturaOriginalId=${encodeURIComponent(facturaOriginalId)}`);
+  await comprobarRespuesta(res, 'No se pudieron cargar las rectificativas de esta factura');
+  const datos: Pagina<Factura> = await res.json();
+  return datos.items;
+}
+
 /** Total gastado y número de facturas por proveedor (texto), calculado en el servidor. */
 export async function obtenerResumenPorProveedor(): Promise<{ proveedor: string; proveedorId: string; totalGastado: number; numFacturas: number }[]> {
   const res = await fetchConAuth('/facturas/resumen-proveedores');
@@ -399,8 +426,15 @@ export async function buscarFacturaDuplicada(params: {
 /**
  * Guarda o actualiza una factura.
  * @param f La factura a guardar.
+ *
+ * `advertenciasRectificativa` (25/09/2026) — campo EFÍMERO que el backend
+ * adjunta solo cuando `f.naturaleza === 'rectificativa'` y hay algo que
+ * revisar (p. ej. la factura original pertenece a otro trimestre); nunca se
+ * persiste en Mongo (ver comentario en `guardarFactura()`, backend). No
+ * forma parte de `Factura` (`types.ts`) precisamente por ser efímero — solo
+ * viaja en esta respuesta concreta, para que la interfaz pueda mostrarlo.
  */
-export async function guardarFactura(f: Factura): Promise<Factura> {
+export async function guardarFactura(f: Factura): Promise<Factura & { advertenciasRectificativa?: string[] }> {
   const res = await fetchConAuth(`/facturas/${f.id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -1619,6 +1653,8 @@ export async function obtenerEmpresa(): Promise<Empresa> {
     saldoInicialAnio: data.saldoInicialAnio ?? null,
     saldoInicialBeneficio: data.saldoInicialBeneficio ?? null,
     saldoInicialIrpf: data.saldoInicialIrpf ?? null,
+    saldoInicialIva: data.saldoInicialIva ?? null,
+    saldoInicialIgic: data.saldoInicialIgic ?? null,
     logoTamano: data.logoTamano || 187,
     enlaceResenaGoogle: data.enlaceResenaGoogle || '',
     imagenResena: data.imagenResena || null,
@@ -1661,6 +1697,8 @@ export async function guardarEmpresa(empresa: Partial<Empresa>): Promise<Empresa
     saldoInicialAnio: data.saldoInicialAnio ?? null,
     saldoInicialBeneficio: data.saldoInicialBeneficio ?? null,
     saldoInicialIrpf: data.saldoInicialIrpf ?? null,
+    saldoInicialIva: data.saldoInicialIva ?? null,
+    saldoInicialIgic: data.saldoInicialIgic ?? null,
     logoTamano: data.logoTamano || 187,
     enlaceResenaGoogle: data.enlaceResenaGoogle || '',
     imagenResena: data.imagenResena || null,

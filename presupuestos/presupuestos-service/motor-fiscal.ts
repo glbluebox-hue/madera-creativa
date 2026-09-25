@@ -22,6 +22,8 @@ type FacturaImpuesto = {
   deducibleIrpf?: number;
   /** Porcentaje (0-100) deducible del IVA/IGIC soportado (Fase 3A) — separado de `importeImpuesto`. */
   ivaIgicDeducible?: number;
+  /** Naturaleza del documento (25/09/2026) — ver `signoPorNaturaleza` más abajo y `Factura.naturaleza` en el frontend. Ausente = 'normal'. */
+  naturaleza?: 'normal' | 'rectificativa';
 };
 
 export type ResumenImpuestosTrimestre = {
@@ -45,6 +47,126 @@ export type ResumenImpuestosTrimestre = {
 };
 
 export type ClasificacionImpuesto = 'iva' | 'igic' | 'exento' | 'sin_impuesto' | 'no_identificado';
+
+// ── Rectificativas/devoluciones (25/09/2026) ── mismo criterio que la
+// versión del frontend (`motor-fiscal.ts` en `presupuestos-prototype`):
+// una rectificativa es `Factura.naturaleza`, nunca un tercer `tipo` ni un
+// importe negativo tecleado — el importe se introduce siempre en positivo,
+// esta función es la única que lo convierte en signo. ──
+
+/** `+1` para una factura normal, `-1` para una rectificativa. */
+export function signoPorNaturaleza(f: Pick<FacturaImpuesto, 'naturaleza'>): 1 | -1 {
+  return f.naturaleza === 'rectificativa' ? -1 : 1;
+}
+
+/**
+ * Expresión Mongo equivalente a `signoPorNaturaleza`, para usar dentro de un
+ * `$group`/`$sum` de `aggregate()` (`presupuestos-service.ts` →
+ * `resumenFacturas`/`resumenEconomico`) — no se puede llamar a una función
+ * de JS dentro del pipeline de agregación de Mongo, así que esta es la
+ * ÚNICA otra definición de la misma regla, mantenida junto a la de arriba a
+ * propósito para que no se desincronicen.
+ */
+export const SIGNO_NATURALEZA_MONGO = { $cond: [{ $eq: ['$naturaleza', 'rectificativa'] }, -1, 1] };
+
+export type ResultadoValidacionRectificativa = {
+  /** `false` = error de integridad del dato (no existe, es de otra cuenta, se referencia a sí misma) — el guardado debe rechazarse. Nunca una cuestión de criterio fiscal. */
+  valido: boolean;
+  motivo?: string;
+  /** Avisos que NO bloquean el guardado — requieren criterio profesional (del usuario/asesor), el sistema nunca los resuelve solo. */
+  advertencias: string[];
+};
+
+/**
+ * Valida una factura rectificativa contra su factura original YA RESUELTA
+ * por quien llama. Pura — no hace ninguna consulta a la base de datos, para
+ * poder testear las reglas sin red ni mocks (mismo principio que
+ * `identificacion-factura.ts`, frontend).
+ *
+ * `facturaOriginal: null` cubre A LA VEZ "no existe" y "pertenece a otra
+ * cuenta" — quien llama debe buscarla siempre filtrando por `usuarioId`
+ * (mismo aislamiento multi-tenant que el resto del proyecto), nunca se
+ * distingue entre ambos casos para no filtrar qué existe en otras cuentas.
+ *
+ * `rectificativasHermanas` son las OTRAS rectificativas ya guardadas de esa
+ * misma factura original (sin incluir `factura` si se está reeditando).
+ */
+export function validarRectificativa(
+  factura: { id: string; importe: number; facturaOriginalId?: string },
+  facturaOriginal: { id: string; importe: number; naturaleza?: 'normal' | 'rectificativa' } | null,
+  rectificativasHermanas: { importe: number }[]
+): ResultadoValidacionRectificativa {
+  const advertencias: string[] = [];
+  if (!factura.facturaOriginalId) {
+    return { valido: false, motivo: 'Una factura rectificativa debe indicar la factura original a la que corrige.', advertencias };
+  }
+  if (factura.facturaOriginalId === factura.id) {
+    return { valido: false, motivo: 'Una factura rectificativa no puede referenciarse a sí misma como original.', advertencias };
+  }
+  if (!facturaOriginal) {
+    return { valido: false, motivo: 'La factura original indicada no existe o no pertenece a esta cuenta.', advertencias };
+  }
+  if (facturaOriginal.naturaleza === 'rectificativa') {
+    advertencias.push('La factura original de esta rectificativa es a su vez otra rectificativa — revisa la cadena a mano, el sistema no decide automáticamente cómo tratarla.');
+  }
+  const sumaRectificativas = rectificativasHermanas.reduce((s, r) => s + r.importe, 0) + factura.importe;
+  if (sumaRectificativas > facturaOriginal.importe + 0.01) {
+    advertencias.push(
+      `La suma de las rectificativas de esta factura (${sumaRectificativas.toFixed(2)}€) supera el importe de la ` +
+      `original (${facturaOriginal.importe.toFixed(2)}€) — revísalo, el sistema no bloquea este caso porque puede ` +
+      'ser correcto según el criterio de tu asesor.'
+    );
+  }
+  return { valido: true, advertencias };
+}
+
+const NOMBRES_TRIMESTRE_BACKEND = ['1.er Trimestre', '2.º Trimestre', '3.er Trimestre', '4.º Trimestre'];
+
+/** Trimestre (0-3) a partir de una fecha ISO `AAAA-MM-DD` — por slicing de texto, nunca `Date`, para no depender de zona horaria. */
+function trimestreDeFecha(fecha: string): number {
+  return Math.floor((Number(fecha.slice(5, 7)) - 1) / 3);
+}
+
+export type AvisoRectificativaTrimestre = {
+  /** `false` si la rectificativa cae en el mismo trimestre/año que su factura original — nada que avisar. */
+  trimestreDistinto: boolean;
+  /** Solo presente cuando `trimestreDistinto` es `true`. */
+  explicacion?: string;
+};
+
+/**
+ * Aviso — nunca una corrección — de que una rectificativa cae en un
+ * trimestre (o año) distinto al de su factura original (25/09/2026, cierre
+ * del riesgo #1 de la revisión de diff: esta misma función ya existía en el
+ * frontend, `motor-fiscal.ts` de `presupuestos-prototype`, pero no estaba
+ * conectada a ningún flujo real — aquí sí se llama desde `guardarFactura`,
+ * en `presupuestos-service.ts`). Mismo criterio exacto que la versión del
+ * frontend: el IRPF ya se corrige solo (acumulado real desde enero), pero
+ * el Modelo 303/420 se calcula trimestre a trimestre de forma
+ * independiente — si la original ya se declaró, corregirla en el trimestre
+ * de la rectificativa puede requerir una complementaria del trimestre
+ * original. Esta función SOLO detecta el caso y lo explica: no decide, no
+ * corrige, no cambia ninguna fecha, no genera ninguna complementaria. Su
+ * resultado se adjunta a la respuesta del guardado (campo efímero, no
+ * persistido en el documento) para que una interfaz futura pueda mostrarlo.
+ */
+export function detectarRectificativaTrimestreDistinto(
+  rectificativa: { fecha: string },
+  facturaOriginal: { fecha: string }
+): AvisoRectificativaTrimestre {
+  const anioRect = Number(rectificativa.fecha.slice(0, 4));
+  const anioOrig = Number(facturaOriginal.fecha.slice(0, 4));
+  const trimRect = trimestreDeFecha(rectificativa.fecha);
+  const trimOrig = trimestreDeFecha(facturaOriginal.fecha);
+  if (anioRect === anioOrig && trimRect === trimOrig) return { trimestreDistinto: false };
+  return {
+    trimestreDistinto: true,
+    explicacion:
+      `La factura original es de ${NOMBRES_TRIMESTRE_BACKEND[trimOrig]} de ${anioOrig} y esta rectificativa es de ` +
+      `${NOMBRES_TRIMESTRE_BACKEND[trimRect]} de ${anioRect} — si el trimestre de la original ya se declaró, puede ` +
+      'hacer falta presentar una complementaria. El sistema no lo decide automáticamente: revísalo con tu asesor.',
+  };
+}
 
 /**
  * Exportada desde Fase 3C.3 (antes privada de este archivo) — el nuevo
@@ -84,23 +206,26 @@ export function calcularImpuestosPorTipo(facturas: FacturaImpuesto[]): ResumenIm
     const clasificacion = clasificarImpuestoFactura(f);
     if (clasificacion === 'exento' || clasificacion === 'sin_impuesto') continue;
     const cuota = cuotaRealDeFactura(f);
+    // Signo por naturaleza (25/09/2026) — ver comentario junto a `signoPorNaturaleza`.
+    const signo = signoPorNaturaleza(f);
     if (clasificacion === 'no_identificado') {
       if (cuota === null || cuota === 0) continue;
       resumen.noIdentificado.numFacturas += 1;
-      if (f.tipo === 'ingreso') resumen.noIdentificado.repercutido += cuota; else resumen.noIdentificado.soportado += cuota;
+      if (f.tipo === 'ingreso') resumen.noIdentificado.repercutido += cuota * signo; else resumen.noIdentificado.soportado += cuota * signo;
       continue;
     }
     if (cuota === null) {
       resumen.noCalculable.numFacturas += 1;
       continue;
     }
-    const base = typeof f.baseImponible === 'number' ? f.baseImponible : 0;
+    const base = (typeof f.baseImponible === 'number' ? f.baseImponible : 0) * signo;
+    const cuotaConSigno = cuota * signo;
     if (clasificacion === 'iva') {
-      if (f.tipo === 'ingreso') { resumen.ivaRepercutido += cuota; resumen.ivaBaseRepercutida += base; }
-      else { resumen.ivaSoportado += cuota; resumen.ivaBaseSoportada += base; }
+      if (f.tipo === 'ingreso') { resumen.ivaRepercutido += cuotaConSigno; resumen.ivaBaseRepercutida += base; }
+      else { resumen.ivaSoportado += cuotaConSigno; resumen.ivaBaseSoportada += base; }
     } else {
-      if (f.tipo === 'ingreso') { resumen.igicRepercutido += cuota; resumen.igicBaseRepercutida += base; }
-      else { resumen.igicSoportado += cuota; resumen.igicBaseSoportada += base; }
+      if (f.tipo === 'ingreso') { resumen.igicRepercutido += cuotaConSigno; resumen.igicBaseRepercutida += base; }
+      else { resumen.igicSoportado += cuotaConSigno; resumen.igicBaseSoportada += base; }
     }
   }
   resumen.ivaBaseRepercutida = redondearEuros(resumen.ivaBaseRepercutida);

@@ -30,6 +30,9 @@ export function SaldoInicialAnio({ anioSeleccionado, onCerrar, onGuardado }: { a
   const [activo, setActivo] = useState(false);
   const [beneficio, setBeneficio] = useState('');
   const [irpf, setIrpf] = useState('');
+  /** Arrastre IVA/IGIC (Fase A-C, 25/09/2026) — a diferencia de beneficio/IRPF, este saldo se sigue arrastrando solo año tras año una vez configurado aquí (ver `calcularSaldoEntradaAnio`), nunca hay que volver a rellenarlo. */
+  const [saldoIva, setSaldoIva] = useState('');
+  const [saldoIgic, setSaldoIgic] = useState('');
 
   useEffect(() => {
     let cancelado = false;
@@ -41,6 +44,8 @@ export function SaldoInicialAnio({ anioSeleccionado, onCerrar, onGuardado }: { a
         setActivo(yaConfigurado);
         setBeneficio(yaConfigurado && e.saldoInicialBeneficio !== null ? String(e.saldoInicialBeneficio) : '');
         setIrpf(yaConfigurado && e.saldoInicialIrpf !== null ? String(e.saldoInicialIrpf) : '');
+        setSaldoIva(yaConfigurado && e.saldoInicialIva !== null ? String(e.saldoInicialIva) : '');
+        setSaldoIgic(yaConfigurado && e.saldoInicialIgic !== null ? String(e.saldoInicialIgic) : '');
       })
       .catch(() => { if (!cancelado) setError('No se pudo cargar la configuración actual.'); })
       .finally(() => { if (!cancelado) setCargando(false); });
@@ -53,8 +58,14 @@ export function SaldoInicialAnio({ anioSeleccionado, onCerrar, onGuardado }: { a
     setError(null);
     try {
       const cambios = activo
-        ? { saldoInicialAnio: anioSeleccionado, saldoInicialBeneficio: parseFloat(beneficio.replace(',', '.')) || 0, saldoInicialIrpf: parseFloat(irpf.replace(',', '.')) || 0 }
-        : { saldoInicialAnio: null, saldoInicialBeneficio: null, saldoInicialIrpf: null };
+        ? {
+            saldoInicialAnio: anioSeleccionado,
+            saldoInicialBeneficio: parseFloat(beneficio.replace(',', '.')) || 0,
+            saldoInicialIrpf: parseFloat(irpf.replace(',', '.')) || 0,
+            saldoInicialIva: parseFloat(saldoIva.replace(',', '.')) || 0,
+            saldoInicialIgic: parseFloat(saldoIgic.replace(',', '.')) || 0,
+          }
+        : { saldoInicialAnio: null, saldoInicialBeneficio: null, saldoInicialIrpf: null, saldoInicialIva: null, saldoInicialIgic: null };
       await api.guardarEmpresa({ ...empresaActual, ...cambios });
       onGuardado();
     } catch {
@@ -96,6 +107,18 @@ export function SaldoInicialAnio({ anioSeleccionado, onCerrar, onGuardado }: { a
                   </label>
                   <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--topo-claro)' }}>
                     Estas cifras son las tuyas — de tu propia contabilidad o de tu gestor — de antes de usar Madera Creativa. Se aplican solo a {anioSeleccionado}; el año que viene el acumulado vuelve a empezar en 0, como en Hacienda.
+                  </p>
+
+                  <div style={{ height: 1, background: 'var(--borde)', margin: '0.25rem 0' }} />
+
+                  <label className={styles.label}>IVA pendiente de compensar antes de usar la app (€)
+                    <input className={styles.input} type="number" value={saldoIva} onChange={(e) => setSaldoIva(e.target.value)} placeholder="0,00" />
+                  </label>
+                  <label className={styles.label}>IGIC pendiente de compensar antes de usar la app (€)
+                    <input className={styles.input} type="number" value={saldoIgic} onChange={(e) => setSaldoIgic(e.target.value)} placeholder="0,00" />
+                  </label>
+                  <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--topo-claro)' }}>
+                    A diferencia del beneficio/IRPF de arriba, este saldo de IVA/IGIC <strong>no</strong> vuelve a 0 el año que viene — una vez indicado aquí para {anioSeleccionado}, la app lo va arrastrando sola año tras año según lo que realmente compenses, sin que tengas que volver a introducirlo.
                   </p>
                 </>
               )}

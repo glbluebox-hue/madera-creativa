@@ -34,6 +34,10 @@ export type DatosTrimestre = {
   facturas: number;
   /** Detalle real de IVA/IGIC por tipo de factura (subfase "Agregación trimestral IVA/IGIC") — nunca deriva del `impuestoIndirecto` de arriba ni de la región fiscal. */
   impuestos: ResumenImpuestosTrimestre;
+  /** Arrastre de compensación de IVA entre trimestres (Fase A-C, saldos IVA/IGIC, 25/09/2026) — ver `ArrastreImpuesto`. IVA e IGIC son circuitos completamente independientes, nunca se mezclan. */
+  ivaArrastre: ArrastreImpuesto;
+  /** Ver `ivaArrastre` — mismo mecanismo, saldo propio e independiente para IGIC. */
+  igicArrastre: ArrastreImpuesto;
 };
 
 /** Naturaleza real de una factura a efectos de agregación IVA/IGIC — se decide SOLO por `tipoImpuesto`, nunca por `regionFiscal`. */
@@ -87,6 +91,59 @@ export const TIPO_GENERAL_POR_REGION: Record<'canarias' | 'peninsula', number> =
 export function trimestreDeFecha(fecha: string): number {
   const mes = desdeFechaISO(fecha).getMonth(); // 0-11
   return Math.floor(mes / 3);
+}
+
+// ── Rectificativas/devoluciones (25/09/2026) ────────────────────────────────
+//
+// Una rectificativa es una NATURALEZA del documento (`Factura.naturaleza`),
+// nunca un tercer valor de `tipo` (que sigue siendo únicamente 'ingreso'/
+// 'gasto') ni un importe negativo tecleado a mano — el importe de una
+// rectificativa se introduce siempre en positivo, igual que cualquier otra
+// factura. Esta es la ÚNICA función que traduce `naturaleza` a un signo;
+// todo cálculo que sume `importe`/cuotas de impuesto por trimestre debe
+// multiplicar por este signo en vez de repetir la condición.
+
+/** `+1` para una factura normal, `-1` para una rectificativa — único punto de esta regla, ver comentario de arriba. */
+export function signoPorNaturaleza(f: Pick<Factura, 'naturaleza'>): 1 | -1 {
+  return f.naturaleza === 'rectificativa' ? -1 : 1;
+}
+
+/**
+ * Aviso — nunca una corrección — de que una rectificativa cae en un
+ * trimestre (o año) distinto al de su factura original (25/09/2026). El
+ * IRPF ya se corrige solo (usa el acumulado real desde enero, no trimestres
+ * aislados — auditoría 13/09/2026), pero el Modelo 303/420 SÍ se calcula
+ * trimestre a trimestre de forma independiente: si la original ya se
+ * declaró, corregirla en el trimestre de la rectificativa puede no ser lo
+ * correcto (podría hacer falta una complementaria del trimestre original).
+ * Esta función SOLO detecta el caso y lo explica — no decide ni corrige
+ * nada, mismo principio que `detectarProblemaFiscal`/
+ * `detectarDatosIdentificacionFaltantes`. Queda preparada para que un
+ * tratamiento posterior (fuera de esta fase) decida qué hacer.
+ */
+export type AvisoRectificativaTrimestre = {
+  /** `false` si la rectificativa cae en el mismo trimestre/año que su factura original — nada que avisar. */
+  trimestreDistinto: boolean;
+  /** Solo presente cuando `trimestreDistinto` es `true`. */
+  explicacion?: string;
+};
+
+export function detectarRectificativaTrimestreDistinto(
+  rectificativa: Pick<Factura, 'fecha'>,
+  facturaOriginal: Pick<Factura, 'fecha'>
+): AvisoRectificativaTrimestre {
+  const anioRect = Number(rectificativa.fecha.slice(0, 4));
+  const anioOrig = Number(facturaOriginal.fecha.slice(0, 4));
+  const trimRect = trimestreDeFecha(rectificativa.fecha);
+  const trimOrig = trimestreDeFecha(facturaOriginal.fecha);
+  if (anioRect === anioOrig && trimRect === trimOrig) return { trimestreDistinto: false };
+  return {
+    trimestreDistinto: true,
+    explicacion:
+      `La factura original es de ${NOMBRES_TRIMESTRE[trimOrig]} de ${anioOrig} y esta rectificativa es de ` +
+      `${NOMBRES_TRIMESTRE[trimRect]} de ${anioRect} — si el trimestre de la original ya se declaró, puede hacer ` +
+      `falta presentar una complementaria. El sistema no lo decide automáticamente: revísalo con tu asesor.`,
+  };
 }
 
 // El IGIC repercutido/soportado con REPEP activo no aplica: un negocio
@@ -192,10 +249,15 @@ export function calcularImpuestosPorTipo(facturas: Factura[]): ResumenImpuestosT
     const clasificacion = clasificarImpuestoFactura(f);
     if (clasificacion === 'exento' || clasificacion === 'sin_impuesto') continue;
     const cuota = cuotaRealDeFactura(f);
+    // Signo por naturaleza (25/09/2026) — una rectificativa resta de la
+    // cuota/base de SU MISMO impuesto real (IVA resta de IVA, IGIC resta de
+    // IGIC), nunca se convierte ni se mueve al otro impuesto. El importe
+    // sigue introduciéndose en positivo; es este signo el que la resta.
+    const signo = signoPorNaturaleza(f);
     if (clasificacion === 'no_identificado') {
       if (cuota === null || cuota === 0) continue; // sin ningún dato real de impuesto — no aporta a "no identificado", ya es "sin desglose" (Fase 1)
       resumen.noIdentificado.numFacturas += 1;
-      if (f.tipo === 'ingreso') resumen.noIdentificado.repercutido += cuota; else resumen.noIdentificado.soportado += cuota;
+      if (f.tipo === 'ingreso') resumen.noIdentificado.repercutido += cuota * signo; else resumen.noIdentificado.soportado += cuota * signo;
       continue;
     }
     // A partir de aquí, clasificacion es 'iva' o 'igic' — tipo real conocido.
@@ -203,13 +265,14 @@ export function calcularImpuestosPorTipo(facturas: Factura[]): ResumenImpuestosT
       resumen.noCalculable.numFacturas += 1;
       continue;
     }
-    const base = typeof f.baseImponible === 'number' ? f.baseImponible : 0;
+    const base = (typeof f.baseImponible === 'number' ? f.baseImponible : 0) * signo;
+    const cuotaConSigno = cuota * signo;
     if (clasificacion === 'iva') {
-      if (f.tipo === 'ingreso') { resumen.ivaRepercutido += cuota; resumen.ivaBaseRepercutida += base; }
-      else { resumen.ivaSoportado += cuota; resumen.ivaBaseSoportada += base; }
+      if (f.tipo === 'ingreso') { resumen.ivaRepercutido += cuotaConSigno; resumen.ivaBaseRepercutida += base; }
+      else { resumen.ivaSoportado += cuotaConSigno; resumen.ivaBaseSoportada += base; }
     } else {
-      if (f.tipo === 'ingreso') { resumen.igicRepercutido += cuota; resumen.igicBaseRepercutida += base; }
-      else { resumen.igicSoportado += cuota; resumen.igicBaseSoportada += base; }
+      if (f.tipo === 'ingreso') { resumen.igicRepercutido += cuotaConSigno; resumen.igicBaseRepercutida += base; }
+      else { resumen.igicSoportado += cuotaConSigno; resumen.igicBaseSoportada += base; }
     }
   }
   resumen.ivaBaseRepercutida = redondearEuros(resumen.ivaBaseRepercutida);
@@ -223,6 +286,56 @@ export function calcularImpuestosPorTipo(facturas: Factura[]): ResumenImpuestosT
   resumen.igicSoportado = redondearEuros(resumen.igicSoportado);
   resumen.igicResultado = redondearEuros(resumen.igicRepercutido - resumen.igicSoportado);
   return resumen;
+}
+
+// ── Arrastre de compensación IVA/IGIC entre trimestres (Fase A-C, 25/09/2026) ──
+//
+// Hasta ahora `ivaResultado`/`igicResultado` (ver `ResumenImpuestosTrimestre`)
+// eran siempre del propio trimestre, sin memoria de lo que quedó a compensar
+// en trimestres anteriores — a diferencia del IRPF, que sí arrastra el
+// beneficio acumulado real. Esta es la pieza que faltaba (auditoría
+// 25/09/2026, confirmada de nuevo en esta fase): un saldo negativo de un
+// trimestre se convierte en saldo pendiente de compensar, que reduce lo que
+// hay que ingresar en el siguiente trimestre en que el resultado sea
+// positivo — sin inventar ninguna compensación entre IVA e IGIC, cada uno
+// mantiene su propio saldo, completamente independiente del otro (regla
+// general de esta fase, no se reabre).
+//
+// `iva.resultado`/`igic.resultado` de `ResumenImpuestosTrimestre` NO cambian
+// de significado: siguen siendo el resultado propio del trimestre. El
+// arrastre vive aparte, en `DatosTrimestre.ivaArrastre`/`igicArrastre`.
+
+/** Arrastre de compensación de un impuesto indirecto (IVA o IGIC) en un trimestre — ver comentario de arriba. */
+export type ArrastreImpuesto = {
+  /** Resultado propio de este trimestre (repercutido − soportado) — mismo valor que `ResumenImpuestosTrimestre.ivaResultado`/`igicResultado`, repetido aquí para tener todo el detalle de la compensación junto. */
+  resultadoTrimestre: number;
+  /** Saldo pendiente de compensar heredado de trimestres (o años) anteriores, ANTES de aplicar este trimestre. Siempre ≥ 0 — es un crédito a favor, nunca una deuda. */
+  saldoAnterior: number;
+  /** Parte de `saldoAnterior` que se ha compensado con el resultado positivo de este trimestre. `0` si el trimestre es negativo (no hay nada que compensar, al contrario, se suma al saldo) o si no había saldo previo. */
+  compensacionAplicada: number;
+  /** Importe real a ingresar este trimestre, ya descontada la compensación. `0` cuando el trimestre queda a compensar (resultado negativo, o positivo pero íntegramente cubierto por `saldoAnterior`). */
+  aIngresar: number;
+  /** Saldo pendiente de compensar que queda para el trimestre siguiente — nunca se pierde, se traslada tal cual (incluso de un año al siguiente, ver `calcularSaldoEntradaAnio`). */
+  saldoPendiente: number;
+};
+
+/**
+ * Aplica el arrastre de un trimestre: si el resultado es positivo, primero
+ * compensa el saldo pendiente heredado (hasta donde llegue) y solo el resto
+ * se ingresa; si es negativo, se suma íntegro al saldo pendiente (nunca hay
+ * nada que ingresar ni que compensar ese mismo trimestre). Pura — no sabe si
+ * es IVA o IGIC, ni en qué trimestre está; ver los ejemplos numéricos de la
+ * auditoría/encargo 25/09/2026, replicados en los tests.
+ */
+function aplicarArrastreImpuesto(resultadoTrimestre: number, saldoAnterior: number): ArrastreImpuesto {
+  if (resultadoTrimestre >= 0) {
+    const compensacionAplicada = redondearEuros(Math.min(saldoAnterior, resultadoTrimestre));
+    const aIngresar = redondearEuros(resultadoTrimestre - compensacionAplicada);
+    const saldoPendiente = redondearEuros(saldoAnterior - compensacionAplicada);
+    return { resultadoTrimestre, saldoAnterior, compensacionAplicada, aIngresar, saldoPendiente };
+  }
+  const saldoPendiente = redondearEuros(saldoAnterior + Math.abs(resultadoTrimestre));
+  return { resultadoTrimestre, saldoAnterior, compensacionAplicada: 0, aIngresar: 0, saldoPendiente };
 }
 
 /**
@@ -248,22 +361,42 @@ export function calcularImpuestosPorTipo(facturas: Factura[]): ResumenImpuestosT
  * (comparando el año que se está mostrando contra el año guardado del saldo,
  * ver `Empresa.saldoInicialAnio`); esta función solo sabe sumarlo como punto
  * de partida, nunca decide a qué año pertenece.
+ *
+ * `saldoInicial.iva`/`igic` (Fase A-C, 25/09/2026): mismo mecanismo de punto
+ * de partida, pero para el arrastre de compensación IVA/IGIC (ver
+ * `ArrastreImpuesto`) — a diferencia de `beneficio`/`irpf`, que SÍ resetean
+ * a 0 cada año natural (así funciona el Modelo 130 real), el saldo pendiente
+ * de IVA/IGIC NO se resetea nunca automáticamente: quien llama es
+ * responsable de pasar aquí el saldo pendiente real al empezar el año
+ * (heredado del cierre del año anterior, o de un saldo inicial manual si es
+ * el primer año en la app) — ver `calcularSaldoEntradaAnio`.
  */
 export function calcularTrimestres(
   facturas: Factura[],
   gastosPeriodicos: GastoPeriodico[],
-  config: { regionFiscal: RegionFiscal; repepActivo: boolean; saldoInicial?: { beneficio: number; irpf: number } }
+  config: {
+    regionFiscal: RegionFiscal; repepActivo: boolean;
+    saldoInicial?: { beneficio: number; irpf: number; iva?: number; igic?: number };
+  }
 ): DatosTrimestre[] {
   const indirectoActivo = calculaIndirecto(config.regionFiscal, config.repepActivo);
   const tipoGeneral = tipoGeneralDeRegion(config.regionFiscal);
 
   let beneficioAcumulado = config.saldoInicial?.beneficio ?? 0;
   let irpfYaCalculado = config.saldoInicial?.irpf ?? 0;
+  let saldoIvaPendiente = config.saldoInicial?.iva ?? 0;
+  let saldoIgicPendiente = config.saldoInicial?.igic ?? 0;
 
   return [0, 1, 2, 3].map((t) => {
     const del = facturas.filter((f) => trimestreDeFecha(f.fecha) === t);
-    const ingresos = del.filter((f) => f.tipo === 'ingreso').reduce((s, f) => s + f.importe, 0);
-    const gastos = del.filter((f) => f.tipo === 'gasto').reduce((s, f) => s + f.importe, 0);
+    // Signo por naturaleza (25/09/2026) — el importe de una rectificativa se
+    // introduce en positivo; es `signoPorNaturaleza` quien lo resta de su
+    // mismo `tipo` (una rectificativa de gasto sigue restando de GASTOS,
+    // nunca se mueve a ingresos). La corrección se aplica en el trimestre en
+    // que se registra la rectificativa, no en el de la factura original —
+    // ver aviso de trimestre distinto más abajo.
+    const ingresos = del.filter((f) => f.tipo === 'ingreso').reduce((s, f) => s + f.importe * signoPorNaturaleza(f), 0);
+    const gastos = del.filter((f) => f.tipo === 'gasto').reduce((s, f) => s + f.importe * signoPorNaturaleza(f), 0);
     const gastosPeriodicosTrimestre = gastosPeriodicos.filter((g) => g.activo && esGastoPeriodicoDeducible(g))
       .reduce((s, g) => s + (g.periodicidad === 'mensual' ? g.importe * 3 : g.importe), 0);
     const beneficio = ingresos - gastos - gastosPeriodicosTrimestre;
@@ -272,9 +405,20 @@ export function calcularTrimestres(
     const irpf = Math.max(0, redondearEuros(irpfTeoricoAcumulado - irpfYaCalculado));
     irpfYaCalculado = redondearEuros(irpfYaCalculado + irpf);
     const impuestoIndirecto = indirectoActivo
-      ? del.filter((f) => f.tipo === 'ingreso').reduce((s, f) => s + impuestoDeFactura(f, indirectoActivo, tipoGeneral), 0)
-        - del.filter((f) => f.tipo === 'gasto').reduce((s, f) => s + impuestoDeFactura(f, indirectoActivo, tipoGeneral), 0)
+      ? del.filter((f) => f.tipo === 'ingreso').reduce((s, f) => s + impuestoDeFactura(f, indirectoActivo, tipoGeneral) * signoPorNaturaleza(f), 0)
+        - del.filter((f) => f.tipo === 'gasto').reduce((s, f) => s + impuestoDeFactura(f, indirectoActivo, tipoGeneral) * signoPorNaturaleza(f), 0)
       : 0;
+    const impuestos = calcularImpuestosPorTipo(del);
+    // Arrastre IVA/IGIC (Fase A-C) — circuitos completamente independientes,
+    // cada uno con su propia variable de estado; nunca se compensa uno con
+    // otro. Si REPEP deja el resultado del trimestre en 0 (sin facturas de
+    // IGIC real, caso normal bajo REPEP), el arrastre no genera ni consume
+    // saldo — no hace falta ninguna condición especial aquí, sale solo de la
+    // aritmética (ver test "REPEP no genera arrastre indebido").
+    const ivaArrastre = aplicarArrastreImpuesto(impuestos.ivaResultado, saldoIvaPendiente);
+    saldoIvaPendiente = ivaArrastre.saldoPendiente;
+    const igicArrastre = aplicarArrastreImpuesto(impuestos.igicResultado, saldoIgicPendiente);
+    saldoIgicPendiente = igicArrastre.saldoPendiente;
     return {
       nombre: NOMBRES_TRIMESTRE[t],
       meses: MESES_TRIMESTRE[t],
@@ -287,9 +431,161 @@ export function calcularTrimestres(
       impuestoIndirecto,
       modeloIndirecto: config.regionFiscal === 'canarias' ? `Modelo 420 (${MODELO_INDIRECTO_MES[t]})` : `Modelo 303 (${MODELO_INDIRECTO_MES[t]})`,
       facturas: del.length,
-      impuestos: calcularImpuestosPorTipo(del),
+      impuestos,
+      ivaArrastre,
+      igicArrastre,
     };
   });
+}
+
+/**
+ * Saldo de entrada de IVA/IGIC de un año, a partir del histórico YA OBTENIDO
+ * de años anteriores (Fase A-C, 25/09/2026) — pura, nunca hace ninguna
+ * petición de red; quien llama (`trimestres.tsx`) decide hasta qué año hace
+ * falta retroceder (usando los años que ya tiene disponibles,
+ * `api.obtenerAniosConFacturas()`) y trae las facturas de cada uno.
+ *
+ * `historico` debe venir ORDENADO de más antiguo a más reciente, empezando
+ * en el año del saldo inicial manual (`saldoInicial`, si existe — mismo
+ * patrón que `Empresa.saldoInicialIva`/`saldoInicialIgic`) o en el año más
+ * antiguo disponible, y llegando hasta el año INMEDIATAMENTE ANTERIOR al que
+ * se quiere calcular. Con `historico` vacío (sin años anteriores, o el año a
+ * calcular es el propio año del saldo inicial), devuelve directamente
+ * `saldoInicial` (o `{iva:0, igic:0}` si tampoco hay saldo inicial — primer
+ * uso de la app, sin ningún dato anterior).
+ *
+ * A diferencia del IRPF (que resetea su acumulado cada año, ver
+ * `beneficioAcumulado`), el saldo de IVA/IGIC nunca se pierde entre años —
+ * por eso hace falta recorrer el histórico entero en vez de solo el año
+ * anterior: el cierre de cada año depende, en cadena, del cierre del
+ * anterior.
+ */
+export function calcularSaldoEntradaAnio(
+  historico: { facturas: Factura[] }[],
+  gastosPeriodicos: GastoPeriodico[],
+  config: { regionFiscal: RegionFiscal; repepActivo: boolean },
+  saldoInicial?: { iva: number; igic: number }
+): { iva: number; igic: number } {
+  let iva = saldoInicial?.iva ?? 0;
+  let igic = saldoInicial?.igic ?? 0;
+  for (const anio of historico) {
+    const trimestres = calcularTrimestres(anio.facturas, gastosPeriodicos, {
+      ...config,
+      saldoInicial: { beneficio: 0, irpf: 0, iva, igic },
+    });
+    const q4 = trimestres[3];
+    iva = q4.ivaArrastre.saldoPendiente;
+    igic = q4.igicArrastre.saldoPendiente;
+  }
+  return { iva, igic };
+}
+
+// ── Posición fiscal trimestral (Bloque B, 25/09/2026) ───────────────────────
+//
+// REESTRUCTURA el resultado que ya calcula `calcularTrimestres` — nunca
+// recalcula nada por su cuenta. El motor ya calcula ingresos/gastos/
+// beneficio, IRPF acumulado, IVA e IGIC; esta función solo les da una forma
+// clara y separada para responder "¿cuánto tengo que pagar a Hacienda?".
+//
+// IVA e IGIC se devuelven SIEMPRE por separado, nunca sumados ni
+// convertidos entre sí — una empresa puede tener ambos en el mismo
+// trimestre a la vez (p. ej. una compra en Península con IVA real, aunque
+// la empresa sea de Canarias con IGIC — regla fundamental de la subfase
+// IVA/IGIC, ver `clasificarImpuestoFactura`) y sumarlos sería fiscalmente
+// incorrecto. Por el mismo motivo esta función NO calcula todavía un
+// `totalAIngresar` combinado — queda para una fase posterior.
+//
+// Modelo 130 (IRPF): mismo cálculo de siempre (acumulado real desde enero,
+// ver `calcularTrimestres`) — esta función NO añade retenciones, mínimo
+// personal ni deducciones específicas: la auditoría del 25/09/2026 confirmó
+// que el motor actual no las tiene implementadas, y simularlas aquí sería
+// inventar un dato que no existe. `irpf.importe` es una estimación basada
+// únicamente en lo que el motor conoce hoy.
+//
+// Modelo 303 (IVA) / Modelo 420 (IGIC): repercutido − soportado del propio
+// trimestre, MÁS el arrastre de compensación entre trimestres (y entre años,
+// Fase A-C, 25/09/2026) que ya calcula `calcularTrimestres` en
+// `DatosTrimestre.ivaArrastre`/`igicArrastre` — esta función sigue sin
+// recalcular nada, solo reestructura lo que ya viene calculado en el
+// trimestre. `resultado` NUNCA cambia de significado (sigue siendo el
+// resultado propio del trimestre, sin compensar) — la cifra ya compensada es
+// `aIngresar`, un campo nuevo y separado.
+//
+// Sigue sin existir aquí ningún `totalAIngresar` que combine IRPF+IVA/IGIC —
+// queda para una fase posterior, y esta función sigue recibiendo un único
+// `DatosTrimestre` (nunca el año completo ni la `Empresa`): el estado
+// cronológico entre trimestres/años vive en `calcularTrimestres`/
+// `calcularSaldoEntradaAnio`, nunca aquí.
+
+/** Posición fiscal de un trimestre — ver comentario de arriba. */
+export type PosicionFiscalTrimestre = {
+  /** Ingresos − gastos (económico puro, sin impuestos) de este trimestre — mismo valor que `DatosTrimestre.beneficio`. */
+  resultadoEconomico: number;
+  irpf: { importe: number; tipoModelo: '130' };
+  /** `resultado` es siempre el del propio trimestre, sin compensar (mismo valor que antes de esta fase) — usa `aIngresar`/`saldoPendiente` para la cifra ya compensada con el arrastre. */
+  iva: { resultado: number; tipoModelo: '303' } & ArrastreImpuesto;
+  /** Ver `iva` — mismos campos, circuito completamente independiente. */
+  igic: { resultado: number; tipoModelo: '420' } & ArrastreImpuesto;
+};
+
+/** Reestructura un `DatosTrimestre` ya calculado — ver comentario de arriba. Nunca recibe facturas ni recalcula nada. */
+export function calcularPosicionFiscal(trimestre: DatosTrimestre): PosicionFiscalTrimestre {
+  return {
+    resultadoEconomico: trimestre.beneficio,
+    irpf: { importe: trimestre.irpf, tipoModelo: '130' },
+    iva: { resultado: trimestre.impuestos.ivaResultado, tipoModelo: '303', ...trimestre.ivaArrastre },
+    igic: { resultado: trimestre.impuestos.igicResultado, tipoModelo: '420', ...trimestre.igicArrastre },
+  };
+}
+
+// ── Total estimado a ingresar (Fase Total, 25/09/2026) ──────────────────────
+//
+// Última capa, encima de `calcularPosicionFiscal` — sigue sin recalcular
+// nada, solo COMBINA lo que ya está calculado. Suma únicamente lo que de
+// verdad hay que ingresar de cada impuesto:
+//   - `irpf.importe`            (Modelo 130, ya neto del acumulado del año)
+//   - `iva.aIngresar`           (Modelo 303, ya neto del arrastre de saldo)
+//   - `igic.aIngresar`          (Modelo 420, ya neto del arrastre de saldo)
+// NUNCA `iva.resultado`/`igic.resultado` a secas — esos son el bruto del
+// propio trimestre, sin compensar con el saldo pendiente heredado.
+//
+// `iva.saldoPendiente`/`igic.saldoPendiente` (lo que queda SIN compensar,
+// cuando el trimestre no llega a cubrir el saldo anterior) NO entran en el
+// total — son puramente informativos, se muestran aparte. Ejemplo del
+// encargo: un IGIC con 200€ pendientes de compensar no resta ni suma nada al
+// total, solo se informa como "IGIC pendiente: 200€".
+//
+// IVA e IGIC nunca se compensan entre sí — cada uno aporta solo su propio
+// `aIngresar`, ya neto de SU PROPIO arrastre (circuito independiente, regla
+// de toda esta fase, no se reabre aquí).
+//
+// Pura — recibe la `PosicionFiscalTrimestre` ya calculada de UN trimestre,
+// nunca el año completo ni la `Empresa`: el estado cronológico (arrastre
+// entre trimestres/años) sigue viviendo únicamente en `calcularTrimestres`/
+// `calcularSaldoEntradaAnio`, nunca aquí ni en `calcularPosicionFiscal`.
+
+/** Desglose del total estimado a ingresar de un trimestre — ver comentario de arriba. */
+export type TotalAIngresar = {
+  irpf: number;
+  iva: number;
+  igic: number;
+  /** Suma de los tres — nunca incluye `saldoPendiente` de IVA/IGIC. */
+  total: number;
+};
+
+/**
+ * Combina IRPF + IVA (`aIngresar`) + IGIC (`aIngresar`) de una posición
+ * fiscal ya calculada. `irpf.importe`, `iva.aIngresar` e `igic.aIngresar` ya
+ * están garantizados ≥0 por quienes los calculan (`Math.max(0, ...)` en
+ * `calcularTrimestres`/`aplicarArrastreImpuesto`) — el `Math.max` de aquí es
+ * una defensa adicional, no estrictamente necesaria hoy, para que esta
+ * función siga siendo correcta aunque esa garantía cambiara en el futuro.
+ */
+export function calcularTotalAIngresar(posicion: PosicionFiscalTrimestre): TotalAIngresar {
+  const irpf = Math.max(0, posicion.irpf.importe);
+  const iva = Math.max(0, posicion.iva.aIngresar);
+  const igic = Math.max(0, posicion.igic.aIngresar);
+  return { irpf, iva, igic, total: redondearEuros(irpf + iva + igic) };
 }
 
 // ── Tratamiento fiscal (Fase 3A, infraestructura) ───────────────────────────

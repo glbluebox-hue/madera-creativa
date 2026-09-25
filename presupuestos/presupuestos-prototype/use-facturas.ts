@@ -18,7 +18,13 @@ export type UseFacturas = {
   filtro: FiltroFacturas;
   establecerFiltro: (f: FiltroFacturas) => void;
   error: string | null;
-  guardar: (f: Factura) => Promise<void>;
+  /**
+   * Devuelve la factura tal como la ha guardado el servidor (25/09/2026) —
+   * antes se descartaba la respuesta real tras usarla solo para actualizar
+   * `facturas`; ahora se propaga para que quien llame pueda leer campos
+   * efímeros como `advertenciasRectificativa` (ver `api.guardarFactura`).
+   */
+  guardar: (f: Factura) => Promise<Factura & { advertenciasRectificativa?: string[] }>;
   borrar: (id: string) => Promise<void>;
   cargarMas: () => void;
   /** Vuelve a pedir la página 1 con el filtro actual — para cuando algo ha cambiado facturas por fuera de `guardar`/`borrar` (Fase 3C.3: aplicar tratamiento fiscal a históricos). */
@@ -106,6 +112,7 @@ export function useFacturas(autenticado = true): UseFacturas {
     const guardada = await api.guardarFactura(f);
     setFacturas((prev) => prev.map((x) => (x.id === guardada.id ? guardada : x)));
     cargarResumen();
+    return guardada;
   }, [cargarResumen]);
 
   const borrar = useCallback(async (id: string) => {

@@ -647,6 +647,12 @@ export const esquemaFactura = z.object({
   paginas: z.array(z.object({ tipo: z.enum(['imagen', 'pdf']), url: z.string() })).optional(),
   /** Fecha de vencimiento ISO opcional (Fase "Calendario", 30/08/2026) — distinta de `fecha` (fecha del propio documento). */
   fechaVencimiento: z.string().max(32).optional().default(''),
+
+  // ── Rectificativas/devoluciones (25/09/2026) ── Sin `.default()` en `naturaleza`: ausente = 'normal' se interpreta al leer (motor-fiscal.ts → signoPorNaturaleza), nunca se escribe por defecto.
+  naturaleza: z.enum(['normal', 'rectificativa']).optional(),
+  facturaOriginalId: z.string().max(128).optional(),
+  numeroFacturaOriginal: z.string().max(100).optional(),
+  motivoRectificacion: z.enum(['devolucion_mercancia', 'error_facturacion', 'descuento_posterior', 'otro']).optional(),
 });
 
 // ── Gastos periódicos/estimados (Fase Facturas Profesional) ────────────────────
@@ -1142,6 +1148,12 @@ export const esquemaPaginacionFacturas = z.object({
   proyectoId: z.string().max(128).optional(),
   /** Devuelve, sin paginar, las facturas cuyo proveedor coincide (búsqueda difusa) con este nombre. */
   proveedor: z.string().max(300).optional(),
+  /** Devuelve, sin paginar, las rectificativas cuya `facturaOriginalId` coincide con este id — conteo/listado real, no acotado a lo cargado en el cliente. */
+  facturaOriginalId: z.string().max(128).optional(),
+  /** Búsqueda de candidatas a "factura original" para una rectificativa — por número, proveedor, importe o fecha. */
+  busqueda: z.string().max(300).optional(),
+  /** Junto con `busqueda`, excluye esta factura de los resultados — para que el selector de "factura original" nunca pueda ofrecerse a sí mismo. */
+  excluirId: z.string().max(128).optional(),
   /**
    * Id real del proveedor (Fase Facturas Profesional) — cuando se manda
    * junto con `proveedor`, `listarFacturasDeProveedor` prioriza esta
@@ -1190,6 +1202,9 @@ export const esquemaEmpresa = z.object({
   saldoInicialAnio: z.number().int().min(2000).max(2100).nullable().optional().default(null),
   saldoInicialBeneficio: z.number().nullable().optional().default(null),
   saldoInicialIrpf: z.number().nullable().optional().default(null),
+  /** Arrastre IVA/IGIC (Fase A-C, 25/09/2026) — ver `EmpresaSchema.saldoInicialIva/Igic` en `cliente.model.ts`. */
+  saldoInicialIva: z.number().nullable().optional().default(null),
+  saldoInicialIgic: z.number().nullable().optional().default(null),
   /** Ancho en píxeles del logo en la barra lateral — ajustable a mano por el usuario, ver `sidebarLogoImg`. */
   logoTamano: z.number().min(40).max(400).optional().default(187),
   /** Minutos de inactividad antes de cerrar sesión sola — `null` = nunca. Ver `EmpresaSchema.tiempoInactividadMin` en `cliente.model.ts`. */

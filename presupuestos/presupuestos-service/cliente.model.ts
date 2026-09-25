@@ -387,6 +387,20 @@ const EmpresaSchema = new Schema({
   saldoInicialAnio: { type: Number, default: null },
   saldoInicialBeneficio: { type: Number, default: null },
   saldoInicialIrpf: { type: Number, default: null },
+  /**
+   * Saldo de partida del arrastre de compensación IVA/IGIC (Fase A-C,
+   * 25/09/2026) — mismo `saldoInicialAnio` de arriba fija el año, pero a
+   * diferencia de `saldoInicialBeneficio`/`Irpf` (que SÍ resetean cada año
+   * natural), este saldo es solo el PUNTO DE PARTIDA de la cadena de
+   * arrastre: el propio motor (`calcularSaldoEntradaAnio` en
+   * `motor-fiscal.ts` del frontend) traslada automáticamente el saldo
+   * pendiente real de un año al siguiente sin que el usuario tenga que
+   * volver a introducirlo — nunca se pierde ni se resetea solo. `null`
+   * hasta que el usuario lo rellena a propósito, mismo criterio que los de
+   * IRPF.
+   */
+  saldoInicialIva: { type: Number, default: null },
+  saldoInicialIgic: { type: Number, default: null },
   /** Tema por defecto del Motor Documental (Incremento 3) — identidad corporativa: todo documento nuevo sin tema propio hereda este. `null` hasta que el usuario personalice uno. */
   temaPorDefecto: { type: Schema.Types.Mixed, default: null },
   /** Ancho en píxeles del logo en la barra lateral — ajustable a mano por el usuario (antes fijo a 187px en CSS). */
@@ -1069,6 +1083,17 @@ const FacturaSchema = new Schema({
     type: [{ tipo: { type: String, enum: ['imagen', 'pdf'] }, url: String, clave: { type: String, default: '' }, tamano: { type: Number, default: 0 } }],
     default: [],
   },
+
+  // ── Rectificativas/devoluciones (25/09/2026) — sin `default` en
+  // `naturaleza`: ausente en toda factura existente se interpreta como
+  // 'normal' al leer (motor-fiscal.ts → signoPorNaturaleza), nunca se
+  // escribe un valor por defecto en Mongo. ──
+  naturaleza: { type: String, enum: ['normal', 'rectificativa'] },
+  /** Id de la Factura original que esta rectifica — solo si naturaleza === 'rectificativa'. Referencia simple por id, mismo patrón que `clienteId`/`proveedorId` (sin `ref`/`populate` de Mongoose). */
+  facturaOriginalId: { type: String, default: '' },
+  /** Número de factura original tal como consta en el propio documento rectificativo — dato del documento, distinto de `facturaOriginalId`. */
+  numeroFacturaOriginal: { type: String, default: '' },
+  motivoRectificacion: { type: String, enum: ['devolucion_mercancia', 'error_facturacion', 'descuento_posterior', 'otro'] },
 });
 
 /**

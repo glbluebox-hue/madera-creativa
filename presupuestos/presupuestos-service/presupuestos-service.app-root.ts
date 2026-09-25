@@ -1809,14 +1809,27 @@ export function run() {
    */
   app.get('/facturas', requireAuth, validar(esquemaPaginacionFacturas, 'query'), async (req: AuthRequest, res) => {
     try {
-      const { pagina, limite, tipo, anio, trimestre, clienteId, proyectoId, proveedor, proveedorId } = req.query as unknown as {
+      const { pagina, limite, tipo, anio, trimestre, clienteId, proyectoId, proveedor, proveedorId, facturaOriginalId, busqueda, excluirId } = req.query as unknown as {
         pagina: number; limite: number; tipo: 'ingreso' | 'gasto' | 'todas'; anio?: number; trimestre?: number;
         clienteId?: string; proyectoId?: string; proveedor?: string; proveedorId?: string;
+        facturaOriginalId?: string; busqueda?: string; excluirId?: string;
       };
-      // proyectoId/clienteId/proveedor/anio devuelven un conjunto completo
-      // sin paginar (acotado por diseño: las facturas de un proyecto, de un
-      // proveedor o de un año concreto) — se comprueban en este orden
-      // porque son usos mutuamente excluyentes en la práctica.
+      // proyectoId/clienteId/proveedor/anio/facturaOriginalId/busqueda
+      // devuelven un conjunto completo sin paginar (acotado por diseño:
+      // las facturas de un proyecto, de un proveedor, de un año concreto,
+      // las rectificativas de una original, o los candidatos de un
+      // buscador interactivo) — se comprueban en este orden porque son
+      // usos mutuamente excluyentes en la práctica.
+      if (facturaOriginalId !== undefined) {
+        const items = await svc.listarFacturasRectificativas(req.usuarioId!, facturaOriginalId);
+        res.json({ items, pagina: 1, limite: items.length, total: items.length, totalPaginas: 1 });
+        return;
+      }
+      if (busqueda !== undefined) {
+        const items = await svc.buscarFacturasOriginalCandidatas(req.usuarioId!, busqueda, excluirId);
+        res.json({ items, pagina: 1, limite: items.length, total: items.length, totalPaginas: 1 });
+        return;
+      }
       if (proyectoId !== undefined) {
         const items = await svc.listarFacturasDeProyecto(req.usuarioId!, proyectoId);
         res.json({ items, pagina: 1, limite: items.length, total: items.length, totalPaginas: 1 });

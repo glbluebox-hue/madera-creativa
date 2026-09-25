@@ -17,6 +17,7 @@ import { autoCrearProveedorDeFactura, type DatosProveedorDetectados } from './pr
 import { colorAvatar, iniciales } from './avatar-utils.js';
 import { etiquetaEstado, grupoEstado } from './estado-utils.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
+import { AvisoRectificativa } from './aviso-rectificativa.js';
 import { SolicitudResena } from './solicitud-resena.js';
 import { VisorFactura } from './visor-factura.js';
 import { TabResumen } from './tab-resumen.js';
@@ -63,8 +64,8 @@ export type FichaClienteProps = {
   onActualizarProyecto: (proyecto: Proyecto) => void | Promise<void>;
   /** Borra por completo este proyecto (con confirmación) y vuelve a la lista — nunca borra al cliente ni sus otros proyectos. */
   onBorrar?: (id: string) => void;
-  /** Guardar una factura de gasto vinculada a este proyecto. */
-  onGuardarFactura?: (f: Factura) => void;
+  /** Guardar una factura de gasto vinculada a este proyecto. Devuelve la factura tal como la guardó el servidor (25/09/2026) — ver `UseFacturas.guardar`, incluye `advertenciasRectificativa` cuando aplica, igual que `Facturas.onGuardar`. */
+  onGuardarFactura?: (f: Factura) => Promise<Factura & { advertenciasRectificativa?: string[] }>;
   /** Crear un nuevo proveedor si no existe al guardar la factura. */
   onCrearProveedor?: (p: Omit<Proveedor, 'id' | 'creado'>) => Proveedor;
   /** Completa la ficha de un proveedor ya existente con datos leídos en una factura (dirección/CP/CIF), si le faltaban. */
@@ -111,6 +112,8 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
   /** Diseño 3D (30/08/2026) — botón en la cabecera de "Archivos del proyecto" + tarjeta del modelo, ver `PanelAdjuntos` más abajo. */
   const modelo3D = useModelo3D(proyecto.id, onActualizarProyecto);
   const [escanerAbierto, setEscanerAbierto] = useState(false);
+  /** Aviso de rectificativa recién guardada (25/09/2026) — ver `AvisoRectificativa`; mismo comportamiento efímero que en `Facturas`. */
+  const [advertenciasRectificativa, setAdvertenciasRectificativa] = useState<string[]>([]);
   const [facturasProyecto, setFacturasProyecto] = useState<Factura[]>([]);
   /** Factura abierta en el visor de imagen/PDF (petición del usuario, 20/08/2026 — antes esta tabla no tenía forma de ver el documento adjunto, solo sus datos). */
   const [viendoFacturaId, setViendoFacturaId] = useState<string | null>(null);
@@ -144,10 +147,18 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
    * coincide con uno existente (o crea la ficha si de verdad no hay
    * ninguno), y recarga la lista. El proveedorId devuelto puede no ser el
    * que traía `fSinResolver` — hay que guardar la factura con ese id.
+   *
+   * Async desde 25/09/2026 (cierre de limitación conocida): antes
+   * descartaba la respuesta del servidor, así que una rectificativa
+   * guardada desde esta ficha nunca mostraba el aviso de trimestre
+   * distinto que sí mostraba `Facturas` — mismo flujo de guardado real
+   * (`onGuardarFactura`, la misma función `guardarFactura` del hook
+   * `use-facturas.ts`), solo faltaba esperar y leer su respuesta aquí.
    */
-  const guardarFacturaConProveedor = (fSinResolver: Factura, datosProveedorDetectados?: DatosProveedorDetectados) => {
+  const guardarFacturaConProveedor = async (fSinResolver: Factura, datosProveedorDetectados?: DatosProveedorDetectados) => {
     const proveedorId = autoCrearProveedorDeFactura(fSinResolver, proveedores, onCrearProveedor, onActualizarProveedor, datosProveedorDetectados);
-    onGuardarFactura?.({ ...fSinResolver, proveedorId });
+    const guardada = await onGuardarFactura?.({ ...fSinResolver, proveedorId });
+    setAdvertenciasRectificativa(guardada?.advertenciasRectificativa ?? []);
     cargarFacturasProyecto();
   };
 
@@ -251,6 +262,7 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
 
   return (
     <div>
+      <AvisoRectificativa advertencias={advertenciasRectificativa} onDescartar={() => setAdvertenciasRectificativa([])} />
       {/* Barra volver móvil — tipo iOS */}
       <div className={styles.barraVolver}>
         <button className={styles.barraVolverBtn} onClick={onVolver}>

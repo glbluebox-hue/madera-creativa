@@ -7,7 +7,7 @@ import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
 import { CandadoPlan } from './candado-plan.js';
 import {
   NOMBRES_TRIMESTRE, MESES_TRIMESTRE, TIPO_MODELO, MODELO_INDIRECTO_MES,
-  calcularTrimestres,
+  calcularTrimestres, calcularPosicionFiscal, calcularSaldoEntradaAnio, calcularTotalAIngresar, trimestreDeFecha,
   type DatosTrimestre, type RegionFiscal,
 } from './motor-fiscal.js';
 import styles from './styles.module.css';
@@ -47,15 +47,25 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
   const [saldoInicialAnio, setSaldoInicialAnio] = React.useState<number | null>(null);
   const [saldoInicialBeneficio, setSaldoInicialBeneficio] = React.useState<number | null>(null);
   const [saldoInicialIrpf, setSaldoInicialIrpf] = React.useState<number | null>(null);
+  // Arrastre IVA/IGIC (Fase A-C, 25/09/2026) — `saldoInicialIva`/`Igic` es solo
+  // el punto de partida manual (mismo patrón que IRPF); `entradaIvaIgic` es lo
+  // que de verdad se aplica a `calcularTrimestres`, calculado automáticamente
+  // recorriendo el histórico de años anteriores — ver el efecto más abajo.
+  const [saldoInicialIva, setSaldoInicialIva] = React.useState<number | null>(null);
+  const [saldoInicialIgic, setSaldoInicialIgic] = React.useState<number | null>(null);
+  const [entradaIvaIgic, setEntradaIvaIgic] = React.useState<{ iva: number; igic: number }>({ iva: 0, igic: 0 });
   const [saldoInicialAbierto, setSaldoInicialAbierto] = React.useState(false);
   const [gastosPeriodicos, setGastosPeriodicos] = React.useState<GastoPeriodico[]>([]);
   const [descargandoAsesor, setDescargandoAsesor] = React.useState<number | null>(null);
   const [descargandoPdf, setDescargandoPdf] = React.useState<number | null>(null);
+  /** Qué tarjeta de trimestre tiene desplegado el detalle de sus rectificativas (25/09/2026) — como mucho una a la vez. */
+  const [trimestreConRectificativasAbierto, setTrimestreConRectificativasAbierto] = React.useState<number | null>(null);
 
   const recargarEmpresa = React.useCallback(() => {
     api.obtenerEmpresa().then((e) => {
       setRegionFiscal(e.regionFiscal); setRepepActivo(e.repepActivo);
       setSaldoInicialAnio(e.saldoInicialAnio); setSaldoInicialBeneficio(e.saldoInicialBeneficio); setSaldoInicialIrpf(e.saldoInicialIrpf);
+      setSaldoInicialIva(e.saldoInicialIva); setSaldoInicialIgic(e.saldoInicialIgic);
     });
   }, []);
 
@@ -77,11 +87,54 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
       .finally(() => setCargando(false));
   }, [anioSeleccionado]);
 
-  // Solo se aplica al año exacto al que corresponde — el acumulado real
-  // vuelve a 0 cada 1 de enero, nunca se arrastra de un año a otro.
-  const saldoInicialAplicable = saldoInicialAnio === anioSeleccionado && saldoInicialBeneficio !== null && saldoInicialIrpf !== null
+  // Arrastre IVA/IGIC entre años (Fase A-C, 25/09/2026) — a diferencia del
+  // beneficio/IRPF (que sí resetean cada año), el saldo de IVA/IGIC nunca se
+  // pierde: se recorre el histórico real de años anteriores (desde el año
+  // del saldo inicial manual, o desde el año más antiguo disponible si no
+  // hay saldo inicial configurado) para obtener el saldo pendiente real con
+  // el que arranca el año seleccionado — sin que el usuario tenga que
+  // reintroducirlo cada año. Si el año seleccionado ES el del saldo inicial
+  // manual, ese valor ya es el punto de partida, sin recorrer nada.
+  React.useEffect(() => {
+    let cancelado = false;
+    if (saldoInicialAnio === anioSeleccionado) {
+      setEntradaIvaIgic({ iva: saldoInicialIva ?? 0, igic: saldoInicialIgic ?? 0 });
+      return;
+    }
+    const aniosAnteriores = aniosDisponibles.filter((a) => a < anioSeleccionado).sort((a, b) => a - b);
+    const inicioCadena = saldoInicialAnio ?? aniosAnteriores[0];
+    if (inicioCadena === undefined || inicioCadena === null || inicioCadena >= anioSeleccionado) {
+      setEntradaIvaIgic({ iva: 0, igic: 0 }); // sin ningún año anterior con datos ni saldo inicial — primer uso de la app
+      return;
+    }
+    const aniosARecorrer: number[] = [];
+    for (let a = inicioCadena; a < anioSeleccionado; a++) aniosARecorrer.push(a);
+    Promise.all(aniosARecorrer.map((a) => api.obtenerFacturasPorAnio(a)))
+      .then((porAnio) => {
+        if (cancelado) return;
+        const historico = porAnio.map((facturas) => ({ facturas }));
+        const saldoManual = saldoInicialAnio !== null ? { iva: saldoInicialIva ?? 0, igic: saldoInicialIgic ?? 0 } : undefined;
+        setEntradaIvaIgic(calcularSaldoEntradaAnio(historico, gastosPeriodicos, { regionFiscal, repepActivo }, saldoManual));
+      })
+      .catch(() => { if (!cancelado) setEntradaIvaIgic({ iva: 0, igic: 0 }); });
+    return () => { cancelado = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anioSeleccionado, saldoInicialAnio, saldoInicialIva, saldoInicialIgic, aniosDisponibles.join(','), regionFiscal, repepActivo]);
+
+  // Beneficio/IRPF: solo se aplica al año exacto al que corresponde — el
+  // acumulado real vuelve a 0 cada 1 de enero, nunca se arrastra de un año a
+  // otro (sin cambios). IVA/IGIC: `entradaIvaIgic` ya trae el saldo correcto
+  // del año, calculado (o heredado) automáticamente arriba — siempre se
+  // aplica, no solo cuando coincide con el año del saldo inicial manual.
+  const saldoInicialBeneficioIrpfAplicable = saldoInicialAnio === anioSeleccionado && saldoInicialBeneficio !== null && saldoInicialIrpf !== null
     ? { beneficio: saldoInicialBeneficio, irpf: saldoInicialIrpf }
     : undefined;
+  const saldoInicialAplicable = {
+    beneficio: saldoInicialBeneficioIrpfAplicable?.beneficio ?? 0,
+    irpf: saldoInicialBeneficioIrpfAplicable?.irpf ?? 0,
+    iva: entradaIvaIgic.iva,
+    igic: entradaIvaIgic.igic,
+  };
 
   // Cálculo fiscal (IRPF/IGIC/IVA) delegado en `motor-fiscal.ts` (Fase 2.0,
   // extracción) — mismas fórmulas, ver ese fichero para el detalle.
@@ -92,6 +145,20 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
   const totalGastosPeriodicos = trimestresData.reduce((s, t) => s + t.gastosPeriodicos, 0);
   const totalBeneficio = totalIngresos - totalGastos - totalGastosPeriodicos;
   const totalIrpf = trimestresData.reduce((s, t) => s + t.irpf, 0);
+
+  /**
+   * Rectificativas del año, agrupadas por trimestre (25/09/2026) — solo
+   * informativo, no participa en ningún cálculo (los importes ya vienen
+   * correctamente sumados/restados desde `calcularTrimestres`, ver
+   * `signoPorNaturaleza` en `motor-fiscal.ts`). `facturasFiltradas` ya es
+   * el año completo cargado por este mismo componente, así que aquí sí se
+   * puede contar sin la limitación de "solo la página cargada" que tiene
+   * el indicador equivalente en `facturas.tsx`.
+   */
+  const rectificativasPorTrimestre: import('./types.js').Factura[][] = [[], [], [], []];
+  for (const f of facturasFiltradas) {
+    if (f.naturaleza === 'rectificativa') rectificativasPorTrimestre[trimestreDeFecha(f.fecha)].push(f);
+  }
 
   const trimActual = Math.floor(new Date().getMonth() / 3);
 
@@ -144,9 +211,14 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
         </div>
       </div>
 
-      {saldoInicialAplicable && (
+      {saldoInicialBeneficioIrpfAplicable && (
         <p style={{ margin: '-1rem 0 1.25rem', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>
-          Aplicando saldo de partida de {anioSeleccionado}: {formatoEuroPrivado(saldoInicialAplicable.beneficio, privado)} de beneficio y {formatoEuroPrivado(saldoInicialAplicable.irpf, privado)} de IRPF ya acumulados antes de usar la app.
+          Aplicando saldo de partida de {anioSeleccionado}: {formatoEuroPrivado(saldoInicialBeneficioIrpfAplicable.beneficio, privado)} de beneficio y {formatoEuroPrivado(saldoInicialBeneficioIrpfAplicable.irpf, privado)} de IRPF ya acumulados antes de usar la app.
+        </p>
+      )}
+      {(entradaIvaIgic.iva !== 0 || entradaIvaIgic.igic !== 0) && (
+        <p style={{ margin: '-1rem 0 1.25rem', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>
+          Este año arranca con {formatoEuroPrivado(entradaIvaIgic.iva, privado)} de IVA y {formatoEuroPrivado(entradaIvaIgic.igic, privado)} de IGIC pendientes de compensar de años anteriores.
         </p>
       )}
 
@@ -217,13 +289,23 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1.25rem' }}>
         {trimestresData.map((t, i) => {
           const esActual = i === trimActual && anioSeleccionado === anioActual;
-          const pagado = t.irpf > 0;
+          // Posición fiscal (25/09/2026) — la tarjeta consume la estructura ya
+          // calculada por el motor, nunca recalcula IRPF/IVA/IGIC por su cuenta
+          // (ver `calcularPosicionFiscal` en `motor-fiscal.ts`). IVA e IGIC se
+          // leen siempre por separado, nunca se suman entre sí.
+          const posicion = calcularPosicionFiscal(t);
+          const pagado = posicion.irpf.importe > 0;
+          const rectificativasTrimestre = rectificativasPorTrimestre[i];
+          // Total estimado a ingresar (Fase Total, 25/09/2026) — combina lo que
+          // ya calcula el motor (IRPF neto + IVA/IGIC ya netos de su propio
+          // arrastre), nunca suma IVA con IGIC entre sí ni recalcula nada aquí.
+          const total = calcularTotalAIngresar(posicion);
           return (
             <div
               key={i}
               className={styles.kpiTarjeta}
               style={{
-                borderTop: `4px solid ${t.beneficio > 0 ? 'var(--verde)' : t.beneficio < 0 ? 'var(--rojo)' : 'var(--borde)'}`,
+                borderTop: `4px solid ${posicion.resultadoEconomico > 0 ? 'var(--verde)' : posicion.resultadoEconomico < 0 ? 'var(--rojo)' : 'var(--borde)'}`,
                 position: 'relative',
                 paddingTop: '1.25rem',
               }}
@@ -243,6 +325,7 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
                 <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--topo-claro)' }}>{t.meses} · {t.facturas} factura{t.facturas !== 1 ? 's' : ''}</p>
               </div>
 
+              <p style={{ margin: '0 0 0.35rem', fontSize: '0.66rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--topo-muy-claro)' }}>Resultado económico</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '1rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
                   <span style={{ color: 'var(--topo-claro)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -270,12 +353,43 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
                 <div style={{ height: 1, background: 'var(--borde)', margin: '0.2rem 0' }} />
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
                   <span style={{ fontWeight: 600, color: 'var(--topo)' }}>Beneficio neto</span>
-                  <span style={{ fontWeight: 700, color: t.beneficio >= 0 ? 'var(--verde)' : 'var(--rojo)' }}>
-                    {formatoEuroPrivado(t.beneficio, privado)}
+                  <span style={{ fontWeight: 700, color: posicion.resultadoEconomico >= 0 ? 'var(--verde)' : 'var(--rojo)' }}>
+                    {formatoEuroPrivado(posicion.resultadoEconomico, privado)}
                   </span>
                 </div>
               </div>
 
+              {rectificativasTrimestre.length > 0 && (
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => setTrimestreConRectificativasAbierto((prev) => (prev === i ? null : i))}
+                    style={{
+                      width: '100%', textAlign: 'left', background: 'var(--azul-bg, #e3edf7)', border: '1px solid var(--azul, #2b6cb0)',
+                      borderRadius: 6, padding: '0.4rem 0.6rem', cursor: 'pointer', fontSize: '0.76rem', color: 'var(--azul, #2b6cb0)', fontWeight: 600,
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    }}
+                  >
+                    <span>Este trimestre incluye {rectificativasTrimestre.length} rectificativa{rectificativasTrimestre.length !== 1 ? 's' : ''}</span>
+                    <span>{trimestreConRectificativasAbierto === i ? '−' : '+'}</span>
+                  </button>
+                  {trimestreConRectificativasAbierto === i && (
+                    <div style={{ marginTop: '0.4rem', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                      {rectificativasTrimestre.map((r) => {
+                        const original = facturasFiltradas.find((f) => f.id === r.facturaOriginalId);
+                        return (
+                          <p key={r.id} style={{ margin: 0, fontSize: '0.74rem', color: 'var(--topo-claro)', paddingLeft: '0.6rem', borderLeft: '2px solid var(--azul, #2b6cb0)' }}>
+                            {r.proveedor || 'sin proveedor/cliente'} — {formatoEuroPrivado(r.importe, privado)}
+                            {original ? ` — rectifica la factura del ${original.fecha.split('-').reverse().join('/')}` : ' — factura original no encontrada en este año'}
+                          </p>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <p style={{ margin: '0 0 0.35rem', fontSize: '0.66rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--topo-muy-claro)' }}>Posición fiscal</p>
               {/* Caja IRPF */}
               <div style={{
                 background: pagado ? 'var(--ocre-bg)' : 'var(--fondo-caja)',
@@ -296,7 +410,7 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
                     fontSize: '1.15rem', fontWeight: 800,
                     color: pagado ? 'var(--ocre)' : 'var(--topo-muy-claro)',
                   }}>
-                    {pagado ? formatoEuroPrivado(t.irpf, privado) : '—'}
+                    {pagado ? formatoEuroPrivado(posicion.irpf.importe, privado) : '—'}
                   </span>
                 </div>
                 {pagado && (
@@ -348,10 +462,17 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
                     <span style={{ color: 'var(--topo-claro)' }}>Soportado</span>
                     <span style={{ fontWeight: 600 }}>{formatoEuroPrivado(t.impuestos.ivaSoportado, privado)}</span>
                   </div>
+                  {posicion.iva.saldoAnterior > 0 && (
+                    <p style={{ margin: '0.3rem 0 0', fontSize: '0.7rem', color: 'var(--topo-claro)' }}>
+                      Saldo pendiente de compensar de antes: {formatoEuroPrivado(posicion.iva.saldoAnterior, privado)}
+                      {posicion.iva.compensacionAplicada > 0 && ` (se compensan ${formatoEuroPrivado(posicion.iva.compensacionAplicada, privado)} este trimestre)`}
+                    </p>
+                  )}
+                  {/* Arrastre IVA (Fase A-C, 25/09/2026) — ya compensado con el saldo pendiente de trimestres/años anteriores, nunca el resultado aislado del propio trimestre. */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginTop: '0.35rem', paddingTop: '0.35rem', borderTop: '1px dashed var(--borde)' }}>
-                    <span style={{ fontWeight: 700 }}>{t.impuestos.ivaResultado >= 0 ? 'A ingresar' : 'A compensar'}</span>
-                    <span style={{ fontWeight: 700, color: t.impuestos.ivaResultado > 0 ? 'var(--ocre)' : 'var(--topo)' }}>
-                      {formatoEuroPrivado(Math.abs(t.impuestos.ivaResultado), privado)}
+                    <span style={{ fontWeight: 700 }}>{posicion.iva.saldoPendiente > 0 ? 'A compensar' : 'A ingresar'}</span>
+                    <span style={{ fontWeight: 700, color: posicion.iva.aIngresar > 0 ? 'var(--ocre)' : 'var(--topo)' }}>
+                      {formatoEuroPrivado(posicion.iva.saldoPendiente > 0 ? posicion.iva.saldoPendiente : posicion.iva.aIngresar, privado)}
                     </span>
                   </div>
                 </div>
@@ -378,10 +499,17 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
                     <span style={{ color: 'var(--topo-claro)' }}>Soportado</span>
                     <span style={{ fontWeight: 600 }}>{formatoEuroPrivado(t.impuestos.igicSoportado, privado)}</span>
                   </div>
+                  {posicion.igic.saldoAnterior > 0 && (
+                    <p style={{ margin: '0.3rem 0 0', fontSize: '0.7rem', color: 'var(--topo-claro)' }}>
+                      Saldo pendiente de compensar de antes: {formatoEuroPrivado(posicion.igic.saldoAnterior, privado)}
+                      {posicion.igic.compensacionAplicada > 0 && ` (se compensan ${formatoEuroPrivado(posicion.igic.compensacionAplicada, privado)} este trimestre)`}
+                    </p>
+                  )}
+                  {/* Arrastre IGIC (Fase A-C, 25/09/2026) — mismo criterio que IVA arriba, circuito completamente independiente. */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginTop: '0.35rem', paddingTop: '0.35rem', borderTop: '1px dashed var(--borde)' }}>
-                    <span style={{ fontWeight: 700 }}>{t.impuestos.igicResultado >= 0 ? 'A ingresar' : 'A compensar'}</span>
-                    <span style={{ fontWeight: 700, color: t.impuestos.igicResultado > 0 ? 'var(--ocre)' : 'var(--topo)' }}>
-                      {formatoEuroPrivado(Math.abs(t.impuestos.igicResultado), privado)}
+                    <span style={{ fontWeight: 700 }}>{posicion.igic.saldoPendiente > 0 ? 'A compensar' : 'A ingresar'}</span>
+                    <span style={{ fontWeight: 700, color: posicion.igic.aIngresar > 0 ? 'var(--ocre)' : 'var(--topo)' }}>
+                      {formatoEuroPrivado(posicion.igic.saldoPendiente > 0 ? posicion.igic.saldoPendiente : posicion.igic.aIngresar, privado)}
                     </span>
                   </div>
                 </div>
@@ -397,6 +525,54 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
                     {t.impuestos.noCalculable.numFacturas} factura{t.impuestos.noCalculable.numFacturas !== 1 ? 's' : ''} con IVA/IGIC identificado pero sin importe de impuesto calculable
                     — no {t.impuestos.noCalculable.numFacturas !== 1 ? 'están sumadas' : 'está sumada'} arriba, revísa{t.impuestos.noCalculable.numFacturas !== 1 ? 'las' : 'la'} y completa la base y el importe del impuesto.
                   </p>
+                )}
+              </div>
+
+              {/*
+                Total estimado a ingresar (Fase Total, 25/09/2026) — combina
+                IRPF (ya neto del acumulado del año) + IVA/IGIC (ya netos de
+                su propio arrastre, `aIngresar`) vía `calcularTotalAIngresar`.
+                Nunca suma IVA con IGIC entre sí (cada uno aporta solo su
+                propio `aIngresar` al total) ni afirma ser una liquidación
+                oficial — solo una estimación de apoyo, mismo criterio que el
+                resto de esta pantalla.
+              */}
+              <div style={{
+                marginTop: '0.6rem',
+                background: total.total > 0 ? 'var(--ocre-bg)' : 'var(--fondo-caja)',
+                border: `1px solid ${total.total > 0 ? 'var(--ocre)' : 'var(--borde)'}`,
+                borderRadius: 6,
+                padding: '0.75rem 1rem',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <p style={{
+                    margin: 0, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700,
+                    color: total.total > 0 ? 'var(--ocre)' : 'var(--topo-muy-claro)',
+                  }}>
+                    Total estimado a ingresar
+                  </p>
+                  <span style={{ fontSize: '1.25rem', fontWeight: 800, color: total.total > 0 ? 'var(--ocre)' : 'var(--topo-muy-claro)' }}>
+                    {formatoEuroPrivado(total.total, privado)}
+                  </span>
+                </div>
+                <p style={{ margin: '0.3rem 0 0', fontSize: '0.68rem', color: 'var(--topo-muy-claro)' }}>
+                  Estimación basada en los datos registrados en la aplicación.
+                </p>
+                {(posicion.iva.saldoPendiente > 0 || posicion.igic.saldoPendiente > 0) && (
+                  <div style={{ marginTop: '0.4rem', paddingTop: '0.4rem', borderTop: '1px dashed var(--borde)', display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                    {posicion.iva.saldoPendiente > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem' }}>
+                        <span style={{ color: 'var(--topo-claro)' }}>IVA pendiente de compensar</span>
+                        <span style={{ fontWeight: 600 }}>{formatoEuroPrivado(posicion.iva.saldoPendiente, privado)}</span>
+                      </div>
+                    )}
+                    {posicion.igic.saldoPendiente > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem' }}>
+                        <span style={{ color: 'var(--topo-claro)' }}>IGIC pendiente de compensar</span>
+                        <span style={{ fontWeight: 600 }}>{formatoEuroPrivado(posicion.igic.saldoPendiente, privado)}</span>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 

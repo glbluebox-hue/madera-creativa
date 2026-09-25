@@ -68,6 +68,18 @@ export type Empresa = {
   saldoInicialAnio: number | null;
   saldoInicialBeneficio: number | null;
   saldoInicialIrpf: number | null;
+  /**
+   * Saldo de partida del arrastre de compensación IVA/IGIC (Fase A-C,
+   * 25/09/2026) — mismo `saldoInicialAnio` de arriba. A diferencia de
+   * `saldoInicialBeneficio`/`Irpf` (que SÍ resetean cada año natural, como
+   * manda Hacienda para el Modelo 130), este saldo NUNCA se resetea solo:
+   * una vez configurado el punto de partida, `calcularSaldoEntradaAnio`
+   * (`motor-fiscal.ts`) lo traslada automáticamente año tras año a partir
+   * del cierre real de cada uno — el usuario no tiene que volver a
+   * introducirlo. `null` hasta que se configura a propósito.
+   */
+  saldoInicialIva: number | null;
+  saldoInicialIgic: number | null;
   /** Ancho en píxeles del logo en la barra lateral — ajustable a mano por el usuario (Ajustes de empresa). */
   logoTamano: number;
   /** Enlace de Google My Business — destino de "Pedir reseña". Vacío hasta que el negocio lo configura en Ajustes de empresa; sin él, ese botón no se ofrece. */
@@ -109,6 +121,8 @@ const EMPRESA_ADMIN: Empresa = {
   saldoInicialAnio: null,
   saldoInicialBeneficio: null,
   saldoInicialIrpf: null,
+  saldoInicialIva: null,
+  saldoInicialIgic: null,
   logoTamano: 187,
   enlaceResenaGoogle: 'https://g.page/r/CdtYE6HZ9ap5EBM/review',
   imagenResena: cartelResenaMadera,
@@ -141,6 +155,8 @@ const EMPRESA_USUARIO: Empresa = {
   saldoInicialAnio: null,
   saldoInicialBeneficio: null,
   saldoInicialIrpf: null,
+  saldoInicialIva: null,
+  saldoInicialIgic: null,
   logoTamano: 187,
   enlaceResenaGoogle: '',
   imagenResena: null,
@@ -216,6 +232,8 @@ export function useEmpresa(autenticado = false, esAdmin = false): {
           saldoInicialAnio: datos.saldoInicialAnio ?? null,
           saldoInicialBeneficio: datos.saldoInicialBeneficio ?? null,
           saldoInicialIrpf: datos.saldoInicialIrpf ?? null,
+          saldoInicialIva: datos.saldoInicialIva ?? null,
+          saldoInicialIgic: datos.saldoInicialIgic ?? null,
           logoTamano: datos.logoTamano ?? inicial.logoTamano,
           enlaceResenaGoogle: datos.enlaceResenaGoogle || inicial.enlaceResenaGoogle,
           imagenResena: datos.imagenResena || inicial.imagenResena,

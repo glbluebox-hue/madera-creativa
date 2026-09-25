@@ -358,6 +358,34 @@ export type Factura = {
   paginas?: { tipo: 'imagen' | 'pdf'; url: string }[];
   /** Solo presente en el listado paginado (`GET /facturas`): indica si hay algún documento adjunto sin exponer su contenido, que se omite ahí por peso. */
   tieneDocumento?: boolean;
+
+  // ── Rectificativas/devoluciones (25/09/2026) ──────────────────────────────
+  /**
+   * Naturaleza del documento — nunca se reutiliza `tipo` (ingreso/gasto)
+   * para esto, son dos ejes independientes: una rectificativa de una
+   * factura de GASTO (el proveedor te devuelve dinero) sigue siendo
+   * `tipo:'gasto'` con `naturaleza:'rectificativa'`, y lo mismo para
+   * ingresos. Ausente en toda factura existente = `'normal'` — nunca se
+   * migra el histórico, se interpreta así al leer (ver `signoPorNaturaleza`
+   * en `motor-fiscal.ts`).
+   */
+  naturaleza?: 'normal' | 'rectificativa';
+  /**
+   * Solo si `naturaleza === 'rectificativa'` — id de la `Factura` original
+   * que esta rectifica. El importe de la rectificativa se introduce SIEMPRE
+   * en positivo (igual que cualquier factura); es `signoPorNaturaleza` quien
+   * decide restarlo en vez de sumarlo, nunca el usuario tecleando un signo.
+   */
+  facturaOriginalId?: string;
+  /**
+   * Número de factura original tal como consta en el propio documento
+   * rectificativo — dato del documento, distinto de `facturaOriginalId`
+   * (puede no coincidir si la original no está registrada en el sistema,
+   * p. ej. de antes de usar la app).
+   */
+  numeroFacturaOriginal?: string;
+  /** Motivo de la rectificación — hecho factual que el usuario confirma, mismo criterio que `hechosFiscales`: nunca inferido con certeza absoluta por IA sin confirmación. */
+  motivoRectificacion?: 'devolucion_mercancia' | 'error_facturacion' | 'descuento_posterior' | 'otro';
 };
 
 /**

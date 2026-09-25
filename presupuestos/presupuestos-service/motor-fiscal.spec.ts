@@ -1,4 +1,4 @@
-import { calcularImpuestosPorTipo, estadoDeducibleIrpf, estadoIvaIgicDeducible, gastoDeducible, cuotaDeducible, agregarLineasFiscales, validarLineasFiscales, detectarProblemaFiscal, type LineaFiscal } from './motor-fiscal.js';
+import { calcularImpuestosPorTipo, estadoDeducibleIrpf, estadoIvaIgicDeducible, gastoDeducible, cuotaDeducible, agregarLineasFiscales, validarLineasFiscales, detectarProblemaFiscal, signoPorNaturaleza, validarRectificativa, SIGNO_NATURALEZA_MONGO, type LineaFiscal } from './motor-fiscal.js';
 
 describe('calcularImpuestosPorTipo (backend, mismo criterio que el frontend)', () => {
   it('IVA repercutido / soportado', () => {
@@ -219,5 +219,143 @@ describe('detectarProblemaFiscal (backend) — detector de desglose fiscal incor
 
   it('diferencia superior a 0,01€ → se marca', () => {
     expect(detectarProblemaFiscal({ importe: 146.63, lineasFiscales: [LINEA_3, LINEA_7] })!.categoria).toBe('descuadre_total');
+  });
+});
+
+// ── Rectificativas/devoluciones (Bloque A, 25/09/2026) ──────────────────────
+
+describe('signoPorNaturaleza (backend, mismo criterio que el frontend)', () => {
+  it('normal → +1, rectificativa → -1, ausente → +1 (compatibilidad histórica)', () => {
+    expect(signoPorNaturaleza({ naturaleza: 'normal' })).toBe(1);
+    expect(signoPorNaturaleza({ naturaleza: 'rectificativa' })).toBe(-1);
+    expect(signoPorNaturaleza({})).toBe(1);
+  });
+});
+
+/**
+ * Test "espejo" frontend↔backend (cierre de riesgo #2 de la revisión de
+ * diff, 25/09/2026) — ver el comentario completo en el describe equivalente
+ * de `presupuestos-prototype/motor-fiscal.spec.ts` (mismo nombre de bloque,
+ * tabla de casos idéntica palabra por palabra). Frontend y backend son apps
+ * Bit independientes sin ningún import cruzado en todo el proyecto — no es
+ * viable un test que ejecute literalmente las dos implementaciones en el
+ * mismo proceso sin publicar una como paquete de la otra (fuera de alcance
+ * de esta fase). Esta tabla, si diverge de la del frontend, hace visible el
+ * diff a quien revise el cambio — no es una garantía automática de
+ * equivalencia binaria entre ambas.
+ */
+describe('signoPorNaturaleza — tabla espejo frontend↔backend (misma tabla que presupuestos-prototype/motor-fiscal.spec.ts)', () => {
+  const CASOS: { descripcion: string; naturaleza: 'normal' | 'rectificativa' | undefined; esperado: 1 | -1 }[] = [
+    { descripcion: 'factura normal', naturaleza: 'normal', esperado: 1 },
+    { descripcion: 'factura rectificativa', naturaleza: 'rectificativa', esperado: -1 },
+    { descripcion: 'naturaleza ausente (histórico)', naturaleza: undefined, esperado: 1 },
+  ];
+
+  for (const caso of CASOS) {
+    it(`${caso.descripcion} → ${caso.esperado}`, () => {
+      const f = caso.naturaleza === undefined ? {} : { naturaleza: caso.naturaleza };
+      expect(signoPorNaturaleza(f)).toBe(caso.esperado);
+    });
+  }
+});
+
+describe('calcularImpuestosPorTipo — IVA/IGIC nunca se mezclan (cierre del riesgo del test #17, 25/09/2026)', () => {
+  it('EMPRESA CANARIAS + FACTURA CON IGIC = IGIC (nunca se agrega como IVA)', () => {
+    const r = calcularImpuestosPorTipo([{ tipo: 'gasto', tipoImpuesto: 'igic', importeImpuesto: 70 }]);
+    expect(r.igicSoportado).toBe(70);
+    expect(r.ivaSoportado).toBe(0);
+    expect(r.ivaRepercutido).toBe(0);
+    expect(r.ivaResultado).toBe(0);
+  });
+
+  it('EMPRESA CANARIAS + FACTURA CON IVA (compra en Península) = IVA (nunca se agrega como IGIC)', () => {
+    const r = calcularImpuestosPorTipo([{ tipo: 'gasto', tipoImpuesto: 'iva', importeImpuesto: 210 }]);
+    expect(r.ivaSoportado).toBe(210);
+    expect(r.igicSoportado).toBe(0);
+    expect(r.igicRepercutido).toBe(0);
+    expect(r.igicResultado).toBe(0);
+  });
+
+  it('IVA e IGIC simultáneos en el mismo conjunto de facturas → se agregan por separado, nunca se suman entre sí', () => {
+    const r = calcularImpuestosPorTipo([
+      { tipo: 'ingreso', tipoImpuesto: 'iva', importeImpuesto: 210 },
+      { tipo: 'ingreso', tipoImpuesto: 'igic', importeImpuesto: 70 },
+    ]);
+    expect(r.ivaResultado).toBe(210);
+    expect(r.igicResultado).toBe(70);
+    // Ningún campo de ResumenImpuestosTrimestre combina ambos — se comprueba
+    // explícitamente que no existe ningún total mezclado.
+    expect((r as any).impuestoIndirectoTotal).toBeUndefined();
+    expect((r as any).total).toBeUndefined();
+  });
+});
+
+describe('SIGNO_NATURALEZA_MONGO — misma regla que signoPorNaturaleza, como expresión de agregación', () => {
+  it('es la expresión $cond esperada (usada por resumenFacturas/resumenEconomico)', () => {
+    expect(SIGNO_NATURALEZA_MONGO).toEqual({ $cond: [{ $eq: ['$naturaleza', 'rectificativa'] }, -1, 1] });
+  });
+});
+
+describe('validarRectificativa — solo integridad del dato bloquea; lo fiscal es advertencia (25/09/2026)', () => {
+  const original = { id: 'f1', importe: 1000, naturaleza: 'normal' as const };
+
+  it('válida, sin facturaOriginalId → inválida por integridad (falta el dato imprescindible)', () => {
+    const r = validarRectificativa({ id: 'r1', importe: 300 }, original, []);
+    expect(r.valido).toBe(false);
+    expect(r.motivo).toMatch(/factura original/i);
+  });
+
+  it('autorreferencia (facturaOriginalId === id) → inválida', () => {
+    const r = validarRectificativa({ id: 'r1', importe: 300, facturaOriginalId: 'r1' }, original, []);
+    expect(r.valido).toBe(false);
+    expect(r.motivo).toMatch(/a sí misma/i);
+  });
+
+  it('factura original inexistente (null, tal como la resuelve el backend cuando no la encuentra) → inválida', () => {
+    const r = validarRectificativa({ id: 'r1', importe: 300, facturaOriginalId: 'no-existe' }, null, []);
+    expect(r.valido).toBe(false);
+    expect(r.motivo).toMatch(/no existe o no pertenece/i);
+  });
+
+  it('factura original de otro usuario → misma respuesta que "inexistente" (null cubre ambos casos a propósito, nunca se distingue para no filtrar qué existe en otras cuentas)', () => {
+    // El backend busca SIEMPRE con { id, usuarioId } — una factura de otro usuario nunca llega
+    // aquí como objeto, llega como null exactamente igual que si no existiera. Ver test de
+    // integración real en rectificativas.spec.ts (aislamiento multi-tenant end-to-end).
+    const r = validarRectificativa({ id: 'r1', importe: 300, facturaOriginalId: 'de-otro-usuario' }, null, []);
+    expect(r.valido).toBe(false);
+  });
+
+  it('caso válido simple, sin hermanas → válida, sin advertencias', () => {
+    const r = validarRectificativa({ id: 'r1', importe: 300, facturaOriginalId: 'f1' }, original, []);
+    expect(r.valido).toBe(true);
+    expect(r.advertencias).toEqual([]);
+  });
+
+  it('varias rectificativas de la misma original, dentro del importe → válida, sin advertencia', () => {
+    const r = validarRectificativa(
+      { id: 'r3', importe: 200, facturaOriginalId: 'f1' },
+      original,
+      [{ importe: 300 }, { importe: 200 }] // hermanas ya guardadas: 500 + 200 nueva = 700 ≤ 1000
+    );
+    expect(r.valido).toBe(true);
+    expect(r.advertencias).toEqual([]);
+  });
+
+  it('rectificativas acumuladas SUPERAN el importe original → sigue siendo válida (no se bloquea), pero con advertencia', () => {
+    const r = validarRectificativa(
+      { id: 'r2', importe: 800, facturaOriginalId: 'f1' },
+      original,
+      [{ importe: 300 }] // 300 + 800 = 1100 > 1000
+    );
+    expect(r.valido).toBe(true);
+    expect(r.advertencias.length).toBe(1);
+    expect(r.advertencias[0]).toMatch(/supera el importe de la/i);
+  });
+
+  it('factura original que es a su vez una rectificativa → no se bloquea, solo advertencia (no se inventa una regla fiscal nueva para la cadena)', () => {
+    const originalEsRectificativa = { id: 'f2', importe: 500, naturaleza: 'rectificativa' as const };
+    const r = validarRectificativa({ id: 'r1', importe: 100, facturaOriginalId: 'f2' }, originalEsRectificativa, []);
+    expect(r.valido).toBe(true);
+    expect(r.advertencias.some((a) => /a su vez otra rectificativa/i.test(a))).toBe(true);
   });
 });

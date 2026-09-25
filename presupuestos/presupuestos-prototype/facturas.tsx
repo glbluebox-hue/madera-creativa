@@ -6,6 +6,7 @@ import { EscanerFactura } from './escaner-factura.js';
 import { Trimestres } from './trimestres.js';
 import { autoCrearProveedorDeFactura, type DatosProveedorDetectados } from './proveedor-utils.js';
 import { useAvisoGuardado, AvisoGuardado } from './aviso-guardado.js';
+import { AvisoRectificativa } from './aviso-rectificativa.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
 import { VisorFactura } from './visor-factura.js';
 import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
@@ -44,7 +45,8 @@ export type FacturasProps = {
   /** Solo id+nombre de todos los clientes, para resolver nombres y para el selector del escáner. */
   clientes: { id: string; nombre: string }[];
   proveedores?: Proveedor[];
-  onGuardar: (f: Factura) => void;
+  /** Devuelve la factura tal como la guardó el servidor (25/09/2026) — ver `UseFacturas.guardar`, incluye `advertenciasRectificativa` cuando aplica. */
+  onGuardar: (f: Factura) => Promise<Factura & { advertenciasRectificativa?: string[] }>;
   onBorrar: (id: string) => void;
   onCrearProveedor?: (p: Omit<Proveedor, 'id' | 'creado'>) => Proveedor;
   onActualizarProveedor?: (p: Proveedor) => void;
@@ -78,6 +80,14 @@ export function Facturas({
   const [descargando, setDescargando] = useState(false);
   const [viendoId, setViendoId] = useState<string | null>(null);
   const [busqueda, setBusqueda] = useState('');
+  /**
+   * Advertencias de una rectificativa recién guardada (25/09/2026) —
+   * `advertenciasRectificativa` es un campo EFÍMERO de la respuesta del
+   * guardado (nunca se persiste, ver `guardarFactura()` en el backend):
+   * solo se muestra una vez, aquí, justo después de guardar. No bloquea
+   * nada, no cambia ningún cálculo — es puramente informativo.
+   */
+  const [advertenciasRectificativa, setAdvertenciasRectificativa] = useState<string[]>([]);
 
   // Carpetas por trimestre — navegación alternativa a la lista paginada:
   // al abrir una, se piden sin paginar todas las facturas (ingreso + gasto)
@@ -120,6 +130,45 @@ export function Facturas({
         (f.concepto ?? '').toLowerCase().includes(textoBusqueda))
     : facturasPorTipo;
 
+  /**
+   * A qué factura apunta cada rectificativa, dentro del conjunto ya
+   * cargado (`facturasBase`) — sirve para el enlace "rectifica la factura
+   * de..." (mostrar la original de una rectificativa visible en pantalla,
+   * caso que sí puede resolverse sin red porque ambas facturas están en el
+   * mismo listado/trimestre por construcción). Se conserva solo para eso.
+   */
+  const rectificativasPorOriginal = new Map<string, Factura[]>();
+  for (const f of facturasBase) {
+    if (f.naturaleza === 'rectificativa' && f.facturaOriginalId) {
+      const lista = rectificativasPorOriginal.get(f.facturaOriginalId) ?? [];
+      lista.push(f);
+      rectificativasPorOriginal.set(f.facturaOriginalId, lista);
+    }
+  }
+  const facturaPorId = new Map(facturasBase.map((f) => [f.id, f]));
+
+  /**
+   * Conteo REAL de rectificativas por factura original (25/09/2026, cierre
+   * de limitación conocida) — `GET /facturas?facturaOriginalId=...` para
+   * cada factura del conjunto cargado que no sea ella misma una
+   * rectificativa, independientemente de si sus rectificativas están o no
+   * en esta misma página/trimestre. Mientras se resuelve, se usa
+   * `rectificativasPorOriginal` (aproximación local, nunca por encima del
+   * valor real) como relleno visual sin parpadeo a 0.
+   */
+  const [rectificativasReales, setRectificativasReales] = useState<Map<string, Factura[]>>(new Map());
+  useEffect(() => {
+    const candidatas = facturasBase.filter((f) => f.naturaleza !== 'rectificativa').map((f) => f.id);
+    if (candidatas.length === 0) { setRectificativasReales(new Map()); return; }
+    let cancelado = false;
+    Promise.all(
+      candidatas.map((id) => api.obtenerFacturasRectificativas(id).then((items) => [id, items] as const).catch((): readonly [string, Factura[]] => [id, []]))
+    ).then((pares) => {
+      if (!cancelado) setRectificativasReales(new Map(pares.filter(([, items]) => items.length > 0)));
+    });
+    return () => { cancelado = true; };
+  }, [facturasBase]);
+
   const abrirCarpeta = (t: number) => setCarpetaTrimestre((prev) => (prev === t ? null : t));
 
   /**
@@ -147,16 +196,19 @@ export function Facturas({
     }
     setEscaner(true);
   };
-  const guardarYCerrar = (fSinResolver: Factura, datosProveedorDetectados?: DatosProveedorDetectados) => {
+  const guardarYCerrar = async (fSinResolver: Factura, datosProveedorDetectados?: DatosProveedorDetectados) => {
     // El proveedorId devuelto puede no ser el que traía `fSinResolver`
     // (recién creado, o encontrado por coincidencia tolerante de nombre) —
     // hay que guardar la factura CON ese id, nunca con el de antes.
     const proveedorId = autoCrearProveedorDeFactura(fSinResolver, proveedores, onCrearProveedor, onActualizarProveedor, datosProveedorDetectados);
     const f: Factura = { ...fSinResolver, proveedorId };
-    onGuardar(f);
+    const guardada = await onGuardar(f);
     setEscaner(false);
     setFacturaEditar(undefined);
     avisoGuardado.mostrar();
+    // Advertencias de rectificativa (25/09/2026) — solo detectan y avisan,
+    // nunca corrigen nada (ver comentario del estado, arriba).
+    setAdvertenciasRectificativa(guardada.advertenciasRectificativa ?? []);
     // Mantiene la carpeta abierta en sincronía sin volver a pedir datos al
     // servidor: si la factura ya pertenecía a este trimestre, se actualiza
     // in-situ; si es nueva y su fecha cae dentro, se añade; si no, se ignora.
@@ -215,6 +267,7 @@ export function Facturas({
   return (
     <div>
       <AvisoGuardado visible={avisoGuardado.visible} mensaje="Factura guardada correctamente" />
+      <AvisoRectificativa advertencias={advertenciasRectificativa} onDescartar={() => setAdvertenciasRectificativa([])} />
       {/* ── Cabecera ── */}
       <div className={styles.barraSeccion} style={{ marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
@@ -448,6 +501,11 @@ export function Facturas({
                   // Datos de identificación incompletos (número de factura/CIF-NIF/razón social) —
                   // petición explícita del usuario 13/09/2026: marcar y decir exactamente qué falta.
                   const identificacionIncompleta = detectarDatosIdentificacionFaltantes(f);
+                  // Rectificativas/devoluciones (25/09/2026) — indicador discreto,
+                  // ver comentario de `rectificativasPorOriginal` arriba.
+                  const esRectificativa = f.naturaleza === 'rectificativa';
+                  const facturaOriginal = esRectificativa && f.facturaOriginalId ? facturaPorId.get(f.facturaOriginalId) : undefined;
+                  const rectificativasDeEsta = rectificativasReales.get(f.id) ?? rectificativasPorOriginal.get(f.id) ?? [];
                   return (
                   <tr key={f.id}>
                     <td className={styles.colOcultarMovil}>
@@ -464,6 +522,15 @@ export function Facturas({
                       >
                         {f.tipo === 'ingreso' ? 'Ingreso' : 'Gasto'}
                       </span>
+                      {esRectificativa && (
+                        <span
+                          className={styles.estado}
+                          title={facturaOriginal ? `Rectifica la factura de ${formatoFecha(facturaOriginal.fecha)} (${facturaOriginal.proveedor || 'sin proveedor'})` : 'Factura rectificativa/devolución'}
+                          style={{ display: 'block', marginTop: '0.25rem', background: 'var(--azul-bg, #e3edf7)', color: 'var(--azul, #2b6cb0)' }}
+                        >
+                          ↩ Rectificativa
+                        </span>
+                      )}
                     </td>
                     <td>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
@@ -481,6 +548,15 @@ export function Facturas({
                         {identificacionIncompleta && (
                           <span title={identificacionIncompleta.explicacion} aria-label={`Aviso: ${identificacionIncompleta.explicacion}`} style={{ display: 'inline-flex', color: 'var(--topo-claro, #8a8072)', cursor: 'help' }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" /><line x1="6" y1="9" x2="10" y2="9" /><line x1="6" y1="13" x2="14" y2="13" /><line x1="16" y1="17" x2="16" y2="17" /></svg>
+                          </span>
+                        )}
+                        {rectificativasDeEsta.length > 0 && (
+                          <span
+                            title={`Tiene ${rectificativasDeEsta.length} rectificativa${rectificativasDeEsta.length !== 1 ? 's' : ''}: ${rectificativasDeEsta.map((r) => `${formatoFecha(r.fecha)} (${formatoEuroPrivado(r.importe, privado)})`).join(', ')}`}
+                            aria-label={`Tiene ${rectificativasDeEsta.length} rectificativa${rectificativasDeEsta.length !== 1 ? 's' : ''} asociada${rectificativasDeEsta.length !== 1 ? 's' : ''}`}
+                            style={{ display: 'inline-flex', color: 'var(--azul, #2b6cb0)', cursor: 'help' }}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 14 4 9 9 4" /><path d="M20 20v-7a4 4 0 0 0-4-4H4" /></svg>
                           </span>
                         )}
                       </span>

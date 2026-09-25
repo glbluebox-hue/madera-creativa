@@ -18,7 +18,7 @@ import { esGastoPeriodicoDeducible } from './gasto-periodico-fiscal.js';
 import { resolverTratamientoFiscal } from './motor-resolucion-fiscal.js';
 import type { OrigenDecisionFiscal } from './motor-resolucion-fiscal.js';
 import { fusionarDecisionFiscal } from './fusion-decision-fiscal.js';
-import { agregarLineasFiscales, validarLineasFiscales, detectarProblemaFiscal, tipoRealDeLineas } from './motor-fiscal.js';
+import { agregarLineasFiscales, validarLineasFiscales, detectarProblemaFiscal, tipoRealDeLineas, validarRectificativa, detectarRectificativaTrimestreDistinto, SIGNO_NATURALEZA_MONGO } from './motor-fiscal.js';
 import { subirORecuperarRecurso } from './documento-recursos-biblioteca.js';
 import type { DocumentoMC, TemaMC, RecursoMC } from './documento-modelo.js';
 import { analizarPrecioPresupuesto, calcularMargenRealProyecto } from './inteligencia-precios.js';
@@ -401,6 +401,9 @@ export type EmpresaDoc = {
   saldoInicialAnio: number | null;
   saldoInicialBeneficio: number | null;
   saldoInicialIrpf: number | null;
+  /** Arrastre IVA/IGIC (Fase A-C, 25/09/2026) — ver comentario en `cliente.model.ts`. */
+  saldoInicialIva: number | null;
+  saldoInicialIgic: number | null;
   /** Ancho en píxeles del logo en la barra lateral — ajustable a mano por el usuario. */
   logoTamano: number;
   /** Enlace de Google My Business — destino de "Pedir reseña". Vacío hasta que el negocio lo configura. */
@@ -1202,6 +1205,8 @@ export class PresupuestosService {
       saldoInicialAnio: (doc as any).saldoInicialAnio ?? null,
       saldoInicialBeneficio: (doc as any).saldoInicialBeneficio ?? null,
       saldoInicialIrpf: (doc as any).saldoInicialIrpf ?? null,
+      saldoInicialIva: (doc as any).saldoInicialIva ?? null,
+      saldoInicialIgic: (doc as any).saldoInicialIgic ?? null,
       logoTamano: (doc as any).logoTamano || 187,
       enlaceResenaGoogle: (doc as any).enlaceResenaGoogle || '',
       imagenResena: (doc as any).imagenResena || '',
@@ -1243,6 +1248,8 @@ export class PresupuestosService {
       saldoInicialAnio: (doc as any).saldoInicialAnio ?? null,
       saldoInicialBeneficio: (doc as any).saldoInicialBeneficio ?? null,
       saldoInicialIrpf: (doc as any).saldoInicialIrpf ?? null,
+      saldoInicialIva: (doc as any).saldoInicialIva ?? null,
+      saldoInicialIgic: (doc as any).saldoInicialIgic ?? null,
       logoTamano: (doc as any).logoTamano || 187,
       enlaceResenaGoogle: (doc as any).enlaceResenaGoogle || '',
       imagenResena: (doc as any).imagenResena || '',
@@ -1395,6 +1402,73 @@ export class PresupuestosService {
   }
 
   /**
+   * Busca candidatas a "factura original" para una rectificativa — por
+   * número de factura, proveedor/cliente, importe exacto o fecha, sin
+   * paginar pero acotado a un máximo de resultados razonable para un
+   * selector interactivo (cierre de limitación conocida: antes el
+   * buscador solo miraba las facturas ya cargadas en la página actual).
+   *
+   * Excluye `excluirId` (la propia factura que se está editando) para que
+   * nunca pueda elegirse a sí misma como original. NO filtra por
+   * `naturaleza`: una rectificativa puede señalarse como original de otra
+   * rectificativa — el modelo ya lo permite con advertencia en vez de
+   * bloquearlo (`validarRectificativa`, `motor-fiscal.ts`) — así que esta
+   * búsqueda no añade una restricción que el resto del sistema no tiene.
+   * @param usuarioId Propietario.
+   * @param termino Número de factura, proveedor, importe o fecha (dd/mm/yyyy o yyyy-mm-dd) a buscar.
+   * @param excluirId Id de la factura a excluir de los resultados.
+   */
+  async buscarFacturasOriginalCandidatas(usuarioId: string, termino: string, excluirId?: string): Promise<Record<string, unknown>[]> {
+    await conectar();
+    const texto = termino.trim();
+    if (!texto) return [];
+    const escapado = texto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const condiciones: Record<string, unknown>[] = [
+      { numeroFactura: { $regex: escapado, $options: 'i' } },
+      { proveedor: { $regex: escapado, $options: 'i' } },
+    ];
+    if (/^[\d.,]+$/.test(texto)) {
+      const comoImporte = Number(texto.replace(',', '.'));
+      if (Number.isFinite(comoImporte)) condiciones.push({ importe: comoImporte });
+    }
+    const comoFechaDDMM = texto.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (comoFechaDDMM) {
+      const [, d, m, y] = comoFechaDDMM;
+      condiciones.push({ fecha: `${y}-${m}-${d}` });
+    } else if (/^\d{4}-\d{2}-\d{2}$/.test(texto)) {
+      condiciones.push({ fecha: texto });
+    }
+    const filtro: Record<string, unknown> = { usuarioId, $or: condiciones };
+    if (excluirId) filtro.id = { $ne: excluirId };
+    const docs = await FacturaModel.aggregate([
+      { $match: filtro },
+      { $sort: { creado: -1 } },
+      { $limit: 50 },
+      ...this.pipelineTieneDocumentoFactura(),
+    ]).exec();
+    return docs.map((d) => this.limpiar(d as Record<string, unknown>));
+  }
+
+  /**
+   * Todas las rectificativas asociadas a una factura original concreta,
+   * sin paginar — conteo/listado REAL, independiente de qué página esté
+   * cargada en el listado general de facturas (cierre de limitación
+   * conocida: el badge de "N rectificativas" contaba antes solo lo visible
+   * en pantalla).
+   * @param usuarioId Propietario.
+   * @param facturaOriginalId Id de la factura original.
+   */
+  async listarFacturasRectificativas(usuarioId: string, facturaOriginalId: string): Promise<Record<string, unknown>[]> {
+    await conectar();
+    const docs = await FacturaModel.aggregate([
+      { $match: { usuarioId, facturaOriginalId } },
+      { $sort: { creado: -1 } },
+      ...this.pipelineTieneDocumentoFactura(),
+    ]).exec();
+    return docs.map((d) => this.limpiar(d as Record<string, unknown>));
+  }
+
+  /**
    * Todas las facturas de un proveedor concreto, sin paginar — para su
    * ficha. El historial de un único proveedor está acotado.
    *
@@ -1471,9 +1545,16 @@ export class PresupuestosService {
     numIngresos: number; numGastos: number; numFacturas: number;
   }> {
     await conectar();
+    // Signo por naturaleza (25/09/2026) — una rectificativa resta de su
+    // mismo `tipo` (SIGNO_NATURALEZA_MONGO, misma regla que
+    // `signoPorNaturaleza` en motor-fiscal.ts, aquí como expresión Mongo
+    // porque no se puede llamar a una función de JS dentro de un pipeline
+    // de agregación). `num` sigue contando TODOS los documentos de ese tipo
+    // — una rectificativa de gasto sigue siendo un documento de gasto a
+    // efectos de conteo, solo su importe se resta.
     const filas = await FacturaModel.aggregate([
       { $match: { usuarioId } },
-      { $group: { _id: '$tipo', total: { $sum: '$importe' }, num: { $sum: 1 } } },
+      { $group: { _id: '$tipo', total: { $sum: { $multiply: ['$importe', SIGNO_NATURALEZA_MONGO] } }, num: { $sum: 1 } } },
     ]).exec();
     const ingresos = (filas as any[]).find((f) => f._id === 'ingreso');
     const gastos = (filas as any[]).find((f) => f._id === 'gasto');
@@ -1515,17 +1596,23 @@ export class PresupuestosService {
     // impuesto, ambas numéricas. `$isNumber` descarta null/ausente/no-número
     // sin que un 0 legítimo cuente como "sin desglose".
     const desgloseFiable = { $and: [{ $isNumber: '$baseImponible' }, { $isNumber: '$importeImpuesto' }] };
+    // Signo por naturaleza (25/09/2026) — mismo criterio que `resumenFacturas`
+    // (SIGNO_NATURALEZA_MONGO, ver su comentario) aplicado a los CUATRO
+    // agregados en euros (total, conDesglose, cuotaImpuesto,
+    // importeSinDesglose) para que el Dashboard no quede desincronizado con
+    // Trimestres tras una rectificativa. Los conteos (`num`/`numConDesglose`)
+    // no llevan signo — son número de documentos, no importes.
     const filas = await FacturaModel.aggregate([
       { $match: { usuarioId, fecha: { $gte: periodo.desde, $lte: periodo.hasta } } },
       {
         $group: {
           _id: '$tipo',
-          total: { $sum: '$importe' },
+          total: { $sum: { $multiply: ['$importe', SIGNO_NATURALEZA_MONGO] } },
           num: { $sum: 1 },
-          conDesglose: { $sum: { $cond: [desgloseFiable, '$baseImponible', 0] } },
-          cuotaImpuesto: { $sum: { $cond: [desgloseFiable, '$importeImpuesto', 0] } },
+          conDesglose: { $sum: { $cond: [desgloseFiable, { $multiply: ['$baseImponible', SIGNO_NATURALEZA_MONGO] }, 0] } },
+          cuotaImpuesto: { $sum: { $cond: [desgloseFiable, { $multiply: ['$importeImpuesto', SIGNO_NATURALEZA_MONGO] }, 0] } },
           numConDesglose: { $sum: { $cond: [desgloseFiable, 1, 0] } },
-          importeSinDesglose: { $sum: { $cond: [desgloseFiable, 0, '$importe'] } },
+          importeSinDesglose: { $sum: { $cond: [desgloseFiable, 0, { $multiply: ['$importe', SIGNO_NATURALEZA_MONGO] }] } },
         },
       },
     ]).exec();
@@ -1792,6 +1879,55 @@ export class PresupuestosService {
   async guardarFactura(factura: Record<string, unknown>, usuarioId: string): Promise<Record<string, unknown>> {
     await conectar();
     const anterior = await FacturaModel.findOne({ id: factura.id, usuarioId }).lean().exec() as any;
+
+    // ── Rectificativas/devoluciones (25/09/2026) ── Se valida aquí, antes de
+    // cualquier subida a almacenamiento, para no gastar cuota en un
+    // guardado que se va a rechazar. `facturaOriginal` se busca SIEMPRE
+    // filtrando por `usuarioId` — null cubre a la vez "no existe" y "es de
+    // otra cuenta" (validarRectificativa nunca distingue los dos casos, ver
+    // su comentario). Las advertencias (no bloqueantes, requieren criterio
+    // fiscal/profesional) solo se registran en el log — el sistema no las
+    // resuelve ni las guarda como una decisión.
+    // `advertenciasRectificativa` se adjunta al `doc` devuelto (más abajo, sin
+    // persistirse en Mongo) para que una futura interfaz pueda mostrarlas —
+    // ver cierre del riesgo #1 de la revisión de diff (25/09/2026).
+    let advertenciasRectificativa: string[] = [];
+    if ((factura as any).naturaleza === 'rectificativa') {
+      const facturaOriginalId = (factura as any).facturaOriginalId as string | undefined;
+      const facturaOriginal = facturaOriginalId
+        ? await FacturaModel.findOne({ id: facturaOriginalId, usuarioId }).lean().exec() as any
+        : null;
+      const rectificativasHermanas = facturaOriginalId
+        ? await FacturaModel.find({ usuarioId, facturaOriginalId, id: { $ne: factura.id } }).select('importe').lean().exec() as any[]
+        : [];
+      const resultado = validarRectificativa(
+        { id: factura.id as string, importe: (factura as any).importe, facturaOriginalId },
+        facturaOriginal ? { id: facturaOriginal.id, importe: facturaOriginal.importe, naturaleza: facturaOriginal.naturaleza } : null,
+        rectificativasHermanas.map((r) => ({ importe: r.importe }))
+      );
+      if (!resultado.valido) throw new ErrorDeNegocio(resultado.motivo ?? 'Factura rectificativa no válida.', 400);
+      advertenciasRectificativa = [...resultado.advertencias];
+
+      // Trimestre/año distinto al de la factura original (Bloque de cierre de
+      // riesgos, 25/09/2026) — SOLO detecta y explica, nunca corrige: no crea
+      // complementaria, no toca ninguna fecha, no modifica ningún cálculo ya
+      // hecho. Requiere `facturaOriginal` resuelta (si no existe, ya se
+      // rechazó arriba con `resultado.valido === false`) y que ambas facturas
+      // traigan `fecha`.
+      if (facturaOriginal && (factura as any).fecha && facturaOriginal.fecha) {
+        const aviso = detectarRectificativaTrimestreDistinto(
+          { fecha: (factura as any).fecha },
+          { fecha: facturaOriginal.fecha }
+        );
+        if (aviso.trimestreDistinto && aviso.explicacion) {
+          advertenciasRectificativa.push(aviso.explicacion);
+        }
+      }
+
+      if (advertenciasRectificativa.length > 0) {
+        logger.warn({ facturaId: factura.id, facturaOriginalId, usuarioId, advertencias: advertenciasRectificativa }, '[factura.rectificativa] Guardada con advertencias — requieren criterio profesional, no se resuelven automáticamente.');
+      }
+    }
 
     // Igual que en guardarCliente: sube a almacenamiento externo cualquier
     // imagen nueva (Base64); las que ya eran una URL no se tocan
@@ -2063,6 +2199,14 @@ export class PresupuestosService {
     if (proyectoIdNuevo && !(doc as any).proyectoId) {
       await FacturaModel.updateOne({ id: factura.id, usuarioId }, { $set: { proyectoId: proyectoIdNuevo } }).exec();
       (doc as any).proyectoId = proyectoIdNuevo;
+    }
+
+    // Campo efímero — nunca se persiste en Mongo, solo viaja en esta
+    // respuesta para que la interfaz (cuando se construya) pueda mostrar el
+    // aviso de trimestre distinto / demás advertencias no bloqueantes de la
+    // rectificativa recién guardada.
+    if (advertenciasRectificativa.length > 0) {
+      (doc as any).advertenciasRectificativa = advertenciasRectificativa;
     }
 
     return resolverUrlsFactura(this.limpiar(doc as Record<string, unknown>));

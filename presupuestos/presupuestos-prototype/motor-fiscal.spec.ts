@@ -4,6 +4,8 @@ import {
   sugerirTipoImpuesto, clasificarImpuestoFactura, cuotaRealDeFactura, calcularImpuestosPorTipo,
   estadoDeducibleIrpf, estadoIvaIgicDeducible, gastoDeducible, cuotaDeducible,
   agregarLineasFiscales, validarLineasFiscales, detectarProblemaFiscal, detectarDatosIdentificacionFaltantes,
+  signoPorNaturaleza, detectarRectificativaTrimestreDistinto, calcularPosicionFiscal,
+  calcularSaldoEntradaAnio, calcularTotalAIngresar,
 } from './motor-fiscal.js';
 import type { Factura, GastoPeriodico, LineaFiscal } from './types.js';
 
@@ -823,5 +825,633 @@ describe('detectarDatosIdentificacionFaltantes — detector de datos de identifi
     const r = detectarDatosIdentificacionFaltantes({ proveedor: '', numeroFactura: '', cifNif: '' });
     expect(r!.faltantes).toEqual(['numero_factura', 'cif_nif', 'razon_social']);
     expect(r!.explicacion).toBe('Faltan el número de factura, el CIF/NIF y el nombre (razón social).');
+  });
+});
+
+// ── Rectificativas/devoluciones (Bloque A, 25/09/2026) ──────────────────────
+
+describe('signoPorNaturaleza — única fuente de la regla de signo', () => {
+  it('factura normal → +1', () => {
+    expect(signoPorNaturaleza(factura({ naturaleza: 'normal' }))).toBe(1);
+  });
+
+  it('rectificativa → -1', () => {
+    expect(signoPorNaturaleza(factura({ naturaleza: 'rectificativa' }))).toBe(-1);
+  });
+
+  it('factura antigua sin `naturaleza` (ausente) → se interpreta como normal, +1 (compatibilidad con el histórico)', () => {
+    const f = factura({});
+    delete (f as any).naturaleza;
+    expect(signoPorNaturaleza(f)).toBe(1);
+  });
+});
+
+/**
+ * Test "espejo" frontend↔backend (cierre de riesgo #2 de la revisión de
+ * diff, 25/09/2026). `signoPorNaturaleza` existe DUPLICADA a propósito en
+ * `presupuestos-prototype/motor-fiscal.ts` (este archivo) y en
+ * `presupuestos-service/motor-fiscal.ts` — son dos apps Bit independientes,
+ * sin ningún paquete compartido entre ellas (confirmado: no hay ningún
+ * import cruzado en todo el proyecto entre `presupuestos-prototype` y
+ * `presupuestos-service`, y `AGENTS.md` prohíbe explícitamente las rutas
+ * relativas entre límites de componente). Un test que importe literalmente
+ * las dos implementaciones en el mismo proceso NO es viable sin inventar
+ * infraestructura nueva (publicar uno como paquete instalable del otro),
+ * así que este test no prueba igualdad de código — prueba que ESTA copia
+ * sigue produciendo, para esta MISMA tabla de casos literal, el resultado
+ * que el archivo hermano espera para la SUYA. Si algún día se cambia esta
+ * tabla aquí sin tocar la del backend (o viceversa), un lector que revise
+ * el diff verá un archivo modificado sin su pareja — es una defensa por
+ * visibilidad, no automática. Tabla idéntica, palabra por palabra, en
+ * `presupuestos-service/motor-fiscal.spec.ts` → describe('signoPorNaturaleza
+ * — tabla espejo frontend↔backend ...').
+ */
+describe('signoPorNaturaleza — tabla espejo frontend↔backend (misma tabla que presupuestos-service/motor-fiscal.spec.ts)', () => {
+  const CASOS: { descripcion: string; naturaleza: 'normal' | 'rectificativa' | undefined; esperado: 1 | -1 }[] = [
+    { descripcion: 'factura normal', naturaleza: 'normal', esperado: 1 },
+    { descripcion: 'factura rectificativa', naturaleza: 'rectificativa', esperado: -1 },
+    { descripcion: 'naturaleza ausente (histórico)', naturaleza: undefined, esperado: 1 },
+  ];
+
+  for (const caso of CASOS) {
+    it(`${caso.descripcion} → ${caso.esperado}`, () => {
+      const f = caso.naturaleza === undefined ? {} : { naturaleza: caso.naturaleza };
+      expect(signoPorNaturaleza(f as Pick<Factura, 'naturaleza'>)).toBe(caso.esperado);
+    });
+  }
+});
+
+describe('calcularTrimestres — rectificativas (Bloque A, 25/09/2026)', () => {
+  const gastosPeriodicos: GastoPeriodico[] = [];
+
+  it('factura normal sola → sin cambios respecto al comportamiento de siempre', () => {
+    const facturas: Factura[] = [factura({ id: 'g1', tipo: 'gasto', fecha: '2026-01-10', importe: 1000, naturaleza: 'normal' })];
+    const [q1] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(q1.gastos).toBe(1000);
+  });
+
+  it('rectificativa de un gasto resta del total de GASTOS del trimestre en que se registra, nunca se mueve a ingresos', () => {
+    const facturas: Factura[] = [
+      factura({ id: 'g1', tipo: 'gasto', fecha: '2026-01-10', importe: 1000 }),
+      factura({ id: 'r1', tipo: 'gasto', fecha: '2026-01-20', importe: 300, naturaleza: 'rectificativa', facturaOriginalId: 'g1' }),
+    ];
+    const [q1] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(q1.gastos).toBe(700); // 1000 - 300, el importe de la rectificativa se introduce en positivo (300), signoPorNaturaleza lo resta
+    expect(q1.ingresos).toBe(0); // nunca se mueve al otro lado
+  });
+
+  it('rectificativa parcial (importe menor que la original) — se resta tal cual, sin necesidad de igualar el importe original', () => {
+    const facturas: Factura[] = [
+      factura({ id: 'i1', tipo: 'ingreso', fecha: '2026-01-10', importe: 1000 }),
+      factura({ id: 'r1', tipo: 'ingreso', fecha: '2026-01-20', importe: 150, naturaleza: 'rectificativa', facturaOriginalId: 'i1' }),
+    ];
+    const [q1] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(q1.ingresos).toBe(850);
+  });
+
+  it('varias rectificativas de la misma factura original, en el mismo trimestre, se acumulan', () => {
+    const facturas: Factura[] = [
+      factura({ id: 'g1', tipo: 'gasto', fecha: '2026-01-10', importe: 1000 }),
+      factura({ id: 'r1', tipo: 'gasto', fecha: '2026-01-15', importe: 200, naturaleza: 'rectificativa', facturaOriginalId: 'g1' }),
+      factura({ id: 'r2', tipo: 'gasto', fecha: '2026-01-20', importe: 100, naturaleza: 'rectificativa', facturaOriginalId: 'g1' }),
+    ];
+    const [q1] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(q1.gastos).toBe(700); // 1000 - 200 - 100
+  });
+
+  it('factura original y rectificativa en el MISMO trimestre → la corrección se ve en ese trimestre, beneficioAcumulado ya la refleja', () => {
+    const facturas: Factura[] = [
+      factura({ id: 'i1', tipo: 'ingreso', fecha: '2026-01-10', importe: 1000 }),
+      factura({ id: 'r1', tipo: 'ingreso', fecha: '2026-02-10', importe: 300, naturaleza: 'rectificativa', facturaOriginalId: 'i1' }),
+    ];
+    const [q1] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(q1.beneficio).toBe(700);
+    expect(q1.beneficioAcumulado).toBe(700);
+  });
+
+  it('factura original y rectificativa en TRIMESTRES DIFERENTES → cada una afecta solo al trimestre en que se registra (la original no se toca retroactivamente)', () => {
+    const facturas: Factura[] = [
+      factura({ id: 'i1', tipo: 'ingreso', fecha: '2026-01-10', importe: 1000 }), // Q1
+      factura({ id: 'r1', tipo: 'ingreso', fecha: '2026-07-10', importe: 300, naturaleza: 'rectificativa', facturaOriginalId: 'i1' }), // Q3
+    ];
+    const [q1, , q3] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(q1.ingresos).toBe(1000); // Q1 no se toca
+    expect(q3.ingresos).toBe(-300); // Q3 registra la corrección
+    // El acumulado SÍ refleja la corrección desde el momento en que se registra — así funciona el Modelo 130 real.
+    expect(q3.beneficioAcumulado).toBe(700);
+  });
+
+  it('facturas antiguas sin `naturaleza` (ausente en el documento guardado) se tratan como normales, sin romper el cálculo de siempre', () => {
+    const antigua = factura({ id: 'g1', tipo: 'gasto', fecha: '2026-01-10', importe: 500 });
+    delete (antigua as any).naturaleza;
+    const [q1] = calcularTrimestres([antigua], gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(q1.gastos).toBe(500);
+  });
+});
+
+describe('detectarRectificativaTrimestreDistinto — solo detecta y avisa, nunca corrige (25/09/2026)', () => {
+  it('misma fecha (mismo trimestre y año) → sin aviso', () => {
+    const r = detectarRectificativaTrimestreDistinto({ fecha: '2026-01-20' }, { fecha: '2026-01-10' });
+    expect(r.trimestreDistinto).toBe(false);
+    expect(r.explicacion).toBeUndefined();
+  });
+
+  it('mismo trimestre, distinto día → sin aviso', () => {
+    const r = detectarRectificativaTrimestreDistinto({ fecha: '2026-03-30' }, { fecha: '2026-01-10' });
+    expect(r.trimestreDistinto).toBe(false);
+  });
+
+  it('trimestre distinto dentro del mismo año → aviso, con explicación que nombra ambos trimestres', () => {
+    const r = detectarRectificativaTrimestreDistinto({ fecha: '2026-07-05' }, { fecha: '2026-01-10' });
+    expect(r.trimestreDistinto).toBe(true);
+    expect(r.explicacion).toContain('1.er Trimestre');
+    expect(r.explicacion).toContain('3.er Trimestre');
+  });
+
+  it('año distinto → aviso', () => {
+    const r = detectarRectificativaTrimestreDistinto({ fecha: '2027-01-05' }, { fecha: '2026-11-10' });
+    expect(r.trimestreDistinto).toBe(true);
+    expect(r.explicacion).toContain('2026');
+    expect(r.explicacion).toContain('2027');
+  });
+});
+
+describe('calcularImpuestosPorTipo — rectificativas e IVA/IGIC simultáneos (Bloque A, 25/09/2026)', () => {
+  it('rectificativa de una factura con IVA resta del IVA, nunca del IGIC', () => {
+    const facturas: Factura[] = [
+      factura({ id: 'g1', tipo: 'gasto', tipoImpuesto: 'iva', baseImponible: 1000, importeImpuesto: 210, importe: 1210 }),
+      factura({ id: 'r1', tipo: 'gasto', tipoImpuesto: 'iva', baseImponible: 300, importeImpuesto: 63, importe: 363, naturaleza: 'rectificativa', facturaOriginalId: 'g1' }),
+    ];
+    const r = calcularImpuestosPorTipo(facturas);
+    expect(r.ivaSoportado).toBeCloseTo(210 - 63, 6);
+    expect(r.ivaBaseSoportada).toBeCloseTo(1000 - 300, 6);
+    expect(r.igicSoportado).toBe(0);
+    expect(r.igicBaseSoportada).toBe(0);
+  });
+
+  it('rectificativa de una factura con IGIC resta del IGIC, nunca del IVA', () => {
+    const facturas: Factura[] = [
+      factura({ id: 'i1', tipo: 'ingreso', tipoImpuesto: 'igic', baseImponible: 1000, importeImpuesto: 70, importe: 1070 }),
+      factura({ id: 'r1', tipo: 'ingreso', tipoImpuesto: 'igic', baseImponible: 200, importeImpuesto: 14, importe: 214, naturaleza: 'rectificativa', facturaOriginalId: 'i1' }),
+    ];
+    const r = calcularImpuestosPorTipo(facturas);
+    expect(r.igicRepercutido).toBeCloseTo(70 - 14, 6);
+    expect(r.igicBaseRepercutida).toBeCloseTo(1000 - 200, 6);
+    expect(r.ivaRepercutido).toBe(0);
+  });
+
+  it('empresa Canarias + factura con tipoImpuesto:\'igic\' → se agrega como IGIC (la región es solo contexto, coincide con el impuesto real de la factura)', () => {
+    const r = calcularImpuestosPorTipo([factura({ tipo: 'gasto', tipoImpuesto: 'igic', importeImpuesto: 70, importe: 1070 })]);
+    expect(r.igicSoportado).toBe(70);
+    expect(r.ivaSoportado).toBe(0);
+  });
+
+  it('empresa Canarias + factura con tipoImpuesto:\'iva\' (compra en Península) → se agrega como IVA, NUNCA se convierte en IGIC por la región', () => {
+    const r = calcularImpuestosPorTipo([factura({ tipo: 'gasto', tipoImpuesto: 'iva', importeImpuesto: 210, importe: 1210 })]);
+    expect(r.ivaSoportado).toBe(210);
+    expect(r.igicSoportado).toBe(0); // la función ni siquiera recibe la región — estructuralmente no puede convertir
+  });
+
+  it('IVA e IGIC simultáneos en el mismo trimestre → se agregan por separado, ninguno se mezcla ni se suma con el otro', () => {
+    const facturas: Factura[] = [
+      factura({ id: 'i1', tipo: 'ingreso', tipoImpuesto: 'iva', importeImpuesto: 210, importe: 1210 }),
+      factura({ id: 'i2', tipo: 'ingreso', tipoImpuesto: 'igic', importeImpuesto: 70, importe: 1070 }),
+    ];
+    const r = calcularImpuestosPorTipo(facturas);
+    expect(r.ivaRepercutido).toBe(210);
+    expect(r.igicRepercutido).toBe(70);
+    // Ningún campo del resumen combina ambos — ivaResultado e igicResultado son independientes.
+    expect(r.ivaResultado).toBe(210);
+    expect(r.igicResultado).toBe(70);
+  });
+});
+
+describe('calcularPosicionFiscal — Bloque B, reestructura sin recalcular (25/09/2026)', () => {
+  const gastosPeriodicos: GastoPeriodico[] = [];
+
+  it('resultadoEconomico es el mismo beneficio que ya calcula calcularTrimestres, sin recalcularlo', () => {
+    const facturas: Factura[] = [
+      factura({ id: 'i1', tipo: 'ingreso', fecha: '2026-01-10', importe: 10000 }),
+      factura({ id: 'g1', tipo: 'gasto', fecha: '2026-01-10', importe: 4000 }),
+    ];
+    const [q1] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    const posicion = calcularPosicionFiscal(q1);
+    expect(posicion.resultadoEconomico).toBe(q1.beneficio);
+    expect(posicion.resultadoEconomico).toBe(6000);
+  });
+
+  it('irpf.importe y tipoModelo \'130\', mismo valor que DatosTrimestre.irpf', () => {
+    const facturas: Factura[] = [factura({ id: 'i1', tipo: 'ingreso', fecha: '2026-01-10', importe: 10000 })];
+    const [q1] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    const posicion = calcularPosicionFiscal(q1);
+    expect(posicion.irpf.importe).toBe(q1.irpf);
+    expect(posicion.irpf.tipoModelo).toBe('130');
+  });
+
+  it('iva.resultado y tipoModelo \'303\', mismo valor que DatosTrimestre.impuestos.ivaResultado', () => {
+    const facturas: Factura[] = [factura({ id: 'i1', tipo: 'ingreso', tipoImpuesto: 'iva', importeImpuesto: 210, importe: 1210, fecha: '2026-01-10' })];
+    const [q1] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: 'peninsula', repepActivo: false });
+    const posicion = calcularPosicionFiscal(q1);
+    expect(posicion.iva.resultado).toBe(q1.impuestos.ivaResultado);
+    expect(posicion.iva.resultado).toBe(210);
+    expect(posicion.iva.tipoModelo).toBe('303');
+  });
+
+  it('igic.resultado y tipoModelo \'420\', mismo valor que DatosTrimestre.impuestos.igicResultado', () => {
+    const facturas: Factura[] = [factura({ id: 'i1', tipo: 'ingreso', tipoImpuesto: 'igic', importeImpuesto: 70, importe: 1070, fecha: '2026-01-10' })];
+    const [q1] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: 'canarias', repepActivo: false });
+    const posicion = calcularPosicionFiscal(q1);
+    expect(posicion.igic.resultado).toBe(q1.impuestos.igicResultado);
+    expect(posicion.igic.resultado).toBe(70);
+    expect(posicion.igic.tipoModelo).toBe('420');
+  });
+
+  it('IVA e IGIC se mantienen separados — no existe ningún campo que los sume ni un total combinado todavía', () => {
+    const facturas: Factura[] = [
+      factura({ id: 'i1', tipo: 'ingreso', tipoImpuesto: 'iva', importeImpuesto: 210, importe: 1210, fecha: '2026-01-10' }),
+      factura({ id: 'i2', tipo: 'ingreso', tipoImpuesto: 'igic', importeImpuesto: 70, importe: 1070, fecha: '2026-01-10' }),
+    ];
+    const [q1] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    const posicion = calcularPosicionFiscal(q1);
+    expect(posicion.iva.resultado).toBe(210);
+    expect(posicion.igic.resultado).toBe(70);
+    expect((posicion as any).totalAIngresar).toBeUndefined();
+    expect(Object.keys(posicion).sort()).toEqual(['igic', 'irpf', 'iva', 'resultadoEconomico']);
+  });
+});
+
+describe('Arrastre IVA/IGIC entre trimestres (Fase A-C, 25/09/2026)', () => {
+  const gastosPeriodicos: GastoPeriodico[] = [];
+  /** Factura de gasto con IVA soportado de `importeImpuesto` € — genera un `ivaResultado` de -X (a compensar). */
+  const gastoIva = (id: string, fecha: string, importeImpuesto: number) =>
+    factura({ id, tipo: 'gasto', fecha, tipoImpuesto: 'iva', importe: importeImpuesto, importeImpuesto });
+  /** Factura de ingreso con IVA repercutido de `importeImpuesto` € — genera un `ivaResultado` de +X (a ingresar). */
+  const ingresoIva = (id: string, fecha: string, importeImpuesto: number) =>
+    factura({ id, tipo: 'ingreso', fecha, tipoImpuesto: 'iva', importe: importeImpuesto, importeImpuesto });
+  const gastoIgic = (id: string, fecha: string, importeImpuesto: number) =>
+    factura({ id, tipo: 'gasto', fecha, tipoImpuesto: 'igic', importe: importeImpuesto, importeImpuesto });
+  const ingresoIgic = (id: string, fecha: string, importeImpuesto: number) =>
+    factura({ id, tipo: 'ingreso', fecha, tipoImpuesto: 'igic', importe: importeImpuesto, importeImpuesto });
+
+  it('1. IVA negativo → se convierte en saldo pendiente de compensar', () => {
+    const facturas = [gastoIva('g1', '2026-01-10', 300)]; // Q1: ivaResultado = -300
+    const [q1] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(q1.impuestos.ivaResultado).toBe(-300);
+    expect(q1.ivaArrastre).toEqual({ resultadoTrimestre: -300, saldoAnterior: 0, compensacionAplicada: 0, aIngresar: 0, saldoPendiente: 300 });
+  });
+
+  it('2-3. IVA positivo consume el saldo — ejemplo exacto del encargo: Q1 -300, Q2 +500 → ingresa 200, saldo 0', () => {
+    const facturas = [gastoIva('g1', '2026-01-10', 300), ingresoIva('i1', '2026-04-10', 500)];
+    const [q1, q2] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(q1.ivaArrastre.saldoPendiente).toBe(300);
+    expect(q2.ivaArrastre).toEqual({ resultadoTrimestre: 500, saldoAnterior: 300, compensacionAplicada: 300, aIngresar: 200, saldoPendiente: 0 });
+  });
+
+  it('4. IVA positivo INFERIOR al saldo → no hay ingreso y queda saldo pendiente', () => {
+    const facturas = [gastoIva('g1', '2026-01-10', 500), ingresoIva('i1', '2026-04-10', 200)];
+    const [q1, q2] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(q1.ivaArrastre.saldoPendiente).toBe(500);
+    expect(q2.ivaArrastre).toEqual({ resultadoTrimestre: 200, saldoAnterior: 500, compensacionAplicada: 200, aIngresar: 0, saldoPendiente: 300 });
+  });
+
+  it('5/A/B. Varios trimestres acumulando saldo — secuencia completa del encargo: -300, -200, +400, +300', () => {
+    const facturas = [
+      gastoIva('g1', '2026-01-10', 300), // Q1: -300 → saldo 300
+      gastoIva('g2', '2026-04-10', 200), // Q2: -200 → saldo 500
+      ingresoIva('i1', '2026-07-10', 400), // Q3: +400 → compensa 400, ingresa 0, saldo 100
+      ingresoIva('i2', '2026-10-10', 300), // Q4: +300 → compensa 100, ingresa 200, saldo 0
+    ];
+    const [q1, q2, q3, q4] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(q1.ivaArrastre.saldoPendiente).toBe(300);
+    expect(q2.ivaArrastre.saldoPendiente).toBe(500);
+    expect(q3.ivaArrastre).toEqual({ resultadoTrimestre: 400, saldoAnterior: 500, compensacionAplicada: 400, aIngresar: 0, saldoPendiente: 100 });
+    expect(q4.ivaArrastre).toEqual({ resultadoTrimestre: 300, saldoAnterior: 100, compensacionAplicada: 100, aIngresar: 200, saldoPendiente: 0 });
+  });
+
+  it('6/C. IGIC sigue exactamente el mismo patrón que IVA', () => {
+    const facturas = [gastoIgic('g1', '2026-01-10', 400), ingresoIgic('i1', '2026-04-10', 700)];
+    const [q1, q2] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(q1.igicArrastre.saldoPendiente).toBe(400);
+    expect(q2.igicArrastre).toEqual({ resultadoTrimestre: 700, saldoAnterior: 400, compensacionAplicada: 400, aIngresar: 300, saldoPendiente: 0 });
+  });
+
+  it('7/D/E. IVA e IGIC son circuitos completamente independientes — nunca se compensan entre sí', () => {
+    const facturas = [
+      gastoIva('g1', '2026-01-10', 300), gastoIgic('g2', '2026-01-10', 150), // Q1: IVA -300, IGIC -150 (D: negativos simultáneos)
+      ingresoIva('i1', '2026-04-10', 500), // Q2: IVA +500 (se compensa con su propio saldo), IGIC sigue sin movimiento (E: IGIC con saldo pendiente mientras IVA ya ingresa)
+    ];
+    const [q1, q2] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(q1.ivaArrastre.saldoPendiente).toBe(300);
+    expect(q1.igicArrastre.saldoPendiente).toBe(150);
+    // Q2: el saldo de IGIC (150) NO se usa para reducir lo que hay que ingresar de IVA — el IVA se compensa solo con SU PROPIO saldo (300).
+    expect(q2.ivaArrastre).toEqual({ resultadoTrimestre: 500, saldoAnterior: 300, compensacionAplicada: 300, aIngresar: 200, saldoPendiente: 0 });
+    // El IGIC de Q2 no tiene facturas → resultado 0, su saldo pendiente de 150 se mantiene intacto, sin tocarlo el resultado de IVA.
+    expect(q2.igicArrastre).toEqual({ resultadoTrimestre: 0, saldoAnterior: 150, compensacionAplicada: 0, aIngresar: 0, saldoPendiente: 150 });
+  });
+
+  it('8/F. Saldo inicial de IVA (negocio que empieza a usar la app a mitad de año con un saldo pendiente ya existente)', () => {
+    const facturas = [ingresoIva('i1', '2026-07-10', 200)]; // único trimestre con datos: Q3, +200
+    const [, , q3] = calcularTrimestres(facturas, gastosPeriodicos, {
+      regionFiscal: '', repepActivo: false, saldoInicial: { beneficio: 0, irpf: 0, iva: 1000, igic: 0 },
+    });
+    // 1.000€ pendientes de antes + 200€ de este trimestre → compensa 200, sigue debiendo 800.
+    expect(q3.ivaArrastre).toEqual({ resultadoTrimestre: 200, saldoAnterior: 1000, compensacionAplicada: 200, aIngresar: 0, saldoPendiente: 800 });
+  });
+
+  it('9/G. Saldo inicial de IGIC — independiente del de IVA', () => {
+    const facturas = [ingresoIgic('i1', '2026-07-10', 100)];
+    const [, , q3] = calcularTrimestres(facturas, gastosPeriodicos, {
+      regionFiscal: '', repepActivo: false, saldoInicial: { beneficio: 0, irpf: 0, iva: 0, igic: 500 },
+    });
+    expect(q3.igicArrastre).toEqual({ resultadoTrimestre: 100, saldoAnterior: 500, compensacionAplicada: 100, aIngresar: 0, saldoPendiente: 400 });
+    expect(q3.ivaArrastre.saldoAnterior).toBe(0); // el saldo inicial de IGIC nunca contamina al de IVA
+  });
+
+  it('H. Saldo inicial + nuevo saldo negativo en el propio trimestre → se acumulan, nunca se pierde ninguno de los dos', () => {
+    const facturas = [gastoIva('g1', '2026-01-10', 150)]; // Q1: -150
+    const [q1] = calcularTrimestres(facturas, gastosPeriodicos, {
+      regionFiscal: '', repepActivo: false, saldoInicial: { beneficio: 0, irpf: 0, iva: 1000, igic: 0 },
+    });
+    expect(q1.ivaArrastre).toEqual({ resultadoTrimestre: -150, saldoAnterior: 1000, compensacionAplicada: 0, aIngresar: 0, saldoPendiente: 1150 });
+  });
+
+  it('sin ningún saldo inicial ni facturas, el arrastre no genera nada de la nada (ausencia de datos anteriores)', () => {
+    const [q1] = calcularTrimestres([], gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(q1.ivaArrastre).toEqual({ resultadoTrimestre: 0, saldoAnterior: 0, compensacionAplicada: 0, aIngresar: 0, saldoPendiente: 0 });
+    expect(q1.igicArrastre).toEqual({ resultadoTrimestre: 0, saldoAnterior: 0, compensacionAplicada: 0, aIngresar: 0, saldoPendiente: 0 });
+  });
+
+  describe('calcularSaldoEntradaAnio — I. saldo que pasa de 4T de un año a 1T del año siguiente', () => {
+    it('sin saldo inicial: el cierre real de 2026 (con un histórico de un solo año) alimenta la entrada de 2027', () => {
+      const facturas2026 = [gastoIva('g1', '2026-10-10', 500)]; // Q4 2026: -500 → cierra el año con 500€ pendientes
+      const entrada2027 = calcularSaldoEntradaAnio([{ facturas: facturas2026 }], gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+      expect(entrada2027).toEqual({ iva: 500, igic: 0 });
+
+      // Y aplicado de verdad al cálculo de 2027 (no solo al helper aislado):
+      const facturas2027 = [ingresoIva('i1', '2027-01-10', 300)]; // Q1 2027: +300, con 500€ de entrada
+      const [q1_2027] = calcularTrimestres(facturas2027, gastosPeriodicos, {
+        regionFiscal: '', repepActivo: false, saldoInicial: { beneficio: 0, irpf: 0, ...entrada2027 },
+      });
+      expect(q1_2027.ivaArrastre).toEqual({ resultadoTrimestre: 300, saldoAnterior: 500, compensacionAplicada: 300, aIngresar: 0, saldoPendiente: 200 });
+    });
+
+    it('con saldo inicial manual en un año anterior al histórico: se usa como punto de partida de la cadena, no se pierde', () => {
+      // Saldo inicial manual de 1.000€ configurado para 2025 (antes de que el negocio tuviera facturas en la app);
+      // 2025 sin movimiento; 2026 compensa parte. calcularSaldoEntradaAnio(historico=[2025, 2026]) debe dar la entrada de 2027.
+      const facturas2025: Factura[] = [];
+      const facturas2026 = [ingresoIva('i1', '2026-01-10', 400)]; // Q1 2026: +400, compensa 400 del saldo inicial de 1000 → queda 600
+      const entrada2027 = calcularSaldoEntradaAnio(
+        [{ facturas: facturas2025 }, { facturas: facturas2026 }],
+        gastosPeriodicos, { regionFiscal: '', repepActivo: false },
+        { iva: 1000, igic: 0 }
+      );
+      expect(entrada2027.iva).toBe(600);
+    });
+
+    it('historico vacío y sin saldoInicial → entrada 0 (primer año de uso de la app, sin dato anterior)', () => {
+      expect(calcularSaldoEntradaAnio([], gastosPeriodicos, { regionFiscal: '', repepActivo: false })).toEqual({ iva: 0, igic: 0 });
+    });
+  });
+
+  it('J. Rectificativa que cambia el resultado de un trimestre — el arrastre ve el resultado YA con el signo aplicado, sin aplicarlo dos veces', () => {
+    const original = ingresoIva('orig', '2026-04-10', 500); // Q2: +500
+    const rectificativa: Factura = { ...ingresoIva('rect', '2026-04-15', 200), naturaleza: 'rectificativa', facturaOriginalId: 'orig' };
+    // ivaResultado de Q2 = 500 - 200 (la rectificativa resta) = 300 → nunca 500-(-200)=700 ni ningún otro signo duplicado.
+    const [, q2] = calcularTrimestres([original, rectificativa], gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(q2.impuestos.ivaResultado).toBe(300);
+    expect(q2.ivaArrastre).toEqual({ resultadoTrimestre: 300, saldoAnterior: 0, compensacionAplicada: 0, aIngresar: 300, saldoPendiente: 0 });
+  });
+
+  it('K. Rectificativa de un trimestre anterior — el arrastre resulta correcto en el trimestre en que se REGISTRA la rectificativa, nunca en el de la original (mismo criterio que ya usa el resto del motor)', () => {
+    const original = ingresoIva('orig', '2026-01-10', 500); // Q1: +500 → ingresa 500, sin saldo
+    const rectificativa: Factura = { ...ingresoIva('rect', '2026-07-15', 200), naturaleza: 'rectificativa', facturaOriginalId: 'orig' };
+    const [q1, , q3] = calcularTrimestres([original, rectificativa], gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(q1.ivaArrastre).toEqual({ resultadoTrimestre: 500, saldoAnterior: 0, compensacionAplicada: 0, aIngresar: 500, saldoPendiente: 0 });
+    // Q3 (donde se registra la rectificativa): -200, no toca Q1 ya calculado — se convierte en saldo pendiente de Q3 en adelante.
+    expect(q3.ivaArrastre).toEqual({ resultadoTrimestre: -200, saldoAnterior: 0, compensacionAplicada: 0, aIngresar: 0, saldoPendiente: 200 });
+  });
+
+  it('L. REPEP activo — sin facturas de IGIC real (caso normal bajo REPEP), el arrastre de IGIC no genera ni consume saldo en ningún trimestre', () => {
+    const facturas = [
+      gastoIva('g1', '2026-01-10', 100), // solo movimiento de IVA (p. ej. una compra en Península) — REPEP no afecta a esto
+      ingresoIva('i1', '2026-04-10', 150),
+    ];
+    const trimestres = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: 'canarias', repepActivo: true });
+    for (const t of trimestres) {
+      expect(t.impuestos.igicResultado).toBe(0);
+      expect(t.igicArrastre).toEqual({ resultadoTrimestre: 0, saldoAnterior: 0, compensacionAplicada: 0, aIngresar: 0, saldoPendiente: 0 });
+    }
+    // El IVA (ajeno a REPEP, que solo afecta al IGIC) sigue arrastrando con normalidad.
+    expect(trimestres[0].ivaArrastre.saldoPendiente).toBe(100);
+  });
+
+  it('13. El cálculo de IRPF no cambia con la llegada del arrastre IVA/IGIC — mismo resultado que antes de esta fase con o sin saldoInicial.iva/igic', () => {
+    const facturas = [factura({ id: 'i1', tipo: 'ingreso', fecha: '2026-01-10', importe: 6000 })];
+    const sinIvaIgic = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false, saldoInicial: { beneficio: 1000, irpf: 200 } });
+    const conIvaIgic = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false, saldoInicial: { beneficio: 1000, irpf: 200, iva: 999, igic: 999 } });
+    expect(conIvaIgic[0].beneficioAcumulado).toBe(sinIvaIgic[0].beneficioAcumulado);
+    expect(conIvaIgic[0].irpf).toBe(sinIvaIgic[0].irpf);
+  });
+
+  it('14. calcularPosicionFiscal() sigue sin mezclar IVA e IGIC — cada uno con su propio arrastre completo, nunca combinados', () => {
+    const facturas = [gastoIva('g1', '2026-01-10', 300), gastoIgic('g2', '2026-01-10', 150)];
+    const [q1] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    const posicion = calcularPosicionFiscal(q1);
+    expect(posicion.iva.saldoPendiente).toBe(300);
+    expect(posicion.igic.saldoPendiente).toBe(150);
+    expect((posicion as any).totalAIngresar).toBeUndefined();
+    expect((posicion.iva as any).saldoIgic).toBeUndefined();
+    expect((posicion.igic as any).saldoIva).toBeUndefined();
+  });
+});
+
+describe('calcularTotalAIngresar — Fase Total estimado a ingresar (25/09/2026)', () => {
+  const gastosPeriodicos: GastoPeriodico[] = [];
+
+  /**
+   * Construye una PosicionFiscalTrimestre directamente con los valores
+   * exactos que necesita cada test — más claro que fabricar facturas para
+   * llegar a una cifra concreta, y perfectamente legítimo: la función bajo
+   * test es pura, solo consume esta forma, no le importa de dónde salió.
+   */
+  const posicion = (over: {
+    irpf?: number;
+    ivaResultado?: number; ivaSaldoAnterior?: number; ivaCompensacion?: number; ivaAIngresar?: number; ivaSaldoPendiente?: number;
+    igicResultado?: number; igicSaldoAnterior?: number; igicCompensacion?: number; igicAIngresar?: number; igicSaldoPendiente?: number;
+  }): ReturnType<typeof calcularPosicionFiscal> => ({
+    resultadoEconomico: 0,
+    irpf: { importe: over.irpf ?? 0, tipoModelo: '130' },
+    iva: {
+      resultado: over.ivaResultado ?? 0, tipoModelo: '303',
+      resultadoTrimestre: over.ivaResultado ?? 0,
+      saldoAnterior: over.ivaSaldoAnterior ?? 0,
+      compensacionAplicada: over.ivaCompensacion ?? 0,
+      aIngresar: over.ivaAIngresar ?? 0,
+      saldoPendiente: over.ivaSaldoPendiente ?? 0,
+    },
+    igic: {
+      resultado: over.igicResultado ?? 0, tipoModelo: '420',
+      resultadoTrimestre: over.igicResultado ?? 0,
+      saldoAnterior: over.igicSaldoAnterior ?? 0,
+      compensacionAplicada: over.igicCompensacion ?? 0,
+      aIngresar: over.igicAIngresar ?? 0,
+      saldoPendiente: over.igicSaldoPendiente ?? 0,
+    },
+  });
+
+  it('1. Solo IRPF a ingresar', () => {
+    expect(calcularTotalAIngresar(posicion({ irpf: 650 }))).toEqual({ irpf: 650, iva: 0, igic: 0, total: 650 });
+  });
+
+  it('2. Solo IVA a ingresar', () => {
+    expect(calcularTotalAIngresar(posicion({ ivaAIngresar: 300 }))).toEqual({ irpf: 0, iva: 300, igic: 0, total: 300 });
+  });
+
+  it('3. Solo IGIC a ingresar', () => {
+    expect(calcularTotalAIngresar(posicion({ igicAIngresar: 150 }))).toEqual({ irpf: 0, iva: 0, igic: 150, total: 150 });
+  });
+
+  it('4. IRPF + IVA', () => {
+    expect(calcularTotalAIngresar(posicion({ irpf: 650, ivaAIngresar: 300 })).total).toBe(950);
+  });
+
+  it('5. IRPF + IGIC', () => {
+    expect(calcularTotalAIngresar(posicion({ irpf: 650, igicAIngresar: 150 })).total).toBe(800);
+  });
+
+  it('6. IVA + IGIC simultáneamente', () => {
+    expect(calcularTotalAIngresar(posicion({ ivaAIngresar: 300, igicAIngresar: 150 })).total).toBe(450);
+  });
+
+  it('7. Los tres impuestos simultáneamente', () => {
+    expect(calcularTotalAIngresar(posicion({ irpf: 650, ivaAIngresar: 300, igicAIngresar: 150 })))
+      .toEqual({ irpf: 650, iva: 300, igic: 150, total: 1100 });
+  });
+
+  it('8. IVA con saldo pendiente de compensar — el pendiente NO entra en el total', () => {
+    expect(calcularTotalAIngresar(posicion({ ivaAIngresar: 0, ivaSaldoPendiente: 400 })))
+      .toEqual({ irpf: 0, iva: 0, igic: 0, total: 0 });
+  });
+
+  it('9. IGIC con saldo pendiente de compensar — el pendiente NO entra en el total', () => {
+    expect(calcularTotalAIngresar(posicion({ igicAIngresar: 0, igicSaldoPendiente: 200 })))
+      .toEqual({ irpf: 0, iva: 0, igic: 0, total: 0 });
+  });
+
+  it('10. IVA e IGIC con saldos independientes — nunca se compensan entre sí en el total', () => {
+    // El saldo pendiente de IGIC (200) no reduce el IVA a ingresar (300), ni al revés.
+    expect(calcularTotalAIngresar(posicion({ ivaAIngresar: 300, igicAIngresar: 0, igicSaldoPendiente: 200 })))
+      .toEqual({ irpf: 0, iva: 300, igic: 0, total: 300 });
+  });
+
+  it('11. Resultado negativo → sin importe a ingresar (aIngresar ya viene en 0 desde el arrastre)', () => {
+    const r = calcularTotalAIngresar(posicion({ ivaResultado: -300, ivaAIngresar: 0, ivaSaldoPendiente: 300 }));
+    expect(r.iva).toBe(0);
+    expect(r.total).toBe(0);
+  });
+
+  it('12. Rectificativa que modifica el total — el signo se aplica una sola vez, el total refleja la corrección', () => {
+    const original = factura({ id: 'orig', tipo: 'ingreso', fecha: '2026-04-10', tipoImpuesto: 'iva', importe: 2500, importeImpuesto: 500 }); // Q2: IVA +500
+    const rectificativa: Factura = {
+      ...factura({ id: 'rect', tipo: 'ingreso', fecha: '2026-04-15', tipoImpuesto: 'iva', importe: 1000, importeImpuesto: 200 }),
+      naturaleza: 'rectificativa', facturaOriginalId: 'orig',
+    }; // resta 200€ del IVA repercutido de Q2 → ivaResultado neto = 300
+    // Gasto sin impuesto que compensa el beneficio neto (2500-1000=1500) de estas dos facturas, para
+    // aislar el efecto de la rectificativa sobre el IVA sin que el IRPF interfiera en el total.
+    const offsetBeneficio = factura({ id: 'g-offset', tipo: 'gasto', fecha: '2026-04-10', importe: 1500 });
+    const [, q2] = calcularTrimestres([original, rectificativa, offsetBeneficio], gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(q2.impuestos.ivaResultado).toBe(300); // ni 500-(-200)=700 ni ningún otro signo duplicado
+    expect(q2.irpf).toBe(0); // beneficio neutralizado a propósito, ver comentario arriba
+    const r = calcularTotalAIngresar(calcularPosicionFiscal(q2));
+    expect(r.iva).toBe(300);
+    expect(r.total).toBe(300);
+  });
+
+  it('13. Cambio de trimestre — cada trimestre usa su propia posición fiscal, el total se actualiza correctamente', () => {
+    // Cada trimestre lleva un ingreso/gasto sin impuesto que compensa el beneficio de la factura con IVA de
+    // ese mismo trimestre — aísla el efecto del arrastre de IVA sobre el total, sin que el IRPF interfiera.
+    const facturas = [
+      factura({ id: 'g1', tipo: 'gasto', fecha: '2026-01-10', tipoImpuesto: 'iva', importe: 1000, importeImpuesto: 300 }), // Q1: IVA soportado 300 → resultado -300
+      factura({ id: 'i0', tipo: 'ingreso', fecha: '2026-01-10', importe: 1000 }), // compensa el beneficio de Q1
+      factura({ id: 'i1', tipo: 'ingreso', fecha: '2026-04-10', tipoImpuesto: 'iva', importe: 500, importeImpuesto: 500 }), // Q2: IVA repercutido 500 → resultado +500, compensa los 300 de Q1
+      factura({ id: 'g0', tipo: 'gasto', fecha: '2026-04-10', importe: 500 }), // compensa el beneficio de Q2
+      factura({ id: 'i2', tipo: 'ingreso', fecha: '2026-07-10', tipoImpuesto: 'iva', importe: 100, importeImpuesto: 100 }), // Q3: IVA +100, sin saldo previo
+      factura({ id: 'g2', tipo: 'gasto', fecha: '2026-07-10', importe: 100 }), // compensa el beneficio de Q3
+    ];
+    const trimestres = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(trimestres[0].irpf).toBe(0);
+    expect(trimestres[1].irpf).toBe(0);
+    expect(trimestres[2].irpf).toBe(0);
+    const totalQ1 = calcularTotalAIngresar(calcularPosicionFiscal(trimestres[0]));
+    const totalQ2 = calcularTotalAIngresar(calcularPosicionFiscal(trimestres[1]));
+    const totalQ3 = calcularTotalAIngresar(calcularPosicionFiscal(trimestres[2]));
+    expect(totalQ1.total).toBe(0); // negativo, nada a ingresar
+    expect(totalQ2.total).toBe(200); // 500 - 300 de saldo compensado
+    expect(totalQ3.total).toBe(100); // ya sin saldo pendiente, todo el resultado se ingresa
+  });
+
+  it('14. Cambio de año — el total de 2027 Q1 usa el saldo pendiente real de 2026 Q4, sin mezclar años', () => {
+    const facturas2026 = [factura({ id: 'g1', tipo: 'gasto', fecha: '2026-10-10', tipoImpuesto: 'iva', importe: 500, importeImpuesto: 500 })]; // Q4 2026: IVA -500
+    const entrada2027 = calcularSaldoEntradaAnio([{ facturas: facturas2026 }], gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(entrada2027).toEqual({ iva: 500, igic: 0 });
+
+    const facturas2027 = [
+      factura({ id: 'i1', tipo: 'ingreso', fecha: '2027-01-10', tipoImpuesto: 'iva', importe: 300, importeImpuesto: 300 }), // Q1 2027: IVA +300
+      factura({ id: 'g-offset', tipo: 'gasto', fecha: '2027-01-10', importe: 300 }), // compensa el beneficio, aísla el efecto sobre el IVA
+    ];
+    const [q1_2027] = calcularTrimestres(facturas2027, gastosPeriodicos, {
+      regionFiscal: '', repepActivo: false, saldoInicial: { beneficio: 0, irpf: 0, ...entrada2027 },
+    });
+    expect(q1_2027.irpf).toBe(0);
+    const total2027Q1 = calcularTotalAIngresar(calcularPosicionFiscal(q1_2027));
+    // 300€ no llega a cubrir los 500€ pendientes de 2026 → nada a ingresar, sigue quedando saldo (nunca se mezcla con 2026).
+    expect(total2027Q1.iva).toBe(0);
+    expect(total2027Q1.total).toBe(0);
+    expect(q1_2027.ivaArrastre.saldoPendiente).toBe(200);
+  });
+
+  it('15. REPEP activo — IGIC no aplicable no aporta nada al total, el IVA real de una compra/venta en Península sí', () => {
+    const facturas = [
+      factura({ id: 'i1', tipo: 'ingreso', fecha: '2026-01-10', tipoImpuesto: 'iva', importe: 726, importeImpuesto: 126 }),
+      factura({ id: 'g-offset', tipo: 'gasto', fecha: '2026-01-10', importe: 726 }), // compensa el beneficio, aísla el efecto sobre el IVA
+    ];
+    const [q1] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: 'canarias', repepActivo: true });
+    expect(q1.impuestos.igicResultado).toBe(0);
+    expect(q1.irpf).toBe(0);
+    const total = calcularTotalAIngresar(calcularPosicionFiscal(q1));
+    expect(total.igic).toBe(0);
+    expect(total.iva).toBe(126);
+    expect(total.total).toBe(126);
+  });
+
+  it('16. Caso sin datos fiscales (trimestre sin facturas) → total 0, sin errores', () => {
+    expect(calcularTotalAIngresar(posicion({}))).toEqual({ irpf: 0, iva: 0, igic: 0, total: 0 });
+  });
+
+  it('17. El IRPF no se descuenta dos veces — usa irpf.importe tal cual, ya neto de trimestres anteriores', () => {
+    // beneficio de 6000€ en Q1 con saldoInicial.irpf de 200€ ya "pagado" → irpf de Q1 = max(0, 6000*0.20 - 200) = 1000
+    const facturas = [factura({ id: 'i1', tipo: 'ingreso', fecha: '2026-01-10', importe: 6000 })];
+    const [q1] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false, saldoInicial: { beneficio: 0, irpf: 200 } });
+    const posicionQ1 = calcularPosicionFiscal(q1);
+    expect(posicionQ1.irpf.importe).toBe(1000);
+    // Si calcularTotalAIngresar volviera a restar algo aquí, saldría menos de 1000 — no debe ocurrir.
+    expect(calcularTotalAIngresar(posicionQ1).irpf).toBe(1000);
+  });
+
+  it('18. IVA e IGIC nunca se compensan entre sí en el total — un saldo grande de IVA a compensar no reduce el IGIC a ingresar', () => {
+    expect(calcularTotalAIngresar(posicion({ ivaAIngresar: 0, ivaSaldoPendiente: 900, igicAIngresar: 300 })))
+      .toEqual({ irpf: 0, iva: 0, igic: 300, total: 300 });
+  });
+
+  it('Test de ejemplo central del encargo — IRPF 650€ + IVA 300€ (tras compensar 500€ de un resultado de 800€) + IGIC 0€ (con 200€ pendientes) = 950€', () => {
+    const p = posicion({
+      irpf: 650,
+      ivaResultado: 800, ivaSaldoAnterior: 500, ivaCompensacion: 500, ivaAIngresar: 300, ivaSaldoPendiente: 0,
+      igicResultado: -200, igicAIngresar: 0, igicSaldoPendiente: 200,
+    });
+    expect(calcularTotalAIngresar(p)).toEqual({ irpf: 650, iva: 300, igic: 0, total: 950 });
+    // Los saldos pendientes, informativos, siguen disponibles aparte en la propia posición — nunca en el total.
+    expect(p.iva.saldoPendiente).toBe(0);
+    expect(p.igic.saldoPendiente).toBe(200);
   });
 });

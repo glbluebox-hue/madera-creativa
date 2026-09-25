@@ -3,6 +3,7 @@ import type { Factura, Proveedor } from './types.js';
 import { EscanerDocumento } from './escaner-documento.js';
 import type { ResultadoEscaneo } from './escaner-documento.js';
 import { ImporteInput } from './importe-input.js';
+import { formatoFecha } from './calculos.js';
 import { leerArchivoComoBase64 } from './archivos.js';
 import { comprimirImagen, rotarImagenDataUrl } from './procesamiento-imagenes.js';
 import { urlImagenFiable } from './imagen-fallback.js';
@@ -12,6 +13,7 @@ import { resolverEmisorReceptor, nombresCoinciden, type EmpresaIdentificacion } 
 import { sugerirTipoImpuesto, estadoIvaIgicDeducible, agregarLineasFiscales, validarLineasFiscales, type RegionFiscal, type TipoImpuestoFactura } from './motor-fiscal.js';
 import { aplicarSugerenciaCategoriaFiscal, type CategoriaFiscal } from './categoria-fiscal.js';
 import { resolverTratamientoFiscal } from './motor-resolucion-fiscal.js';
+import { detectarPosibleRectificativa, type SugerenciaRectificativa } from './deteccion-rectificativa.js';
 import type { HechosFiscales, OrigenDecisionFiscal, LineaFiscal, TipoLineaFiscal } from './types.js';
 import type { HechoFiscalRequerido } from './identificacion-gasto.js';
 import * as api from './api.js';
@@ -238,6 +240,28 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
   const [origen, setOrigen] = useState<'escaner' | 'foto' | 'pdf' | 'manual' | ''>(facturaEditar?.origen ?? '');
   const [paginaVista, setPaginaVista] = useState(0);
   const [tipo, setTipo] = useState<'ingreso' | 'gasto'>(facturaEditar?.tipo ?? 'gasto');
+  // ── Rectificativas/devoluciones (Fase interfaz, 25/09/2026) ──────────────
+  // `naturaleza` es un eje independiente de `tipo` (ver comentario en
+  // `types.ts`): una rectificativa de un GASTO sigue siendo `tipo:'gasto'`,
+  // solo cambia `naturaleza`. Por defecto 'normal', tal como se pidió.
+  const [naturaleza, setNaturaleza] = useState<'normal' | 'rectificativa'>(facturaEditar?.naturaleza ?? 'normal');
+  const [facturaOriginalId, setFacturaOriginalId] = useState(facturaEditar?.facturaOriginalId ?? '');
+  const [numeroFacturaOriginal, setNumeroFacturaOriginal] = useState(facturaEditar?.numeroFacturaOriginal ?? '');
+  const [motivoRectificacion, setMotivoRectificacion] = useState<'' | NonNullable<Factura['motivoRectificacion']>>(facturaEditar?.motivoRectificacion ?? '');
+  /** Resumen de la factura original elegida, solo para mostrarla (número/fecha/proveedor/importe) — la referencia real que se guarda es `facturaOriginalId`. */
+  const [facturaOriginalResumen, setFacturaOriginalResumen] = useState<Factura | null>(null);
+  const [buscadorOriginalAbierto, setBuscadorOriginalAbierto] = useState(false);
+  const [textoBusquedaOriginal, setTextoBusquedaOriginal] = useState('');
+  const [candidatasOriginal, setCandidatasOriginal] = useState<Factura[]>([]);
+  const [cargandoCandidatasOriginal, setCargandoCandidatasOriginal] = useState(false);
+  /**
+   * Sugerencia automática (heurística de palabras clave, `deteccion-rectificativa.ts`)
+   * — SOLO se calcula tras una extracción con IA (ver `extraerConIA`), y
+   * SOLO se muestra si el usuario no la ha descartado ya y la factura no
+   * está ya marcada como rectificativa. Nunca marca nada por sí sola.
+   */
+  const [sugerenciaRectificativa, setSugerenciaRectificativa] = useState<SugerenciaRectificativa | null>(null);
+  const [sugerenciaDescartada, setSugerenciaDescartada] = useState(false);
   const [fecha, setFecha] = useState(facturaEditar?.fecha ?? new Date().toISOString().slice(0, 10));
   const [importe, setImporte] = useState(facturaEditar ? String(facturaEditar.importe) : '');
   const [concepto, setConcepto] = useState(facturaEditar?.concepto ?? '');
@@ -366,6 +390,56 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
       .then((e) => { setEmpresa({ nombre: e.nombre ?? '', titular: e.titular ?? '', nifCif: e.nifCif ?? '' }); setRegionFiscal(e.regionFiscal ?? ''); setRepepActivo(!!e.repepActivo); })
       .catch(() => setEmpresa({ nombre: '', titular: '', nifCif: '' }));
   }, []);
+
+  // Al editar una rectificativa ya guardada, recupera el resumen de su
+  // factura original para mostrarlo (número/fecha/proveedor/importe) sin
+  // que el usuario tenga que volver a buscarla.
+  useEffect(() => {
+    if (!facturaEditar?.facturaOriginalId) return;
+    let cancelado = false;
+    api.obtenerFactura(facturaEditar.facturaOriginalId)
+      .then((f) => { if (!cancelado) setFacturaOriginalResumen(f); })
+      .catch(() => { /* la original pudo borrarse desde entonces — se deja sin resumen, el id se conserva tal cual */ });
+    return () => { cancelado = true; };
+  }, [facturaEditar?.facturaOriginalId]);
+
+  /**
+   * Busca candidatas a "factura original" en TODO el histórico del
+   * usuario (no solo la página que esté cargada en el listado general) —
+   * `GET /facturas?busqueda=...` en servidor, por número/proveedor/importe/
+   * fecha. Excluye siempre la propia factura en edición (`excluirId`, ya
+   * aplicado en el servidor, no en el cliente). Con el texto vacío no
+   * consulta nada — evita traer "las últimas N facturas" como si fueran
+   * resultado de una búsqueda cuando el usuario aún no ha escrito nada.
+   * Con debounce de 300ms para no lanzar una petición por cada pulsación.
+   */
+  const busquedaOriginalTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const buscarFacturasOriginal = (texto: string) => {
+    setTextoBusquedaOriginal(texto);
+    if (busquedaOriginalTimeout.current) clearTimeout(busquedaOriginalTimeout.current);
+    const q = texto.trim();
+    if (!q) { setCandidatasOriginal([]); setCargandoCandidatasOriginal(false); return; }
+    setCargandoCandidatasOriginal(true);
+    busquedaOriginalTimeout.current = setTimeout(async () => {
+      try {
+        const items = await api.buscarFacturasOriginalCandidatas(q, facturaEditar?.id);
+        setCandidatasOriginal(items);
+      } catch {
+        setCandidatasOriginal([]);
+      } finally {
+        setCargandoCandidatasOriginal(false);
+      }
+    }, 300);
+  };
+
+  const elegirFacturaOriginal = (f: Factura) => {
+    setFacturaOriginalId(f.id);
+    setNumeroFacturaOriginal(f.numeroFactura ?? '');
+    setFacturaOriginalResumen(f);
+    setBuscadorOriginalAbierto(false);
+    setTextoBusquedaOriginal('');
+    setCandidatasOriginal([]);
+  };
 
   // Sugerencia de tipo de impuesto SOLO en facturas nuevas y SOLO si el
   // campo sigue vacío cuando llega la región — nunca sobrescribe un valor
@@ -509,6 +583,20 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
       if ((Array.isArray(datos.lineasFiscales) && datos.lineasFiscales.length > 0) || tiposValidos.includes(datos.tipoImpuestoSugerido)) setDatosFiscalesAbierto(true);
       setConfianzaIA(resuelto.confianza);
       setAvisoRevisarEmisor(resuelto.revisar);
+      // Detección de posible rectificativa/devolución (Fase interfaz, 25/09/2026)
+      // — SOLO sugiere, nunca marca nada por sí sola (ver `deteccion-rectificativa.ts`).
+      // Se recalcula en cada extracción nueva; si el usuario ya había marcado la
+      // factura como rectificativa a mano no hace falta volver a preguntarle.
+      setSugerenciaDescartada(false);
+      setSugerenciaRectificativa(
+        naturaleza === 'rectificativa'
+          ? null
+          : detectarPosibleRectificativa({
+              concepto: datos.concepto ?? null,
+              numeroFactura: datos.numeroFactura ?? null,
+              importeExtraido: typeof datos.importe === 'number' ? datos.importe : null,
+            })
+      );
     } catch {
       setErrorExtraccion('No se pudieron extraer los datos automáticamente. Revísalos a mano.');
     } finally {
@@ -643,6 +731,10 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
       ivaIgicDeducibleOrigen,
       hechosFiscales,
       categoriaFiscal,
+      naturaleza,
+      facturaOriginalId: naturaleza === 'rectificativa' ? facturaOriginalId : undefined,
+      numeroFacturaOriginal: naturaleza === 'rectificativa' ? numeroFacturaOriginal.trim() || undefined : undefined,
+      motivoRectificacion: naturaleza === 'rectificativa' && motivoRectificacion ? motivoRectificacion : undefined,
       creado: facturaEditar?.creado ?? new Date().toISOString(),
     };
   };
@@ -916,6 +1008,121 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
               Gasto
             </button>
           </div>
+
+          {/* Sugerencia automática de rectificativa (Fase interfaz, 25/09/2026) — solo
+              sugiere, nunca marca nada por sí sola (ver `deteccion-rectificativa.ts`). */}
+          {sugerenciaRectificativa?.sugerido && !sugerenciaDescartada && naturaleza !== 'rectificativa' && (
+            <div style={{ background: 'var(--azul-bg, #e3edf7)', border: '1px solid var(--azul, #2b6cb0)', borderRadius: 8, padding: '0.75rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--azul, #2b6cb0)', fontWeight: 600 }}>
+                Esta factura parece ser una rectificativa. ¿Quieres marcarla como rectificativa?
+              </p>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button type="button" className={`${styles.btn} ${styles.btnPrimario}`} style={{ fontSize: '0.78rem', flex: 1, justifyContent: 'center' }}
+                  onClick={() => { setNaturaleza('rectificativa'); setSugerenciaDescartada(true); }}>
+                  Marcar como rectificativa
+                </button>
+                <button type="button" className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.78rem', flex: 1, justifyContent: 'center' }}
+                  onClick={() => setSugerenciaDescartada(true)}>
+                  No, es una factura normal
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Tipo de factura: normal / rectificativa (Fase interfaz, 25/09/2026) —
+              eje independiente de Ingreso/Gasto, ver comentario del estado `naturaleza`. */}
+          <label className={styles.label}>Tipo de factura
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.3rem' }}>
+              <button type="button" className={`${styles.btn} ${naturaleza === 'normal' ? styles.btnPrimario : styles.btnSecundario}`}
+                style={{ flex: 1, justifyContent: 'center' }} onClick={() => setNaturaleza('normal')}>
+                Normal
+              </button>
+              <button type="button" className={`${styles.btn} ${naturaleza === 'rectificativa' ? styles.btnPrimario : styles.btnSecundario}`}
+                style={{ flex: 1, justifyContent: 'center' }} onClick={() => setNaturaleza('rectificativa')}>
+                Rectificativa / devolución
+              </button>
+            </div>
+          </label>
+
+          {naturaleza === 'rectificativa' && (
+            <div style={{ background: 'var(--fondo-caja)', border: '1px solid var(--borde)', borderRadius: 8, padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+              <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--topo)' }}>
+                Escribe el importe de esta rectificativa <strong>en positivo</strong> (p. ej. 300 €, no −300 €) — la aplicación ya resta internamente lo que corresponde.
+              </p>
+
+              {/* Factura original — buscador/selector */}
+              <div>
+                <span style={{ fontSize: '0.82rem', color: 'var(--topo)' }}>Factura original</span>
+                {facturaOriginalResumen && !buscadorOriginalAbierto ? (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.3rem', background: 'var(--blanco)', border: '1px solid var(--borde)', borderRadius: 6, padding: '0.5rem 0.7rem' }}>
+                    <span style={{ fontSize: '0.8rem' }}>
+                      {facturaOriginalResumen.numeroFactura ? `Nº ${facturaOriginalResumen.numeroFactura} — ` : ''}
+                      {formatoFecha(facturaOriginalResumen.fecha)} — {facturaOriginalResumen.proveedor || 'sin proveedor/cliente'} — {facturaOriginalResumen.importe.toFixed(2)}€
+                    </span>
+                    <button type="button" className={styles.btn} style={{ fontSize: '0.74rem', padding: '0.2rem 0' }}
+                      onClick={() => { setBuscadorOriginalAbierto(true); buscarFacturasOriginal(''); }}>
+                      Cambiar
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ position: 'relative', marginTop: '0.3rem' }}>
+                    <input
+                      className={styles.input} style={{ width: '100%', boxSizing: 'border-box' }}
+                      type="text" placeholder="Busca por nº de factura, proveedor/cliente, importe o fecha…"
+                      value={textoBusquedaOriginal}
+                      onFocus={() => { setBuscadorOriginalAbierto(true); if (!candidatasOriginal.length) buscarFacturasOriginal(textoBusquedaOriginal); }}
+                      onChange={(e) => buscarFacturasOriginal(e.target.value)}
+                    />
+                    {buscadorOriginalAbierto && (
+                      <div style={{
+                        position: 'absolute', top: 'calc(100% + 2px)', left: 0, right: 0,
+                        background: 'var(--blanco)', border: '1px solid var(--borde)', borderRadius: 8,
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: Z_DESPLEGABLE,
+                        maxHeight: 220, overflowY: 'auto',
+                      }}>
+                        {cargandoCandidatasOriginal && (
+                          <p style={{ margin: 0, padding: '0.6rem 0.85rem', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>Buscando…</p>
+                        )}
+                        {!cargandoCandidatasOriginal && candidatasOriginal.length === 0 && (
+                          <p style={{ margin: 0, padding: '0.6rem 0.85rem', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>
+                            {textoBusquedaOriginal.trim() ? 'Sin resultados.' : 'Escribe para buscar por nº, proveedor/cliente, importe o fecha.'}
+                          </p>
+                        )}
+                        {candidatasOriginal.map((f) => (
+                          <button
+                            key={f.id} type="button" onClick={() => elegirFacturaOriginal(f)}
+                            style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '0.55rem 0.85rem', cursor: 'pointer', fontSize: '0.8rem', color: 'var(--negro)', display: 'flex', flexDirection: 'column', borderBottom: '1px solid var(--borde-fino)' }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--fondo-caja)')}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
+                          >
+                            <strong>{f.numeroFactura ? `Nº ${f.numeroFactura} — ` : ''}{f.proveedor || 'sin proveedor/cliente'}</strong>
+                            <span style={{ fontSize: '0.74rem', color: 'var(--topo-claro)' }}>{formatoFecha(f.fecha)} · {f.importe.toFixed(2)}€ · {f.tipo === 'ingreso' ? 'Ingreso' : 'Gasto'}</span>
+                          </button>
+                        ))}
+                        <button type="button" onClick={() => setBuscadorOriginalAbierto(false)} style={{ width: '100%', textAlign: 'center', background: 'none', border: 'none', padding: '0.45rem', cursor: 'pointer', fontSize: '0.74rem', color: 'var(--topo-claro)' }}>
+                          Cerrar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {!facturaOriginalId && (
+                  <p style={{ margin: '0.3rem 0 0', fontSize: '0.74rem', color: 'var(--ocre, #a67c00)' }}>Selecciona la factura original para poder guardar esta rectificativa.</p>
+                )}
+              </div>
+
+              <label className={styles.label}>Motivo de la rectificación
+                <select className={styles.select} style={{ width: '100%', boxSizing: 'border-box' }}
+                  value={motivoRectificacion} onChange={(e) => setMotivoRectificacion(e.target.value as typeof motivoRectificacion)}>
+                  <option value="">Sin especificar</option>
+                  <option value="devolucion_mercancia">Devolución de mercancía</option>
+                  <option value="error_facturacion">Error de facturación</option>
+                  <option value="descuento_posterior">Descuento posterior</option>
+                  <option value="otro">Otro</option>
+                </select>
+              </label>
+            </div>
+          )}
 
           <label className={styles.label}>Fecha
             <input className={styles.input} type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
@@ -1238,7 +1445,7 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
             <button
               className={`${styles.btn} ${styles.btnPrimario}`}
               style={{ flex: 2, justifyContent: 'center' }}
-              disabled={!importe || parseFloat(String(importe).replace(',', '.')) <= 0 || comprobandoDuplicado}
+              disabled={!importe || parseFloat(String(importe).replace(',', '.')) <= 0 || comprobandoDuplicado || (naturaleza === 'rectificativa' && !facturaOriginalId)}
               onClick={() => guardar(false)}
             >
               {comprobandoDuplicado ? 'Comprobando…' : esEdicion ? 'Guardar cambios' : 'Guardar factura'}
