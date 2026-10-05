@@ -506,7 +506,8 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
           receptorCodigoPostal: datos.receptorCodigoPostal ?? null,
           tipo: datos.tipo === 'ingreso' || datos.tipo === 'gasto' ? datos.tipo : null,
         },
-        empresa ?? { nombre: '', titular: '', nifCif: '' }
+        empresa ?? { nombre: '', titular: '', nifCif: '' },
+        proveedores
       );
       // La IA propone — solo rellena los campos, el usuario debe revisar y
       // pulsar "Guardar factura" para confirmar. Nunca sobrescribe con

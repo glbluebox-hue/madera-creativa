@@ -1613,3 +1613,11 @@
 2026-09-25T20:24:32.082Z 3060 test presupuestos-service, failed
 2026-09-25T20:24:39.700Z 27468 check-types presupuestos-service, started
 2026-09-25T20:25:04.411Z 27468 check-types presupuestos-service, succeeded
+2026-10-05T08:33:11.954Z 27224 test presupuestos-prototype/identificacion-factura, started
+2026-10-05T08:33:12.459Z 27224 test presupuestos-prototype/identificacion-factura, failed
+2026-10-05T08:33:19.343Z 13432 list, started
+2026-10-05T08:33:19.819Z 13432 list, succeeded
+2026-10-05T08:33:26.413Z 10592 test madera-creativa.presupuestos/presupuestos-prototype, started
+2026-10-05T08:35:25.996Z 10592 test madera-creativa.presupuestos/presupuestos-prototype, failed
+2026-10-05T08:35:34.960Z 18224 check-types madera-creativa.presupuestos/presupuestos-prototype, started
+2026-10-05T08:37:02.864Z 18224 check-types madera-creativa.presupuestos/presupuestos-prototype, succeeded

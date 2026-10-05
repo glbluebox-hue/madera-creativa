@@ -41,6 +41,17 @@ export type EmpresaIdentificacion = {
   nifCif: string;
 };
 
+/**
+ * Proveedor ya dado de alta por este usuario (ficha creada a partir de al
+ * menos una factura de gasto real anterior — ver `proveedor-utils.ts`).
+ * Solo se necesitan estos dos campos para usarlo como evidencia de
+ * identificación (bloque 2.5 de `resolverInterno`).
+ */
+export type ProveedorConocido = {
+  nombre: string;
+  cifNif?: string | null;
+};
+
 export type ResultadoIdentificacion = {
   /** Va directo a `Factura.proveedor` — el cliente si es ingreso, el proveedor real si es gasto. */
   proveedor: string;
@@ -130,8 +141,12 @@ export function nombresCoinciden(a: string | null | undefined, b: string | null 
  * esa red de seguridad cubra los CUATRO bloques de más abajo a la vez, sin
  * tener que repetir la comprobación en cada `return`.
  */
-export function resolverEmisorReceptor(datos: DatosExtraidosFactura, empresa: EmpresaIdentificacion): ResultadoIdentificacion {
-  let resultado = resolverInterno(datos, empresa);
+export function resolverEmisorReceptor(
+  datos: DatosExtraidosFactura,
+  empresa: EmpresaIdentificacion,
+  proveedoresConocidos: ProveedorConocido[] = []
+): ResultadoIdentificacion {
+  let resultado = resolverInterno(datos, empresa, proveedoresConocidos);
 
   // Red de seguridad final (petición explícita del usuario, 27/08/2026,
   // caso real: el CIF de MONTÓ estaba escrito en letra tan pequeña que la
@@ -177,7 +192,11 @@ export function resolverEmisorReceptor(datos: DatosExtraidosFactura, empresa: Em
   return resultado;
 }
 
-function resolverInterno(datos: DatosExtraidosFactura, empresa: EmpresaIdentificacion): ResultadoIdentificacion {
+function resolverInterno(
+  datos: DatosExtraidosFactura,
+  empresa: EmpresaIdentificacion,
+  proveedoresConocidos: ProveedorConocido[]
+): ResultadoIdentificacion {
   const emisorEsEmpresaPorNif = empresa.nifCif ? nifsCoinciden(datos.emisorCifNif, empresa.nifCif) : false;
   const receptorEsEmpresaPorNif = empresa.nifCif ? nifsCoinciden(datos.receptorCifNif, empresa.nifCif) : false;
 
@@ -251,6 +270,59 @@ function resolverInterno(datos: DatosExtraidosFactura, empresa: EmpresaIdentific
       codigoPostal: datos.emisorCodigoPostal ?? '',
       confianza: 'media',
       revisar: !datos.emisorNombre,
+    };
+  }
+
+  // 2.5) Evidencia por proveedor ya conocido (bug real de producción,
+  //      05/10/2026: una factura de Leroy Merlin —proveedor de gasto ya
+  //      dado de alta con su propio CIF guardado— caía en el bloque 3
+  //      porque ni su nombre ni su CIF coinciden con los de la EMPRESA (es
+  //      un tercero, no la propia empresa, así que los bloques 1 y 2 nunca
+  //      se disparan) y la IA adivinaba `tipo:'ingreso'`; el bloque 3
+  //      entonces descartaba el nombre real —`emisorNombre`, bien leído—
+  //      y usaba `receptorNombre` (vacío en un ticket de caja), perdiendo
+  //      a la vez el tipo y el proveedor. Que un nombre o CIF coincida con
+  //      un proveedor YA REGISTRADO es un hecho objetivo, no una
+  //      suposición —una ficha de proveedor solo se crea a partir de una
+  //      factura de gasto real anterior (`proveedor-utils.ts`)— así que
+  //      esta evidencia se usa ANTES del fallback ciego del bloque 3.
+  //      Un proveedor conocido es siempre del lado del GASTO: si el nombre
+  //      coincide, esa factura es un gasto con ese proveedor como emisor,
+  //      sea cual sea el campo del documento donde la IA lo haya colocado.
+  const emisorEsProveedorPorNif = datos.emisorCifNif
+    ? proveedoresConocidos.some((p) => nifsCoinciden(datos.emisorCifNif, p.cifNif))
+    : false;
+  const receptorEsProveedorPorNif = datos.receptorCifNif
+    ? proveedoresConocidos.some((p) => nifsCoinciden(datos.receptorCifNif, p.cifNif))
+    : false;
+  const emisorEsProveedorPorNombre = proveedoresConocidos.some((p) => nombresCoinciden(datos.emisorNombre, p.nombre));
+  const receptorEsProveedorPorNombre = proveedoresConocidos.some((p) => nombresCoinciden(datos.receptorNombre, p.nombre));
+  const emisorEsProveedorConocido = emisorEsProveedorPorNif || emisorEsProveedorPorNombre;
+  const receptorEsProveedorConocido = receptorEsProveedorPorNif || receptorEsProveedorPorNombre;
+
+  // Si coinciden los dos lados a la vez (dos proveedores distintos
+  // mencionados en el mismo documento — caso raro pero posible) es
+  // ambiguo: no se inventa cuál es el real, se cae al bloque 3.
+  if (emisorEsProveedorConocido && !receptorEsProveedorConocido) {
+    return {
+      tipo: 'gasto',
+      proveedor: datos.emisorNombre ?? '',
+      cifNif: datos.emisorCifNif ?? '',
+      direccion: datos.emisorDireccion ?? '',
+      codigoPostal: datos.emisorCodigoPostal ?? '',
+      confianza: emisorEsProveedorPorNif ? 'alta' : 'media',
+      revisar: !datos.emisorNombre,
+    };
+  }
+  if (receptorEsProveedorConocido && !emisorEsProveedorConocido) {
+    return {
+      tipo: 'gasto',
+      proveedor: datos.receptorNombre ?? '',
+      cifNif: datos.receptorCifNif ?? '',
+      direccion: datos.receptorDireccion ?? '',
+      codigoPostal: datos.receptorCodigoPostal ?? '',
+      confianza: receptorEsProveedorPorNif ? 'alta' : 'media',
+      revisar: !datos.receptorNombre,
     };
   }
 

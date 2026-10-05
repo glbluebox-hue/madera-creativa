@@ -268,4 +268,70 @@ describe('resolverEmisorReceptor (auditoría emisor/receptor, 23/08/2026)', () =
     expect(r.cifNif).toBe('B98765432');
     expect(r.revisar).toBe(false);
   });
+
+  it('18. Bug real de producción (05/10/2026): proveedor ya conocido (Leroy Merlin) + IA adivina mal "ingreso" → gana la evidencia del proveedor conocido, no el fallback ciego', () => {
+    const r = resolverEmisorReceptor(datos({
+      emisorNombre: 'Leroy Merlin', emisorCifNif: null, // el CIF no se ha podido leer, como suele pasar en tickets de caja
+      receptorNombre: null, receptorCifNif: null, // un ticket de caja normal no trae datos del receptor
+      tipo: 'ingreso', // la IA adivina mal — ni el nombre ni el CIF coinciden con la propia empresa
+    }), EMPRESA, [{ nombre: 'Leroy Merlin', cifNif: 'B98765432' }]);
+    expect(r.tipo).toBe('gasto');
+    expect(r.proveedor).toBe('Leroy Merlin');
+    expect(r.confianza).toBe('media');
+    expect(r.revisar).toBe(false);
+  });
+
+  it('19. Proveedor conocido identificado por CIF (aunque el nombre del documento venga abreviado/distinto) → confianza alta', () => {
+    const r = resolverEmisorReceptor(datos({
+      emisorNombre: 'LM Canarias', emisorCifNif: 'B98765432', // mismo CIF que el proveedor guardado, nombre distinto al guardado
+      tipo: 'ingreso',
+    }), EMPRESA, [{ nombre: 'Leroy Merlin', cifNif: 'B98765432' }]);
+    expect(r.tipo).toBe('gasto');
+    expect(r.proveedor).toBe('LM Canarias');
+    expect(r.confianza).toBe('alta');
+  });
+
+  it('20. Proveedor conocido en el campo receptor (documento con los campos intercambiados) → mismo criterio, simétrico', () => {
+    const r = resolverEmisorReceptor(datos({
+      emisorNombre: null, emisorCifNif: null,
+      receptorNombre: 'Leroy Merlin', receptorCifNif: null,
+      tipo: 'ingreso',
+    }), EMPRESA, [{ nombre: 'Leroy Merlin', cifNif: 'B98765432' }]);
+    expect(r.tipo).toBe('gasto');
+    expect(r.proveedor).toBe('Leroy Merlin');
+    expect(r.revisar).toBe(false);
+  });
+
+  it('21. Dos proveedores conocidos distintos, uno en cada lado del documento (ambiguo) → no se inventa, cae al fallback con revisión', () => {
+    const r = resolverEmisorReceptor(datos({
+      emisorNombre: 'Leroy Merlin', emisorCifNif: null,
+      receptorNombre: 'Bricomart', receptorCifNif: null,
+      tipo: 'ingreso',
+    }), EMPRESA, [{ nombre: 'Leroy Merlin', cifNif: 'B98765432' }, { nombre: 'Bricomart', cifNif: 'B11122233' }]);
+    expect(r.confianza).toBe('baja');
+    expect(r.revisar).toBe(true);
+  });
+
+  it('22. Sin proveedores conocidos coincidentes, el comportamiento del fallback ciego no cambia (compatibilidad con lo ya existente)', () => {
+    const r = resolverEmisorReceptor(datos({
+      emisorNombre: 'Empresa Nueva Desconocida', emisorCifNif: null,
+      receptorNombre: null, receptorCifNif: null,
+      tipo: 'ingreso',
+    }), EMPRESA, [{ nombre: 'Leroy Merlin', cifNif: 'B98765432' }]);
+    // Ningún proveedor conocido coincide — debe comportarse exactamente
+    // igual que sin el parámetro nuevo: fallback ciego del bloque 3.
+    expect(r.tipo).toBe('ingreso');
+    expect(r.proveedor).toBe(''); // receptorNombre está vacío
+    expect(r.confianza).toBe('baja');
+    expect(r.revisar).toBe(true);
+  });
+
+  it('23. Llamar sin el tercer argumento (compatibilidad hacia atrás) sigue funcionando', () => {
+    const r = resolverEmisorReceptor(datos({
+      emisorNombre: 'Ferretería López', emisorCifNif: 'B99999999',
+      receptorNombre: 'Madera Creativa', receptorCifNif: 'B12345678',
+    }), EMPRESA);
+    expect(r.tipo).toBe('gasto');
+    expect(r.proveedor).toBe('Ferretería López');
+  });
 });
