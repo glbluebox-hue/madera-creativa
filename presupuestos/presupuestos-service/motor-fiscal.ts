@@ -110,12 +110,27 @@ export type ResultadoValidacionRectificativa = {
  * misma factura original (sin incluir `factura` si se está reeditando).
  */
 export function validarRectificativa(
-  factura: { id: string; importe: number; facturaOriginalId?: string },
+  factura: { id: string; importe: number; facturaOriginalId?: string; numeroFacturaOriginal?: string },
   facturaOriginal: { id: string; importe: number; naturaleza?: 'normal' | 'rectificativa' } | null,
   rectificativasHermanas: { importe: number }[]
 ): ResultadoValidacionRectificativa {
   const advertencias: string[] = [];
   if (!factura.facturaOriginalId) {
+    // Sin factura original EN EL SISTEMA (no se escaneó, o es de antes de
+    // usar la app) — `numeroFacturaOriginal` (texto libre) es la vía
+    // alternativa ya prevista en el modelo para este caso (10/10/2026,
+    // incidencia real: una devolución no se podía guardar como rectificativa
+    // porque su compra original nunca se había escaneado). Sin id no hay
+    // nada que comprobar contra la base de datos — el dato es puramente
+    // informativo, así que no hay autorreferencia/pertenencia/suma que
+    // validar aquí; `facturaOriginal`/`rectificativasHermanas` se ignoran
+    // en esta rama.
+    if (factura.numeroFacturaOriginal?.trim()) {
+      return {
+        valido: true,
+        advertencias: ['Factura original no vinculada en el sistema — solo se guarda el número indicado a mano. No se puede comprobar automáticamente su importe ni su naturaleza.'],
+      };
+    }
     return { valido: false, motivo: 'Una factura rectificativa debe indicar la factura original a la que corrige.', advertencias };
   }
   if (factura.facturaOriginalId === factura.id) {

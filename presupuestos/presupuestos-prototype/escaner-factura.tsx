@@ -1108,7 +1108,19 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
                   </div>
                 )}
                 {!facturaOriginalId && (
-                  <p style={{ margin: '0.3rem 0 0', fontSize: '0.74rem', color: 'var(--ocre, #a67c00)' }}>Selecciona la factura original para poder guardar esta rectificativa.</p>
+                  <div style={{ marginTop: '0.4rem' }}>
+                    <p style={{ margin: 0, fontSize: '0.74rem', color: numeroFacturaOriginal.trim() ? 'var(--topo)' : 'var(--ocre, #a67c00)' }}>
+                      {numeroFacturaOriginal.trim()
+                        ? 'Factura original no encontrada en el sistema — se guardará solo el número indicado.'
+                        : 'Selecciona la factura original de la lista, o si no está en el sistema, escribe su número abajo.'}
+                    </p>
+                    <input
+                      className={styles.input} style={{ width: '100%', boxSizing: 'border-box', marginTop: '0.3rem' }}
+                      type="text" placeholder="Nº de la factura original (si no está en el sistema)"
+                      value={numeroFacturaOriginal}
+                      onChange={(e) => setNumeroFacturaOriginal(e.target.value)}
+                    />
+                  </div>
                 )}
               </div>
 
@@ -1446,7 +1458,7 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
             <button
               className={`${styles.btn} ${styles.btnPrimario}`}
               style={{ flex: 2, justifyContent: 'center' }}
-              disabled={!importe || parseFloat(String(importe).replace(',', '.')) <= 0 || comprobandoDuplicado || (naturaleza === 'rectificativa' && !facturaOriginalId)}
+              disabled={!importe || parseFloat(String(importe).replace(',', '.')) <= 0 || comprobandoDuplicado || (naturaleza === 'rectificativa' && !facturaOriginalId && !numeroFacturaOriginal.trim())}
               onClick={() => guardar(false)}
             >
               {comprobandoDuplicado ? 'Comprobando…' : esEdicion ? 'Guardar cambios' : 'Guardar factura'}

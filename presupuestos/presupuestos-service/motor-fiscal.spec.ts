@@ -412,4 +412,37 @@ describe('validarRectificativa — solo integridad del dato bloquea; lo fiscal e
     expect(r.valido).toBe(true);
     expect(r.advertencias.some((a) => /a su vez otra rectificativa/i.test(a))).toBe(true);
   });
+
+  // ── Factura original NO vinculada en el sistema (10/10/2026) ──────────
+  // Caso real: el asesor detectó dos devoluciones (Leroy Merlin, Higinio
+  // Tabares) guardadas como gasto normal porque su compra original nunca se
+  // escaneó en la app — sin `facturaOriginalId`, el guardado quedaba
+  // bloqueado sin ninguna vía de salida. `numeroFacturaOriginal` (texto
+  // libre) ya existía en el modelo exactamente para esto, pero nunca se
+  // conectó en la validación.
+
+  it('sin facturaOriginalId pero con numeroFacturaOriginal → válida, con advertencia de que no se pudo comprobar nada', () => {
+    const r = validarRectificativa({ id: 'r1', importe: 25, numeroFacturaOriginal: 'LM-2026-998' }, null, []);
+    expect(r.valido).toBe(true);
+    expect(r.advertencias.length).toBe(1);
+    expect(r.advertencias[0]).toMatch(/no vinculada en el sistema/i);
+  });
+
+  it('sin facturaOriginalId y con numeroFacturaOriginal solo espacios → sigue inválida (no cuenta como dato real)', () => {
+    const r = validarRectificativa({ id: 'r1', importe: 25, numeroFacturaOriginal: '   ' }, null, []);
+    expect(r.valido).toBe(false);
+    expect(r.motivo).toMatch(/factura original/i);
+  });
+
+  it('sin facturaOriginalId y sin numeroFacturaOriginal → sigue inválida exactamente como antes (no se afloja la regla por error)', () => {
+    const r = validarRectificativa({ id: 'r1', importe: 300 }, original, []);
+    expect(r.valido).toBe(false);
+    expect(r.motivo).toMatch(/factura original/i);
+  });
+
+  it('con facturaOriginalId presente, numeroFacturaOriginal se ignora (la referencia real manda, caso ya cubierto sigue funcionando igual)', () => {
+    const r = validarRectificativa({ id: 'r1', importe: 300, facturaOriginalId: 'f1', numeroFacturaOriginal: 'texto que no se usa' }, original, []);
+    expect(r.valido).toBe(true);
+    expect(r.advertencias).toEqual([]);
+  });
 });

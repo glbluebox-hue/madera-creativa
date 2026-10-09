@@ -3,6 +3,24 @@ import JSZip from 'jszip';
 import { almacenamiento } from './almacenamiento.service.js';
 import { verificarTokenArchivo } from './token.service.js';
 import type { ResumenImpuestosTrimestre } from './motor-fiscal.js';
+import { signoPorNaturaleza } from './motor-fiscal.js';
+
+/**
+ * Suma `importe` de un conjunto de facturas aplicando el signo de
+ * rectificativa (`signoPorNaturaleza`) — nunca a pelo. Exportada y separada
+ * para poder testear directamente que una devolución resta en vez de sumar,
+ * sin depender del contenido binario del PDF generado.
+ *
+ * Incidencia real (09/10/2026, asesor fiscal): este archivo sumaba
+ * `f.importe` sin signo en los totales de cabecera del informe del asesor
+ * (`generarResumenPdf`), mientras que la sección de IVA/IGIC del MISMO PDF
+ * sí lo aplicaba (vía `calcularImpuestosPorTipo`) — el documento se
+ * contradecía a sí mismo. Mismo criterio que `calcularTrimestres`
+ * (frontend) y `resumenFacturas`/`resumenEconomico` (este mismo backend).
+ */
+export function sumaConSigno(filas: Record<string, unknown>[]): number {
+  return filas.reduce((s, f) => s + Number(f.importe || 0) * signoPorNaturaleza(f as { naturaleza?: 'normal' | 'rectificativa' }), 0);
+}
 
 /**
  * Generación de PDF/ZIP para facturas (Fase Facturas Profesional). Antes no
@@ -323,7 +341,7 @@ export async function generarResumenPdf(datos: {
     nuevaPaginaSiHaceFalta(20);
     y -= 3;
     pagina.drawLine({ start: { x: colNombreInicio, y: y + 10 }, end: { x: ANCHO - margen, y: y + 10 }, thickness: 0.6, color: COLOR_LINEA });
-    const total = filas.reduce((s, f) => s + Number(f.importe || 0), 0);
+    const total = sumaConSigno(filas);
     pagina.drawText('TOTAL', { x: colNombreInicio, y, size: 9, font: fuenteNegrita, color: COLOR_TEXTO });
     escribirAlineadoDerecha(formatoEuro(total), COL_IMPORTE_FIN, { tam: 9, negrita: true });
     y -= 22;
@@ -333,8 +351,8 @@ export async function generarResumenPdf(datos: {
   escribir(`Resumen ${datos.periodoLabel}`, { tam: 13, negrita: true, salto: 22 });
   escribir(`Generado el ${new Date().toLocaleDateString('es-ES')}`, { tam: 8.5, color: [0.45, 0.4, 0.35], salto: 20 });
 
-  const totalIngresos = datos.ingresos.reduce((s, f) => s + Number(f.importe || 0), 0);
-  const totalGastos = datos.gastos.reduce((s, f) => s + Number(f.importe || 0), 0);
+  const totalIngresos = sumaConSigno(datos.ingresos);
+  const totalGastos = sumaConSigno(datos.gastos);
   const totalPeriodicos = (datos.gastosPeriodicos ?? []).reduce((s, g) => s + g.importe, 0);
   const beneficio = totalIngresos - totalGastos - totalPeriodicos;
 

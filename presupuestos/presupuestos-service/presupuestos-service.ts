@@ -1901,7 +1901,7 @@ export class PresupuestosService {
         ? await FacturaModel.find({ usuarioId, facturaOriginalId, id: { $ne: factura.id } }).select('importe').lean().exec() as any[]
         : [];
       const resultado = validarRectificativa(
-        { id: factura.id as string, importe: (factura as any).importe, facturaOriginalId },
+        { id: factura.id as string, importe: (factura as any).importe, facturaOriginalId, numeroFacturaOriginal: (factura as any).numeroFacturaOriginal },
         facturaOriginal ? { id: facturaOriginal.id, importe: facturaOriginal.importe, naturaleza: facturaOriginal.naturaleza } : null,
         rectificativasHermanas.map((r) => ({ importe: r.importe }))
       );

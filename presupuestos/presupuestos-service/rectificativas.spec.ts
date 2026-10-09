@@ -96,6 +96,44 @@ describe('guardarFactura — validación de rectificativas', () => {
     );
     expect((guardada as any).id).toBe('g1');
   });
+
+  // ── Factura original NO vinculada en el sistema (10/10/2026) ──────────
+  // Caso real: el asesor detectó devoluciones (Leroy Merlin, Higinio
+  // Tabares) que no se podían guardar como rectificativa porque su compra
+  // original nunca se escaneó en la app — `numeroFacturaOriginal` (texto
+  // libre) es la vía alternativa, sin ninguna consulta a la base de datos.
+
+  it('acepta una rectificativa sin facturaOriginalId cuando trae numeroFacturaOriginal (la original no está en el sistema)', async () => {
+    const guardada = await svc.guardarFactura(
+      { id: 'r1', tipo: 'gasto', fecha: '2026-09-10', importe: 25, naturaleza: 'rectificativa', numeroFacturaOriginal: 'LM-2026-998', creado: new Date().toISOString() },
+      USUARIO
+    );
+    expect((guardada as any).id).toBe('r1');
+    expect((guardada as any).numeroFacturaOriginal).toBe('LM-2026-998');
+    expect((guardada as any).facturaOriginalId).toBeFalsy();
+    // No hay original real con la que comparar trimestre/año — detectarRectificativaTrimestreDistinto
+    // no se invoca en este caso, solo queda el aviso de "no vinculada", nunca el de trimestre distinto.
+    expect((guardada as any).advertenciasRectificativa.length).toBe(1);
+    expect((guardada as any).advertenciasRectificativa[0]).toMatch(/no vinculada en el sistema/i);
+  });
+
+  it('rechaza una rectificativa sin facturaOriginalId NI numeroFacturaOriginal — sigue exigiendo al menos uno de los dos', async () => {
+    await expect(
+      svc.guardarFactura({ id: 'r1', tipo: 'gasto', fecha: '2026-09-10', importe: 25, naturaleza: 'rectificativa', creado: new Date().toISOString() }, USUARIO)
+    ).rejects.toThrow(ErrorDeNegocio);
+  });
+
+  it('con facturaOriginalId SÍ presente, sigue validando contra la base de datos como antes (numeroFacturaOriginal no la exime de las comprobaciones reales)', async () => {
+    // facturaOriginalId apunta a una factura inexistente: debe rechazarse igual que sin
+    // numeroFacturaOriginal — el campo de texto libre nunca sustituye la validación real
+    // cuando sí se ha indicado un id.
+    await expect(
+      svc.guardarFactura(
+        { id: 'r1', tipo: 'gasto', fecha: '2026-09-10', importe: 25, naturaleza: 'rectificativa', facturaOriginalId: 'no-existe', numeroFacturaOriginal: 'LM-2026-998', creado: new Date().toISOString() },
+        USUARIO
+      )
+    ).rejects.toThrow(ErrorDeNegocio);
+  });
 });
 
 describe('Consistencia entre resumenFacturas()/resumenEconomico() y la regla de signo del motor fiscal (test 26)', () => {
