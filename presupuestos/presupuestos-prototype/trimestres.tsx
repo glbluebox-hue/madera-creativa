@@ -529,34 +529,40 @@ export function Trimestres({ anio, privado = false, plan, esAdmin }: TrimestresP
               </div>
 
               {/*
-                Total estimado a ingresar (Fase Total, 25/09/2026) — combina
-                IRPF (ya neto del acumulado del año) + IVA/IGIC (ya netos de
-                su propio arrastre, `aIngresar`) vía `calcularTotalAIngresar`.
-                Nunca suma IVA con IGIC entre sí (cada uno aporta solo su
-                propio `aIngresar` al total) ni afirma ser una liquidación
-                oficial — solo una estimación de apoyo, mismo criterio que el
-                resto de esta pantalla.
+                Total estimado a ingresar (Fase Total, 25/09/2026; con signo,
+                09/10/2026) — combina IRPF (ya neto del acumulado del año) +
+                la posición neta de IVA + la posición neta de IGIC (cada una
+                `aIngresar - saldoPendiente` de su propio arrastre) vía
+                `calcularTotalAIngresar`. Nunca suma IVA con IGIC entre sí
+                (cada uno aporta solo su propia posición neta) ni afirma ser
+                una liquidación oficial — solo una estimación de apoyo. Puede
+                ser negativo (`total.aFavor`): a diferencia de antes, ya no
+                se recorta a 0,00€ cuando hay crédito — un trimestre en
+                pérdidas con IVA/IGIC a favor debe poder mostrar esa posición
+                real en vez de esconderla (petición real del usuario,
+                09/10/2026, tras comparar con su asesor).
               */}
               <div style={{
                 marginTop: '0.6rem',
-                background: total.total > 0 ? 'var(--ocre-bg)' : 'var(--fondo-caja)',
-                border: `1px solid ${total.total > 0 ? 'var(--ocre)' : 'var(--borde)'}`,
+                background: total.aFavor ? 'var(--verde-bg)' : total.total > 0 ? 'var(--ocre-bg)' : 'var(--fondo-caja)',
+                border: `1px solid ${total.aFavor ? 'var(--verde)' : total.total > 0 ? 'var(--ocre)' : 'var(--borde)'}`,
                 borderRadius: 6,
                 padding: '0.75rem 1rem',
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <p style={{
                     margin: 0, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700,
-                    color: total.total > 0 ? 'var(--ocre)' : 'var(--topo-muy-claro)',
+                    color: total.aFavor ? 'var(--verde-dark)' : total.total > 0 ? 'var(--ocre)' : 'var(--topo-muy-claro)',
                   }}>
-                    Total estimado a ingresar
+                    {total.aFavor ? 'A tu favor' : 'Total estimado a ingresar'}
                   </p>
-                  <span style={{ fontSize: '1.25rem', fontWeight: 800, color: total.total > 0 ? 'var(--ocre)' : 'var(--topo-muy-claro)' }}>
-                    {formatoEuroPrivado(total.total, privado)}
+                  <span style={{ fontSize: '1.25rem', fontWeight: 800, color: total.aFavor ? 'var(--verde-dark)' : total.total > 0 ? 'var(--ocre)' : 'var(--topo-muy-claro)' }}>
+                    {formatoEuroPrivado(Math.abs(total.total), privado)}
                   </span>
                 </div>
                 <p style={{ margin: '0.3rem 0 0', fontSize: '0.68rem', color: 'var(--topo-muy-claro)' }}>
                   Estimación basada en los datos registrados en la aplicación.
+                  {total.aFavor && ' Suma informativa de IRPF, IVA e IGIC — cada modelo se liquida por separado, no es un único ingreso automático de Hacienda.'}
                 </p>
                 {(posicion.iva.saldoPendiente > 0 || posicion.igic.saldoPendiente > 0) && (
                   <div style={{ marginTop: '0.4rem', paddingTop: '0.4rem', borderTop: '1px dashed var(--borde)', display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>

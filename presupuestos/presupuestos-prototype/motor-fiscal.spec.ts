@@ -1280,7 +1280,7 @@ describe('Arrastre IVA/IGIC entre trimestres (Fase A-C, 25/09/2026)', () => {
   });
 });
 
-describe('calcularTotalAIngresar — Fase Total estimado a ingresar (25/09/2026)', () => {
+describe('calcularTotalAIngresar — Fase Total estimado a ingresar (25/09/2026; con signo, 09/10/2026)', () => {
   const gastosPeriodicos: GastoPeriodico[] = [];
 
   /**
@@ -1315,15 +1315,15 @@ describe('calcularTotalAIngresar — Fase Total estimado a ingresar (25/09/2026)
   });
 
   it('1. Solo IRPF a ingresar', () => {
-    expect(calcularTotalAIngresar(posicion({ irpf: 650 }))).toEqual({ irpf: 650, iva: 0, igic: 0, total: 650 });
+    expect(calcularTotalAIngresar(posicion({ irpf: 650 }))).toEqual({ irpf: 650, iva: 0, igic: 0, total: 650, aFavor: false });
   });
 
   it('2. Solo IVA a ingresar', () => {
-    expect(calcularTotalAIngresar(posicion({ ivaAIngresar: 300 }))).toEqual({ irpf: 0, iva: 300, igic: 0, total: 300 });
+    expect(calcularTotalAIngresar(posicion({ ivaAIngresar: 300 }))).toEqual({ irpf: 0, iva: 300, igic: 0, total: 300, aFavor: false });
   });
 
   it('3. Solo IGIC a ingresar', () => {
-    expect(calcularTotalAIngresar(posicion({ igicAIngresar: 150 }))).toEqual({ irpf: 0, iva: 0, igic: 150, total: 150 });
+    expect(calcularTotalAIngresar(posicion({ igicAIngresar: 150 }))).toEqual({ irpf: 0, iva: 0, igic: 150, total: 150, aFavor: false });
   });
 
   it('4. IRPF + IVA', () => {
@@ -1340,29 +1340,31 @@ describe('calcularTotalAIngresar — Fase Total estimado a ingresar (25/09/2026)
 
   it('7. Los tres impuestos simultáneamente', () => {
     expect(calcularTotalAIngresar(posicion({ irpf: 650, ivaAIngresar: 300, igicAIngresar: 150 })))
-      .toEqual({ irpf: 650, iva: 300, igic: 150, total: 1100 });
+      .toEqual({ irpf: 650, iva: 300, igic: 150, total: 1100, aFavor: false });
   });
 
-  it('8. IVA con saldo pendiente de compensar — el pendiente NO entra en el total', () => {
+  it('8. IVA con saldo pendiente de compensar — SÍ entra en el total, como posición negativa (09/10/2026: antes se recortaba a 0)', () => {
     expect(calcularTotalAIngresar(posicion({ ivaAIngresar: 0, ivaSaldoPendiente: 400 })))
-      .toEqual({ irpf: 0, iva: 0, igic: 0, total: 0 });
+      .toEqual({ irpf: 0, iva: -400, igic: 0, total: -400, aFavor: true });
   });
 
-  it('9. IGIC con saldo pendiente de compensar — el pendiente NO entra en el total', () => {
+  it('9. IGIC con saldo pendiente de compensar — SÍ entra en el total, como posición negativa (09/10/2026: antes se recortaba a 0)', () => {
     expect(calcularTotalAIngresar(posicion({ igicAIngresar: 0, igicSaldoPendiente: 200 })))
-      .toEqual({ irpf: 0, iva: 0, igic: 0, total: 0 });
+      .toEqual({ irpf: 0, iva: 0, igic: -200, total: -200, aFavor: true });
   });
 
-  it('10. IVA e IGIC con saldos independientes — nunca se compensan entre sí en el total', () => {
-    // El saldo pendiente de IGIC (200) no reduce el IVA a ingresar (300), ni al revés.
-    expect(calcularTotalAIngresar(posicion({ ivaAIngresar: 300, igicAIngresar: 0, igicSaldoPendiente: 200 })))
-      .toEqual({ irpf: 0, iva: 300, igic: 0, total: 300 });
+  it('10. IVA e IGIC con saldos independientes — el crédito de uno no altera el valor calculado del otro', () => {
+    // igic sigue valiendo 300 (su propio aIngresar) independientemente del saldo pendiente de IVA (200) —
+    // solo se SUMAN al final, nunca se compensan entre sí antes de eso.
+    const r = calcularTotalAIngresar(posicion({ ivaAIngresar: 300, igicAIngresar: 0, igicSaldoPendiente: 200 }));
+    expect(r).toEqual({ irpf: 0, iva: 300, igic: -200, total: 100, aFavor: false });
   });
 
-  it('11. Resultado negativo → sin importe a ingresar (aIngresar ya viene en 0 desde el arrastre)', () => {
+  it('11. IVA en crédito → posición neta negativa, reflejada en el total con signo (09/10/2026: antes se recortaba a 0)', () => {
     const r = calcularTotalAIngresar(posicion({ ivaResultado: -300, ivaAIngresar: 0, ivaSaldoPendiente: 300 }));
-    expect(r.iva).toBe(0);
-    expect(r.total).toBe(0);
+    expect(r.iva).toBe(-300);
+    expect(r.total).toBe(-300);
+    expect(r.aFavor).toBe(true);
   });
 
   it('12. Rectificativa que modifica el total — el signo se aplica una sola vez, el total refleja la corrección', () => {
@@ -1400,7 +1402,7 @@ describe('calcularTotalAIngresar — Fase Total estimado a ingresar (25/09/2026)
     const totalQ1 = calcularTotalAIngresar(calcularPosicionFiscal(trimestres[0]));
     const totalQ2 = calcularTotalAIngresar(calcularPosicionFiscal(trimestres[1]));
     const totalQ3 = calcularTotalAIngresar(calcularPosicionFiscal(trimestres[2]));
-    expect(totalQ1.total).toBe(0); // negativo, nada a ingresar
+    expect(totalQ1.total).toBe(-300); // en crédito (300€ pendientes de compensar), reflejado con signo
     expect(totalQ2.total).toBe(200); // 500 - 300 de saldo compensado
     expect(totalQ3.total).toBe(100); // ya sin saldo pendiente, todo el resultado se ingresa
   });
@@ -1419,9 +1421,10 @@ describe('calcularTotalAIngresar — Fase Total estimado a ingresar (25/09/2026)
     });
     expect(q1_2027.irpf).toBe(0);
     const total2027Q1 = calcularTotalAIngresar(calcularPosicionFiscal(q1_2027));
-    // 300€ no llega a cubrir los 500€ pendientes de 2026 → nada a ingresar, sigue quedando saldo (nunca se mezcla con 2026).
-    expect(total2027Q1.iva).toBe(0);
-    expect(total2027Q1.total).toBe(0);
+    // 300€ no llega a cubrir los 500€ pendientes de 2026 → nada a ingresar, sigue quedando saldo (nunca se mezcla con
+    // 2026) — y ese saldo restante (200€) se refleja ahora como posición negativa en el total.
+    expect(total2027Q1.iva).toBe(-200);
+    expect(total2027Q1.total).toBe(-200);
     expect(q1_2027.ivaArrastre.saldoPendiente).toBe(200);
   });
 
@@ -1440,7 +1443,7 @@ describe('calcularTotalAIngresar — Fase Total estimado a ingresar (25/09/2026)
   });
 
   it('16. Caso sin datos fiscales (trimestre sin facturas) → total 0, sin errores', () => {
-    expect(calcularTotalAIngresar(posicion({}))).toEqual({ irpf: 0, iva: 0, igic: 0, total: 0 });
+    expect(calcularTotalAIngresar(posicion({}))).toEqual({ irpf: 0, iva: 0, igic: 0, total: 0, aFavor: false });
   });
 
   it('17. El IRPF no se descuenta dos veces — usa irpf.importe tal cual, ya neto de trimestres anteriores', () => {
@@ -1453,20 +1456,43 @@ describe('calcularTotalAIngresar — Fase Total estimado a ingresar (25/09/2026)
     expect(calcularTotalAIngresar(posicionQ1).irpf).toBe(1000);
   });
 
-  it('18. IVA e IGIC nunca se compensan entre sí en el total — un saldo grande de IVA a compensar no reduce el IGIC a ingresar', () => {
+  it('18. IVA e IGIC nunca se compensan entre sí antes de sumarse — un crédito grande de IVA no reduce el valor propio del IGIC a ingresar', () => {
+    // igic sigue valiendo 300 (su propio aIngresar, sin tocar) — el saldo de 900€ de IVA solo resta en el
+    // total FINAL, nunca se usa para rebajar el IGIC calculado.
     expect(calcularTotalAIngresar(posicion({ ivaAIngresar: 0, ivaSaldoPendiente: 900, igicAIngresar: 300 })))
-      .toEqual({ irpf: 0, iva: 0, igic: 300, total: 300 });
+      .toEqual({ irpf: 0, iva: -900, igic: 300, total: -600, aFavor: true });
   });
 
-  it('Test de ejemplo central del encargo — IRPF 650€ + IVA 300€ (tras compensar 500€ de un resultado de 800€) + IGIC 0€ (con 200€ pendientes) = 950€', () => {
+  it('Test de ejemplo central del encargo original (25/09/2026) — recalculado tras el cambio de signo (09/10/2026): IRPF 650€ + IVA 300€ (tras compensar 500€ de un resultado de 800€) + IGIC con 200€ pendientes (ahora resta, no se ignora) = 750€', () => {
     const p = posicion({
       irpf: 650,
       ivaResultado: 800, ivaSaldoAnterior: 500, ivaCompensacion: 500, ivaAIngresar: 300, ivaSaldoPendiente: 0,
       igicResultado: -200, igicAIngresar: 0, igicSaldoPendiente: 200,
     });
-    expect(calcularTotalAIngresar(p)).toEqual({ irpf: 650, iva: 300, igic: 0, total: 950 });
-    // Los saldos pendientes, informativos, siguen disponibles aparte en la propia posición — nunca en el total.
+    // Antes del cambio de signo (09/10/2026) este caso daba total=950 (el pendiente de IGIC se ignoraba). Con la
+    // nueva semántica, el crédito de 200€ de IGIC SÍ resta del total: 650 + 300 - 200 = 750.
+    expect(calcularTotalAIngresar(p)).toEqual({ irpf: 650, iva: 300, igic: -200, total: 750, aFavor: false });
+    // Los saldos pendientes de cada impuesto, por separado, siguen disponibles aparte en la propia posición.
     expect(p.iva.saldoPendiente).toBe(0);
     expect(p.igic.saldoPendiente).toBe(200);
+  });
+
+  it('Caso real de producción (09/10/2026) — trimestre en pérdidas, sin IRPF, con IVA a favor: el total ya no se queda plano en 0,00€', () => {
+    // Reproduce de extremo a extremo (vía calcularTrimestres, no fabricando la posición a mano) el caso real
+    // que motivó este cambio: Q1 con pérdidas (sin IRPF), un gasto con IVA real que deja crédito a favor, y
+    // sin ninguna factura con IGIC. Antes de este cambio, `calcularTotalAIngresar` daba total=0 aquí —
+    // escondiendo que en realidad hay 300€ a favor del contribuyente en IVA.
+    const facturas = [
+      factura({ id: 'g1', tipo: 'gasto', fecha: '2026-01-10', tipoImpuesto: 'iva', importe: 1300, importeImpuesto: 300 }), // IVA soportado 300, sin repercutido → resultado -300
+      factura({ id: 'i1', tipo: 'ingreso', fecha: '2026-01-10', importe: 500 }), // ingresos insuficientes para cubrir el gasto → beneficio negativo, sin IRPF
+    ];
+    const [q1] = calcularTrimestres(facturas, gastosPeriodicos, { regionFiscal: '', repepActivo: false });
+    expect(q1.irpf).toBe(0);
+    expect(q1.beneficio).toBeLessThan(0);
+    const posicionQ1 = calcularPosicionFiscal(q1);
+    expect(posicionQ1.igic.aIngresar).toBe(0);
+    expect(posicionQ1.igic.saldoPendiente).toBe(0);
+    const total = calcularTotalAIngresar(posicionQ1);
+    expect(total).toEqual({ irpf: 0, iva: -300, igic: 0, total: -300, aFavor: true });
   });
 });

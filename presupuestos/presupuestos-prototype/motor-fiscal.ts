@@ -575,26 +575,32 @@ export function calcularPosicionFiscal(trimestre: DatosTrimestre): PosicionFisca
   };
 }
 
-// ── Total estimado a ingresar (Fase Total, 25/09/2026) ──────────────────────
+// ── Total estimado a ingresar (Fase Total, 25/09/2026; con signo, 09/10/2026) ──
 //
 // Última capa, encima de `calcularPosicionFiscal` — sigue sin recalcular
-// nada, solo COMBINA lo que ya está calculado. Suma únicamente lo que de
-// verdad hay que ingresar de cada impuesto:
-//   - `irpf.importe`            (Modelo 130, ya neto del acumulado del año)
-//   - `iva.aIngresar`           (Modelo 303, ya neto del arrastre de saldo)
-//   - `igic.aIngresar`          (Modelo 420, ya neto del arrastre de saldo)
-// NUNCA `iva.resultado`/`igic.resultado` a secas — esos son el bruto del
-// propio trimestre, sin compensar con el saldo pendiente heredado.
+// nada, solo COMBINA lo que ya está calculado.
 //
-// `iva.saldoPendiente`/`igic.saldoPendiente` (lo que queda SIN compensar,
-// cuando el trimestre no llega a cubrir el saldo anterior) NO entran en el
-// total — son puramente informativos, se muestran aparte. Ejemplo del
-// encargo: un IGIC con 200€ pendientes de compensar no resta ni suma nada al
-// total, solo se informa como "IGIC pendiente: 200€".
+// IRPF: `irpf.importe` tal cual — el Modelo 130 nunca da "a devolver" cada
+// trimestre (ya viene garantizado ≥0 por `calcularTrimestres`, el ajuste a
+// la baja ocurre en la Renta anual, fuera de este cálculo).
 //
-// IVA e IGIC nunca se compensan entre sí — cada uno aporta solo su propio
-// `aIngresar`, ya neto de SU PROPIO arrastre (circuito independiente, regla
-// de toda esta fase, no se reabre aquí).
+// IVA/IGIC: posición NETA de cada uno por separado —
+//   `posicionNeta = aIngresar - saldoPendiente`
+// En el estado que produce `aplicarArrastreImpuesto`, `aIngresar` y
+// `saldoPendiente` nunca son ambos distintos de 0 a la vez (si debes, el
+// saldo pendiente ya se compensó y quedó en 0; si tienes crédito, lo que hay
+// que ingresar ya es 0) — así que esta resta da siempre un número limpio:
+// positivo si debes ese impuesto, negativo si estás en crédito.
+//
+// `total = irpf + posicionNetaIva + posicionNetaIgic` — con signo, puede ser
+// negativo. Un total negativo es una cifra INFORMATIVA (cuánto suman tus
+// posiciones a favor menos lo que debes), nunca una única transferencia que
+// Hacienda vaya a hacerte: IRPF, IVA e IGIC siguen siendo tres modelos
+// distintos, liquidados cada uno por separado (petición real del usuario,
+// 09/10/2026, tras comparar con su asesor — un trimestre en pérdidas con
+// IVA/IGIC a favor se quedaba fijo en 0,00€ en vez de reflejar la posición
+// real). IVA e IGIC nunca se compensan entre sí en este cálculo — cada uno
+// aporta ya su propio neto, calculado de forma completamente independiente.
 //
 // Pura — recibe la `PosicionFiscalTrimestre` ya calculada de UN trimestre,
 // nunca el año completo ni la `Empresa`: el estado cronológico (arrastre
@@ -604,25 +610,29 @@ export function calcularPosicionFiscal(trimestre: DatosTrimestre): PosicionFisca
 /** Desglose del total estimado a ingresar de un trimestre — ver comentario de arriba. */
 export type TotalAIngresar = {
   irpf: number;
+  /** Posición neta de IVA (`aIngresar - saldoPendiente`) — positiva si debes, negativa si tienes crédito a tu favor. */
   iva: number;
+  /** Ver `iva` — mismo criterio, IGIC completamente independiente. */
   igic: number;
-  /** Suma de los tres — nunca incluye `saldoPendiente` de IVA/IGIC. */
+  /** Suma con signo de los tres — puede ser negativa (posición a favor). */
   total: number;
+  /** `true` cuando `total < 0` — a favor del contribuyente, nunca "a ingresar". */
+  aFavor: boolean;
 };
 
 /**
- * Combina IRPF + IVA (`aIngresar`) + IGIC (`aIngresar`) de una posición
- * fiscal ya calculada. `irpf.importe`, `iva.aIngresar` e `igic.aIngresar` ya
- * están garantizados ≥0 por quienes los calculan (`Math.max(0, ...)` en
- * `calcularTrimestres`/`aplicarArrastreImpuesto`) — el `Math.max` de aquí es
- * una defensa adicional, no estrictamente necesaria hoy, para que esta
- * función siga siendo correcta aunque esa garantía cambiara en el futuro.
+ * Combina IRPF + posición neta de IVA + posición neta de IGIC de una
+ * posición fiscal ya calculada. `irpf.importe` ya viene garantizado ≥0 por
+ * `calcularTrimestres` — no hace falta ningún `Math.max` ahí. La posición
+ * neta de IVA/IGIC SÍ puede ser negativa (y debe poder serlo: es la forma de
+ * reflejar un crédito a favor del contribuyente en el total).
  */
 export function calcularTotalAIngresar(posicion: PosicionFiscalTrimestre): TotalAIngresar {
-  const irpf = Math.max(0, posicion.irpf.importe);
-  const iva = Math.max(0, posicion.iva.aIngresar);
-  const igic = Math.max(0, posicion.igic.aIngresar);
-  return { irpf, iva, igic, total: redondearEuros(irpf + iva + igic) };
+  const irpf = posicion.irpf.importe;
+  const iva = redondearEuros(posicion.iva.aIngresar - posicion.iva.saldoPendiente);
+  const igic = redondearEuros(posicion.igic.aIngresar - posicion.igic.saldoPendiente);
+  const total = redondearEuros(irpf + iva + igic);
+  return { irpf, iva, igic, total, aFavor: total < 0 };
 }
 
 // ── Tratamiento fiscal (Fase 3A, infraestructura) ───────────────────────────
