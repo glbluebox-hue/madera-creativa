@@ -172,7 +172,10 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, e
       observer.disconnect();
     };
   }, [herramientasAbiertas, herramienta]);
-  const [colorActivo, setColorActivo] = useState<string>(COLORES[0]);
+  // Rojo por defecto (petición del usuario, 14/10/2026) — no reordena
+  // `COLORES` (la paleta visual mantiene su orden de siempre), solo cambia
+  // qué color viene preseleccionado al abrir el editor.
+  const [colorActivo, setColorActivo] = useState<string>('#e03131');
   // "Extra fino" es el grosor por defecto (a petición explícita del
   // usuario) — se busca por id, no por índice, para que reordenar
   // `GROSORES` no cambie el valor inicial sin querer.
