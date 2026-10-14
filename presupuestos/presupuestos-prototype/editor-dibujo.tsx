@@ -205,6 +205,24 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, e
   // editor. Un guardado manual con el botón "Guardar" nunca lo activa, así
   // que nunca navega solo.
   const volverTrasGuardarRef = useRef(false);
+  // Al reabrir un dibujo YA guardado con cotas, Excalidraw restaura
+  // `initialData` y el primer `onChange` dispara `sincronizarCotas` (más
+  // abajo) ANTES de que el usuario toque nada — ese resync puede reasignar
+  // `version` a los elementos de las cotas sin ningún cambio real de
+  // contenido. Si se compara contra la firma cruda guardada en base de
+  // datos, esto se leía como "hay cambios sin guardar" en cuanto se abría
+  // cualquier dibujo con cotas, y "← Volver" forzaba un guardado de más —
+  // si ese guardado fallaba (red, tamaño), el editor quedaba atascado sin
+  // poder salir ni, por tanto, borrar el dibujo desde la cuadrícula (bug
+  // real reportado el mismo día que el aviso de error de arriba). Por
+  // eso, para un dibujo YA existente, la firma "guardada" de referencia no
+  // se fija hasta el primer `onChange` real tras abrir — ese primer disparo
+  // ya incluye la normalización de Excalidraw y el resync de cotas, así
+  // que es la base correcta, no la cruda. Para un dibujo NUEVO (`dibujo`
+  // nulo) no aplica: la firma de partida debe seguir siendo "sin
+  // elementos", para que el primer trazo sí cuente como pendiente de
+  // guardar.
+  const primerCambioProcesadoRef = useRef(false);
 
   // Sistema de cotas (Fase 2.3) — las cotas son entidades propias del
   // dibujo, no solo flechas con texto; viven junto a `elements`/`files`
@@ -799,6 +817,19 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, e
     const resultado = sincronizarCotas(elements, cotasRef.current, escalaRef.current, unidadVisualizacionRef.current);
     if (resultado.cotas !== cotasRef.current) setCotas(resultado.cotas);
     if (resultado.elementos) apiRef.current?.updateScene({ elements: resultado.elementos });
+
+    // Primer `onChange` real de un dibujo YA existente (ver comentario de
+    // `primerCambioProcesadoRef` más arriba): fija aquí la firma de
+    // referencia, ya con la normalización de Excalidraw y el resync de
+    // cotas de arriba aplicados, en vez de la firma cruda calculada al
+    // montar. Un dibujo nuevo (`dibujo` nulo) no debe tocar la referencia
+    // aquí: su firma de partida es "sin elementos" a propósito.
+    if (!primerCambioProcesadoRef.current) {
+      primerCambioProcesadoRef.current = true;
+      if (dibujo) {
+        firmaGuardadaRef.current = firmaDeElementos((resultado.elementos ?? elements) as ExcalidrawElement[]);
+      }
+    }
 
     // Con la herramienta Seleccionar activa, si hay exactamente una cota
     // seleccionada se abre (o mantiene) su panel de edición de longitud;

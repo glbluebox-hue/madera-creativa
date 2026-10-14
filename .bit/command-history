@@ -1658,3 +1658,13 @@
 2026-10-14T07:30:55.704Z 29160 test presupuestos-prototype, failed
 2026-10-14T07:31:04.044Z 28248 check-types presupuestos-prototype, started
 2026-10-14T07:31:48.055Z 28248 check-types presupuestos-prototype, succeeded
+2026-10-14T07:42:18.832Z 2096 check-types presupuestos-prototype, started
+2026-10-14T07:43:09.848Z 2096 check-types presupuestos-prototype, succeeded
+2026-10-14T07:43:16.952Z 26860 test presupuestos-prototype, started
+2026-10-14T07:43:40.624Z 26860 test presupuestos-prototype, failed
+2026-10-14T07:44:30.684Z 23800 check-types editor-dibujo, started
+2026-10-14T07:44:30.799Z 23800 check-types editor-dibujo, failed
+2026-10-14T07:44:39.713Z 6684 check-types, started
+2026-10-14T07:46:14.246Z 6684 check-types, succeeded
+2026-10-14T07:46:32.719Z 4876 test madera-creativa.presupuestos/presupuestos-prototype, started
+2026-10-14T07:46:56.904Z 4876 test madera-creativa.presupuestos/presupuestos-prototype, failed
