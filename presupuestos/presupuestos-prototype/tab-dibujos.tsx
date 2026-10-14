@@ -6,7 +6,8 @@ import { EditorDibujo } from './editor-dibujo.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
 import { formatoFecha } from './calculos.js';
 import { urlImagenFiable } from './imagen-fallback.js';
-import type { PlanAcceso } from './planes.js';
+import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
+import { CandadoPlan } from './candado-plan.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
 
@@ -42,6 +43,10 @@ const IconoMover = () => (
 );
 const IconoMoverProyecto = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1" /><path d="M14 6h7" /><path d="M18 2l4 4-4 4" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
+);
+/** "Subir dibujo" (14/10/2026) — foto/boceto ya hecho, no creado desde cero en el lienzo. */
+const IconoSubir = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
 );
 
 const SIN_CARPETA = '';
@@ -83,7 +88,7 @@ export function TabDibujos({ proyecto, plan, esAdmin }: TabDibujosProps) {
 
   const [carpetaId, setCarpetaId] = useState<string | null>(null); // null = vista de carpetas
   const [busqueda, setBusqueda] = useState('');
-  const [editando, setEditando] = useState<{ dibujo: Dibujo | null } | null>(null);
+  const [editando, setEditando] = useState<{ dibujo: Dibujo | null; subirImagen?: boolean } | null>(null);
   const [cargandoCompleto, setCargandoCompleto] = useState(false);
   const [creandoCarpeta, setCreandoCarpeta] = useState(false);
   const [nombreNuevaCarpeta, setNombreNuevaCarpeta] = useState('');
@@ -130,6 +135,9 @@ export function TabDibujos({ proyecto, plan, esAdmin }: TabDibujosProps) {
     dibujos.filter((d) => d.carpetaId === idCarpeta && d.miniatura).slice(0, 4);
 
   const abrirNuevo = () => setEditando({ dibujo: null });
+  /** "Subir dibujo" (14/10/2026) — abre un dibujo nuevo con "Imagen" ya seleccionada, para no tener que buscar esa herramienta a mano tras crear uno en blanco. */
+  const abrirNuevoConImagen = () => setEditando({ dibujo: null, subirImagen: true });
+  const tienePlanImagen = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
 
   const abrirExistente = async (d: Dibujo) => {
     setCargandoCompleto(true);
@@ -212,6 +220,7 @@ export function TabDibujos({ proyecto, plan, esAdmin }: TabDibujosProps) {
         carpetaId={carpetaId ?? SIN_CARPETA}
         plan={plan}
         esAdmin={esAdmin}
+        abrirConHerramientaImagen={editando.subirImagen}
         onVolver={() => setEditando(null)}
         onGuardar={async (d) => { await guardar(d); setEditando(null); }}
       />
@@ -236,9 +245,23 @@ export function TabDibujos({ proyecto, plan, esAdmin }: TabDibujosProps) {
           </button>
         )}
         {!buscando && carpetaId !== null && (
-          <button className={styles.btnCirculoOscuro} onClick={abrirNuevo} title="Nuevo dibujo en esta carpeta">
-            <IconoMas />
-          </button>
+          <>
+            <button className={styles.btnCirculoOscuro} onClick={abrirNuevo} title="Nuevo dibujo en esta carpeta">
+              <IconoMas />
+            </button>
+            <button
+              className={styles.btnCirculoOscuro}
+              style={{ position: 'relative' }}
+              onClick={abrirNuevoConImagen}
+              disabled={!tienePlanImagen}
+              title={tienePlanImagen ? 'Subir un dibujo o foto ya hecho' : 'Subir un dibujo o foto ya hecho — requiere el plan PRO o superior'}
+            >
+              <IconoSubir />
+              {!tienePlanImagen && (
+                <span style={{ position: 'absolute', top: -2, right: -2 }}><CandadoPlan planMinimo="PRO" compacto /></span>
+              )}
+            </button>
+          </>
         )}
       </div>
 

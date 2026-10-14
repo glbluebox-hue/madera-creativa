@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import type { Dibujo } from './types.js';
-import type { PlanAcceso } from './planes.js';
+import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
 import { useDibujos } from './use-dibujos.js';
 import { EditorDibujo } from './editor-dibujo.js';
 import { SelectorDestinoGuardado, type DestinoDibujo } from './selector-destino-guardado.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
+import { CandadoPlan } from './candado-plan.js';
 import { formatoFecha } from './calculos.js';
 import { urlImagenFiable } from './imagen-fallback.js';
 import * as api from './api.js';
@@ -49,6 +50,10 @@ const IconoBuscar = () => (
 const IconoAsignar = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
 );
+/** "Subir dibujo" (14/10/2026) — foto/boceto ya hecho, no creado desde cero en el lienzo. */
+const IconoSubir = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+);
 
 /**
  * Bandeja de dibujos temporales (Fase 2.2 — antes galería global de todos
@@ -61,9 +66,10 @@ const IconoAsignar = () => (
 export function SeccionDibujos({ clientes = [], onEditorAbierto, plan, esAdmin }: SeccionDibujosProps) {
   const { dibujos, cargando, guardar, borrar } = useDibujos(true, { temporales: true });
   const [busqueda, setBusqueda] = useState('');
-  const [editando, setEditando] = useState<{ dibujo: Dibujo | null } | null>(null);
+  const [editando, setEditando] = useState<{ dibujo: Dibujo | null; subirImagen?: boolean } | null>(null);
   const [cargandoCompleto, setCargandoCompleto] = useState(false);
   const [asignando, setAsignando] = useState<Dibujo | null>(null);
+  const tienePlanImagen = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
 
   useEffect(() => {
     onEditorAbierto?.(editando !== null);
@@ -73,6 +79,7 @@ export function SeccionDibujos({ clientes = [], onEditorAbierto, plan, esAdmin }
   const visibles = dibujos.filter((d) => d.nombre.toLowerCase().includes(busqueda.trim().toLowerCase()));
 
   const abrirNuevo = () => setEditando({ dibujo: null });
+  const abrirNuevoConImagen = () => setEditando({ dibujo: null, subirImagen: true });
 
   const abrirExistente = async (d: Dibujo) => {
     setCargandoCompleto(true);
@@ -100,6 +107,7 @@ export function SeccionDibujos({ clientes = [], onEditorAbierto, plan, esAdmin }
         clientes={clientes}
         plan={plan}
         esAdmin={esAdmin}
+        abrirConHerramientaImagen={editando.subirImagen}
         onVolver={() => setEditando(null)}
         onGuardar={async (d) => { await guardar(d); setEditando(null); }}
       />
@@ -120,6 +128,18 @@ export function SeccionDibujos({ clientes = [], onEditorAbierto, plan, esAdmin }
         </div>
         <button className={styles.btnCirculoOscuro} onClick={abrirNuevo} title="Nuevo dibujo">
           <IconoMas />
+        </button>
+        <button
+          className={styles.btnCirculoOscuro}
+          style={{ position: 'relative' }}
+          onClick={abrirNuevoConImagen}
+          disabled={!tienePlanImagen}
+          title={tienePlanImagen ? 'Subir un dibujo o foto ya hecho' : 'Subir un dibujo o foto ya hecho — requiere el plan PRO o superior'}
+        >
+          <IconoSubir />
+          {!tienePlanImagen && (
+            <span style={{ position: 'absolute', top: -2, right: -2 }}><CandadoPlan planMinimo="PRO" compacto /></span>
+          )}
         </button>
       </div>
       <p className={styles.dashboardVacio} style={{ margin: '-0.5rem 0 1rem' }}>

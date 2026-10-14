@@ -53,6 +53,16 @@ export type EditorDibujoProps = {
   esAdmin?: boolean;
   /** Lista ligera de clientes — solo se usa si hace falta mostrar el selector de destino. */
   clientes?: { id: string; nombre: string }[];
+  /**
+   * Al abrir un dibujo nuevo, selecciona directamente la herramienta
+   * "Imagen" en vez del lienzo en blanco con "Lápiz" — para el botón
+   * "Subir dibujo" de la cuadrícula (petición del usuario, 14/10/2026: "no
+   * se puede subir un archivo ya dibujado"), que antes exigía abrir un
+   * dibujo nuevo y encontrar manualmente el botón "Imagen" en la barra.
+   * Sin efecto si el plan no incluye esa herramienta (mismo candado PRO+ de
+   * siempre, comprobado dentro de `seleccionarHerramienta`).
+   */
+  abrirConHerramientaImagen?: boolean;
   onGuardar: (d: Dibujo) => Promise<void>;
   onVolver: () => void;
 };
@@ -128,7 +138,7 @@ function atajoTeclado(key: string, opts: { ctrl?: boolean; shift?: boolean } = {
  * en styles.module.css); toda la interfaz visible es propia, con el Design
  * System de la aplicación, controlada vía la API imperativa de Excalidraw.
  */
-export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, esAdmin, clientes, onGuardar, onVolver }: EditorDibujoProps) {
+export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, esAdmin, clientes, abrirConHerramientaImagen, onGuardar, onVolver }: EditorDibujoProps) {
   const tienePlanAvanzado = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const raizRef = useRef<HTMLDivElement | null>(null);
@@ -312,6 +322,16 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, e
     // "setState en componente no montado" y dentro del propio Excalidraw
     // la herramienta activa nunca cambia. Diferirlo al siguiente tick lo evita.
     setTimeout(() => {
+      // "Subir dibujo" (ver `abrirConHerramientaImagen`): el dibujo nuevo
+      // arranca con "Imagen" ya seleccionada en vez de "Lápiz", para que el
+      // siguiente toque del lienzo abra directamente el selector de
+      // archivos nativo. `seleccionarHerramienta` ya trae su propio
+      // candado PRO+ (no hace nada si el plan no lo permite), así que no
+      // hace falta repetir esa comprobación aquí.
+      if (abrirConHerramientaImagen) {
+        seleccionarHerramienta('image');
+        return;
+      }
       api.setActiveTool({ type: 'freedraw' });
       // Sin esto, Excalidraw dibuja con su propio grosor/color por defecto
       // hasta que el usuario toque el selector una vez — nuestra barra ya
