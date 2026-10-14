@@ -354,7 +354,25 @@ export function TabDibujos({ proyecto, plan, esAdmin }: TabDibujosProps) {
           <div className={styles.vacio}>
             <p>{buscando ? 'Ningún dibujo coincide con la búsqueda.' : 'Esta carpeta todavía no tiene dibujos.'}</p>
             {!buscando && (
-              <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={abrirNuevo}>Crear un dibujo aquí</button>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={abrirNuevo}>Crear un dibujo aquí</button>
+                {/* Mismo destino que el botón pequeño de la cabecera — repetido
+                    aquí porque es el único punto que el usuario ve en una
+                    carpeta vacía; el icono de arriba pasa fácilmente
+                    desapercibido (reportado por el usuario, 14/10/2026). */}
+                <button
+                  className={`${styles.btn} ${styles.btnSecundario}`}
+                  style={{ position: 'relative' }}
+                  onClick={abrirNuevoConImagen}
+                  disabled={!tienePlanImagen}
+                  title={tienePlanImagen ? undefined : 'Requiere el plan PRO o superior'}
+                >
+                  Subir un dibujo o foto ya hecho
+                  {!tienePlanImagen && (
+                    <span style={{ position: 'absolute', top: -6, right: -6 }}><CandadoPlan planMinimo="PRO" compacto /></span>
+                  )}
+                </button>
+              </div>
             )}
           </div>
         ) : (
