@@ -625,7 +625,12 @@ export async function guardarDibujo(d: Dibujo): Promise<Dibujo> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(d),
   });
-  await comprobarRespuesta(res, 'No se pudo guardar el dibujo');
+  // `comprobarRespuestaConMotivo` (no la genérica): un dibujo que supera el
+  // límite de tamaño (foto de fondo + anotaciones) responde 400 con el
+  // motivo real ("El contenido del dibujo supera el límite de 8 MB.") en
+  // vez del mensaje genérico — imprescindible para que el aviso de guardado
+  // fallido (editor-dibujo.tsx) pueda decir POR QUÉ falló, no solo que falló.
+  await comprobarRespuestaConMotivo(res, 'No se pudo guardar el dibujo');
   return res.json();
 }
 

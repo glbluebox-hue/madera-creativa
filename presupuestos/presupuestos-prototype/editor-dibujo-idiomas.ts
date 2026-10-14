@@ -25,6 +25,10 @@ type Textos = {
   guardando: string;
   guardar: string;
   guardado: string;
+  errorGuardadoTitulo: string;
+  errorGuardadoRed: string;
+  errorGuardadoGenerico: string;
+  errorGuardadoReintentar: string;
   escalaLabel: string;
   escalaSinCalibrar: string;
   escalaFormato: (factorMm: number) => string;
@@ -73,6 +77,10 @@ export const TEXTOS: Record<Idioma, Textos> = {
     guardando: 'Guardando…',
     guardar: 'Guardar',
     guardado: 'Guardado',
+    errorGuardadoTitulo: 'No se ha guardado',
+    errorGuardadoRed: 'No se ha podido conectar. El dibujo NO se ha guardado — comprueba tu conexión y vuelve a intentarlo antes de salir.',
+    errorGuardadoGenerico: 'No se ha podido guardar el dibujo. Vuelve a intentarlo.',
+    errorGuardadoReintentar: 'Reintentar',
     escalaLabel: 'Escala del dibujo:',
     escalaSinCalibrar: 'Sin calibrar (toca para calibrar)',
     escalaFormato: (factorMm) => `1 u = ${factorMm.toFixed(3)} mm`,
@@ -126,6 +134,10 @@ export const TEXTOS: Record<Idioma, Textos> = {
     guardando: 'Saving…',
     guardar: 'Save',
     guardado: 'Saved',
+    errorGuardadoTitulo: 'Not saved',
+    errorGuardadoRed: 'Could not connect. The drawing has NOT been saved — check your connection and try again before leaving.',
+    errorGuardadoGenerico: 'Could not save the drawing. Please try again.',
+    errorGuardadoReintentar: 'Retry',
     escalaLabel: 'Drawing scale:',
     escalaSinCalibrar: 'Not calibrated (tap to calibrate)',
     escalaFormato: (factorMm) => `1 u = ${factorMm.toFixed(3)} mm`,
@@ -179,6 +191,10 @@ export const TEXTOS: Record<Idioma, Textos> = {
     guardando: 'Salvataggio…',
     guardar: 'Salva',
     guardado: 'Salvato',
+    errorGuardadoTitulo: 'Non salvato',
+    errorGuardadoRed: 'Impossibile connettersi. Il disegno NON è stato salvato — controlla la connessione e riprova prima di uscire.',
+    errorGuardadoGenerico: 'Impossibile salvare il disegno. Riprova.',
+    errorGuardadoReintentar: 'Riprova',
     escalaLabel: 'Scala del disegno:',
     escalaSinCalibrar: 'Non calibrato (tocca per calibrare)',
     escalaFormato: (factorMm) => `1 u = ${factorMm.toFixed(3)} mm`,

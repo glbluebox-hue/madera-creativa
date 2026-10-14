@@ -16,6 +16,7 @@ import { puntosCandidatosSnap, buscarSnap, umbralSnapEscena, construirResaltoSna
 import type { HerramientaId } from './editor-dibujo-tipos.js';
 import { IDIOMAS, EXCALIDRAW_LANG_CODE, TEXTOS, type Idioma, type IdGrosor } from './editor-dibujo-idiomas.js';
 import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
+import { firmaDeElementos } from './firma-dibujo.js';
 import styles from './styles.module.css';
 
 /** Props del editor de dibujo (Fase 2.1, destino de guardado en Fase 2.2). */
@@ -175,7 +176,35 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, e
   const [paletaAbierta, setPaletaAbierta] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [guardadoOk, setGuardadoOk] = useState(false);
+  // Aviso de guardado fallido (14/10/2026) — antes `ejecutarGuardado` no
+  // tenía ningún `catch`: si `onGuardar` fallaba (sin red, dibujo demasiado
+  // pesado, servidor caído) el error se perdía como promesa rechazada sin
+  // capturar y la pantalla volvía sola al botón "Guardar" sin avisar de
+  // nada — un dibujo real (foto del sitio + cotas encima) se perdió así en
+  // casa de una clienta. Nunca más en silencio: éxito o fallo, siempre
+  // visible.
+  const [errorGuardado, setErrorGuardado] = useState<string | null>(null);
+  const ultimoDestinoRef = useRef<DestinoDibujo | undefined>(undefined);
   const [mostrarSelectorDestino, setMostrarSelectorDestino] = useState(false);
+  // Bloqueo de salida con cambios sin guardar (14/10/2026) — mismo motivo
+  // que el aviso de error de arriba: el dibujo real que se perdió en casa
+  // de una clienta se guardó, en apariencia, con normalidad, y el editor se
+  // podía cerrar sin más. `firmaGuardadaRef` guarda la firma del contenido
+  // tal como quedó en el ÚLTIMO guardado con éxito (al abrir un dibujo ya
+  // existente, la firma inicial; tras cada `ejecutarGuardado` que termine
+  // bien, se actualiza). Comparar la firma actual contra esta es el único
+  // criterio de "¿hay algo sin guardar?" — no un simple booleano, porque un
+  // deshacer que vuelve exactamente al estado ya guardado no debe seguir
+  // bloqueando la salida.
+  const firmaGuardadaRef = useRef<string>(
+    firmaDeElementos(((dibujo?.contenido as any)?.elements ?? []) as ExcalidrawElement[])
+  );
+  // Si "← Volver" dispara un guardado (directo o vía el selector de
+  // destino), este flag le dice al `ejecutarGuardado` que, en cuanto
+  // termine bien, además de marcarse como guardado hay que salir del
+  // editor. Un guardado manual con el botón "Guardar" nunca lo activa, así
+  // que nunca navega solo.
+  const volverTrasGuardarRef = useRef(false);
 
   // Sistema de cotas (Fase 2.3) — las cotas son entidades propias del
   // dibujo, no solo flechas con texto; viven junto a `elements`/`files`
@@ -808,7 +837,16 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, e
   const ejecutarGuardado = useCallback(async (destino?: DestinoDibujo) => {
     const api = apiRef.current;
     if (!api) return;
+    // Recuerda el destino de este intento — el botón "Reintentar" del aviso
+    // de error (más abajo) vuelve a llamar a `ejecutarGuardado` sin ningún
+    // argumento; sin esto, reintentar tras elegir "guardar en un cliente"
+    // desde el selector y que ESE primer intento fallara (p. ej. sin red en
+    // el momento justo) perdería el destino elegido y lo guardaría otra vez
+    // sin cliente/carpeta — el mismo problema que ya le pasó al usuario,
+    // disfrazado de "reintento".
+    ultimoDestinoRef.current = destino;
     setGuardando(true);
+    setErrorGuardado(null);
     try {
       const elements = api.getSceneElements();
       const appState = api.getAppState();
@@ -854,15 +892,60 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, e
       await onGuardar(aGuardar);
       setGuardadoOk(true);
       setTimeout(() => setGuardadoOk(false), 2500);
+      firmaGuardadaRef.current = firmaDeElementos(elements);
+      if (volverTrasGuardarRef.current) {
+        volverTrasGuardarRef.current = false;
+        onVolver();
+      }
+    } catch (err) {
+      // `TypeError` es lo que lanza `fetch()` cuando ni siquiera llega a
+      // contactar con el servidor (sin red) — se distingue de un error de
+      // negocio real (p. ej. "El contenido del dibujo supera el límite de
+      // 8 MB.", ya con el motivo exacto gracias a `comprobarRespuestaConMotivo`
+      // en `guardarDibujo`, api.ts) para dar un mensaje útil en cada caso.
+      const esFalloDeRed = err instanceof TypeError;
+      const motivo = !esFalloDeRed && err instanceof Error && err.message ? err.message : null;
+      setErrorGuardado(esFalloDeRed ? t.errorGuardadoRed : (motivo ?? t.errorGuardadoGenerico));
     } finally {
       setGuardando(false);
     }
-  }, [dibujo, clienteId, carpetaId, proyectoId, nombre, onGuardar]);
+  }, [dibujo, clienteId, carpetaId, proyectoId, nombre, onGuardar, onVolver, t]);
 
   const handleGuardarClick = useCallback(() => {
     if (necesitaPreguntarDestino) setMostrarSelectorDestino(true);
     else ejecutarGuardado();
   }, [necesitaPreguntarDestino, ejecutarGuardado]);
+
+  // "← Volver" ya no sale a ciegas (14/10/2026, mismo caso real que el
+  // aviso de error): si no hay nada sin guardar, sale directamente — si lo
+  // hay, dispara el mismo camino que el botón "Guardar" (incluido el
+  // selector de destino si hace falta preguntar dónde archivarlo) y solo
+  // sale cuando ESE guardado termina bien. Si falla, el aviso de error ya
+  // construido se queda a la vista y el editor no se cierra — nunca se
+  // pierde el dibujo por cerrar justo después de un fallo silencioso.
+  const alPulsarVolver = useCallback(() => {
+    const elementosActuales = (apiRef.current?.getSceneElements() ?? []) as ExcalidrawElement[];
+    if (firmaDeElementos(elementosActuales) === firmaGuardadaRef.current) { onVolver(); return; }
+    volverTrasGuardarRef.current = true;
+    handleGuardarClick();
+  }, [handleGuardarClick, onVolver]);
+
+  // Red de seguridad para cerrar la pestaña/recargar con el dibujo sin
+  // guardar — el diálogo propio de arriba cubre el botón "← Volver" de
+  // dentro de la app, pero no un cierre de pestaña o un F5. El navegador
+  // ignora cualquier texto propio en `beforeunload` desde hace años y
+  // muestra su propio aviso genérico — basta con que aparezca.
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      const elementosActuales = (apiRef.current?.getSceneElements() ?? []) as ExcalidrawElement[];
+      if (firmaDeElementos(elementosActuales) !== firmaGuardadaRef.current) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, []);
 
   // Ctrl+S / Cmd+S para guardar sin soltar el lápiz.
   useEffect(() => {
@@ -911,7 +994,7 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, e
   return createPortal(
     <div className={styles.editorDibujo} ref={raizRef}>
       <header ref={headerRef} className={styles.editorDibujoCabecera}>
-        <button className={styles.btnIcono} onClick={onVolver} aria-label={t.volver}>
+        <button className={styles.btnIcono} onClick={alPulsarVolver} disabled={guardando} aria-label={t.volver}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
         </button>
         <input
@@ -1167,6 +1250,30 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, e
         </button>
       </header>
 
+      {errorGuardado && (
+        <div style={{
+          flexShrink: 0, background: 'var(--rojo-bg)', borderBottom: '1px solid var(--rojo)',
+          padding: '0.6rem 1rem', display: 'flex', alignItems: 'center', gap: '0.6rem',
+        }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--rojo)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+          <p style={{ margin: 0, flex: 1, fontSize: '0.8rem', color: 'var(--rojo)', fontWeight: 600 }}>
+            {t.errorGuardadoTitulo} — {errorGuardado}
+          </p>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnPrimario}`}
+            style={{ flexShrink: 0, fontSize: '0.75rem', padding: '0.3rem 0.7rem' }}
+            onClick={() => ejecutarGuardado(ultimoDestinoRef.current)}
+            disabled={guardando}
+          >
+            {t.errorGuardadoReintentar}
+          </button>
+          <button className={styles.btnIcono} onClick={() => setErrorGuardado(null)} aria-label="Descartar aviso" title="Descartar">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
+        </div>
+      )}
+
       <div className={styles.editorDibujoCuerpo}>
         {herramientasAbiertas && (
         <aside className={styles.editorDibujoHerramientas} ref={toolbarRef}>
@@ -1308,7 +1415,7 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, e
       {mostrarSelectorDestino && clientes && (
         <SelectorDestinoGuardado
           clientes={clientes}
-          onCancelar={() => setMostrarSelectorDestino(false)}
+          onCancelar={() => { setMostrarSelectorDestino(false); volverTrasGuardarRef.current = false; }}
           onConfirmar={(destino) => { setMostrarSelectorDestino(false); ejecutarGuardado(destino); }}
         />
       )}

@@ -1077,7 +1077,18 @@ export const esquemaProducto = z.object({
  * patrón que fotos/adjuntos, Incremento 1.7) — el límite aquí es sobre el
  * Base64 de entrada, no sobre lo que queda finalmente en Mongo.
  */
-export const LIMITE_CONTENIDO_DIBUJO_BYTES = 4 * 1024 * 1024;
+// Subido de 4 MB a 8 MB (14/10/2026) — caso real: una foto del lugar de
+// trabajo tomada con el móvil, con las cotas anotadas encima (uso legítimo
+// y frecuente de la Pizarra de medición), supera 4 MB en Base64 con
+// facilidad. El guardado rechazado se perdía en silencio para el usuario
+// (ver fix en editor-dibujo.tsx, misma fecha) — subir el límite reduce el
+// riesgo real, no solo lo hace más visible. `contenido` vive embebido tal
+// cual en el propio documento de Mongo (ver DibujoSchema, cliente.model.ts)
+// así que el techo real es el límite de 16 MB por documento de MongoDB —
+// 8 MB deja margen amplio sin acercarse a ese límite. No subir más sin
+// revisar antes si hace falta mover `contenido` a almacenamiento externo
+// (como ya hace `miniatura`) en vez de seguir ampliando este número.
+export const LIMITE_CONTENIDO_DIBUJO_BYTES = 8 * 1024 * 1024;
 export const LIMITE_MINIATURA_DIBUJO_BYTES = 1 * 1024 * 1024;
 
 export const esquemaDibujo = z.object({

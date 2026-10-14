@@ -1634,3 +1634,27 @@
 2026-10-09T19:47:22.354Z 24972 test presupuestos-prototype, failed
 2026-10-09T19:47:30.985Z 25844 check-types presupuestos-prototype, started
 2026-10-09T19:47:58.550Z 25844 check-types presupuestos-prototype, succeeded
+2026-10-14T07:12:37.472Z 28916 check-types presupuestos-prototype, started
+2026-10-14T07:16:54.048Z 28916 check-types presupuestos-prototype, succeeded
+2026-10-14T07:17:17.027Z 30216 test presupuestos-service --pattern esquema-dibujo-limite, started
+2026-10-14T07:17:27.799Z 29036 test presupuestos/presupuestos-service/esquema-dibujo-limite.spec.ts, started
+2026-10-14T07:17:57.175Z 29036 test presupuestos/presupuestos-service/esquema-dibujo-limite.spec.ts, succeeded
+2026-10-14T07:18:08.956Z 22644 test presupuestos-prototype --unmodified, started
+2026-10-14T07:18:14.283Z 20188 test presupuestos-service --unmodified, started
+2026-10-14T07:18:22.300Z 16836 check-types presupuestos-service, started
+2026-10-14T07:18:44.070Z 22644 test presupuestos-prototype --unmodified, failed
+2026-10-14T07:19:23.650Z 28140 test presupuestos-service --unmodified, started
+2026-10-14T07:19:41.354Z 16836 check-types presupuestos-service, succeeded
+2026-10-14T07:20:05.493Z 28140 test presupuestos-service --unmodified, failed
+2026-10-14T07:20:44.231Z 11596 test presupuestos-service --unmodified, started
+2026-10-14T07:21:19.592Z 11596 test presupuestos-service --unmodified, failed
+2026-10-14T07:27:21.547Z 10588 test presupuestos-prototype --junit, started
+2026-10-14T07:27:21.835Z 10588 test presupuestos-prototype --junit, failed
+2026-10-14T07:27:29.906Z 22840 test presupuestos-prototype, started
+2026-10-14T07:28:08.267Z 22840 test presupuestos-prototype, failed
+2026-10-14T07:29:35.344Z 18124 test presupuestos-prototype, started
+2026-10-14T07:30:05.263Z 18124 test presupuestos-prototype, failed
+2026-10-14T07:30:25.513Z 29160 test presupuestos-prototype, started
+2026-10-14T07:30:55.704Z 29160 test presupuestos-prototype, failed
+2026-10-14T07:31:04.044Z 28248 check-types presupuestos-prototype, started
+2026-10-14T07:31:48.055Z 28248 check-types presupuestos-prototype, succeeded
