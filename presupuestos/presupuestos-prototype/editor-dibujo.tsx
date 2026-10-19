@@ -8,7 +8,7 @@ import type { Dibujo } from './types.js';
 import { generarId } from './mock.js';
 import { SelectorDestinoGuardado, type DestinoDibujo } from './selector-destino-guardado.js';
 import {
-  iniciarCotaEnCurso, actualizarCotaEnCurso, sincronizarCotas, calibrarDesdeCota, calibrarPorRectangulo, regenerarEtiquetasCotas, ajustarLongitudCotaEnEscena, fijarValorManualCota, convertirDesdeMm, convertirAMm,
+  iniciarCotaEnCurso, actualizarCotaEnCurso, sincronizarCotas, calibrarDesdeCota, calibrarPorRectangulo, regenerarEtiquetasCotas, ajustarLongitudCotaEnEscena, fijarValorManualCota, calcularEngancheImagen, convertirDesdeMm, convertirAMm,
   construirMarcadoresCalibracion, IDS_MARCADORES_CALIBRACION, ID_LINEA_CALIBRACION,
   type Cota, type EscalaDibujo, type OrientacionCota, type PuntoEscena, type UnidadVisualizacion,
 } from './cota-modelo.js';
@@ -704,7 +704,19 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, e
       // resultado después de calcularlo es seguro y no deja ningún rastro
       // de la escala en la cota manual.
       const esManual = modoCotaActivoRef.current === 'manual';
-      const cotaFinal: Cota = esManual ? { ...resultado.cota, modo: 'manual', valorManualMm: null } : resultado.cota;
+      // Enganche a la imagen de fondo (petición del usuario, 19/10/2026) —
+      // ver `Cota.imagenAsociadaId` en cota-modelo.ts. `elementosBase` es la
+      // escena justo ANTES de dibujar esta cota, así que ya incluye
+      // cualquier imagen insertada previamente, sin la propia cota nueva de
+      // por medio. Independiente del modo manual/automático: una cota
+      // puede estar enganchada y a la vez tener su valor en cualquiera de
+      // los dos modos.
+      const enganche = calcularEngancheImagen(elementosBase, resultado.cota.puntoOrigen, resultado.cota.puntoDestino);
+      const cotaFinal: Cota = {
+        ...resultado.cota,
+        ...enganche,
+        ...(esManual ? { modo: 'manual' as const, valorManualMm: null } : {}),
+      };
 
       setCotas((prev) => [...prev, cotaFinal]);
       // `IMMEDIATELY`: esta es la única llamada que debe quedar en el

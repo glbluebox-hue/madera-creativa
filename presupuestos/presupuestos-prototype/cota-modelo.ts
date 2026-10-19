@@ -99,6 +99,23 @@ export type Cota = {
   modo?: 'manual';
   /** Valor mostrado cuando `modo === 'manual'`, en milímetros (misma unidad canónica que `longitudMm`). `null`/ausente justo tras dibujar la línea, antes de que el usuario escriba el número. */
   valorManualMm?: number | null;
+  /**
+   * Imagen a la que esta cota queda "enganchada" (petición del usuario,
+   * 19/10/2026): si al dibujarla sus dos extremos caían dentro de una misma
+   * imagen del lienzo, se guarda aquí su id — a partir de ese momento,
+   * mover o escalar esa imagen mueve/escala la cota con ella (ver
+   * `sincronizarCotas`). Ausente = cota libre, en coordenadas absolutas del
+   * lienzo como siempre — compatibilidad total con cotas ya guardadas, sin
+   * ninguna migración de datos. Independiente del modo manual/automático:
+   * una cota puede estar enganchada a una imagen y a la vez tener su valor
+   * en cualquiera de los dos modos.
+   */
+  imagenAsociadaId?: string;
+  /** Posición de `puntoOrigen`/`puntoDestino` como proporción (0-1) del rectángulo de `imagenAsociadaId` en el momento de la última sincronización — ver `relativoAPunto`/`puntoARelativo`. Solo tienen sentido junto con `imagenAsociadaId`. */
+  origenRelativo?: PuntoEscena;
+  destinoRelativo?: PuntoEscena;
+  /** Rectángulo de `imagenAsociadaId` la última vez que esta cota se sincronizó contra ella — mismo patrón que `escalaUtilizada`: compararlo contra el rectángulo actual de la imagen es lo que detecta "la imagen se movió/escaló" en `sincronizarCotas`. */
+  geometriaImagenUtilizada?: RectImagen;
   elementos: { flechaId: string; extension1Id: string; extension2Id: string; grupoId: string };
   fecha: string;
   version: number;
@@ -129,6 +146,89 @@ function perpendicularUnitaria(a: PuntoEscena, b: PuntoEscena): PuntoEscena {
   const dy = b.y - a.y;
   const len = Math.hypot(dx, dy) || 1;
   return { x: -dy / len, y: dx / len };
+}
+
+/**
+ * Rectángulo (en coordenadas de escena) de una imagen insertada en el
+ * lienzo — mismo formato que usa Excalidraw para cualquier elemento no
+ * rotado: `x`/`y` es la esquina superior-izquierda, `width`/`height` su
+ * tamaño. Se guarda una copia plana (no el elemento de Excalidraw entero)
+ * en `Cota.geometriaImagenUtilizada` para poder comparar "¿cambió la
+ * imagen desde la última vez?" con una simple igualdad, igual que ya hace
+ * `escalaUtilizada` con la escala del dibujo.
+ */
+export type RectImagen = { x: number; y: number; width: number; height: number };
+
+function rectDeImagen(imagen: ExcalidrawElement): RectImagen {
+  const i = imagen as any;
+  return { x: i.x, y: i.y, width: i.width, height: i.height };
+}
+
+/** `true` si el punto cae dentro de los límites del rectángulo (incluido el borde). */
+function puntoDentroDeRect(p: PuntoEscena, r: RectImagen): boolean {
+  return p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height;
+}
+
+/** Posición de un punto absoluto como proporción (0-1) del ancho/alto del rectángulo — inversa de `relativoAPunto`. */
+function puntoARelativo(p: PuntoEscena, r: RectImagen): PuntoEscena {
+  return { x: r.width === 0 ? 0 : (p.x - r.x) / r.width, y: r.height === 0 ? 0 : (p.y - r.y) / r.height };
+}
+
+/** Punto absoluto a partir de una posición relativa (0-1) y el rectángulo actual de la imagen — inversa de `puntoARelativo`. */
+function relativoAPunto(rel: PuntoEscena, r: RectImagen): PuntoEscena {
+  return { x: r.x + rel.x * r.width, y: r.y + rel.y * r.height };
+}
+
+/**
+ * Busca, entre las imágenes vivas del lienzo, la que debería "adoptar" una
+ * cota recién dibujada entre `a` y `b` (petición del usuario, 19/10/2026):
+ * la imagen cuyos límites contienen POR COMPLETO los dos puntos. Si varias
+ * imágenes se solapan y ambas califican (caso raro), gana la de área menor
+ * — es la más específica, la que con más probabilidad es "la foto que el
+ * usuario está midiendo" y no un fondo más grande debajo. Si ninguna
+ * imagen contiene los dos puntos a la vez (cota a mano alzada, o entre dos
+ * imágenes distintas), no hay ganadora: la cota queda libre, igual que
+ * siempre.
+ */
+export function encontrarImagenParaCota(
+  elements: readonly ExcalidrawElement[],
+  a: PuntoEscena,
+  b: PuntoEscena
+): ExcalidrawElement | null {
+  let mejor: ExcalidrawElement | null = null;
+  let mejorArea = Infinity;
+  for (const e of elements) {
+    if ((e as any).isDeleted || e.type !== 'image') continue;
+    const r = rectDeImagen(e);
+    if (!puntoDentroDeRect(a, r) || !puntoDentroDeRect(b, r)) continue;
+    const area = r.width * r.height;
+    if (area < mejorArea) { mejorArea = area; mejor = e; }
+  }
+  return mejor;
+}
+
+/**
+ * Campos de enganche a añadir a una cota recién dibujada, a partir de las
+ * imágenes vivas del lienzo — `{}` si ninguna imagen contiene los dos
+ * puntos (la cota nace libre). Se usa justo después de crear la cota
+ * (`finalizar` en editor-dibujo.tsx), igual que el modo manual: ninguna
+ * función de construcción de geometría necesita saber nada de imágenes,
+ * esto se calcula y se mezcla aparte.
+ */
+export function calcularEngancheImagen(
+  elements: readonly ExcalidrawElement[],
+  puntoOrigen: PuntoEscena,
+  puntoDestino: PuntoEscena
+): Pick<Cota, 'imagenAsociadaId' | 'origenRelativo' | 'destinoRelativo' | 'geometriaImagenUtilizada'> {
+  const imagen = encontrarImagenParaCota(elements, puntoOrigen, puntoDestino);
+  if (!imagen) return {};
+  const rect = rectDeImagen(imagen);
+  return {
+    imagenAsociadaId: imagen.id,
+    origenRelativo: puntoARelativo(puntoOrigen, rect),
+    destinoRelativo: puntoARelativo(puntoDestino, rect),
+    geometriaImagenUtilizada: rect,
+  };
 }
 
 const MATRIZ_IDENTIDAD: MatrizHomografia = [1, 0, 0, 0, 1, 0, 0, 0, 1];
@@ -767,7 +867,45 @@ export function sincronizarCotas(
     const esManual = cota.modo === 'manual';
     const cambioEscala = !esManual && JSON.stringify(cota.escalaUtilizada) !== JSON.stringify(escala);
 
-    if (cambioGeometria || cambioEscala) {
+    // Enganche a una imagen de fondo (petición del usuario, 19/10/2026) —
+    // ver `Cota.imagenAsociadaId`. Dos caminos, excluyentes por
+    // construcción (el segundo solo se evalúa cuando NO hubo arrastre
+    // directo de la propia cota):
+    //   1. `cambioGeometria`: el usuario arrastró un extremo a mano — se
+    //      recalcula la posición relativa contra la imagen TAL COMO ESTÁ
+    //      AHORA, o se desengancha si el extremo quedó fuera de ella.
+    //   2. Nadie tocó la cota, pero la imagen a la que está enganchada
+    //      cambió de sitio/tamaño desde la última sincronización — se
+    //      recalculan los puntos absolutos desde la posición relativa
+    //      guardada (`cambioImagen`), para que la cota siga a la imagen.
+    // Si la imagen asociada fue borrada, la cota se desengancha y conserva
+    // su posición actual tal cual — nunca queda apuntando a un id muerto.
+    let puntoOrigenImg: PuntoEscena | undefined;
+    let puntoDestinoImg: PuntoEscena | undefined;
+    let camposEnganche: Partial<Cota> | undefined;
+    let cambioImagen = false;
+    if (cota.imagenAsociadaId) {
+      const imagenViva = elements.find((e: any) => !e.isDeleted && e.type === 'image' && e.id === cota.imagenAsociadaId);
+      if (!imagenViva) {
+        camposEnganche = { imagenAsociadaId: undefined, origenRelativo: undefined, destinoRelativo: undefined, geometriaImagenUtilizada: undefined };
+      } else if (cambioGeometria) {
+        const rectActual = rectDeImagen(imagenViva);
+        camposEnganche = (puntoDentroDeRect(p1, rectActual) && puntoDentroDeRect(p2, rectActual))
+          ? { origenRelativo: puntoARelativo(p1, rectActual), destinoRelativo: puntoARelativo(p2, rectActual), geometriaImagenUtilizada: rectActual }
+          : { imagenAsociadaId: undefined, origenRelativo: undefined, destinoRelativo: undefined, geometriaImagenUtilizada: undefined };
+      } else {
+        const rectActual = rectDeImagen(imagenViva);
+        if (JSON.stringify(rectActual) !== JSON.stringify(cota.geometriaImagenUtilizada)) {
+          puntoOrigenImg = relativoAPunto(cota.origenRelativo!, rectActual);
+          puntoDestinoImg = relativoAPunto(cota.destinoRelativo!, rectActual);
+          camposEnganche = { geometriaImagenUtilizada: rectActual };
+          cambioImagen = true;
+        }
+      }
+    }
+    const huboCambioPosicion = cambioGeometria || cambioImagen;
+
+    if (huboCambioPosicion || cambioEscala || camposEnganche) {
       // Solo se remide la geometría si de verdad cambió — si lo único que
       // cambió fue la escala, se reutilizan los puntos/longitud ya
       // conocidos (los mismos que se usaron para calibrar) en vez de
@@ -777,16 +915,24 @@ export function sincronizarCotas(
       // valor exacto (p. ej. "500 cm") acabara mostrando un número distinto
       // ("498.9 cm"): la escala se calculaba con una longitud y la
       // reconstrucción inmediatamente posterior mostraba otra.
-      const puntoOrigen = cambioGeometria ? p1 : cota.puntoOrigen;
-      const puntoDestino = cambioGeometria ? p2 : cota.puntoDestino;
-      const longitudInterna = cambioGeometria ? distancia(p1, p2) : cota.longitudInterna;
+      const puntoOrigen = cambioGeometria ? p1 : cambioImagen ? puntoOrigenImg! : cota.puntoOrigen;
+      const puntoDestino = cambioGeometria ? p2 : cambioImagen ? puntoDestinoImg! : cota.puntoDestino;
+      const longitudInterna = huboCambioPosicion ? distancia(puntoOrigen, puntoDestino) : cota.longitudInterna;
       // Manual: se arrastra como cualquier otra línea (posición libre), pero
       // `escalaUtilizada`/`longitudMm` nunca se tocan — `valorManualMm` (el
       // único dato que se muestra) viaja intacto vía el spread `...cota`.
-      const actualizada: Cota = esManual
-        ? { ...cota, puntoOrigen, puntoDestino, longitudInterna, version: cota.version + 1, fecha: new Date().toISOString() }
+      // Lo mismo aplica, por el mismo motivo, cuando el único cambio es que
+      // la cota siguió a su imagen (`cambioImagen` sin `cambioGeometria`):
+      // lo que mide la realidad no cambia porque la foto se vea más grande
+      // o más pequeña en el lienzo — solo cambia su posición EN PANTALLA.
+      // Recalcular por escala aquí mezclaría "la imagen se redimensionó en
+      // el editor" con "la medida real cambió", que son cosas distintas.
+      const preservarValorReal = esManual || (cambioImagen && !cambioGeometria);
+      const actualizada: Cota = preservarValorReal
+        ? { ...cota, ...camposEnganche, puntoOrigen, puntoDestino, longitudInterna, version: cota.version + 1, fecha: new Date().toISOString() }
         : {
             ...cota,
+            ...camposEnganche,
             puntoOrigen,
             puntoDestino,
             longitudInterna,
