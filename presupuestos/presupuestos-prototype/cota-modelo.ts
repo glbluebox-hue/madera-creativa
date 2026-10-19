@@ -400,13 +400,20 @@ export function construirElementosCota(
 
   const skeletons = [
     {
+      // `type: 'arrow'` se conserva (no 'line') únicamente porque es el tipo
+      // que `convertToExcalidrawElements` sabe enlazar con una etiqueta de
+      // texto nativa centrada — ver el comentario de la función. Sin punta
+      // en ningún extremo (petición del usuario, 19/10/2026: quiere una
+      // línea de acotación técnica clásica — dos remates perpendiculares ya
+      // construidos más abajo + línea recta sin flechas), queda visualmente
+      // como una línea recta normal.
       type: 'arrow',
       id: flechaId,
       x: a.x,
       y: a.y,
       points: [[0, 0], [b.x - a.x, b.y - a.y]],
-      startArrowhead: 'arrow',
-      endArrowhead: 'arrow',
+      startArrowhead: null,
+      endArrowhead: null,
       strokeColor: estilo.strokeColor,
       strokeWidth: estilo.strokeWidth,
       label: { text: formatoLongitudCota(cota, unidadVisualizacion), strokeColor: estilo.strokeColor },
