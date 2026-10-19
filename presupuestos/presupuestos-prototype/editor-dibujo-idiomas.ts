@@ -66,8 +66,13 @@ type Textos = {
   mostrarHerramientas: string;
   edicionLongitudLabel: string;
   edicionLongitudLabelSinCalibrar: string;
+  edicionLongitudLabelManual: string;
   edicionLongitudBoton: string;
   borrarCota: string;
+  modoCotaAutomatica: string;
+  modoCotaManual: string;
+  modoCotaAutomaticaTitulo: string;
+  modoCotaManualTitulo: string;
 };
 
 export const TEXTOS: Record<Idioma, Textos> = {
@@ -125,8 +130,13 @@ export const TEXTOS: Record<Idioma, Textos> = {
     mostrarHerramientas: 'Mostrar herramientas',
     edicionLongitudLabel: 'Medida exacta de esta cota',
     edicionLongitudLabelSinCalibrar: 'Medida real de esta cota (calibra el dibujo con este valor)',
+    edicionLongitudLabelManual: 'Escribe la medida (no usa ninguna escala)',
     edicionLongitudBoton: 'Aplicar',
     borrarCota: 'Borrar esta cota',
+    modoCotaAutomatica: 'Automática',
+    modoCotaManual: 'Manual',
+    modoCotaAutomaticaTitulo: 'La medida se calcula por la escala del dibujo',
+    modoCotaManualTitulo: 'Tú escribes la medida; no usa ninguna escala ni calibra nada',
   },
   en: {
     volver: 'Back to Drawings',
@@ -182,8 +192,13 @@ export const TEXTOS: Record<Idioma, Textos> = {
     mostrarHerramientas: 'Show tools',
     edicionLongitudLabel: 'Exact measurement for this dimension',
     edicionLongitudLabelSinCalibrar: 'Real measurement for this dimension (calibrates the drawing using this value)',
+    edicionLongitudLabelManual: 'Type the measurement (uses no scale at all)',
     edicionLongitudBoton: 'Apply',
     borrarCota: 'Delete this dimension',
+    modoCotaAutomatica: 'Automatic',
+    modoCotaManual: 'Manual',
+    modoCotaAutomaticaTitulo: 'The measurement is calculated from the drawing scale',
+    modoCotaManualTitulo: 'You type the measurement; it uses no scale and calibrates nothing',
   },
   it: {
     volver: 'Torna ai Disegni',
@@ -239,7 +254,12 @@ export const TEXTOS: Record<Idioma, Textos> = {
     mostrarHerramientas: 'Mostra strumenti',
     edicionLongitudLabel: 'Misura esatta di questa quota',
     edicionLongitudLabelSinCalibrar: 'Misura reale di questa quota (calibra il disegno con questo valore)',
+    edicionLongitudLabelManual: 'Scrivi la misura (non usa nessuna scala)',
     edicionLongitudBoton: 'Applica',
     borrarCota: 'Elimina questa quota',
+    modoCotaAutomatica: 'Automatica',
+    modoCotaManual: 'Manuale',
+    modoCotaAutomaticaTitulo: 'La misura si calcola dalla scala del disegno',
+    modoCotaManualTitulo: 'Scrivi tu la misura; non usa nessuna scala né calibra nulla',
   },
 };

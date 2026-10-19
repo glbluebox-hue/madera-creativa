@@ -8,7 +8,7 @@ import type { Dibujo } from './types.js';
 import { generarId } from './mock.js';
 import { SelectorDestinoGuardado, type DestinoDibujo } from './selector-destino-guardado.js';
 import {
-  iniciarCotaEnCurso, actualizarCotaEnCurso, sincronizarCotas, calibrarDesdeCota, calibrarPorRectangulo, regenerarEtiquetasCotas, ajustarLongitudCotaEnEscena, convertirDesdeMm, convertirAMm,
+  iniciarCotaEnCurso, actualizarCotaEnCurso, sincronizarCotas, calibrarDesdeCota, calibrarPorRectangulo, regenerarEtiquetasCotas, ajustarLongitudCotaEnEscena, fijarValorManualCota, convertirDesdeMm, convertirAMm,
   construirMarcadoresCalibracion, IDS_MARCADORES_CALIBRACION, ID_LINEA_CALIBRACION,
   type Cota, type EscalaDibujo, type OrientacionCota, type PuntoEscena, type UnidadVisualizacion,
 } from './cota-modelo.js';
@@ -292,6 +292,15 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, e
   const [orientacionCota, setOrientacionCota] = useState<OrientacionCota>('alineada');
   const orientacionCotaRef = useRef(orientacionCota);
   orientacionCotaRef.current = orientacionCota;
+  // Interruptor "Automática"/"Manual" (petición del usuario, 19/10/2026):
+  // determina el modo de las cotas que se dibujen A PARTIR de ahora — nunca
+  // cambia una cota ya creada. "Manual" nunca calcula por escala ni
+  // calibra nada, ver `Cota.modo` en cota-modelo.ts. Se lee dentro del
+  // efecto de captura de punteros de más abajo (dependencias fijas), así
+  // que necesita su propio ref para no quedarse con un valor obsoleto.
+  const [modoCotaActivo, setModoCotaActivo] = useState<'automatica' | 'manual'>('automatica');
+  const modoCotaActivoRef = useRef(modoCotaActivo);
+  modoCotaActivoRef.current = modoCotaActivo;
   const cotasRef = useRef(cotas);
   cotasRef.current = cotas;
   const escalaRef = useRef(escala);
@@ -529,12 +538,25 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, e
     const api = apiRef.current;
     const valor = Number(edicionValor);
     if (!api || !cotaSeleccionadaId || !(valor > 0)) return;
+    const cota = cotasRef.current.find((c) => c.id === cotaSeleccionadaId);
+    if (!cota) return;
+    // Modo manual (petición del usuario, 19/10/2026): nunca calibra, nunca
+    // mueve la línea — solo fija el número que se ve, sin relación alguna
+    // con la escala del dibujo. Se comprueba antes que "sin calibrar" a
+    // propósito: una cota manual puede existir en un dibujo que todavía no
+    // tiene escala, y eso no debe disparar ninguna calibración.
+    if (cota.modo === 'manual') {
+      const resultado = fijarValorManualCota(api.getSceneElements(), cota, valor, edicionUnidad, edicionUnidad);
+      setUnidadVisualizacion(edicionUnidad);
+      setCotas((prev) => prev.map((c) => (c.id === cota.id ? resultado.cota : c)));
+      api.updateScene({ elements: resultado.elementos, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+      setCotaSeleccionadaId(null);
+      return;
+    }
     if (!escalaRef.current) {
       confirmarCalibracion(cotaSeleccionadaId, valor, edicionUnidad);
       return;
     }
-    const cota = cotasRef.current.find((c) => c.id === cotaSeleccionadaId);
-    if (!cota) return;
     // Misma unidad elegida aquí = unidad por defecto de todo el dibujo a
     // partir de ahora (ver nota igual en `confirmarCalibracion`).
     setUnidadVisualizacion(edicionUnidad);
@@ -673,7 +695,18 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, e
 
       if (resultado.cota.longitudInterna < LONGITUD_MINIMA_ARRASTRE) { descartar(); return; }
 
-      setCotas((prev) => [...prev, resultado.cota]);
+      // Modo manual (petición del usuario, 19/10/2026): la línea se dibuja
+      // igual, pero la cota queda marcada `modo:'manual'` desde el momento
+      // en que nace — su valor (`valorManualMm`) todavía no existe, lo pone
+      // el usuario a continuación en el panel que se abre justo debajo. No
+      // hace falta tocar `actualizarCotaEnCurso`/`construirCota` para esto:
+      // ambas son puras y no calibran nada por sí solas, así que marcar el
+      // resultado después de calcularlo es seguro y no deja ningún rastro
+      // de la escala en la cota manual.
+      const esManual = modoCotaActivoRef.current === 'manual';
+      const cotaFinal: Cota = esManual ? { ...resultado.cota, modo: 'manual', valorManualMm: null } : resultado.cota;
+
+      setCotas((prev) => [...prev, cotaFinal]);
       // `IMMEDIATELY`: esta es la única llamada que debe quedar en el
       // historial de deshacer — todo el arrastre cuenta como una sola acción.
       // Sin especificarlo explícitamente, Excalidraw no la trataba como su
@@ -687,14 +720,18 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, e
 
       // Recién soltada, se abre directamente su edición numérica — no hace
       // falta ir a seleccionarla aparte para poder escribir la medida exacta.
+      // En manual arranca vacío a propósito: no hay ningún valor calculado
+      // que precargar, es el usuario quien lo escribe desde cero.
       setEdicionTop(posicionBajoCabecera());
       setEdicionValor(
-        resultado.cota.longitudMm !== null
-          ? String(Math.round(convertirDesdeMm(resultado.cota.longitudMm, unidadVisualizacionRef.current) * 100) / 100)
-          : ''
+        esManual
+          ? ''
+          : resultado.cota.longitudMm !== null
+            ? String(Math.round(convertirDesdeMm(resultado.cota.longitudMm, unidadVisualizacionRef.current) * 100) / 100)
+            : ''
       );
       setEdicionUnidad(unidadVisualizacionRef.current);
-      setCotaSeleccionadaId(resultado.cota.id);
+      setCotaSeleccionadaId(cotaFinal.id);
     };
 
     const manejarSoltar = (e: PointerEvent) => finalizar(e);
@@ -1234,7 +1271,11 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, e
         </select>
         {cotaSeleccionadaId && (
           <div className={styles.editorDibujoCalibracionPanel} style={{ top: edicionTop }}>
-            <label style={{ fontSize: 12 }}>{escala ? t.edicionLongitudLabel : t.edicionLongitudLabelSinCalibrar}</label>
+            <label style={{ fontSize: 12 }}>
+              {cotas.find((c) => c.id === cotaSeleccionadaId)?.modo === 'manual'
+                ? t.edicionLongitudLabelManual
+                : escala ? t.edicionLongitudLabel : t.edicionLongitudLabelSinCalibrar}
+            </label>
             <div style={{ display: 'flex', gap: 6 }}>
               <input
                 type="number" min="0" step="any" autoFocus
@@ -1372,6 +1413,34 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, e
                   {o.icono}
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* Interruptor Automática/Manual (petición del usuario, 19/10/2026)
+              — decide el modo de las cotas que se dibujen a partir de ahora,
+              ver `Cota.modo` en cota-modelo.ts. Mismo nivel de visibilidad
+              que la orientación, junto a ella, solo con la herramienta Cota
+              activa. */}
+          {herramienta === 'cota' && (
+            <div className={styles.editorDibujoOrientacionCota}>
+              <button
+                type="button"
+                title={t.modoCotaAutomaticaTitulo}
+                className={`${styles.editorDibujoHerramientaBtn} ${modoCotaActivo === 'automatica' ? styles.editorDibujoHerramientaBtnActivo : ''}`}
+                style={{ width: 'auto', height: 28, padding: '0 8px', fontSize: 11, whiteSpace: 'nowrap' }}
+                onClick={() => setModoCotaActivo('automatica')}
+              >
+                {t.modoCotaAutomatica}
+              </button>
+              <button
+                type="button"
+                title={t.modoCotaManualTitulo}
+                className={`${styles.editorDibujoHerramientaBtn} ${modoCotaActivo === 'manual' ? styles.editorDibujoHerramientaBtnActivo : ''}`}
+                style={{ width: 'auto', height: 28, padding: '0 8px', fontSize: 11, whiteSpace: 'nowrap' }}
+                onClick={() => setModoCotaActivo('manual')}
+              >
+                {t.modoCotaManual}
+              </button>
             </div>
           )}
 

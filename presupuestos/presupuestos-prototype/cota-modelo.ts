@@ -84,6 +84,21 @@ export type Cota = {
   escalaUtilizada: EscalaSnapshot | null;
   /** Longitud real en milímetros (unidad canónica) — `null` mientras el dibujo no esté calibrado. La unidad en que se *muestra* (mm/cm/m) es una preferencia de visualización aparte, ver `UnidadVisualizacion`. */
   longitudMm: number | null;
+  /**
+   * Modo "manual" (petición del usuario, 19/10/2026): la cota no usa la
+   * escala del dibujo en absoluto, ni para mostrarse ni para calibrar nada
+   * — ni siquiera de forma transitoria. `longitudInterna`/`escalaUtilizada`/
+   * `longitudMm` se siguen rellenando igual que en cualquier otra cota (para
+   * no tener que ramificar el resto del módulo), pero se IGNORAN para
+   * mostrar el valor: lo que se ve es siempre `valorManualMm`, escrito
+   * directamente por el usuario, sin relación con la distancia en píxeles
+   * de la línea ni con ninguna otra cota. Ausente = "automática", el
+   * comportamiento de siempre — compatibilidad con dibujos ya guardados,
+   * sin ninguna migración de datos.
+   */
+  modo?: 'manual';
+  /** Valor mostrado cuando `modo === 'manual'`, en milímetros (misma unidad canónica que `longitudMm`). `null`/ausente justo tras dibujar la línea, antes de que el usuario escriba el número. */
+  valorManualMm?: number | null;
   elementos: { flechaId: string; extension1Id: string; extension2Id: string; grupoId: string };
   fecha: string;
   version: number;
@@ -306,21 +321,31 @@ export function convertirAMm(valor: number, unidad: UnidadVisualizacion): number
   return valor * 1000;
 }
 
+/** Formatea un valor en mm a la unidad de visualización, con los decimales habituales de cada unidad — compartido por el formato automático y el manual. */
+function formatearValorMm(valorMm: number, unidadVisualizacion: UnidadVisualizacion): string {
+  const valor = convertirDesdeMm(valorMm, unidadVisualizacion);
+  const decimales = unidadVisualizacion === 'mm' ? 0 : unidadVisualizacion === 'cm' ? 1 : 2;
+  return `${valor.toFixed(decimales)} ${unidadVisualizacion}`;
+}
+
 /**
- * Texto a mostrar en la etiqueta de la cota. Sin calibración se muestra en
- * unidades internas ("240 u") — nunca mm/cm/m, para que nadie confunda ese
- * número con una medida real.
+ * Texto a mostrar en la etiqueta de la cota. En modo manual (`modo ===
+ * 'manual'`) se muestra siempre `valorManualMm`, nunca el cálculo por
+ * escala — ver el comentario de `Cota.modo`. En modo automático, sin
+ * calibración se muestra en unidades internas ("240 u") — nunca mm/cm/m,
+ * para que nadie confunda ese número con una medida real.
  */
 export function formatoLongitudCota(
-  cota: Pick<Cota, 'longitudInterna' | 'longitudMm'>,
+  cota: Pick<Cota, 'longitudInterna' | 'longitudMm' | 'modo' | 'valorManualMm'>,
   unidadVisualizacion: UnidadVisualizacion
 ): string {
+  if (cota.modo === 'manual') {
+    return cota.valorManualMm == null ? '?' : formatearValorMm(cota.valorManualMm, unidadVisualizacion);
+  }
   if (cota.longitudMm === null) {
     return `${Math.round(cota.longitudInterna)} u`;
   }
-  const valor = convertirDesdeMm(cota.longitudMm, unidadVisualizacion);
-  const decimales = unidadVisualizacion === 'mm' ? 0 : unidadVisualizacion === 'cm' ? 1 : 2;
-  return `${valor.toFixed(decimales)} ${unidadVisualizacion}`;
+  return formatearValorMm(cota.longitudMm, unidadVisualizacion);
 }
 
 /**
@@ -707,6 +732,14 @@ export function sincronizarCotas(
         },
         fecha: new Date().toISOString(),
         version: 1,
+        // Duplicado (Ctrl+D / copiar-pegar) de una cota manual: conserva su
+        // valor tal cual, nunca lo recalcula por escala — `cota` aquí es el
+        // registro ORIGINAL (mismo `cotaId`, ver comentario de
+        // `grupoIdActual` más arriba), así que su `modo`/`valorManualMm` son
+        // el valor correcto a heredar. Una cota realmente desconocida
+        // (`!cota`, no debería pasar en uso normal) no tiene de dónde
+        // heredar nada y queda automática, igual que siempre.
+        ...(cota?.modo === 'manual' ? { modo: 'manual' as const, valorManualMm: cota.valorManualMm } : {}),
       };
       reemplazosFlecha.set(flecha.id, construirElementosCota(nueva, estiloDeFlecha(flecha), unidadVisualizacion));
       nuevasCotas.push(nueva);
@@ -721,7 +754,11 @@ export function sincronizarCotas(
       Math.abs(p1.y - cota.puntoOrigen.y) > EPSILON ||
       Math.abs(p2.x - cota.puntoDestino.x) > EPSILON ||
       Math.abs(p2.y - cota.puntoDestino.y) > EPSILON;
-    const cambioEscala = JSON.stringify(cota.escalaUtilizada) !== JSON.stringify(escala);
+    // Una cota manual no tiene escala que la pueda hacer "cambiar" — nunca
+    // se recalcula por este motivo, solo por un arrastre real de su línea
+    // (ver comentario de `Cota.modo`).
+    const esManual = cota.modo === 'manual';
+    const cambioEscala = !esManual && JSON.stringify(cota.escalaUtilizada) !== JSON.stringify(escala);
 
     if (cambioGeometria || cambioEscala) {
       // Solo se remide la geometría si de verdad cambió — si lo único que
@@ -736,16 +773,21 @@ export function sincronizarCotas(
       const puntoOrigen = cambioGeometria ? p1 : cota.puntoOrigen;
       const puntoDestino = cambioGeometria ? p2 : cota.puntoDestino;
       const longitudInterna = cambioGeometria ? distancia(p1, p2) : cota.longitudInterna;
-      const actualizada: Cota = {
-        ...cota,
-        puntoOrigen,
-        puntoDestino,
-        longitudInterna,
-        escalaUtilizada: escala,
-        longitudMm: calcularLongitudMm(puntoOrigen, puntoDestino, longitudInterna, escala),
-        version: cota.version + 1,
-        fecha: new Date().toISOString(),
-      };
+      // Manual: se arrastra como cualquier otra línea (posición libre), pero
+      // `escalaUtilizada`/`longitudMm` nunca se tocan — `valorManualMm` (el
+      // único dato que se muestra) viaja intacto vía el spread `...cota`.
+      const actualizada: Cota = esManual
+        ? { ...cota, puntoOrigen, puntoDestino, longitudInterna, version: cota.version + 1, fecha: new Date().toISOString() }
+        : {
+            ...cota,
+            puntoOrigen,
+            puntoDestino,
+            longitudInterna,
+            escalaUtilizada: escala,
+            longitudMm: calcularLongitudMm(puntoOrigen, puntoDestino, longitudInterna, escala),
+            version: cota.version + 1,
+            fecha: new Date().toISOString(),
+          };
       idsAEliminar.add(cota.elementos.extension1Id);
       idsAEliminar.add(cota.elementos.extension2Id);
       const etiquetaVieja = etiquetaVivaId(flecha);
@@ -805,6 +847,46 @@ export function ajustarLongitudCotaEnEscena(
     longitudInterna,
     escalaUtilizada: escala,
     longitudMm,
+    version: cota.version + 1,
+    fecha: new Date().toISOString(),
+  };
+
+  const idsAEliminar = new Set([cota.elementos.extension1Id, cota.elementos.extension2Id]);
+  if (flechaViva) {
+    const etiquetaVieja = etiquetaVivaId(flechaViva);
+    if (etiquetaVieja) idsAEliminar.add(etiquetaVieja);
+  }
+  const reemplazos = new Map([[cota.elementos.flechaId, construirElementosCota(actualizada, estilo, unidadVisualizacion)]]);
+  const elementosFinales = elements
+    .filter((e) => !idsAEliminar.has(e.id))
+    .flatMap((e) => reemplazos.get(e.id) ?? [e]);
+
+  return { cota: actualizada, elementos: elementosFinales as ExcalidrawElement[] };
+}
+
+/**
+ * Fija el valor mostrado de una cota en modo "manual" (petición del
+ * usuario, 19/10/2026) — a diferencia de `ajustarLongitudCotaEnEscena`
+ * (modo automático), esta función NUNCA mueve la línea ni toca la escala
+ * del dibujo: el único cambio es `valorManualMm`, completamente
+ * independiente de la geometría y de cualquier otra cota. Funciona igual
+ * con el dibujo calibrado o sin calibrar — una cota manual nunca depende
+ * de eso.
+ */
+export function fijarValorManualCota(
+  elements: readonly ExcalidrawElement[],
+  cota: Cota,
+  valorNuevo: number,
+  unidadNueva: UnidadVisualizacion,
+  unidadVisualizacion: UnidadVisualizacion = 'cm'
+): { cota: Cota; elementos: ExcalidrawElement[] } {
+  const flechaViva = elements.find((e) => e.id === cota.elementos.flechaId);
+  const estilo = flechaViva ? estiloDeFlecha(flechaViva) : ESTILO_POR_DEFECTO;
+
+  const actualizada: Cota = {
+    ...cota,
+    modo: 'manual',
+    valorManualMm: convertirAMm(valorNuevo, unidadNueva),
     version: cota.version + 1,
     fecha: new Date().toISOString(),
   };
