@@ -1107,23 +1107,57 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, e
           ))}
         </div>
         <div style={{ position: 'relative' }}>
-          <button
-            type="button"
-            className={styles.editorDibujoEscalaBadge}
-            title={t.escalaTitulo}
-            onClick={() => {
-              setCalibracionTop(posicionBajoCabecera());
-              setCalibracionAbierta((v) => {
-                const siguiente = !v;
-                if (!siguiente) { borrarMarcadoresRectangulo(); setEsquinasRectangulo([]); }
-                return siguiente;
-              });
-            }}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12" y2="17" /></svg>
-            {t.escalaLabel} {escala ? (escala.tipo === 'lineal' ? t.escalaFormato(escala.factorMm) : t.escalaFormatoPerspectiva(escala.anchoMm, escala.altoMm)) : t.escalaSinCalibrar}
-          </button>
-          {calibracionAbierta && (
+          {/* Interruptor Automática/Manual fusionado con la insignia de escala
+              (reubicado aquí a petición explícita del usuario, 19/10/2026 —
+              antes vivía junto a la orientación de la herramienta Cota,
+              visible solo con esa herramienta activa; ahora siempre visible
+              arriba, mismo sitio que el estado de calibración, porque decide
+              precisamente si esa calibración aplica o no). Apagado (Manual):
+              las cotas nuevas nunca calculan por escala ni calibran nada —
+              ver `Cota.modo` en cota-modelo.ts — así que tocar la insignia no
+              abre el panel de calibración mientras esté apagado. */}
+          <div className={styles.editorDibujoEscalaBadge}>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={modoCotaActivo === 'automatica'}
+              title={modoCotaActivo === 'automatica' ? t.modoCotaAutomaticaTitulo : t.modoCotaManualTitulo}
+              onClick={() => setModoCotaActivo((m) => (m === 'automatica' ? 'manual' : 'automatica'))}
+              style={{
+                width: 28, height: 15, borderRadius: 999, border: 'none', position: 'relative',
+                background: modoCotaActivo === 'automatica' ? 'var(--verde)' : 'var(--rojo)',
+                cursor: 'pointer', flexShrink: 0, padding: 0,
+              }}
+            >
+              <span style={{
+                position: 'absolute', top: 2, left: modoCotaActivo === 'automatica' ? 15 : 2,
+                width: 11, height: 11, borderRadius: '50%', background: '#fff', transition: 'left 0.12s',
+              }} />
+            </button>
+            <button
+              type="button"
+              title={modoCotaActivo === 'automatica' ? t.escalaTitulo : t.modoCotaManualTitulo}
+              disabled={modoCotaActivo !== 'automatica'}
+              onClick={() => {
+                setCalibracionTop(posicionBajoCabecera());
+                setCalibracionAbierta((v) => {
+                  const siguiente = !v;
+                  if (!siguiente) { borrarMarcadoresRectangulo(); setEsquinasRectangulo([]); }
+                  return siguiente;
+                });
+              }}
+              style={{
+                background: 'none', border: 'none', padding: 0, display: 'flex', alignItems: 'center', gap: '0.3rem',
+                font: 'inherit', color: 'inherit', cursor: modoCotaActivo === 'automatica' ? 'pointer' : 'default',
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12" y2="17" /></svg>
+              {modoCotaActivo === 'automatica'
+                ? <>{t.escalaLabel} {escala ? (escala.tipo === 'lineal' ? t.escalaFormato(escala.factorMm) : t.escalaFormatoPerspectiva(escala.anchoMm, escala.altoMm)) : t.escalaSinCalibrar}</>
+                : t.modoCotaManual}
+            </button>
+          </div>
+          {modoCotaActivo === 'automatica' && calibracionAbierta && (
             <div className={styles.editorDibujoCalibracionPanel} style={{ top: calibracionTop }}>
               <div style={{ display: 'flex', gap: 4 }}>
                 <button
@@ -1413,34 +1447,6 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, e
                   {o.icono}
                 </button>
               ))}
-            </div>
-          )}
-
-          {/* Interruptor Automática/Manual (petición del usuario, 19/10/2026)
-              — decide el modo de las cotas que se dibujen a partir de ahora,
-              ver `Cota.modo` en cota-modelo.ts. Mismo nivel de visibilidad
-              que la orientación, junto a ella, solo con la herramienta Cota
-              activa. */}
-          {herramienta === 'cota' && (
-            <div className={styles.editorDibujoOrientacionCota}>
-              <button
-                type="button"
-                title={t.modoCotaAutomaticaTitulo}
-                className={`${styles.editorDibujoHerramientaBtn} ${modoCotaActivo === 'automatica' ? styles.editorDibujoHerramientaBtnActivo : ''}`}
-                style={{ width: 'auto', height: 28, padding: '0 8px', fontSize: 11, whiteSpace: 'nowrap' }}
-                onClick={() => setModoCotaActivo('automatica')}
-              >
-                {t.modoCotaAutomatica}
-              </button>
-              <button
-                type="button"
-                title={t.modoCotaManualTitulo}
-                className={`${styles.editorDibujoHerramientaBtn} ${modoCotaActivo === 'manual' ? styles.editorDibujoHerramientaBtnActivo : ''}`}
-                style={{ width: 'auto', height: 28, padding: '0 8px', fontSize: 11, whiteSpace: 'nowrap' }}
-                onClick={() => setModoCotaActivo('manual')}
-              >
-                {t.modoCotaManual}
-              </button>
             </div>
           )}
 
