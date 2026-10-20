@@ -212,6 +212,40 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, e
   const firmaGuardadaRef = useRef<string>(
     firmaDeElementos(((dibujo?.contenido as any)?.elements ?? []) as ExcalidrawElement[])
   );
+  // Autoguardado de borrador local (20/10/2026) — pérdida real de datos:
+  // el usuario tomó medidas en casa de una clienta, se puso a hablar con
+  // ella sin tocar la pantalla, y el cierre de sesión automático por
+  // inactividad (`MINUTOS_INACTIVIDAD` en use-auth.ts, 5 minutos) desmontó
+  // el editor sin guardar nada — el bloqueo de cierre de arriba solo
+  // protege un cierre EXPLÍCITO desde dentro del propio editor (botón
+  // "Volver" o cerrar la pestaña), nunca un logout disparado por otra
+  // parte de la app, que simplemente destruye este componente sin pasar
+  // por ningún aviso. Red de seguridad independiente del motivo real:
+  // guarda una copia local cada cierto tiempo mientras hay cambios sin
+  // guardar, para poder recuperarla al reabrir, sea cual sea la causa de
+  // que el editor se haya cerrado sin querer.
+  //
+  // La clave distingue dibujos ya guardados (por su id, nunca choca con
+  // otro) de dibujos nuevos (por cliente/carpeta/proyecto — dos dibujos
+  // nuevos sin guardar a la vez en la misma carpeta compartirían ranura y
+  // se pisarían entre sí; límite conocido, aceptable frente a no proteger
+  // nada en absoluto).
+  const claveBorrador = `borrador-dibujo:${dibujo?.id || `nuevo:${clienteId ?? ''}:${carpetaId ?? ''}:${proyectoId ?? ''}`}`;
+  type BorradorDibujo = {
+    elements: ExcalidrawElement[]; files: Record<string, unknown>; cotas: Cota[];
+    escala: EscalaDibujo; unidadVisualizacion: UnidadVisualizacion; nombre: string;
+  };
+  const [borrador, setBorrador] = useState<BorradorDibujo | null>(() => {
+    try {
+      const raw = localStorage.getItem(claveBorrador);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as Partial<BorradorDibujo>;
+      if (!Array.isArray(parsed.elements) || parsed.elements.length === 0) return null;
+      return parsed as BorradorDibujo;
+    } catch { return null; }
+  });
+  const nombreRef = useRef(nombre);
+  nombreRef.current = nombre;
   // Si "← Volver" dispara un guardado (directo o vía el selector de
   // destino), este flag le dice al `ejecutarGuardado` que, en cuanto
   // termine bien, además de marcarse como guardado hay que salir del
@@ -996,6 +1030,9 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, e
       setGuardadoOk(true);
       setTimeout(() => setGuardadoOk(false), 2500);
       firmaGuardadaRef.current = firmaDeElementos(elements);
+      // Ya está a salvo en el servidor — el borrador local deja de hacer
+      // falta; dejarlo ofrecería "recuperar" algo que ya está guardado.
+      try { localStorage.removeItem(claveBorrador); } catch { /* noop */ }
       if (volverTrasGuardarRef.current) {
         volverTrasGuardarRef.current = false;
         onVolver();
@@ -1012,12 +1049,38 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, e
     } finally {
       setGuardando(false);
     }
-  }, [dibujo, clienteId, carpetaId, proyectoId, nombre, onGuardar, onVolver, t]);
+  }, [dibujo, clienteId, carpetaId, proyectoId, nombre, onGuardar, onVolver, t, claveBorrador]);
 
   const handleGuardarClick = useCallback(() => {
     if (necesitaPreguntarDestino) setMostrarSelectorDestino(true);
     else ejecutarGuardado();
   }, [necesitaPreguntarDestino, ejecutarGuardado]);
+
+  // Carga el contenido del borrador recuperado en el lienzo ya montado —
+  // `addFiles` registra las imágenes embebidas antes de que `updateScene`
+  // pinte los elementos que las referencian por `fileId`, si no, saldrían
+  // en blanco. `firmaGuardadaRef` NO se toca: el contenido recuperado sigue
+  // sin estar guardado de verdad en el servidor, así que debe seguir
+  // bloqueando la salida/avisando como pendiente hasta que se guarde.
+  const recuperarBorrador = useCallback(() => {
+    if (!borrador) return;
+    const api = apiRef.current;
+    if (api) {
+      const archivos = Object.values(borrador.files ?? {});
+      if (archivos.length > 0) api.addFiles(archivos as Parameters<typeof api.addFiles>[0]);
+      api.updateScene({ elements: borrador.elements, captureUpdate: CaptureUpdateAction.NEVER });
+    }
+    setCotas(borrador.cotas ?? []);
+    setEscala(borrador.escala ?? null);
+    setUnidadVisualizacion(borrador.unidadVisualizacion ?? 'cm');
+    if (borrador.nombre) setNombre(borrador.nombre);
+    setBorrador(null);
+  }, [borrador]);
+
+  const descartarBorrador = useCallback(() => {
+    try { localStorage.removeItem(claveBorrador); } catch { /* noop */ }
+    setBorrador(null);
+  }, [claveBorrador]);
 
   // "← Volver" ya no sale a ciegas (14/10/2026, mismo caso real que el
   // aviso de error): si no hay nada sin guardar, sale directamente — si lo
@@ -1049,6 +1112,35 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, e
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   }, []);
+
+  // Autoguardado de borrador local, cada 20s mientras hay cambios sin
+  // guardar (ver comentario largo junto a `claveBorrador` más arriba) —
+  // independiente de `beforeunload`/"← Volver": protege también contra un
+  // cierre de sesión u otra causa que desmonte el editor sin pasar por
+  // ninguno de esos dos caminos.
+  useEffect(() => {
+    const intervalo = setInterval(() => {
+      const api = apiRef.current;
+      if (!api) return;
+      const elements = api.getSceneElements();
+      if (elements.length === 0) return;
+      if (firmaDeElementos(elements as ExcalidrawElement[]) === firmaGuardadaRef.current) return;
+      const base = {
+        elements, cotas: cotasRef.current, escala: escalaRef.current,
+        unidadVisualizacion: unidadVisualizacionRef.current, nombre: nombreRef.current,
+      };
+      try {
+        localStorage.setItem(claveBorrador, JSON.stringify({ ...base, files: api.getFiles() }));
+      } catch {
+        // Cuota de localStorage superada (probable: foto de fondo pesada) —
+        // mejor recuperar la geometría/cotas sin la imagen que no recuperar
+        // nada; si ni eso cabe, el autoguardado es best-effort y se rinde
+        // en silencio, nunca debe romper el editor.
+        try { localStorage.setItem(claveBorrador, JSON.stringify({ ...base, files: {} })); } catch { /* sin espacio ni para eso */ }
+      }
+    }, 20000);
+    return () => clearInterval(intervalo);
+  }, [claveBorrador]);
 
   // Ctrl+S / Cmd+S para guardar sin soltar el lápiz.
   useEffect(() => {
@@ -1390,6 +1482,34 @@ export function EditorDibujo({ dibujo, clienteId, carpetaId, proyectoId, plan, e
           {guardando ? t.guardando : t.guardar}
         </button>
       </header>
+
+      {borrador && (
+        <div style={{
+          flexShrink: 0, background: 'var(--azul-bg)', borderBottom: '1px solid var(--azul)',
+          padding: '0.6rem 1rem', display: 'flex', alignItems: 'center', gap: '0.6rem',
+        }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--azul)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M3 3v5h5" /><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" /></svg>
+          <p style={{ margin: 0, flex: 1, fontSize: '0.8rem', color: 'var(--azul)', fontWeight: 600 }}>
+            {t.borradorTitulo}
+          </p>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnPrimario}`}
+            style={{ flexShrink: 0, fontSize: '0.75rem', padding: '0.3rem 0.7rem' }}
+            onClick={recuperarBorrador}
+          >
+            {t.borradorRecuperar}
+          </button>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnSecundario}`}
+            style={{ flexShrink: 0, fontSize: '0.75rem', padding: '0.3rem 0.7rem' }}
+            onClick={descartarBorrador}
+          >
+            {t.borradorDescartar}
+          </button>
+        </div>
+      )}
 
       {errorGuardado && (
         <div style={{

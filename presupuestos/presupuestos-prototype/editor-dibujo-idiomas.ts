@@ -29,6 +29,9 @@ type Textos = {
   errorGuardadoRed: string;
   errorGuardadoGenerico: string;
   errorGuardadoReintentar: string;
+  borradorTitulo: string;
+  borradorRecuperar: string;
+  borradorDescartar: string;
   escalaLabel: string;
   escalaSinCalibrar: string;
   escalaFormato: (factorMm: number) => string;
@@ -86,6 +89,9 @@ export const TEXTOS: Record<Idioma, Textos> = {
     errorGuardadoRed: 'No se ha podido conectar. El dibujo NO se ha guardado — comprueba tu conexión y vuelve a intentarlo antes de salir.',
     errorGuardadoGenerico: 'No se ha podido guardar el dibujo. Vuelve a intentarlo.',
     errorGuardadoReintentar: 'Reintentar',
+    borradorTitulo: 'Se encontró un dibujo sin guardar de una sesión anterior (p. ej. por un cierre de sesión mientras trabajabas). ¿Quieres recuperarlo?',
+    borradorRecuperar: 'Recuperar',
+    borradorDescartar: 'Descartar',
     escalaLabel: 'Escala del dibujo:',
     escalaSinCalibrar: 'Sin calibrar (toca para calibrar)',
     escalaFormato: (factorMm) => `1 u = ${factorMm.toFixed(3)} mm`,
@@ -148,6 +154,9 @@ export const TEXTOS: Record<Idioma, Textos> = {
     errorGuardadoRed: 'Could not connect. The drawing has NOT been saved — check your connection and try again before leaving.',
     errorGuardadoGenerico: 'Could not save the drawing. Please try again.',
     errorGuardadoReintentar: 'Retry',
+    borradorTitulo: 'An unsaved drawing from a previous session was found (e.g. a session timeout while you were working). Do you want to recover it?',
+    borradorRecuperar: 'Recover',
+    borradorDescartar: 'Discard',
     escalaLabel: 'Drawing scale:',
     escalaSinCalibrar: 'Not calibrated (tap to calibrate)',
     escalaFormato: (factorMm) => `1 u = ${factorMm.toFixed(3)} mm`,
@@ -210,6 +219,9 @@ export const TEXTOS: Record<Idioma, Textos> = {
     errorGuardadoRed: 'Impossibile connettersi. Il disegno NON è stato salvato — controlla la connessione e riprova prima di uscire.',
     errorGuardadoGenerico: 'Impossibile salvare il disegno. Riprova.',
     errorGuardadoReintentar: 'Riprova',
+    borradorTitulo: 'È stato trovato un disegno non salvato di una sessione precedente (ad es. per una disconnessione automatica durante il lavoro). Vuoi recuperarlo?',
+    borradorRecuperar: 'Recupera',
+    borradorDescartar: 'Scarta',
     escalaLabel: 'Scala del disegno:',
     escalaSinCalibrar: 'Non calibrato (tocca per calibrare)',
     escalaFormato: (factorMm) => `1 u = ${factorMm.toFixed(3)} mm`,
