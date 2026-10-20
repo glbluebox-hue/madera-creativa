@@ -38,6 +38,14 @@ function limpiarNodoTexto(nodo: Node): void {
     if (hijo.nodeType !== Node.ELEMENT_NODE) { nodo.removeChild(hijo); continue; }
     const el = hijo as HTMLElement;
     if (!ETIQUETAS_TEXTO_PERMITIDAS.has(el.tagName)) {
+      // Bug real, 20/10/2026: esto solo desenvolvía UN nivel — un pegado
+      // típico de Word/una web (`<div><p><span style="...">texto</span></p></div>`)
+      // dejaba el `<p>`/`<span>` internos sin tocar, porque el bucle ya
+      // había capturado su instantánea de `childNodes` antes de promoverlos.
+      // Limpiar el subárbol de `el` ANTES de promover sus hijos asegura que
+      // lo que se promueve ya está completamente saneado, sea cual sea la
+      // profundidad de anidación.
+      limpiarNodoTexto(el);
       while (el.firstChild) nodo.insertBefore(el.firstChild, el);
       nodo.removeChild(el);
       continue;
@@ -47,7 +55,7 @@ function limpiarNodoTexto(nodo: Node): void {
   }
 }
 
-function sanitizarHtmlTexto(html: string): string {
+export function sanitizarHtmlTexto(html: string): string {
   const contenedor = document.createElement('div');
   contenedor.innerHTML = html;
   limpiarNodoTexto(contenedor);
@@ -106,6 +114,25 @@ function RenderTexto({ elemento, editando, onCambiarContenido, onSalirEdicion }:
         if (!ref.current) return;
         onCambiarContenido({ texto: ref.current.innerText, textoHtml: sanitizarHtmlTexto(ref.current.innerHTML) });
         onSalirEdicion();
+      }}
+      // Bug real, 20/10/2026 ("pego un texto de fuera y luego, al editar una
+      // palabra y borrarla, me borra todo el cuadro"): pegar texto externo
+      // (Word, una web, un email) inserta su HTML tal cual en el DOM en
+      // vivo sin pasar por `sanitizarHtmlTexto` — ese saneado solo corría
+      // al guardar (`onBlur`, arriba). Mientras se sigue editando, el nodo
+      // real puede quedar con estructura profundamente anidada (`<p>`,
+      // `<span style=...>`, comentarios de Word, etc.) que el propio
+      // `contenteditable` del navegador puede gestionar mal al seleccionar/
+      // borrar una palabra suelta dentro de esa estructura — un borrado que
+      // debería afectar solo a la palabra puede acabar colapsando un bloque
+      // entero. Arreglo: sanear el contenido pegado ANTES de insertarlo,
+      // con la misma lista blanca que ya se usa al guardar, así el DOM en
+      // vivo nunca llega a tener esa estructura problemática.
+      onPaste={(e) => {
+        e.preventDefault();
+        const html = e.clipboardData.getData('text/html');
+        const htmlSeguro = html ? sanitizarHtmlTexto(html) : escaparHtmlPlano(e.clipboardData.getData('text/plain'));
+        document.execCommand('insertHTML', false, htmlSeguro);
       }}
       style={{
         width: '100%', height: '100%', outline: 'none', cursor: editando ? 'text' : 'inherit',
