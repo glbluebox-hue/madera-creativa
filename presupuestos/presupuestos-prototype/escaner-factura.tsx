@@ -45,7 +45,7 @@ export type EscanerFacturaProps = {
    * `ficha-cliente.tsx`) decide si completar la ficha con ellos, vía
    * `autoCrearProveedorDeFactura` (`proveedor-utils.ts`).
    */
-  onGuardar: (f: Factura, datosProveedorDetectados?: DatosProveedorDetectados) => void;
+  onGuardar: (f: Factura, datosProveedorDetectados?: DatosProveedorDetectados) => void | Promise<void>;
   /** Callback al cerrar sin guardar. */
   onCerrar: () => void;
   /** Factura existente para editar (si se pasa, el modal abre en modo edición). */
@@ -220,6 +220,19 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
   const tienePlanIA = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
   const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
   const esEdicion = !!facturaEditar;
+  /**
+   * Id fijo de esta factura NUEVA, generado una sola vez al abrir el
+   * formulario (bug real reportado por el usuario, 22/10/2026: antes se
+   * generaba un `uid()` nuevo en cada llamada a `construirFactura()`, así
+   * que si el guardado tardaba y el usuario pulsaba "Guardar factura" otra
+   * vez, cada click creaba una factura DISTINTA — duplicados reales en la
+   * base de datos, no un reintento del mismo guardado). Con un id fijo,
+   * reintentar siempre apunta al mismo documento (PUT idempotente).
+   */
+  const [idFacturaNueva] = useState(() => uid());
+  /** Mientras hay un guardado real en curso — ver el comentario de `idFacturaNueva`: evita que varios clicks lancen varios guardados a la vez. */
+  const [guardando, setGuardando] = useState(false);
+  const [errorGuardado, setErrorGuardado] = useState<string | null>(null);
   const [paginas, setPaginas] = useState<Pagina[]>(() => {
     if (facturaEditar?.paginas?.length) {
       return facturaEditar.paginas.map((p) => ({ id: uid(), dataUrl: p.url, nombre: p.tipo === 'pdf' ? 'PDF' : 'Página', tipo: p.tipo }));
@@ -695,8 +708,9 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
     // tipos, para los lectores nuevos que ya saben distinguirlos.
     const esSoloPdf = paginas.length > 0 && paginas.every(p => p.tipo === 'pdf');
     return {
-      // En edición conservar id y fecha de creación originales
-      id: facturaEditar?.id ?? uid(),
+      // En edición conservar id y fecha de creación originales; en creación,
+      // el id fijado una vez al abrir el formulario (ver `idFacturaNueva`).
+      id: facturaEditar?.id ?? idFacturaNueva,
       tipo,
       fecha,
       concepto,
@@ -775,6 +789,7 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
 
   /** `forzar: true` = el usuario ya vio el aviso de duplicado y quiere guardar igual. */
   const guardar = async (forzar = false) => {
+    if (guardando) return; // ya hay un guardado real en curso, ver `idFacturaNueva`
     const f = construirFactura();
     if (!forzar) {
       setComprobandoDuplicado(true);
@@ -800,7 +815,17 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
       tipo === 'gasto' && (direccionDetectada || codigoPostalDetectado || cifNif)
         ? { direccion: direccionDetectada, codigoPostal: codigoPostalDetectado, cifNif: cifNif.trim() }
         : undefined;
-    onGuardar(f, datosProveedorDetectados);
+    setGuardando(true);
+    setErrorGuardado(null);
+    try {
+      await onGuardar(f, datosProveedorDetectados);
+      // Sin `setGuardando(false)` aquí a propósito: en el camino feliz,
+      // quien llama cierra este modal (`onCerrar`/desmontaje) en cuanto
+      // `onGuardar` resuelve — no hay nada que reactivar.
+    } catch {
+      setGuardando(false);
+      setErrorGuardado('No se pudo guardar la factura. Comprueba tu conexión e inténtalo de nuevo.');
+    }
   };
 
   const paginaActual = paginas[paginaVista];
@@ -1444,24 +1469,28 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
                 <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.78rem' }} onClick={() => setDuplicado(null)}>
                   Revisar, no guardar
                 </button>
-                <button className={`${styles.btn} ${styles.btnPeligro}`} style={{ fontSize: '0.78rem' }} onClick={() => guardar(true)}>
-                  Guardar de todas formas
+                <button className={`${styles.btn} ${styles.btnPeligro}`} style={{ fontSize: '0.78rem' }} disabled={guardando} onClick={() => guardar(true)}>
+                  {guardando ? 'Guardando…' : 'Guardar de todas formas'}
                 </button>
               </div>
             </div>
           )}
 
+          {errorGuardado && (
+            <div className={styles.loginError}>{errorGuardado}</div>
+          )}
+
           <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
-            <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={onCerrar} style={{ flex: 1, justifyContent: 'center' }}>
+            <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={onCerrar} disabled={guardando} style={{ flex: 1, justifyContent: 'center' }}>
               Cancelar
             </button>
             <button
               className={`${styles.btn} ${styles.btnPrimario}`}
               style={{ flex: 2, justifyContent: 'center' }}
-              disabled={!importe || parseFloat(String(importe).replace(',', '.')) <= 0 || comprobandoDuplicado || (naturaleza === 'rectificativa' && !facturaOriginalId && !numeroFacturaOriginal.trim())}
+              disabled={!importe || parseFloat(String(importe).replace(',', '.')) <= 0 || comprobandoDuplicado || guardando || (naturaleza === 'rectificativa' && !facturaOriginalId && !numeroFacturaOriginal.trim())}
               onClick={() => guardar(false)}
             >
-              {comprobandoDuplicado ? 'Comprobando…' : esEdicion ? 'Guardar cambios' : 'Guardar factura'}
+              {guardando ? 'Guardando…' : comprobandoDuplicado ? 'Comprobando…' : esEdicion ? 'Guardar cambios' : 'Guardar factura'}
             </button>
           </div>
         </div>

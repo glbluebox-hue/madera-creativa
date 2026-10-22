@@ -563,7 +563,14 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
           clientes={clientes}
           proveedores={proveedores}
           proyectoFijo={{ id: proyecto.id, clienteId: cliente.id, nombre: proyecto.proyecto || cliente.nombre }}
-          onGuardar={(f, datosProveedorDetectados) => { guardarFacturaConProveedor({ ...f, clienteId: cliente.id, proyectoId: proyecto.id, tipo: 'gasto' }, datosProveedorDetectados); setEscanerAbierto(false); }}
+          onGuardar={async (f, datosProveedorDetectados) => {
+            // Async y esperando el guardado real (bug real, 22/10/2026): antes
+            // cerraba el modal al instante sin esperar, así que un guardado
+            // que tardaba o fallaba daba igual — el modal ya se había ido, sin
+            // forma de que el usuario supiera si de verdad se guardó.
+            await guardarFacturaConProveedor({ ...f, clienteId: cliente.id, proyectoId: proyecto.id, tipo: 'gasto' }, datosProveedorDetectados);
+            setEscanerAbierto(false);
+          }}
           onCerrar={() => setEscanerAbierto(false)}
           plan={plan}
           esAdmin={esAdmin}
