@@ -12,6 +12,7 @@ import { CalendarioDia } from './calendario-dia.js';
 import { CalendarioCrearModal } from './calendario-crear-modal.js';
 import { CalendarioDetalleEventoModal } from './calendario-detalle-evento-modal.js';
 import { CalendarioDetalleNotaModal } from './calendario-detalle-nota-modal.js';
+import { CalendarioDetalleTareaModal } from './calendario-detalle-tarea-modal.js';
 import { generarId } from './mock.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
@@ -44,6 +45,7 @@ export function CalendarioVista({ proyectos, onAbrirElemento }: {
   const [fechaCreacion, setFechaCreacion] = useState<string | null>(null);
   const [elementoDetalle, setElementoDetalle] = useState<ElementoCalendario | null>(null);
   const [notaDetalleId, setNotaDetalleId] = useState<string | null>(null);
+  const [tareaDetalle, setTareaDetalle] = useState<ElementoCalendario | null>(null);
   const hoy = hoyISO();
   const rango = useMemo(() => rangoParaVista(cal.vista, cal.fechaRef), [cal.vista, cal.fechaRef]);
 
@@ -52,12 +54,18 @@ export function CalendarioVista({ proyectos, onAbrirElemento }: {
    * origen" — se abre aquí mismo. Una nota sí tiene su propia sección
    * (Notas), pero el usuario pidió explícitamente poder editar/borrar/
    * cambiar la prioridad sin salir del Calendario, así que también se
-   * abre aquí (30/08/2026). El resto (proyecto/tarea/factura/cliente)
-   * navega, delegado al contenedor de la app.
+   * abre aquí (30/08/2026). Una tarea, igual (23/10/2026, bug real: antes
+   * caía en la delegación genérica de `onAbrirElemento`, y como siempre
+   * tiene `proyectoId`, `abrirElementoCalendario` en
+   * `presupuestos-prototype.tsx` la resolvía como "ir al proyecto" antes
+   * de poder distinguir el tipo — el usuario nunca veía el texto de la
+   * tarea). El resto (proyecto/factura/cliente) navega, delegado al
+   * contenedor de la app.
    */
   const abrirElemento = (elemento: ElementoCalendario) => {
     if (elemento.tipo === 'evento' || elemento.tipo === 'recordatorio') { setElementoDetalle(elemento); return; }
     if (elemento.tipo === 'nota') { setNotaDetalleId(elemento.origenId); return; }
+    if (elemento.tipo === 'tarea') { setTareaDetalle(elemento); return; }
     onAbrirElemento(elemento);
   };
 
@@ -200,6 +208,15 @@ export function CalendarioVista({ proyectos, onAbrirElemento }: {
           notaId={notaDetalleId}
           onCambio={cal.recargar}
           onCerrar={() => setNotaDetalleId(null)}
+        />
+      )}
+
+      {tareaDetalle && (
+        <CalendarioDetalleTareaModal
+          elemento={tareaDetalle}
+          onCambio={cal.recargar}
+          onCerrar={() => setTareaDetalle(null)}
+          onIrAProyecto={() => { const el = tareaDetalle; setTareaDetalle(null); onAbrirElemento(el); }}
         />
       )}
     </div>
