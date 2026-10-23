@@ -84,13 +84,22 @@ export function CalendarioMes({ desde, hasta, hoy, mesActual, elementos, onAbrir
           const items = porDia.get(fechaIso) ?? [];
           const visibles = items.slice(0, MAX_VISIBLES_POR_DIA);
           const restantes = items.length - visibles.length;
+          // Si el día ya tiene algo apuntado, tocar la celda debe ENSEÑARLO
+          // (vista Día, lista clara con texto completo), nunca saltar
+          // directo a "¿Qué quieres añadir?" — bug real reportado por el
+          // usuario (23/10/2026): en esta vista los elementos son puntos de
+          // color diminutos (`compacto`), fáciles de confundir con el de un
+          // vecino (p. ej. un cliente con fecha ese mismo día) si se intenta
+          // tocar el chip exacto en vez del día. Un día vacío sigue yendo
+          // directo a crear, porque no hay nada que mostrar.
+          const alTocarCelda = () => ((esMovil || items.length > 0) ? onVerDia(fechaIso) : onCrearEnFecha(fechaIso));
           return (
             <div
               key={fechaIso}
-              onClick={() => (esMovil ? onVerDia(fechaIso) : onCrearEnFecha(fechaIso))}
+              onClick={alTocarCelda}
               role="button"
               tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter') (esMovil ? onVerDia(fechaIso) : onCrearEnFecha(fechaIso)); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') alTocarCelda(); }}
               className={styles.calendarioDiaCelda}
               style={{
                 minHeight: 92, borderRadius: 8, padding: '0.35rem',

@@ -53,13 +53,16 @@ export function CalendarioSemana({ desde, hoy, elementos, onAbrirElemento, onVer
         const esHoy = fechaIso === hoy;
         const dia = Number(fechaIso.split('-')[2]);
         const items = porDia.get(fechaIso) ?? [];
+        // Mismo criterio que calendario-mes.tsx: un día con contenido debe
+        // mostrar la vista Día al tocarlo, no saltar directo a crear.
+        const alTocarCelda = () => ((esMovil || items.length > 0) ? onVerDia(fechaIso) : onCrearEnFecha(fechaIso));
         return (
           <div
             key={fechaIso}
-            onClick={() => (esMovil ? onVerDia(fechaIso) : onCrearEnFecha(fechaIso))}
+            onClick={alTocarCelda}
             role="button"
             tabIndex={0}
-            onKeyDown={(e) => { if (e.key === 'Enter') (esMovil ? onVerDia(fechaIso) : onCrearEnFecha(fechaIso)); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') alTocarCelda(); }}
             className={styles.calendarioSemanaCelda}
             style={{
               minHeight: 220, borderRadius: 8, padding: '0.5rem',
