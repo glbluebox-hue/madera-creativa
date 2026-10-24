@@ -17,7 +17,7 @@ type ProyectoParaSelector = { id: string; proyecto: string };
  * `onCrearEvento`) — reutiliza exactamente los mismos flujos de guardado
  * que Notas/Tareas del proyecto, nunca una ruta paralela.
  */
-export function CalendarioCrearModal({ fechaIso, horaInicial, proyectos, onGuardarNota, onCrearTarea, onCrearEvento, onCerrar }: {
+export function CalendarioCrearModal({ fechaIso, horaInicial, horaFinInicial, proyectos, onGuardarNota, onCrearTarea, onCrearEvento, onCerrar }: {
   fechaIso: string;
   /**
    * Hora ya elegida al tocar una franja de la rejilla horaria de la vista
@@ -26,6 +26,8 @@ export function CalendarioCrearModal({ fechaIso, horaInicial, proyectos, onGuard
    * tipo, el pre-rellenado es solo una comodidad de partida.
    */
   horaInicial?: string;
+  /** Hora de fin ya elegida con el flujo de dos toques de `CalendarioDia` (24/10/2026) — misma comodidad de partida que `horaInicial`, nunca obligatoria. */
+  horaFinInicial?: string;
   proyectos: ProyectoParaSelector[];
   onGuardarNota: (contenido: string, fecha: string, prioridad: PrioridadNota) => Promise<void>;
   /** El propio contenedor se encarga de leer las tareas actuales del proyecto (necesita el proyecto completo, no solo este resumen) antes de guardar la lista con la nueva añadida. */
@@ -42,7 +44,7 @@ export function CalendarioCrearModal({ fechaIso, horaInicial, proyectos, onGuard
   const [proyectoId, setProyectoId] = useState('');
   const [hora, setHora] = useState(horaInicial ?? '');
   /** Fin de la franja horaria (opcional) — solo para calcular `duracionMin`, nunca obligatorio. */
-  const [horaFin, setHoraFin] = useState('');
+  const [horaFin, setHoraFin] = useState(horaFinInicial ?? '');
   const [todoElDia, setTodoElDia] = useState(!horaInicial);
   const [prioridad, setPrioridad] = useState<PrioridadNota>('media');
   const [guardando, setGuardando] = useState(false);
