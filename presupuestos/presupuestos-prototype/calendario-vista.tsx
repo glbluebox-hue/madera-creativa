@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
 import type { ProyectoResumen } from './api.js';
 import type { NotaMC, PrioridadNota } from './notas-modelo.js';
+import type { Proveedor } from './types.js';
+import type { PlanAcceso } from './planes.js';
 import { useCalendario } from './use-calendario.js';
 import {
   TIPOS_CALENDARIO, CONFIG_TIPO_CALENDARIO, etiquetaCabecera, desplazar, desdeFechaISO, hoyISO, aFechaISO, rangoParaVista,
@@ -13,6 +15,7 @@ import { CalendarioCrearModal } from './calendario-crear-modal.js';
 import { CalendarioDetalleEventoModal } from './calendario-detalle-evento-modal.js';
 import { CalendarioDetalleNotaModal } from './calendario-detalle-nota-modal.js';
 import { CalendarioDetalleTareaModal } from './calendario-detalle-tarea-modal.js';
+import { CalendarioDetalleFacturaModal } from './calendario-detalle-factura-modal.js';
 import { generarId } from './mock.js';
 import * as api from './api.js';
 import styles from './styles.module.css';
@@ -37,9 +40,15 @@ const VISTAS: { id: VistaCalendario; etiqueta: string }[] = [
  * el sitio natural donde un día se enchufaría una sugerencia de la IA sin
  * rehacer nada de lo ya construido).
  */
-export function CalendarioVista({ proyectos, onAbrirElemento }: {
+export function CalendarioVista({ proyectos, onAbrirElemento, clientes, proveedores = [], crearProveedor, actualizarProveedor, plan, esAdmin }: {
   proyectos: ProyectoResumen[];
   onAbrirElemento: (elemento: ElementoCalendario) => void;
+  clientes: { id: string; nombre: string }[];
+  proveedores?: Proveedor[];
+  crearProveedor?: (p: Omit<Proveedor, 'id' | 'creado'>) => Proveedor;
+  actualizarProveedor?: (p: Proveedor) => void;
+  plan?: PlanAcceso;
+  esAdmin?: boolean;
 }) {
   const cal = useCalendario();
   const [fechaCreacion, setFechaCreacion] = useState<string | null>(null);
@@ -50,6 +59,7 @@ export function CalendarioVista({ proyectos, onAbrirElemento }: {
   const [elementoDetalle, setElementoDetalle] = useState<ElementoCalendario | null>(null);
   const [notaDetalleId, setNotaDetalleId] = useState<string | null>(null);
   const [tareaDetalle, setTareaDetalle] = useState<ElementoCalendario | null>(null);
+  const [facturaDetalleId, setFacturaDetalleId] = useState<string | null>(null);
   const hoy = hoyISO();
   const rango = useMemo(() => rangoParaVista(cal.vista, cal.fechaRef), [cal.vista, cal.fechaRef]);
 
@@ -63,13 +73,18 @@ export function CalendarioVista({ proyectos, onAbrirElemento }: {
    * tiene `proyectoId`, `abrirElementoCalendario` en
    * `presupuestos-prototype.tsx` la resolvía como "ir al proyecto" antes
    * de poder distinguir el tipo — el usuario nunca veía el texto de la
-   * tarea). El resto (proyecto/factura/cliente) navega, delegado al
+   * tarea). Una factura, igual (24/10/2026, mismo bug real: antes caía en
+   * la delegación genérica de `onAbrirElemento`, que al no distinguir
+   * tipos abría siempre la sección Facturas genérica — o el proyecto
+   * vinculado, si la factura tenía `proyectoId` — en vez de la factura
+   * concreta pulsada). El resto (proyecto/cliente) navega, delegado al
    * contenedor de la app.
    */
   const abrirElemento = (elemento: ElementoCalendario) => {
     if (elemento.tipo === 'evento' || elemento.tipo === 'recordatorio') { setElementoDetalle(elemento); return; }
     if (elemento.tipo === 'nota') { setNotaDetalleId(elemento.origenId); return; }
     if (elemento.tipo === 'tarea') { setTareaDetalle(elemento); return; }
+    if (elemento.tipo === 'factura') { setFacturaDetalleId(elemento.origenId); return; }
     onAbrirElemento(elemento);
   };
 
@@ -225,6 +240,20 @@ export function CalendarioVista({ proyectos, onAbrirElemento }: {
           onCambio={cal.recargar}
           onCerrar={() => setTareaDetalle(null)}
           onIrAProyecto={() => { const el = tareaDetalle; setTareaDetalle(null); onAbrirElemento(el); }}
+        />
+      )}
+
+      {facturaDetalleId && (
+        <CalendarioDetalleFacturaModal
+          facturaId={facturaDetalleId}
+          clientes={clientes}
+          proveedores={proveedores}
+          crearProveedor={crearProveedor}
+          actualizarProveedor={actualizarProveedor}
+          plan={plan}
+          esAdmin={esAdmin}
+          onCambio={cal.recargar}
+          onCerrar={() => setFacturaDetalleId(null)}
         />
       )}
     </div>

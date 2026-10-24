@@ -328,18 +328,16 @@ export function PresupuestosPrototype() {
 
   /**
    * "Acceder al elemento de origen" desde el Calendario (30/08/2026) — cada
-   * tipo navega a donde de verdad vive ese dato; evento/recordatorio no
-   * llega aquí (el propio `CalendarioVista` los abre en su modal, al no
-   * tener otra sección propia). Proyecto/tarea/factura con `proyectoId`
-   * abren directamente esa ficha (mismo camino que `abrirProyecto`); una
-   * nota o factura sin proyecto asociado, o un cliente recién añadido, solo
-   * cambian de sección — profundizar más ahí exigiría que Notas/Facturas
-   * supieran abrir directamente un elemento concreto, que hoy no hacen.
+   * tipo navega a donde de verdad vive ese dato; evento/recordatorio/nota/
+   * tarea/factura no llegan aquí (el propio `CalendarioVista` los abre en
+   * su propio modal, 24/10/2026 para factura — ver `abrirElemento` ahí).
+   * Proyecto con `proyectoId` (p.ej. una tarea que el usuario decide "ir al
+   * proyecto" desde su modal) abre directamente esa ficha (mismo camino que
+   * `abrirProyecto`); un cliente recién añadido solo cambia de sección.
    */
   const abrirElementoCalendario = (elemento: ElementoCalendario) => {
     if (elemento.proyectoId) { cambiarSeccion('clientes'); abrirProyecto(elemento.proyectoId); return; }
     if (elemento.tipo === 'nota') { cambiarSeccion('notas'); return; }
-    if (elemento.tipo === 'factura') { cambiarSeccion('facturas'); return; }
     if (elemento.tipo === 'cliente') { cambiarSeccion('clientes'); return; }
   };
 
@@ -702,7 +700,18 @@ export function PresupuestosPrototype() {
         {seccion === 'notas' && <NotasVista clientes={nombresClientes} />}
 
         {/* ── SECCIÓN CALENDARIO (30/08/2026) ── */}
-        {seccion === 'calendario' && <CalendarioVista proyectos={proyectos} onAbrirElemento={abrirElementoCalendario} />}
+        {seccion === 'calendario' && (
+          <CalendarioVista
+            proyectos={proyectos}
+            onAbrirElemento={abrirElementoCalendario}
+            clientes={nombresClientes}
+            proveedores={proveedores}
+            crearProveedor={crearProveedor}
+            actualizarProveedor={actualizarProveedor}
+            plan={sesion?.plan}
+            esAdmin={sesion?.esAdmin}
+          />
+        )}
 
         {/* ── SECCIÓN CÓDIGOS QR ── */}
         {seccion === 'codigosQR' && <CodigosQRVista />}
