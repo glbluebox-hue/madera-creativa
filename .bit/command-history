@@ -1768,3 +1768,11 @@
 2026-10-24T18:47:43.866Z 19472 test madera-creativa.presupuestos/presupuestos-prototype, failed
 2026-10-24T18:47:45.727Z 31212 check-types madera-creativa.presupuestos/presupuestos-prototype, started
 2026-10-24T18:48:15.487Z 31212 check-types madera-creativa.presupuestos/presupuestos-prototype, succeeded
+2026-10-24T18:58:22.140Z 31672 test madera-creativa.presupuestos/presupuestos-prototype, started
+2026-10-24T18:58:44.910Z 31672 test madera-creativa.presupuestos/presupuestos-prototype, failed
+2026-10-24T18:58:46.729Z 22748 check-types madera-creativa.presupuestos/presupuestos-prototype, started
+2026-10-24T18:59:15.266Z 22748 check-types madera-creativa.presupuestos/presupuestos-prototype, succeeded
+2026-10-24T18:59:54.318Z 24348 test madera-creativa.presupuestos/presupuestos-prototype, started
+2026-10-24T19:00:12.787Z 24348 test madera-creativa.presupuestos/presupuestos-prototype, failed
+2026-10-24T19:00:14.633Z 26464 check-types madera-creativa.presupuestos/presupuestos-prototype, started
+2026-10-24T19:00:43.656Z 26464 check-types madera-creativa.presupuestos/presupuestos-prototype, succeeded

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import type { ProyectoResumen } from './api.js';
-import type { NotaMC } from './notas-modelo.js';
+import type { NotaMC, PrioridadNota } from './notas-modelo.js';
 import { useCalendario } from './use-calendario.js';
 import {
   TIPOS_CALENDARIO, CONFIG_TIPO_CALENDARIO, etiquetaCabecera, desplazar, desdeFechaISO, hoyISO, aFechaISO, rangoParaVista,
@@ -81,10 +81,10 @@ export function CalendarioVista({ proyectos, onAbrirElemento }: {
   };
   const filtroActivo: TipoElementoCalendario | 'todos' = !cal.tipos ? 'todos' : (cal.tipos.length === 1 ? cal.tipos[0] : 'todos');
 
-  const guardarNotaRapida = async (contenido: string, fecha: string) => {
+  const guardarNotaRapida = async (contenido: string, fecha: string, prioridad: PrioridadNota) => {
     const ahora = new Date().toISOString();
     const nueva: NotaMC = {
-      id: generarId(), titulo: '', contenido, tipo: 'nota', items: [], prioridad: 'media', estado: 'abierta',
+      id: generarId(), titulo: '', contenido, tipo: 'nota', items: [], prioridad, estado: 'abierta',
       clienteId: '', proyectoId: '', etiquetas: [], origen: 'texto', fecha,
       creado: ahora, actualizado: ahora,
     };
