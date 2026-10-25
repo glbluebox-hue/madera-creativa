@@ -1,7 +1,8 @@
-import { useState, useLayoutEffect, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import * as api from './api.js';
 import type { PresupuestoMC } from './presupuestos-modelo.js';
+import type { Seguimiento } from './api.js';
 import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
 import { CandadoPlan } from './candado-plan.js';
 import { SolicitudSeguimiento } from './solicitud-seguimiento.js';
@@ -27,31 +28,50 @@ export type SolicitudSeguimientoProyectoProps = {
  * "Pedir reseña" (un enlace por cliente), el Seguimiento es por
  * PRESUPUESTO concreto: este componente resuelve primero a cuál de los
  * presupuestos del proyecto se refiere — si solo hay uno, pasa
- * directamente a `SolicitudSeguimiento` (ya con `autoAbrir`, sin pedir un
- * segundo clic); si hay varios, deja elegir cuál antes.
+ * directamente a `SolicitudSeguimiento`; si hay varios, deja elegir cuál.
+ *
+ * Carga el estado de cada presupuesto POR ADELANTADO (no solo al pulsar) —
+ * petición explícita del usuario, 25/10/2026: antes solo se podía ver si el
+ * cliente ya había contestado desde la sección global "Presupuestos"; aquí
+ * el botón se quedaba siempre en "Pedir seguimiento" aunque ya hubiera
+ * respuesta. Ahora, igual que en esa lista, se convierte en "Ver
+ * seguimiento" (con el punto ocre) en cuanto hay alguna respuesta.
  */
 export function SolicitudSeguimientoProyecto({ proyectoId, clienteId, plan, esAdmin }: SolicitudSeguimientoProyectoProps) {
   const tienePlan = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
   const [abierto, setAbierto] = useState(false);
-  const [cargando, setCargando] = useState(false);
+  const [cargando, setCargando] = useState(true);
   const [presupuestos, setPresupuestos] = useState<PresupuestoMC[] | null>(null);
+  const [estados, setEstados] = useState<Record<string, Seguimiento | null>>({});
   const [elegidoId, setElegidoId] = useState<string | null>(null);
   // Mismo bug y misma solución que `solicitud-seguimiento.tsx` — ver el comentario allí.
   const [montadoEnNavegador, setMontadoEnNavegador] = useState(false);
   useLayoutEffect(() => { setMontadoEnNavegador(true); }, []);
 
-  const abrir = useCallback(() => {
-    setAbierto(true);
-    if (presupuestos) return;
+  useEffect(() => {
+    if (!tienePlan) { setCargando(false); return; }
+    let cancelado = false;
     setCargando(true);
     api.obtenerPresupuestosDeProyecto(proyectoId)
-      .then((lista) => {
+      .then(async (lista) => {
+        if (cancelado) return;
         setPresupuestos(lista);
-        if (lista.length === 1) setElegidoId(lista[0].id);
+        const pares = await Promise.all(lista.map(async (p): Promise<[string, Seguimiento | null]> => {
+          try { return [p.id, await api.obtenerSeguimiento(p.id)]; }
+          catch { return [p.id, null]; }
+        }));
+        if (!cancelado) setEstados(Object.fromEntries(pares));
       })
-      .catch(() => setPresupuestos([]))
-      .finally(() => setCargando(false));
-  }, [proyectoId, presupuestos]);
+      .catch(() => { if (!cancelado) setPresupuestos([]); })
+      .finally(() => { if (!cancelado) setCargando(false); });
+    return () => { cancelado = true; };
+  }, [proyectoId, tienePlan]);
+
+  const abrir = () => {
+    if (!presupuestos || presupuestos.length === 0) return;
+    if (presupuestos.length === 1) { setElegidoId(presupuestos[0].id); return; }
+    setAbierto(true);
+  };
 
   if (!tienePlan) {
     return (
@@ -61,14 +81,30 @@ export function SolicitudSeguimientoProyecto({ proyectoId, clienteId, plan, esAd
     );
   }
 
+  // Una vez elegido (o resuelto automáticamente porque solo había uno), el
+  // propio `SolicitudSeguimiento` manda: es quien de verdad sabe el estado
+  // de ESE presupuesto en concreto y abre ya su panel completo.
   if (elegidoId) {
     return <SolicitudSeguimiento presupuestoId={elegidoId} clienteId={clienteId} plan={plan} esAdmin={esAdmin} autoAbrir />;
   }
 
+  const valores = Object.values(estados);
+  const hayRespuesta = valores.some((s) => s?.respuesta);
+  const hayAlguno = valores.some((s) => !!s);
+  const etiquetaBoton = hayRespuesta ? 'Ver seguimiento' : hayAlguno ? 'Seguimiento' : 'Pedir seguimiento';
+
   return (
     <>
-      <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={abrir} disabled={cargando} title="Pedir la opinión del cliente sobre uno de sus presupuestos">
-        {IconoGlobo} Pedir seguimiento
+      <button
+        className={`${styles.btn} ${styles.btnSecundario}`}
+        onClick={abrir}
+        disabled={cargando || (presupuestos !== null && presupuestos.length === 0)}
+        title={presupuestos?.length === 0 ? 'Este proyecto todavía no tiene ningún presupuesto' : 'Pedir la opinión del cliente sobre uno de sus presupuestos'}
+      >
+        {IconoGlobo} {etiquetaBoton}
+        {hayRespuesta && (
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--ocre)', display: 'inline-block', marginLeft: '0.1rem' }} />
+        )}
       </button>
 
       {abierto && montadoEnNavegador && createPortal(
@@ -80,27 +116,26 @@ export function SolicitudSeguimientoProyecto({ proyectoId, clienteId, plan, esAd
           >
             <p style={{ margin: 0, fontWeight: 700, fontSize: '0.95rem', textAlign: 'center' }}>¿Sobre qué presupuesto?</p>
 
-            {cargando && <p style={{ textAlign: 'center', fontSize: '0.85rem', color: 'var(--topo-claro)' }}>Cargando…</p>}
-
-            {presupuestos && presupuestos.length === 0 && (
-              <p style={{ textAlign: 'center', fontSize: '0.85rem', color: 'var(--topo-claro)' }}>
-                Este proyecto todavía no tiene ningún presupuesto.
-              </p>
-            )}
-
             {presupuestos && presupuestos.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                {presupuestos.map((p) => (
-                  <button
-                    key={p.id}
-                    className={`${styles.btn} ${styles.btnSecundario}`}
-                    onClick={() => setElegidoId(p.id)}
-                    style={{ textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}
-                  >
-                    <span>{p.titulo}</span>
-                    {p.estado === 'aceptado' && <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--verde)', flexShrink: 0 }}>✓ Aceptado</span>}
-                  </button>
-                ))}
+                {presupuestos.map((p) => {
+                  const s = estados[p.id];
+                  const etiqueta = s?.respuesta ? 'Ver seguimiento' : s ? 'Seguimiento pedido' : 'Sin seguimiento';
+                  return (
+                    <button
+                      key={p.id}
+                      className={`${styles.btn} ${styles.btnSecundario}`}
+                      onClick={() => setElegidoId(p.id)}
+                      style={{ textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}
+                    >
+                      <span>{p.titulo}</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
+                        {p.estado === 'aceptado' && <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--verde)' }}>✓ Aceptado</span>}
+                        <span style={{ fontSize: '0.68rem', color: s?.respuesta ? 'var(--ocre)' : 'var(--topo-claro)', fontWeight: s?.respuesta ? 700 : 400 }}>{etiqueta}</span>
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             )}
 
