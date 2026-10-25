@@ -2882,3 +2882,40 @@
 .seguimientoPuntos { display: flex; gap: 0.3rem; justify-content: center; margin: 0.2rem 0 0.4rem; }
 .seguimientoPunto { width: 7px; height: 7px; border-radius: 50%; background: var(--borde); display: inline-block; }
 .seguimientoPuntoActivo { background: var(--ocre); }
+
+.seguimientoShell {
+  width: 100%;
+  max-width: 480px;
+  --sg-h2: 1.3rem;
+  --sg-h3: 1.05rem;
+  --sg-texto: 0.9rem;
+  --sg-cta-fuente: 0.95rem;
+  --sg-cta-padding: 0.8rem;
+}
+/* Reporte real del usuario, 25/10/2026: en tablet/escritorio la tarjeta del
+   cuestionario se quedaba con el mismo ancho estrecho de móvil en medio de
+   una pantalla grande — "muy pequeño", "poco evidente". Solo crece a partir
+   de tablet (mismo punto de corte que el resto de la app); el móvil no
+   cambia. Las fuentes de preguntas/cuerpo usan las variables de arriba
+   (heredadas por los `style` en línea de `cuestionario-seguimiento.tsx`) en
+   vez de un valor fijo, así escalan sin tocar cada línea una a una; botones
+   y campos se amplían con reglas descendientes para no afectar al resto de
+   la app, que comparte las mismas clases `.btn`/`.input`. */
+@media (min-width: 641px) {
+  .seguimientoShell {
+    max-width: 640px;
+    --sg-h2: 1.7rem;
+    --sg-h3: 1.3rem;
+    --sg-texto: 1.02rem;
+    --sg-cta-fuente: 1.05rem;
+    --sg-cta-padding: 1rem;
+  }
+  .seguimientoPanel { padding: 2.5rem 2.75rem; }
+  .seguimientoPanel .btn { font-size: 0.95rem; padding: 0.75rem 1.15rem; }
+  .seguimientoPanel .btnPrimario { font-size: 1.02rem; }
+  .seguimientoPanel .input { font-size: 0.98rem; padding: 0.7rem 0.9rem; }
+  .seguimientoOpcion { padding: 0.85rem 1.15rem; font-size: 0.95rem; gap: 0.75rem; }
+  .seguimientoMarcador { width: 20px; height: 20px; }
+  .seguimientoPuntos { gap: 0.4rem; margin: 0.3rem 0 0.5rem; }
+  .seguimientoPunto { width: 9px; height: 9px; }
+}

@@ -69,13 +69,21 @@ function OpcionCuestionario({ texto, seleccionada, casilla, onClick }: { texto: 
  * Se abre desde el enlace que el carpintero comparte tras enviar un
  * presupuesto que el cliente no ha confirmado. Mismo patrón que
  * `portal-presupuesto.tsx`: todo el estado vive aquí, sin tocar `use-auth.ts`.
+ *
+ * Orden de las pantallas (reordenado 25/10/2026, a petición del usuario
+ * tras probarlo en real): TODAS las preguntas de selección (1, 4, 5) van
+ * antes que las dos de texto libre (lo que gusta / lo que cambiaría +
+ * comentario) — observación directa del usuario: quien tiene que ESCRIBIR
+ * abandona el cuestionario a medias con más frecuencia que quien solo
+ * tiene que marcar una opción. Dejando lo fácil de contestar primero, se
+ * recoge ese dato aunque el cliente abandone antes de llegar al texto libre.
  */
 export function CuestionarioSeguimiento() {
   const { token } = useParams<{ token: string }>();
   const [estadoCarga, setEstadoCarga] = useState<'cargando' | 'listo' | 'error'>('cargando');
   const [error, setError] = useState('');
   const [datos, setDatos] = useState<SeguimientoPublico | null>(null);
-  const [pantalla, setPantalla] = useState(0); // 0 bienvenida · 1-5 preguntas · 6 cierre
+  const [pantalla, setPantalla] = useState(0); // 0 bienvenida · 1 P1 · 2 P4 · 3 P5 · 4 loQueGusta · 5 loQueNoConvence+comentario · 6 cierre
   const [respuesta, setRespuesta] = useState<RespuestaSeguimiento>(RESPUESTA_VACIA);
   const [enviando, setEnviando] = useState(false);
   const [errorEnvio, setErrorEnvio] = useState('');
@@ -94,9 +102,10 @@ export function CuestionarioSeguimiento() {
   const avanza = () => setPantalla((p) => Math.min(6, p + 1));
   const retrocede = () => setPantalla((p) => Math.max(0, p - 1));
 
-  const saltaP4 = respuesta.valoracion === OPCIONES_P1[0]; // "Me encaja y quiero seguir adelante." → sin fricción, sin preguntar cómo ayudar
-  const avanzaDesdeP3 = () => setPantalla(saltaP4 ? 5 : 4);
-  const retrocedeDesdeP5 = () => setPantalla(saltaP4 ? 3 : 4);
+  // "Me encaja y quiero seguir adelante." → sin fricción, sin preguntar cómo ayudar (pantalla 2 se salta).
+  const saltaP4 = respuesta.valoracion === OPCIONES_P1[0];
+  const avanzaDesdeP1 = () => setPantalla(saltaP4 ? 3 : 2);
+  const retrocedeDesdeP5 = () => setPantalla(saltaP4 ? 1 : 2);
 
   const toggleAyuda = useCallback((opcion: string) => {
     setRespuesta((r) => {
@@ -130,7 +139,7 @@ export function CuestionarioSeguimiento() {
 
   return (
     <div className={styles.app} style={{ minHeight: '100vh', background: 'var(--fondo)', display: 'flex', justifyContent: 'center', padding: '1.25rem 1rem 3rem' }}>
-      <div style={{ width: '100%', maxWidth: '480px' }}>
+      <div className={styles.seguimientoShell}>
 
         {estadoCarga === 'cargando' && (
           <p style={{ textAlign: 'center', color: 'var(--topo-claro)', marginTop: '3rem' }}>Cargando…</p>
@@ -144,7 +153,7 @@ export function CuestionarioSeguimiento() {
         )}
 
         {estadoCarga === 'listo' && datos && (
-          <div className={styles.panel} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div className={`${styles.panel} ${styles.seguimientoPanel}`} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
 
             {pantalla === 0 && (
               <>
@@ -153,15 +162,15 @@ export function CuestionarioSeguimiento() {
                     Presupuesto · {datos.presupuestoTitulo}
                   </p>
                 )}
-                <h2 style={{ margin: 0 }}>
+                <h2 style={{ margin: 0, fontSize: 'var(--sg-h2)' }}>
                   {datos.clienteNombre ? `Hola, ${primerNombre(datos.clienteNombre)}, ` : ''}¿qué te ha parecido nuestra propuesta?
                 </h2>
-                <p style={{ margin: 0, fontSize: '0.9rem', lineHeight: 1.6, color: 'var(--topo-claro)' }}>
+                <p style={{ margin: 0, fontSize: 'var(--sg-texto)', lineHeight: 1.6, color: 'var(--topo-claro)' }}>
                   Hemos preparado esta propuesta para tu proyecto y nos gustaría conocer tu opinión. Queremos asegurarnos
                   de que se adapta a lo que necesitas y, si hay algo que quieras comentar, estaremos encantados de
                   escucharte. Solo te llevará un minuto.
                 </p>
-                <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={avanza} style={{ width: '100%', fontSize: '0.95rem', padding: '0.8rem' }}>
+                <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={avanza} style={{ width: '100%', fontSize: 'var(--sg-cta-fuente)', padding: 'var(--sg-cta-padding)' }}>
                   Empezar
                 </button>
               </>
@@ -170,7 +179,7 @@ export function CuestionarioSeguimiento() {
             {pantalla === 1 && (
               <>
                 {PUNTOS(1)}
-                <h3 style={{ margin: 0 }}>¿Cómo ves nuestro presupuesto?</h3>
+                <h3 style={{ margin: 0, fontSize: 'var(--sg-h3)' }}>¿Cómo ves nuestro presupuesto?</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
                   {OPCIONES_P1.map((op) => (
                     <OpcionCuestionario key={op} texto={op} seleccionada={respuesta.valoracion === op} onClick={() => setRespuesta((r) => ({ ...r, valoracion: op }))} />
@@ -178,7 +187,7 @@ export function CuestionarioSeguimiento() {
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.2rem' }}>
                   <button className={styles.btn} onClick={retrocede}>Atrás</button>
-                  <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={avanza} disabled={!respuesta.valoracion} style={{ flex: 1 }}>
+                  <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={avanzaDesdeP1} disabled={!respuesta.valoracion} style={{ flex: 1 }}>
                     Siguiente
                   </button>
                 </div>
@@ -188,8 +197,46 @@ export function CuestionarioSeguimiento() {
             {pantalla === 2 && (
               <>
                 {PUNTOS(2)}
+                <h3 style={{ margin: 0, fontSize: 'var(--sg-h3)' }}>Si hay algo que te impide confirmar el presupuesto, ¿podemos ayudarte de alguna manera?</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                  {OPCIONES_P4.map((op) => (
+                    <OpcionCuestionario
+                      key={op}
+                      texto={op}
+                      casilla
+                      seleccionada={(respuesta.ayudaNecesaria || []).includes(op)}
+                      onClick={() => toggleAyuda(op)}
+                    />
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.2rem' }}>
+                  <button className={styles.btn} onClick={retrocede}>Atrás</button>
+                  <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={avanza} style={{ flex: 1 }}>Siguiente</button>
+                </div>
+              </>
+            )}
+
+            {pantalla === 3 && (
+              <>
+                {PUNTOS(3)}
+                <h3 style={{ margin: 0, fontSize: 'var(--sg-h3)' }}>¿Te gustaría que nos pusiéramos en contacto contigo?</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                  {OPCIONES_P5.map((op) => (
+                    <OpcionCuestionario key={op} texto={op} seleccionada={respuesta.quiereContacto === op} onClick={() => setRespuesta((r) => ({ ...r, quiereContacto: op }))} />
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.2rem' }}>
+                  <button className={styles.btn} onClick={retrocedeDesdeP5}>Atrás</button>
+                  <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={avanza} style={{ flex: 1 }}>Siguiente</button>
+                </div>
+              </>
+            )}
+
+            {pantalla === 4 && (
+              <>
+                {PUNTOS(4)}
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '0.5rem' }}>
-                  <h3 style={{ margin: 0 }}>¿Qué es lo que más te ha gustado de nuestra propuesta?</h3>
+                  <h3 style={{ margin: 0, fontSize: 'var(--sg-h3)' }}>¿Qué es lo que más te ha gustado de nuestra propuesta?</h3>
                   <span style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--topo-claro)', background: 'var(--fondo)', borderRadius: 999, padding: '0.2em 0.7em', whiteSpace: 'nowrap' }}>Opcional</span>
                 </div>
                 <p style={{ margin: 0, fontSize: '0.78rem', fontStyle: 'italic', color: 'var(--topo-muy-claro)' }}>
@@ -209,11 +256,11 @@ export function CuestionarioSeguimiento() {
               </>
             )}
 
-            {pantalla === 3 && (
+            {pantalla === 5 && (
               <>
-                {PUNTOS(3)}
+                {PUNTOS(5)}
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '0.5rem' }}>
-                  <h3 style={{ margin: 0 }}>¿Hay algo que cambiarías o que no termine de convencerte?</h3>
+                  <h3 style={{ margin: 0, fontSize: 'var(--sg-h3)' }}>¿Hay algo que cambiarías o que no termine de convencerte?</h3>
                   <span style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--topo-claro)', background: 'var(--fondo)', borderRadius: 999, padding: '0.2em 0.7em', whiteSpace: 'nowrap' }}>Opcional</span>
                 </div>
                 <p style={{ margin: 0, fontSize: '0.78rem', fontStyle: 'italic', color: 'var(--topo-muy-claro)' }}>
@@ -226,45 +273,7 @@ export function CuestionarioSeguimiento() {
                   value={respuesta.loQueNoConvence}
                   onChange={(e) => setRespuesta((r) => ({ ...r, loQueNoConvence: e.target.value }))}
                 />
-                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.2rem' }}>
-                  <button className={styles.btn} onClick={retrocede}>Atrás</button>
-                  <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={avanzaDesdeP3} style={{ flex: 1 }}>Siguiente</button>
-                </div>
-              </>
-            )}
-
-            {pantalla === 4 && (
-              <>
-                {PUNTOS(4)}
-                <h3 style={{ margin: 0 }}>Si hay algo que te impide confirmar el presupuesto, ¿podemos ayudarte de alguna manera?</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-                  {OPCIONES_P4.map((op) => (
-                    <OpcionCuestionario
-                      key={op}
-                      texto={op}
-                      casilla
-                      seleccionada={(respuesta.ayudaNecesaria || []).includes(op)}
-                      onClick={() => toggleAyuda(op)}
-                    />
-                  ))}
-                </div>
-                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.2rem' }}>
-                  <button className={styles.btn} onClick={retrocede}>Atrás</button>
-                  <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={avanza} style={{ flex: 1 }}>Siguiente</button>
-                </div>
-              </>
-            )}
-
-            {pantalla === 5 && (
-              <>
-                {PUNTOS(5)}
-                <h3 style={{ margin: 0 }}>¿Te gustaría que nos pusiéramos en contacto contigo?</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-                  {OPCIONES_P5.map((op) => (
-                    <OpcionCuestionario key={op} texto={op} seleccionada={respuesta.quiereContacto === op} onClick={() => setRespuesta((r) => ({ ...r, quiereContacto: op }))} />
-                  ))}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '0.5rem', marginTop: '0.2rem' }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '0.5rem', marginTop: '0.3rem' }}>
                   <span style={{ fontSize: '0.82rem', fontWeight: 700 }}>Algo más que quieras contarnos</span>
                   <span style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--topo-claro)', background: 'var(--fondo)', borderRadius: 999, padding: '0.2em 0.7em', whiteSpace: 'nowrap' }}>Opcional</span>
                 </div>
@@ -277,7 +286,7 @@ export function CuestionarioSeguimiento() {
                 />
                 {errorEnvio && <p style={{ color: 'var(--rojo)', fontSize: '0.82rem', margin: 0 }}>{errorEnvio}</p>}
                 <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.2rem' }}>
-                  <button className={styles.btn} onClick={retrocedeDesdeP5}>Atrás</button>
+                  <button className={styles.btn} onClick={retrocede}>Atrás</button>
                   <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={enviar} disabled={enviando} style={{ flex: 1 }}>
                     {enviando ? 'Enviando…' : 'Enviar mi opinión'}
                   </button>
@@ -290,7 +299,7 @@ export function CuestionarioSeguimiento() {
                 <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'var(--verde-bg)', color: 'var(--verde)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                 </div>
-                <h3 style={{ margin: 0 }}>Muchas gracias por compartir tu opinión.</h3>
+                <h3 style={{ margin: 0, fontSize: 'var(--sg-h3)' }}>Muchas gracias por compartir tu opinión.</h3>
                 <p style={{ margin: 0, fontSize: '0.88rem', lineHeight: 1.6, color: 'var(--topo-claro)' }}>
                   Nos ayuda a comprender mejor lo que necesitas y a preparar propuestas cada vez mejores.
                   <br /><br />
