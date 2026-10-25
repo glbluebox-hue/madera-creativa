@@ -106,15 +106,22 @@ export function PresupuestosPrototype() {
   const [ajustes, setAjustes] = useState(false);
   const [ajustesBiometria, setAjustesBiometria] = useState(false);
   const [panelAdmin, setPanelAdmin] = useState(false);
-  // Siempre se entra por "Inicio" — a petición del usuario, nunca se
-  // recuerda la última sección visitada entre sesiones (antes se
-  // persistía en localStorage; se quitó a propósito). Única excepción:
-  // llegar desde la notificación de recordatorio de horas, que sí debe
-  // abrir directamente en Clientes (petición del usuario, 18/08/2026) —
-  // un parámetro de un solo uso en la URL, nunca algo persistente.
+  // Se recuerda la última página visitada, incluso recargando (petición
+  // explícita del usuario, 25/10/2026 — revierte una decisión anterior del
+  // 18/08/2026 que pedía justo lo contrario). Clave de localStorage con
+  // `storagePrefix` para no mezclar la navegación de un usuario con la de
+  // otro en el mismo navegador (mismo criterio que `useTutorial`). El
+  // parámetro `?accion=clientes` de la notificación de recordatorio de
+  // horas sigue teniendo prioridad — es un destino explícito de un solo
+  // uso, más fuerte que "la última página".
   const [seccion, setSeccion] = useState<Seccion>(() => {
     const abrirEn = new URLSearchParams(window.location.search).get('accion');
-    return abrirEn === 'clientes' ? 'clientes' : 'inicio';
+    if (abrirEn === 'clientes') return 'clientes';
+    try {
+      const guardada = JSON.parse(localStorage.getItem(`${storagePrefix}navegacion`) ?? 'null') as { seccion?: Seccion } | null;
+      if (guardada?.seccion && guardada.seccion in ETIQUETA_SECCION_CORTA) return guardada.seccion;
+    } catch { /* noop */ }
+    return 'inicio';
   });
   /**
    * Historial de secciones visitadas en ESTA sesión (en memoria, se
@@ -159,6 +166,38 @@ export function PresupuestosPrototype() {
     return () => navigator.serviceWorker?.removeEventListener('message', alRecibirMensaje);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /**
+   * Restaura la ficha de proyecto exacta que estaba abierta (si la había)
+   * cuando la sección guardada es "clientes" — ver el `useState` de
+   * `seccion` más arriba, que ya restaura la sección en sí. Deliberadamente
+   * NO reutiliza `abrirProyecto` (se define más abajo, después de varios
+   * `return` tempranos de autenticación/licencia — no se puede depender de
+   * ella aquí sin romper el orden de hooks), así que repite su mismo
+   * `api.obtenerProyecto` + `api.obtenerCliente`. Solo corre una vez, al
+   * confirmarse la sesión (`listo`).
+   */
+  useEffect(() => {
+    if (!listo || seccion !== 'clientes' || seleccionado) return;
+    try {
+      const guardada = JSON.parse(localStorage.getItem(`${storagePrefix}navegacion`) ?? 'null') as { proyectoId?: string } | null;
+      if (!guardada?.proyectoId) return;
+      setSeleccionado(guardada.proyectoId);
+      api.obtenerProyecto(guardada.proyectoId)
+        .then((p) => { setProyectoActual(p); return api.obtenerCliente(p.clienteId); })
+        .then(setClienteActualIdentidad)
+        .catch(() => { setProyectoActual(null); setClienteActualIdentidad(null); });
+    } catch { /* noop */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listo]);
+
+  /** Guarda la página actual (y la ficha de proyecto abierta, si la hay) para restaurarla en la próxima carga — ver los dos efectos de arriba. */
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${storagePrefix}navegacion`, JSON.stringify({ seccion, proyectoId: seccion === 'clientes' ? seleccionado : null }));
+    } catch { /* noop */ }
+  }, [seccion, seleccionado, storagePrefix]);
+
   // Con un dibujo abierto a pantalla completa, la barra "← Inicio" móvil no
   // debe ni existir en el DOM (ver `SeccionDibujosProps.onEditorAbierto`).
   const [dibujoEditorAbierto, setDibujoEditorAbierto] = useState(false);

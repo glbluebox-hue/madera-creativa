@@ -30,6 +30,8 @@ export type SolicitudSeguimientoProps = {
   plan?: PlanAcceso;
   /** Bypass administrativo — ver `puedeUsar()` en `planes.ts`. */
   esAdmin?: boolean;
+  /** Abre el panel directamente al montar — usado por `solicitud-seguimiento-proyecto.tsx` tras elegir presupuesto, para que no haga falta un segundo clic. */
+  autoAbrir?: boolean;
 };
 
 /**
@@ -41,9 +43,9 @@ export type SolicitudSeguimientoProps = {
  * nota interna y un selector de estado — ver `cuestionario-seguimiento.tsx`
  * para la página pública.
  */
-export function SolicitudSeguimiento({ presupuestoId, plan, esAdmin }: SolicitudSeguimientoProps) {
+export function SolicitudSeguimiento({ presupuestoId, plan, esAdmin, autoAbrir }: SolicitudSeguimientoProps) {
   const tienePlan = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
-  const [abierto, setAbierto] = useState(false);
+  const [abierto, setAbierto] = useState(() => !!autoAbrir);
   const [cargando, setCargando] = useState(false);
   const [generando, setGenerando] = useState(false);
   const [guardando, setGuardando] = useState(false);

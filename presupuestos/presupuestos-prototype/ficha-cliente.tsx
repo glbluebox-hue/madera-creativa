@@ -19,6 +19,7 @@ import { etiquetaEstado, grupoEstado } from './estado-utils.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
 import { AvisoRectificativa } from './aviso-rectificativa.js';
 import { SolicitudResena } from './solicitud-resena.js';
+import { SolicitudSeguimientoProyecto } from './solicitud-seguimiento-proyecto.js';
 import { VisorFactura } from './visor-factura.js';
 import { TabResumen } from './tab-resumen.js';
 import { TabDatos } from './tab-datos.js';
@@ -313,6 +314,7 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
               Editar
             </button>
             <SolicitudResena clienteId={cliente.id} plan={plan} esAdmin={esAdmin} />
+            <SolicitudSeguimientoProyecto proyectoId={proyecto.id} clienteId={cliente.id} plan={plan} esAdmin={esAdmin} />
             {onBorrar && (
               <ConfirmarBorrado
                 label="Eliminar"
