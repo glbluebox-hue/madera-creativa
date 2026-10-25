@@ -157,11 +157,13 @@ export function CuestionarioSeguimiento() {
 
             {pantalla === 0 && (
               <>
-                {datos.presupuestoTitulo && (
-                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--topo-claro)', textAlign: 'center' }}>
-                    Presupuesto · {datos.presupuestoTitulo}
-                  </p>
-                )}
+                {/* Deliberadamente SIN mostrar `datos.presupuestoTitulo` — es la
+                    etiqueta interna que le pone el profesional al presupuesto
+                    (p. ej. "Plantilla corporativa"), nunca un dato pensado para
+                    que lo vea el cliente (reporte real del usuario, 25/10/2026).
+                    El saludo con su nombre ya da contexto de sobra. Sigue
+                    viajando en la respuesta pública por si en el futuro hiciera
+                    falta para otra cosa — aquí, simplemente, no se pinta. */}
                 <h2 style={{ margin: 0, fontSize: 'var(--sg-h2)' }}>
                   {datos.clienteNombre ? `Hola, ${primerNombre(datos.clienteNombre)}, ` : ''}¿qué te ha parecido nuestra propuesta?
                 </h2>
