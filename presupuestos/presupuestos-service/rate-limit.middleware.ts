@@ -131,3 +131,32 @@ export const limitadorResena = rateLimit({
   legacyHeaders: false,
   message: { error: 'Demasiadas peticiones. Inténtalo de nuevo en unos minutos.' },
 });
+
+/**
+ * Ver el cuestionario de Seguimiento (Portal) — por IP, generoso como
+ * `limitadorPortalVer`: una vista previa de enlace de WhatsApp/redes
+ * dispara esta ruta sin que sea el cliente real abriéndolo.
+ */
+export const limitadorSeguimientoVer = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiadas peticiones. Inténtalo de nuevo en unos minutos.' },
+});
+
+/**
+ * Enviar la respuesta del cuestionario de Seguimiento — por TOKEN, no por
+ * IP (mismo motivo que `limitadorPortalAceptar`: el cliente responde desde
+ * el móvil, a menudo detrás de CGNAT). Más generoso que
+ * `limitadorPortalAceptar` porque aquí SÍ es legítimo reenviar varias veces
+ * (el dueño del negocio decidió que se puede responder más de una vez).
+ */
+export const limitadorSeguimientoResponder = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.params.token || ipKeyGenerator(req.ip ?? ''),
+  message: { error: 'Demasiados intentos. Inténtalo de nuevo en unos minutos.' },
+});

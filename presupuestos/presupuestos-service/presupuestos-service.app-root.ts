@@ -35,6 +35,7 @@ import { crearRouterIA } from './ia-rutas.js';
 import { crearRouterWebAuthn } from './webauthn-rutas.js';
 import { crearRouterPortal } from './portal-rutas.js';
 import { crearRouterResena } from './resena-rutas.js';
+import { crearRouterSeguimiento } from './seguimiento-rutas.js';
 import { crearRouterTrimble, crearRouterTrimbleCallback } from './trimble-rutas.js';
 import { validar } from './validacion.middleware.js';
 import { hashPassword, verificarPassword, verificarPasswordLegado } from './password.service.js';
@@ -1085,6 +1086,13 @@ export function run() {
    * `resena-rutas.ts`.
    */
   app.use('/resena', crearRouterResena());
+
+  /**
+   * Seguimiento de presupuestos (enlace público, cuestionario de opinión
+   * tras un presupuesto sin confirmar) — montado sin `requireAuth`, mismo
+   * motivo que `/portal`. Ver `seguimiento-rutas.ts`.
+   */
+  app.use('/seguimiento', crearRouterSeguimiento());
 
   /**
    * Integración SketchUp/Trimble Connect (Fase "Diseño 3D", 30/08/2026) —
@@ -2342,6 +2350,31 @@ export function run() {
   app.post('/presupuestos/:id/enlace', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
     try {
       res.json(await svc.generarEnlacePresupuesto(req.params.id, req.usuarioId!));
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /**
+   * Seguimiento de presupuestos (Fase 1, 25/10/2026) — "pedir una opinión"
+   * es la misma categoría comercial que "pedir una reseña"/"generar un
+   * enlace de presupuesto": PRO+, mismo gate. El cuestionario público en sí
+   * (`/seguimiento/*`, montado arriba) sigue sin login para cualquier
+   * cliente, sea cual sea el plan de quien se lo mandó.
+   */
+  app.post('/presupuestos/:id/seguimiento-enlace', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
+    try {
+      res.json(await svc.generarEnlaceSeguimiento(req.params.id, req.usuarioId!));
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  app.get('/presupuestos/:id/seguimiento', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
+    try {
+      res.json(await svc.obtenerSeguimiento(req.params.id, req.usuarioId!));
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  app.patch('/presupuestos/:id/seguimiento', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
+    try {
+      res.json(await svc.actualizarSeguimiento(req.params.id, req.usuarioId!, req.body || {}));
     } catch (err) { responderError(req, res, err); }
   });
 

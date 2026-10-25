@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { createRoot } from 'react-dom/client';
 import { PresupuestosPrototype } from './presupuestos-prototype.js';
 import { PortalPresupuesto } from './portal-presupuesto.js';
+import { CuestionarioSeguimiento } from './cuestionario-seguimiento.js';
 import { PoliticaPrivacidad } from './politica-privacidad.js';
 import { ErrorBoundary } from './error-boundary.js';
 // Import solo por su efecto secundario (08/09/2026): registra el
@@ -62,6 +63,7 @@ if (container) {
             comportamiento de siempre para cualquier otra ruta. */}
         <Routes>
           <Route path="/portal/:token" element={<PortalPresupuesto />} />
+          <Route path="/seguimiento/:token" element={<CuestionarioSeguimiento />} />
           <Route path="/privacidad" element={<PoliticaPrivacidad />} />
           <Route path="*" element={<PresupuestosPrototype />} />
         </Routes>

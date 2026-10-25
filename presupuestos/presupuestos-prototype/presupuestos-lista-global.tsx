@@ -16,6 +16,7 @@ import { ConfirmarBorrado } from './confirmar-borrado.js';
 import { AnalisisPrecioPresupuesto } from './analisis-precio-presupuesto.js';
 import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
 import { CandadoPlan } from './candado-plan.js';
+import { SolicitudSeguimiento } from './solicitud-seguimiento.js';
 import styles from './styles.module.css';
 
 export type PresupuestosListaGlobalProps = {
@@ -668,6 +669,9 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'flex-end', minWidth: 0 }}>
                   <span style={{ fontWeight: 800, fontSize: '1.05rem', whiteSpace: 'nowrap' }}>{formatoEuro(p.precioTotal)}</span>
                   <div onClick={(e) => e.stopPropagation()}>{accionEnlace(p)}</div>
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <SolicitudSeguimiento presupuestoId={p.id} clienteId={p.clienteId} plan={plan} esAdmin={esAdmin} />
+                  </div>
                   <div onClick={(e) => e.stopPropagation()}>
                     <ConfirmarBorrado onConfirmar={() => borrar(p.id)} titulo="Borrar presupuesto" />
                   </div>

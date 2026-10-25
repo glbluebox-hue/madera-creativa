@@ -1489,6 +1489,79 @@ export async function aceptarPresupuestoPublico(token: string, firma: string): P
   return res.json();
 }
 
+/* ===== SEGUIMIENTO DE PRESUPUESTOS (Fase 1, 25/10/2026) ===== */
+
+/** Respuesta del cuestionario de Seguimiento — campos opcionales salvo `valoracion`. */
+export type RespuestaSeguimiento = {
+  valoracion: string;
+  loQueGusta?: string;
+  loQueNoConvence?: string;
+  ayudaNecesaria?: string[];
+  quiereContacto?: string;
+  comentario?: string;
+};
+
+/** Datos públicos que ve el cliente al abrir el enlace de Seguimiento — sin sesión. */
+export type SeguimientoPublico = {
+  presupuestoTitulo: string;
+  clienteNombre: string;
+  respuestaPrevia: RespuestaSeguimiento | null;
+};
+
+/** Seguimiento activo de un presupuesto, tal y como lo ve el profesional en su ficha. */
+export type Seguimiento = {
+  creadoEn: string;
+  primerUsoEn: string | null;
+  usos: number;
+  respondidoEn: string | null;
+  respuesta: RespuestaSeguimiento | null;
+  notaInterna: string;
+  estado: string;
+};
+
+/** Genera (o regenera, revocando el anterior) el enlace de Seguimiento de este presupuesto. */
+export async function generarEnlaceSeguimiento(presupuestoId: string): Promise<{ token: string }> {
+  const res = await fetchConAuth(`/presupuestos/${presupuestoId}/seguimiento-enlace`, { method: 'POST' });
+  await comprobarRespuestaConMotivo(res, 'No se pudo generar el enlace');
+  return res.json();
+}
+
+/** Seguimiento activo de un presupuesto (autenticado) — `null` si nunca se generó ninguno. */
+export async function obtenerSeguimiento(presupuestoId: string): Promise<Seguimiento | null> {
+  const res = await fetchConAuth(`/presupuestos/${presupuestoId}/seguimiento`);
+  await comprobarRespuestaConMotivo(res, 'No se pudo cargar el seguimiento');
+  return res.json();
+}
+
+/** Cambia a mano el estado o la nota interna del Seguimiento activo de un presupuesto. */
+export async function actualizarSeguimiento(presupuestoId: string, cambios: { estado?: string; notaInterna?: string }): Promise<{ ok: true }> {
+  const res = await fetchConAuth(`/presupuestos/${presupuestoId}/seguimiento`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(cambios),
+  });
+  await comprobarRespuestaConMotivo(res, 'No se pudo guardar el seguimiento');
+  return res.json();
+}
+
+/** Vista pública del cuestionario de Seguimiento — sin sesión. */
+export async function obtenerSeguimientoPublico(token: string): Promise<SeguimientoPublico> {
+  const res = await fetch(`${BASE}/seguimiento/presupuestos/${token}`);
+  await comprobarRespuestaConMotivo(res, 'No se pudo cargar el seguimiento');
+  return res.json();
+}
+
+/** Envía (o actualiza) la respuesta del cuestionario de Seguimiento — sin sesión, se puede volver a enviar más de una vez. */
+export async function enviarRespuestaSeguimientoPublico(token: string, respuesta: RespuestaSeguimiento): Promise<{ ok: true }> {
+  const res = await fetch(`${BASE}/seguimiento/presupuestos/${token}/responder`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(respuesta),
+  });
+  await comprobarRespuestaConMotivo(res, 'No se pudo enviar tu respuesta');
+  return res.json();
+}
+
 /* ===== PLANTILLAS (Motor Documental, Incremento 4) ===== */
 
 /** Recupera todas las plantillas del usuario. */

@@ -6,6 +6,7 @@ import type { ElementoCalendario, TipoElementoCalendario } from './calendario-ti
 import { UsuarioModel, conectarUsuarios } from './usuario.model.js';
 import { crearEnlacePresupuesto, buscarEnlacePorToken, reclamarEnlaceAceptado, guardarFirmaEnlace, formatoTokenValido, enlacesActivosDeUsuario } from './enlace-presupuesto.model.js';
 import { crearEnlaceResena, buscarEnlaceResenaPorToken, registrarUsoEnlaceResena, formatoTokenValidoResena } from './enlace-resena.model.js';
+import { crearEnlaceSeguimiento, buscarEnlaceSeguimientoPorToken, buscarEnlaceSeguimientoActivo, registrarUsoEnlaceSeguimiento, formatoTokenValidoSeguimiento, EnlaceSeguimientoModel } from './enlace-seguimiento.model.js';
 import { almacenamiento } from './almacenamiento.service.js';
 import { firmarTokenArchivo } from './token.service.js';
 import { intentarBorrarArchivo } from './borrado-pendiente.service.js';
@@ -3607,6 +3608,105 @@ export class PresupuestosService {
 
     const { transicionOcurrioAhora } = await this.aceptarPresupuesto(enlace.presupuestoId, enlace.usuarioId);
     return { ok: true, yaEstabaAceptado: !transicionOcurrioAhora };
+  }
+
+  /**
+   * Genera (o regenera, revocando el anterior) el enlace de Seguimiento de
+   * un presupuesto — ver `crearEnlaceSeguimiento`. Disponible para
+   * cualquier presupuesto, esté o no aceptado (decisión del dueño del
+   * negocio, 25/10/2026) — a diferencia del enlace del Portal, no exige un
+   * formato concreto: el cuestionario no renderiza el documento, solo
+   * referencia su título.
+   */
+  async generarEnlaceSeguimiento(presupuestoId: string, usuarioId: string): Promise<{ token: string }> {
+    await conectar();
+    const presupuesto = await PresupuestoModel.findOne({ id: presupuestoId, usuarioId }).lean().exec() as any;
+    if (!presupuesto) throw new ErrorDeNegocio('Presupuesto no encontrado', 400);
+    return crearEnlaceSeguimiento({ presupuestoId, clienteId: presupuesto.clienteId, usuarioId });
+  }
+
+  /**
+   * Vista pública del cuestionario de Seguimiento — sin sesión, solo el
+   * token del enlace. A diferencia de `obtenerPresupuestoPublico`, este
+   * enlace no caduca (decisión del dueño del negocio, 25/10/2026), así que
+   * no se comprueba ninguna fecha de expiración, solo `revocadoEn`.
+   * `respuestaPrevia` deja que el cliente vea lo que ya había contestado si
+   * vuelve a abrir el enlace, coherente con que puede responder más de una vez.
+   */
+  async obtenerSeguimientoPublico(tokenPlano: string): Promise<Record<string, unknown>> {
+    if (!formatoTokenValidoSeguimiento(tokenPlano)) throw new ErrorDeNegocio('Enlace no válido.', 400);
+    await conectar();
+    const enlace = await buscarEnlaceSeguimientoPorToken(tokenPlano);
+    if (!enlace || enlace.revocadoEn) throw new ErrorDeNegocio('Este enlace ya no está disponible. Pide uno nuevo.', 409);
+
+    const presupuesto = await PresupuestoModel.findOne({ id: enlace.presupuestoId, usuarioId: enlace.usuarioId }).select('titulo').lean().exec() as any;
+    if (!presupuesto) throw new ErrorDeNegocio('Enlace no válido.', 400);
+    const cliente = await ClienteModel.findOne({ id: enlace.clienteId, usuarioId: enlace.usuarioId }).select('nombre').lean().exec() as any;
+
+    await registrarUsoEnlaceSeguimiento(tokenPlano);
+
+    return {
+      presupuestoTitulo: presupuesto.titulo || '',
+      clienteNombre: cliente?.nombre || '',
+      respuestaPrevia: enlace.respuesta || null,
+    };
+  }
+
+  /**
+   * Guarda (o sobrescribe) la respuesta del cuestionario de Seguimiento —
+   * sin sesión, solo el token. El estado solo pasa a `'respondido'`
+   * automáticamente si seguía en `'generado'`/`'enviado'` — si el
+   * profesional ya lo había movido a mano a `'contactoSolicitado'`/`'pausa'`/
+   * `'cerrado'`, un nuevo envío del cliente no debe pisar esa decisión.
+   */
+  async guardarRespuestaSeguimientoPublico(tokenPlano: string, respuesta: Record<string, unknown>): Promise<{ ok: true }> {
+    if (!formatoTokenValidoSeguimiento(tokenPlano)) throw new ErrorDeNegocio('Enlace no válido.', 400);
+    await conectar();
+    const enlace = await buscarEnlaceSeguimientoPorToken(tokenPlano);
+    if (!enlace || enlace.revocadoEn) throw new ErrorDeNegocio('Este enlace ya no está disponible. Pide uno nuevo.', 409);
+
+    const nuevoEstado = enlace.estado === 'generado' || enlace.estado === 'enviado' ? 'respondido' : enlace.estado;
+    await EnlaceSeguimientoModel.updateOne(
+      { _id: enlace._id },
+      { $set: { respuesta, respondidoEn: new Date(), estado: nuevoEstado } }
+    ).exec();
+
+    return { ok: true };
+  }
+
+  /**
+   * Cambia a mano el estado o la nota interna de un Seguimiento — autenticado,
+   * siempre sobre el enlace ACTIVO (`revocadoEn: null`) del presupuesto.
+   */
+  async actualizarSeguimiento(presupuestoId: string, usuarioId: string, cambios: { estado?: string; notaInterna?: string }): Promise<{ ok: true }> {
+    await conectar();
+    const enlace = await buscarEnlaceSeguimientoActivo(presupuestoId, usuarioId);
+    if (!enlace) throw new ErrorDeNegocio('Todavía no se ha generado ningún enlace de seguimiento para este presupuesto.', 400);
+    const cambiosLimpios: Record<string, unknown> = {};
+    if (typeof cambios.estado === 'string') cambiosLimpios.estado = cambios.estado;
+    if (typeof cambios.notaInterna === 'string') cambiosLimpios.notaInterna = cambios.notaInterna;
+    await EnlaceSeguimientoModel.updateOne({ _id: enlace._id }, { $set: cambiosLimpios }).exec();
+    return { ok: true };
+  }
+
+  /**
+   * Devuelve el Seguimiento activo de un presupuesto (autenticado) para
+   * pintarlo en la ficha — nunca el token, solo sus datos. `null` si nunca
+   * se generó ninguno.
+   */
+  async obtenerSeguimiento(presupuestoId: string, usuarioId: string): Promise<Record<string, unknown> | null> {
+    await conectar();
+    const enlace = await buscarEnlaceSeguimientoActivo(presupuestoId, usuarioId);
+    if (!enlace) return null;
+    return {
+      creadoEn: enlace.creadoEn.toISOString(),
+      primerUsoEn: enlace.primerUsoEn ? enlace.primerUsoEn.toISOString() : null,
+      usos: enlace.usos,
+      respondidoEn: enlace.respondidoEn ? enlace.respondidoEn.toISOString() : null,
+      respuesta: enlace.respuesta || null,
+      notaInterna: enlace.notaInterna || '',
+      estado: enlace.estado || 'generado',
+    };
   }
 
   /**

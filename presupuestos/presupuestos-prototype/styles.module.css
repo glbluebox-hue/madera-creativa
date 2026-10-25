@@ -2841,3 +2841,44 @@
 @media print {
   @page { margin: 0; }
 }
+
+/* ===== SEGUIMIENTO DE PRESUPUESTOS (Fase 1, 25/10/2026) ===== */
+/* Tarjetas de opción del cuestionario público (selección única/múltiple) —
+   mismo lenguaje visual que el resto de la app: borde + fondo sutil al
+   seleccionar, nunca un check a secas sobre fondo blanco. */
+.seguimientoOpcion {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  padding: 0.6rem 0.75rem;
+  font-size: 0.86rem;
+  cursor: pointer;
+  background: var(--blanco);
+  transition: var(--trans);
+}
+.seguimientoOpcion:hover { border-color: var(--topo-muy-claro); }
+.seguimientoOpcionSeleccionada {
+  border-color: var(--ocre);
+  background: var(--ocre-bg);
+}
+.seguimientoMarcador {
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  border: 1.5px solid var(--borde);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--blanco);
+}
+.seguimientoMarcadorCasilla { border-radius: 4px; }
+.seguimientoOpcionSeleccionada .seguimientoMarcador {
+  border-color: var(--ocre);
+  background: var(--ocre);
+}
+.seguimientoPuntos { display: flex; gap: 0.3rem; justify-content: center; margin: 0.2rem 0 0.4rem; }
+.seguimientoPunto { width: 7px; height: 7px; border-radius: 50%; background: var(--borde); display: inline-block; }
+.seguimientoPuntoActivo { background: var(--ocre); }

@@ -888,6 +888,16 @@ export const esquemaAceptarPortalPublico = z.object({
   firma: z.string().min(100).max(600_000).regex(/^data:image\/png;base64,/, 'La firma debe ser una imagen PNG.'),
 });
 
+/** Respuesta del cuestionario de Seguimiento de presupuestos (cliente público, sin sesión) — todos los campos opcionales salvo `valoracion`. */
+export const esquemaResponderSeguimientoPublico = z.object({
+  valoracion: z.string().trim().min(1).max(200),
+  loQueGusta: z.string().trim().max(2000).optional().default(''),
+  loQueNoConvence: z.string().trim().max(2000).optional().default(''),
+  ayudaNecesaria: z.array(z.string().trim().max(200)).max(20).optional().default([]),
+  quiereContacto: z.string().trim().max(200).optional().default(''),
+  comentario: z.string().trim().max(2000).optional().default(''),
+});
+
 /** Un hito de cobro editado a mano (roadmap "cobros pendientes", 18/08/2026). */
 const esquemaCobro = z.object({
   id: z.string().min(1).max(64),
