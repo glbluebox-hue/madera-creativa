@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import * as api from './api.js';
 import type { Seguimiento } from './api.js';
 import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
@@ -55,6 +56,15 @@ export function SolicitudSeguimiento({ presupuestoId, plan, esAdmin, autoAbrir }
   const [notaInterna, setNotaInterna] = useState('');
   const [estado, setEstado] = useState('generado');
   const [error, setError] = useState<string | null>(null);
+  // Portal a `document.body` (bug real, 25/10/2026: "la ventana se queda
+  // detrás de los otros presupuestos" al abrir desde la lista global) —
+  // sin esto, el `.filaListaClic:hover { transform: translateY(-2px) }` de
+  // la fila se convierte en el contenedor de este `position: fixed` y el
+  // modal queda encogido dentro de la fila en vez de cubrir toda la
+  // pantalla. Mismo bug y misma solución ya aplicada en
+  // `analisis-precio-presupuesto.tsx` para esta misma lista.
+  const [montadoEnNavegador, setMontadoEnNavegador] = useState(false);
+  useLayoutEffect(() => { setMontadoEnNavegador(true); }, []);
 
   const cargar = useCallback(async () => {
     if (!tienePlan) return;
@@ -125,7 +135,7 @@ export function SolicitudSeguimiento({ presupuestoId, plan, esAdmin, autoAbrir }
         </button>
       )}
 
-      {abierto && tienePlan && (
+      {abierto && tienePlan && montadoEnNavegador && createPortal(
         <div className={styles.overlay} onClick={() => setAbierto(false)}>
           <div
             className={styles.modal}
@@ -224,7 +234,8 @@ export function SolicitudSeguimiento({ presupuestoId, plan, esAdmin, autoAbrir }
 
             <button className={styles.btn} onClick={() => setAbierto(false)} style={{ fontSize: '0.8rem' }}>Cerrar</button>
           </div>
-        </div>
+        </div>,
+        document.querySelector(`.${styles.app}`) ?? document.body
       )}
     </>
   );

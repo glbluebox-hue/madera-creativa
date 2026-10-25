@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react';
+import { useState, useLayoutEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import * as api from './api.js';
 import type { PresupuestoMC } from './presupuestos-modelo.js';
 import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
@@ -35,6 +36,9 @@ export function SolicitudSeguimientoProyecto({ proyectoId, clienteId, plan, esAd
   const [cargando, setCargando] = useState(false);
   const [presupuestos, setPresupuestos] = useState<PresupuestoMC[] | null>(null);
   const [elegidoId, setElegidoId] = useState<string | null>(null);
+  // Mismo bug y misma solución que `solicitud-seguimiento.tsx` — ver el comentario allí.
+  const [montadoEnNavegador, setMontadoEnNavegador] = useState(false);
+  useLayoutEffect(() => { setMontadoEnNavegador(true); }, []);
 
   const abrir = useCallback(() => {
     setAbierto(true);
@@ -67,7 +71,7 @@ export function SolicitudSeguimientoProyecto({ proyectoId, clienteId, plan, esAd
         {IconoGlobo} Pedir seguimiento
       </button>
 
-      {abierto && (
+      {abierto && montadoEnNavegador && createPortal(
         <div className={styles.overlay} onClick={() => setAbierto(false)}>
           <div
             className={styles.modal}
@@ -102,7 +106,8 @@ export function SolicitudSeguimientoProyecto({ proyectoId, clienteId, plan, esAd
 
             <button className={styles.btn} onClick={() => setAbierto(false)} style={{ fontSize: '0.8rem' }}>Cancelar</button>
           </div>
-        </div>
+        </div>,
+        document.querySelector(`.${styles.app}`) ?? document.body
       )}
     </>
   );
