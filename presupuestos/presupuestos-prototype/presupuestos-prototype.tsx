@@ -829,7 +829,7 @@ export function PresupuestosPrototype() {
 
         {/* ── SECCIÓN FACTURAS EMITIDAS (SIF, Fase 1-5, 26/10/2026) ── */}
         {seccion === 'facturasEmitidas' && (
-          <FacturasEmitidasLista clientes={nombresClientes} plan={sesion?.plan} esAdmin={sesion?.esAdmin} />
+          <FacturasEmitidasLista clientes={nombresClientes} />
         )}
 
         {/* ── SECCIÓN CLIENTES ── */}

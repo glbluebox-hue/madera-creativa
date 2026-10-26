@@ -3,15 +3,11 @@ import * as api from './api.js';
 import type { FacturaEmitida, LineaFacturaEmitida } from './api.js';
 import { formatoEuro, formatoFecha } from './calculos.js';
 import { ConfirmarBorrado } from './confirmar-borrado.js';
-import { puedeUsar, PRO_O_SUPERIOR, type PlanAcceso } from './planes.js';
-import { CandadoPlan } from './candado-plan.js';
 import styles from './styles.module.css';
 
 export type FacturasEmitidasListaProps = {
   /** Lista ligera de clientes — para el selector y el nombre en cada fila. */
   clientes: { id: string; nombre: string }[];
-  plan?: PlanAcceso;
-  esAdmin?: boolean;
 };
 
 const ETIQUETA_ESTADO: Record<string, string> = { borrador: 'Borrador', emitida: 'Emitida', anulada: 'Anulada' };
@@ -27,12 +23,12 @@ function nuevaLinea(): LineaFacturaEmitida {
  * siendo solo gastos/ingresos ya facturados por otro medio). Solo SIF, sin
  * VERI*FACTU: nada de lo que hay aquí envía nada a Hacienda — las facturas
  * quedan numeradas, selladas e íntegras, listas para enseñarse si las
- * piden. Función comercial de la app (gateada PRO+, igual que "Generar
- * enlace"/"Pedir reseña"/"Pedir seguimiento" — misma suposición de plan a
- * confirmar por el usuario antes de producción).
+ * piden. Función comercial de la app — deliberadamente SIN gate de plan
+ * (decisión explícita del usuario, 26/10/2026): disponible en cualquier
+ * plan, incluido el más básico, para quien solo quiera contratarlo por
+ * esto.
  */
-export function FacturasEmitidasLista({ clientes, plan, esAdmin }: FacturasEmitidasListaProps) {
-  const tienePlan = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
+export function FacturasEmitidasLista({ clientes }: FacturasEmitidasListaProps) {
   const [facturas, setFacturas] = useState<FacturaEmitida[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -42,23 +38,14 @@ export function FacturasEmitidasLista({ clientes, plan, esAdmin }: FacturasEmiti
   const nombreDe = useCallback((clienteId: string) => clientes.find((c) => c.id === clienteId)?.nombre ?? 'Cliente', [clientes]);
 
   const cargar = useCallback(() => {
-    if (!tienePlan) { setCargando(false); return; }
     setCargando(true);
     api.obtenerFacturasEmitidas()
       .then(setFacturas)
       .catch((e) => setError(String(e).replace(/^Error:\s*/, '')))
       .finally(() => setCargando(false));
-  }, [tienePlan]);
+  }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
-
-  if (!tienePlan) {
-    return (
-      <div className={styles.tabVacio}>
-        <p>La facturación con SIF requiere el plan PRO o superior. <CandadoPlan planMinimo="PRO" /></p>
-      </div>
-    );
-  }
 
   if (cargando) return <p style={{ color: 'var(--topo-claro)', fontSize: '0.85rem' }}>Cargando facturas emitidas…</p>;
 

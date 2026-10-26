@@ -2386,17 +2386,19 @@ export function run() {
   /**
    * Facturas emitidas — SIF, Fase 1-5 (26/10/2026), sin VERI*FACTU (ningún
    * envío a AEAT en ninguna ruta de aquí abajo). Función comercial de la
-   * app (Madera Creativa Estudio se vende a otros carpinteros), igual que
-   * "Generar enlace"/"Pedir reseña"/"Pedir seguimiento": exige PRO+ — mismo
-   * criterio, no una decisión final del usuario, confirmar antes de
-   * lanzarlo a producción.
+   * app (Madera Creativa Estudio se vende a otros carpinteros) — a
+   * diferencia de "Generar enlace"/"Pedir reseña"/"Pedir seguimiento",
+   * deliberadamente SIN gate de plan (decisión explícita del usuario,
+   * 26/10/2026): alguien puede contratar el plan más barato solo para
+   * usar el sistema de facturación, así que debe estar disponible en
+   * cualquier plan, no reservado a PRO+.
    */
-  app.post('/facturas-emitidas', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
+  app.post('/facturas-emitidas', requireAuth, async (req: AuthRequest, res) => {
     try { res.json(await svc.crearFacturaEmitidaBorrador(req.usuarioId!, req.body || {})); }
     catch (err) { responderError(req, res, err); }
   });
 
-  app.get('/facturas-emitidas', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
+  app.get('/facturas-emitidas', requireAuth, async (req: AuthRequest, res) => {
     try {
       const filtros = {
         clienteId: typeof req.query.clienteId === 'string' ? req.query.clienteId : undefined,
@@ -2407,7 +2409,7 @@ export function run() {
     } catch (err) { responderError(req, res, err); }
   });
 
-  app.get('/facturas-emitidas/:id', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
+  app.get('/facturas-emitidas/:id', requireAuth, async (req: AuthRequest, res) => {
     try {
       const factura = await svc.obtenerFacturaEmitida(req.params.id, req.usuarioId!);
       if (!factura) { res.status(404).json({ error: 'No encontrada' }); return; }
@@ -2415,32 +2417,32 @@ export function run() {
     } catch (err) { responderError(req, res, err); }
   });
 
-  app.patch('/facturas-emitidas/:id', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
+  app.patch('/facturas-emitidas/:id', requireAuth, async (req: AuthRequest, res) => {
     try { res.json(await svc.actualizarFacturaEmitidaBorrador(req.params.id, req.usuarioId!, req.body || {})); }
     catch (err) { responderError(req, res, err); }
   });
 
-  app.delete('/facturas-emitidas/:id', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
+  app.delete('/facturas-emitidas/:id', requireAuth, async (req: AuthRequest, res) => {
     try { await svc.borrarFacturaEmitidaBorrador(req.params.id, req.usuarioId!); res.json({ ok: true }); }
     catch (err) { responderError(req, res, err); }
   });
 
-  app.post('/facturas-emitidas/:id/emitir', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
+  app.post('/facturas-emitidas/:id/emitir', requireAuth, async (req: AuthRequest, res) => {
     try { res.json(await svc.emitirFacturaEmitida(req.params.id, req.usuarioId!)); }
     catch (err) { responderError(req, res, err); }
   });
 
-  app.post('/facturas-emitidas/:id/anular', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
+  app.post('/facturas-emitidas/:id/anular', requireAuth, async (req: AuthRequest, res) => {
     try { res.json(await svc.anularFacturaEmitida(req.params.id, req.usuarioId!, String(req.body?.motivo || ''))); }
     catch (err) { responderError(req, res, err); }
   });
 
-  app.post('/facturas-emitidas/:id/rectificar', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
+  app.post('/facturas-emitidas/:id/rectificar', requireAuth, async (req: AuthRequest, res) => {
     try { res.json(await svc.rectificarFacturaEmitida(req.params.id, req.usuarioId!, req.body || {})); }
     catch (err) { responderError(req, res, err); }
   });
 
-  app.get('/facturas-emitidas/:id/pdf', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
+  app.get('/facturas-emitidas/:id/pdf', requireAuth, async (req: AuthRequest, res) => {
     try {
       const bytes = await svc.generarPdfFacturaEmitida(req.params.id, req.usuarioId!);
       res.setHeader('Content-Type', 'application/pdf');
