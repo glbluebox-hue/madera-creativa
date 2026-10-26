@@ -2384,6 +2384,71 @@ export function run() {
   });
 
   /**
+   * Facturas emitidas — SIF, Fase 1-5 (26/10/2026), sin VERI*FACTU (ningún
+   * envío a AEAT en ninguna ruta de aquí abajo). Función comercial de la
+   * app (Madera Creativa Estudio se vende a otros carpinteros), igual que
+   * "Generar enlace"/"Pedir reseña"/"Pedir seguimiento": exige PRO+ — mismo
+   * criterio, no una decisión final del usuario, confirmar antes de
+   * lanzarlo a producción.
+   */
+  app.post('/facturas-emitidas', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
+    try { res.json(await svc.crearFacturaEmitidaBorrador(req.usuarioId!, req.body || {})); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.get('/facturas-emitidas', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
+    try {
+      const filtros = {
+        clienteId: typeof req.query.clienteId === 'string' ? req.query.clienteId : undefined,
+        proyectoId: typeof req.query.proyectoId === 'string' ? req.query.proyectoId : undefined,
+        estado: typeof req.query.estado === 'string' ? req.query.estado : undefined,
+      };
+      res.json(await svc.listarFacturasEmitidas(req.usuarioId!, filtros));
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  app.get('/facturas-emitidas/:id', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
+    try {
+      const factura = await svc.obtenerFacturaEmitida(req.params.id, req.usuarioId!);
+      if (!factura) { res.status(404).json({ error: 'No encontrada' }); return; }
+      res.json(factura);
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  app.patch('/facturas-emitidas/:id', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
+    try { res.json(await svc.actualizarFacturaEmitidaBorrador(req.params.id, req.usuarioId!, req.body || {})); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.delete('/facturas-emitidas/:id', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
+    try { await svc.borrarFacturaEmitidaBorrador(req.params.id, req.usuarioId!); res.json({ ok: true }); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.post('/facturas-emitidas/:id/emitir', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
+    try { res.json(await svc.emitirFacturaEmitida(req.params.id, req.usuarioId!)); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.post('/facturas-emitidas/:id/anular', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
+    try { res.json(await svc.anularFacturaEmitida(req.params.id, req.usuarioId!, String(req.body?.motivo || ''))); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.post('/facturas-emitidas/:id/rectificar', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
+    try { res.json(await svc.rectificarFacturaEmitida(req.params.id, req.usuarioId!, req.body || {})); }
+    catch (err) { responderError(req, res, err); }
+  });
+
+  app.get('/facturas-emitidas/:id/pdf', requireAuth, requirePlan(PRO_O_SUPERIOR), async (req: AuthRequest, res) => {
+    try {
+      const bytes = await svc.generarPdfFacturaEmitida(req.params.id, req.usuarioId!);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.send(bytes);
+    } catch (err) { responderError(req, res, err); }
+  });
+
+  /**
    * Sustituye la lista completa de cobros de un presupuesto (roadmap
    * "cobros pendientes"). Ruta de acción dedicada, fuera del PUT genérico
    * de presupuesto — mismo motivo que `estado`/`firmaClienteUrl`: así un

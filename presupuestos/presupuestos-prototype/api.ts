@@ -1562,6 +1562,129 @@ export async function enviarRespuestaSeguimientoPublico(token: string, respuesta
   return res.json();
 }
 
+/* ===== FACTURAS EMITIDAS (SIF, Fase 1-5, 26/10/2026) =====
+ * Entidad nueva y separada de `Factura` (gastos/ingresos ya facturados por
+ * otro medio) — ver `factura-emitida.model.ts` en el backend. Solo SIF,
+ * SIN VERI*FACTU: ninguna función de aquí abajo envía nada a AEAT. */
+
+export type LineaFacturaEmitida = { id: string; concepto: string; precio: number };
+export type LineaFiscalFacturaEmitida = { id: string; tipo: 'igic' | 'iva' | 'exento' | 'sin_impuesto'; porcentaje: number; baseImponible: number; cuota: number };
+
+export type FacturaEmitida = {
+  id: string;
+  usuarioId: string;
+  clienteId: string;
+  proyectoId: string;
+  estado: 'borrador' | 'emitida' | 'anulada';
+  titulo: string;
+  lineas: LineaFacturaEmitida[];
+  tipoImpuesto: 'igic' | 'iva' | 'exento' | 'sin_impuesto' | '';
+  porcentajeImpuesto?: number;
+  baseImponible?: number;
+  importeImpuesto?: number;
+  lineasFiscales: LineaFiscalFacturaEmitida[];
+  importeTotal: number;
+  serie: string;
+  numero: number | null;
+  numeroFormateado: string;
+  naturaleza: 'normal' | 'rectificativa';
+  facturaOriginalId: string;
+  numeroFacturaOriginal: string;
+  motivoRectificacion?: 'devolucion_mercancia' | 'error_facturacion' | 'descuento_posterior' | 'otro';
+  motivoAnulacion: string;
+  anuladaEn: string;
+  hash: string;
+  hashAnterior: string;
+  indicadorVerifactu: string;
+  fechaEmision: string;
+  creado: string;
+  actualizado: string;
+};
+
+/** Crea un borrador de factura emitida — sin número, totalmente editable. */
+export async function crearFacturaEmitida(datos: {
+  clienteId: string; proyectoId?: string; titulo?: string; lineas?: LineaFacturaEmitida[];
+  tipoImpuesto?: string; porcentajeImpuesto?: number; baseImponible?: number; importeImpuesto?: number;
+  lineasFiscales?: LineaFiscalFacturaEmitida[]; importeTotal?: number;
+}): Promise<FacturaEmitida> {
+  const res = await fetchConAuth('/facturas-emitidas', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos),
+  });
+  await comprobarRespuestaConMotivo(res, 'No se pudo crear la factura');
+  return res.json();
+}
+
+/** Lista las facturas emitidas del usuario, opcionalmente filtradas. */
+export async function obtenerFacturasEmitidas(filtros?: { clienteId?: string; proyectoId?: string; estado?: string }): Promise<FacturaEmitida[]> {
+  const params = new URLSearchParams();
+  if (filtros?.clienteId) params.set('clienteId', filtros.clienteId);
+  if (filtros?.proyectoId) params.set('proyectoId', filtros.proyectoId);
+  if (filtros?.estado) params.set('estado', filtros.estado);
+  const query = params.toString();
+  const res = await fetchConAuth(`/facturas-emitidas${query ? `?${query}` : ''}`);
+  await comprobarRespuestaConMotivo(res, 'No se pudieron cargar las facturas emitidas');
+  return res.json();
+}
+
+export async function obtenerFacturaEmitida(id: string): Promise<FacturaEmitida> {
+  const res = await fetchConAuth(`/facturas-emitidas/${id}`);
+  await comprobarRespuestaConMotivo(res, 'No se pudo cargar la factura');
+  return res.json();
+}
+
+/** Edita un borrador — el backend rechaza si la factura ya no está en estado borrador. */
+export async function actualizarFacturaEmitidaBorrador(id: string, cambios: Record<string, unknown>): Promise<FacturaEmitida> {
+  const res = await fetchConAuth(`/facturas-emitidas/${id}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cambios),
+  });
+  await comprobarRespuestaConMotivo(res, 'No se pudo guardar la factura');
+  return res.json();
+}
+
+export async function borrarFacturaEmitidaBorrador(id: string): Promise<{ ok: true }> {
+  const res = await fetchConAuth(`/facturas-emitidas/${id}`, { method: 'DELETE' });
+  await comprobarRespuestaConMotivo(res, 'No se pudo borrar la factura');
+  return res.json();
+}
+
+/** Emite la factura: la numera, la sella en la cadena de integridad — a partir de aquí es de solo lectura, solo se puede anular o rectificar. */
+export async function emitirFacturaEmitida(id: string): Promise<FacturaEmitida> {
+  const res = await fetchConAuth(`/facturas-emitidas/${id}/emitir`, { method: 'POST' });
+  await comprobarRespuestaConMotivo(res, 'No se pudo emitir la factura');
+  return res.json();
+}
+
+/** Anula una factura ya emitida — nunca la borra, solo registra el motivo y cambia su estado. */
+export async function anularFacturaEmitida(id: string, motivo: string): Promise<FacturaEmitida> {
+  const res = await fetchConAuth(`/facturas-emitidas/${id}/anular`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ motivo }),
+  });
+  await comprobarRespuestaConMotivo(res, 'No se pudo anular la factura');
+  return res.json();
+}
+
+/** Crea una factura rectificativa nueva vinculada a la original — nunca edita la original. Nace en borrador, hay que emitirla igual que cualquier otra. */
+export async function rectificarFacturaEmitida(id: string, datos: {
+  motivoRectificacion: 'devolucion_mercancia' | 'error_facturacion' | 'descuento_posterior' | 'otro';
+  titulo?: string; lineas?: LineaFacturaEmitida[]; tipoImpuesto?: string;
+  porcentajeImpuesto?: number; baseImponible?: number; importeImpuesto?: number;
+  lineasFiscales?: LineaFiscalFacturaEmitida[]; importeTotal: number;
+}): Promise<FacturaEmitida> {
+  const res = await fetchConAuth(`/facturas-emitidas/${id}/rectificar`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos),
+  });
+  await comprobarRespuestaConMotivo(res, 'No se pudo crear la rectificativa');
+  return res.json();
+}
+
+/** Descarga el PDF legal de una factura emitida (con QR) — solo disponible una vez emitida/anulada. */
+export async function descargarPdfFacturaEmitida(id: string, numeroFormateado?: string): Promise<void> {
+  const res = await fetchConAuth(`/facturas-emitidas/${id}/pdf`);
+  await comprobarRespuesta(res, 'No se pudo generar el PDF de la factura');
+  const nombrePorDefecto = `${numeroFormateado ? numeroFormateado.replace(/[/\\]/g, '-') : 'factura'}.pdf`;
+  descargarBlobDelNavegador(await res.blob(), nombreDesdeContentDisposition(res, nombrePorDefecto));
+}
+
 /* ===== PLANTILLAS (Motor Documental, Incremento 4) ===== */
 
 /** Recupera todas las plantillas del usuario. */

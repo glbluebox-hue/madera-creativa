@@ -7,6 +7,11 @@ import { UsuarioModel, conectarUsuarios } from './usuario.model.js';
 import { crearEnlacePresupuesto, buscarEnlacePorToken, reclamarEnlaceAceptado, guardarFirmaEnlace, formatoTokenValido, enlacesActivosDeUsuario } from './enlace-presupuesto.model.js';
 import { crearEnlaceResena, buscarEnlaceResenaPorToken, registrarUsoEnlaceResena, formatoTokenValidoResena } from './enlace-resena.model.js';
 import { crearEnlaceSeguimiento, buscarEnlaceSeguimientoPorToken, buscarEnlaceSeguimientoActivo, registrarUsoEnlaceSeguimiento, formatoTokenValidoSeguimiento, EnlaceSeguimientoModel } from './enlace-seguimiento.model.js';
+import { FacturaEmitidaModel } from './factura-emitida.model.js';
+import { EventoFacturaEmitidaModel } from './evento-factura-emitida.model.js';
+import { reclamarNumeroFacturaEmitida, formatearNumeroFacturaEmitida } from './numeracion-facturas-emitidas.js';
+import { reclamarSecuenciaCadena, obtenerHashAnteriorPorSecuencia, calcularHashFacturaEmitida } from './cadena-facturas-emitidas.js';
+import { generarPdfFacturaEmitidaBytes } from './factura-emitida-pdf.service.js';
 import { almacenamiento } from './almacenamiento.service.js';
 import { firmarTokenArchivo } from './token.service.js';
 import { intentarBorrarArchivo } from './borrado-pendiente.service.js';
@@ -3707,6 +3712,210 @@ export class PresupuestosService {
       notaInterna: enlace.notaInterna || '',
       estado: enlace.estado || 'generado',
     };
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // Facturas emitidas (SIF, Fase 1-5, 26/10/2026) — entidad nueva y
+  // separada de `FacturaSchema` (ver `factura-emitida.model.ts` para el
+  // porqué: una factura RECIBIDA y una factura EMITIDA por el propio
+  // sistema son dos naturalezas de documento distintas). `FacturaSchema`/
+  // `FacturaModel` no se tocan en ningún método de esta sección.
+  //
+  // Solo SIF, SIN VERI*FACTU: ningún método de aquí abajo envía nada a
+  // AEAT ni a ningún servidor externo — las facturas quedan guardadas
+  // localmente, numeradas y selladas con su cadena de integridad, listas
+  // para enseñarse si Hacienda las pide. La conexión en directo
+  // (VERI*FACTU) es una decisión de negocio futura, fuera de alcance.
+  //
+  // Construir y probar esto no activa ninguna obligación legal — nace
+  // cuando el sistema está "en operación" de verdad (primera factura real
+  // emitida a un cliente), no antes.
+  // ════════════════════════════════════════════════════════════════════
+
+  private limpiarFacturaEmitida(doc: Record<string, unknown>): Record<string, unknown> {
+    const { _id, __v, ...resto } = doc as any;
+    return resto;
+  }
+
+  /** Crea un borrador — sin número, totalmente editable. El número y el sello legal solo llegan al emitir (`emitirFacturaEmitida`), nunca aquí. */
+  async crearFacturaEmitidaBorrador(usuarioId: string, datos: {
+    clienteId: string; proyectoId?: string; titulo?: string;
+    lineas?: { id: string; concepto: string; precio: number }[];
+    tipoImpuesto?: 'igic' | 'iva' | 'exento' | 'sin_impuesto' | '';
+    porcentajeImpuesto?: number; baseImponible?: number; importeImpuesto?: number;
+    lineasFiscales?: { id: string; tipo: string; porcentaje: number; baseImponible: number; cuota: number }[];
+    importeTotal?: number;
+  }): Promise<Record<string, unknown>> {
+    await conectar();
+    const clienteExiste = await ClienteModel.exists({ id: datos.clienteId, usuarioId });
+    if (!clienteExiste) throw new ErrorDeNegocio('Cliente no encontrado', 400);
+    const ahora = new Date().toISOString();
+    const doc = await FacturaEmitidaModel.create({
+      id: randomUUID(), usuarioId, clienteId: datos.clienteId, proyectoId: datos.proyectoId || '',
+      estado: 'borrador', titulo: datos.titulo || '', lineas: datos.lineas || [],
+      tipoImpuesto: datos.tipoImpuesto || '', porcentajeImpuesto: datos.porcentajeImpuesto,
+      baseImponible: datos.baseImponible, importeImpuesto: datos.importeImpuesto,
+      lineasFiscales: datos.lineasFiscales || [], importeTotal: datos.importeTotal || 0,
+      creado: ahora, actualizado: ahora,
+    });
+    await EventoFacturaEmitidaModel.create({ id: randomUUID(), usuarioId, facturaEmitidaId: doc.id, tipo: 'creada', detalle: 'Borrador creado', creado: ahora });
+    return this.limpiarFacturaEmitida(doc.toObject());
+  }
+
+  /** Edita un borrador — rechaza si ya no está en `estado: 'borrador'`: una factura emitida o anulada es de solo lectura desde aquí, la única vía para "corregir" es `rectificarFacturaEmitida`. */
+  async actualizarFacturaEmitidaBorrador(id: string, usuarioId: string, cambios: Record<string, unknown>): Promise<Record<string, unknown>> {
+    await conectar();
+    const actual = await FacturaEmitidaModel.findOne({ id, usuarioId }).lean().exec() as any;
+    if (!actual) throw new ErrorDeNegocio('Factura no encontrada', 400);
+    if (actual.estado !== 'borrador') throw new ErrorDeNegocio('Esta factura ya está emitida — no se puede editar, solo rectificar.', 409);
+    const permitidos = ['clienteId', 'proyectoId', 'titulo', 'lineas', 'tipoImpuesto', 'porcentajeImpuesto', 'baseImponible', 'importeImpuesto', 'lineasFiscales', 'importeTotal'];
+    const cambiosLimpios: Record<string, unknown> = {};
+    for (const campo of permitidos) if (campo in cambios) cambiosLimpios[campo] = cambios[campo];
+    cambiosLimpios.actualizado = new Date().toISOString();
+    const actualizado = await FacturaEmitidaModel.findOneAndUpdate({ id, usuarioId, estado: 'borrador' }, { $set: cambiosLimpios }, { new: true }).exec() as any;
+    if (!actualizado) throw new ErrorDeNegocio('Esta factura ya está emitida — no se puede editar, solo rectificar.', 409);
+    return this.limpiarFacturaEmitida(actualizado.toObject());
+  }
+
+  /** Solo permitido en `estado: 'borrador'` — una factura emitida o anulada nunca se borra físicamente (evidencia). */
+  async borrarFacturaEmitidaBorrador(id: string, usuarioId: string): Promise<void> {
+    await conectar();
+    const borrada = await FacturaEmitidaModel.findOneAndDelete({ id, usuarioId, estado: 'borrador' }).exec();
+    if (!borrada) throw new ErrorDeNegocio('Solo se puede borrar una factura en borrador.', 409);
+  }
+
+  /**
+   * Emite la factura: reclama atómicamente el número legal
+   * (`numeracion-facturas-emitidas.ts`), calcula su posición y hash en la
+   * cadena de integridad (`cadena-facturas-emitidas.ts`), y la sella.
+   *
+   * Dos pasos deliberadamente separados para no desperdiciar NUNCA un
+   * número: primero se reclama atómicamente la transición
+   * `borrador → emitida` (sin asignar todavía número/hash) — si dos
+   * peticiones casi simultáneas intentan emitir la misma factura, solo una
+   * gana esta transición; la otra recibe el error de negocio antes de
+   * haber reclamado ningún número. Solo quien gana la transición reclama
+   * número y calcula el hash, en un segundo `$set`.
+   */
+  async emitirFacturaEmitida(id: string, usuarioId: string): Promise<Record<string, unknown>> {
+    await conectar();
+    const original = await FacturaEmitidaModel.findOne({ id, usuarioId }).lean().exec() as any;
+    if (!original) throw new ErrorDeNegocio('Factura no encontrada', 400);
+    if (original.estado !== 'borrador') throw new ErrorDeNegocio('Esta factura ya ha sido emitida.', 409);
+    if (!original.clienteId) throw new ErrorDeNegocio('La factura necesita un cliente.', 400);
+    // Una rectificativa (devolución) legítimamente lleva importe NEGATIVO —
+    // solo las facturas normales exigen un importe positivo. En ambos
+    // casos, 0 nunca es válido (no tiene sentido emitir una factura sin
+    // efecto económico alguno).
+    if (!original.importeTotal) throw new ErrorDeNegocio('El importe total no puede ser cero.', 400);
+    if (original.naturaleza !== 'rectificativa' && original.importeTotal <= 0) throw new ErrorDeNegocio('El importe total debe ser mayor que cero.', 400);
+
+    const ahora = new Date().toISOString();
+    const ganoLaTransicion = await FacturaEmitidaModel.findOneAndUpdate(
+      { id, usuarioId, estado: 'borrador' },
+      { $set: { estado: 'emitida', actualizado: ahora } }
+    ).exec();
+    if (!ganoLaTransicion) throw new ErrorDeNegocio('Esta factura ya ha sido emitida.', 409); // perdió la carrera — ningún número desperdiciado
+
+    const empresa = await EmpresaModel.findOne({ usuarioId }).lean().exec() as any;
+    const nifEmisor = empresa?.nifCif || '';
+    const anio = anioMadrid(ahora);
+    const numero = await reclamarNumeroFacturaEmitida(usuarioId, anio);
+    const numeroFormateado = formatearNumeroFacturaEmitida(numero, anio);
+    const secuenciaCadena = await reclamarSecuenciaCadena(usuarioId);
+    const hashAnterior = await obtenerHashAnteriorPorSecuencia(usuarioId, secuenciaCadena);
+    const hash = calcularHashFacturaEmitida({
+      nifEmisor, numeroFormateado, fechaEmision: ahora,
+      naturaleza: (original.naturaleza || 'normal') as 'normal' | 'rectificativa',
+      importeTotal: original.importeTotal, hashAnterior,
+    });
+
+    const sellada = await FacturaEmitidaModel.findOneAndUpdate(
+      { id, usuarioId },
+      { $set: { serie: 'A', numero, numeroFormateado, secuenciaCadena, hash, hashAnterior, fechaEmision: ahora, actualizado: ahora } },
+      { new: true }
+    ).exec() as any;
+    await EventoFacturaEmitidaModel.create({ id: randomUUID(), usuarioId, facturaEmitidaId: id, tipo: 'emitida', detalle: `Emitida como ${numeroFormateado}`, creado: ahora });
+    return this.limpiarFacturaEmitida(sellada.toObject());
+  }
+
+  /** Anula una factura ya emitida — nunca la borra, solo registra el evento y cambia su estado. Rechaza si no está en `estado: 'emitida'`. */
+  async anularFacturaEmitida(id: string, usuarioId: string, motivo: string): Promise<Record<string, unknown>> {
+    await conectar();
+    const ahora = new Date().toISOString();
+    const anulada = await FacturaEmitidaModel.findOneAndUpdate(
+      { id, usuarioId, estado: 'emitida' },
+      { $set: { estado: 'anulada', motivoAnulacion: motivo || '', anuladaEn: ahora, actualizado: ahora } },
+      { new: true }
+    ).exec() as any;
+    if (!anulada) throw new ErrorDeNegocio('Solo se puede anular una factura emitida.', 409);
+    await EventoFacturaEmitidaModel.create({ id: randomUUID(), usuarioId, facturaEmitidaId: id, tipo: 'anulada', detalle: motivo || '', creado: ahora });
+    return this.limpiarFacturaEmitida(anulada.toObject());
+  }
+
+  /**
+   * Crea una factura rectificativa NUEVA vinculada a la original — nunca
+   * edita la original. Mismos nombres y semántica que ya usa `Factura`
+   * (`naturaleza`, `facturaOriginalId`, `numeroFacturaOriginal`,
+   * `motivoRectificacion`) para que `motor-fiscal.ts` → `signoPorNaturaleza()`
+   * funcione igual sin cambios. La rectificativa nace en `estado: 'borrador'`
+   * — hay que emitirla igual que cualquier otra para que quede numerada y
+   * sellada en la cadena.
+   */
+  async rectificarFacturaEmitida(id: string, usuarioId: string, datos: {
+    motivoRectificacion: 'devolucion_mercancia' | 'error_facturacion' | 'descuento_posterior' | 'otro';
+    titulo?: string;
+    lineas?: { id: string; concepto: string; precio: number }[];
+    tipoImpuesto?: 'igic' | 'iva' | 'exento' | 'sin_impuesto' | '';
+    porcentajeImpuesto?: number; baseImponible?: number; importeImpuesto?: number;
+    lineasFiscales?: { id: string; tipo: string; porcentaje: number; baseImponible: number; cuota: number }[];
+    importeTotal: number;
+  }): Promise<Record<string, unknown>> {
+    await conectar();
+    const original = await FacturaEmitidaModel.findOne({ id, usuarioId }).lean().exec() as any;
+    if (!original) throw new ErrorDeNegocio('Factura no encontrada', 400);
+    if (original.estado !== 'emitida') throw new ErrorDeNegocio('Solo se puede rectificar una factura ya emitida.', 409);
+
+    const ahora = new Date().toISOString();
+    const doc = await FacturaEmitidaModel.create({
+      id: randomUUID(), usuarioId, clienteId: original.clienteId, proyectoId: original.proyectoId || '',
+      estado: 'borrador', titulo: datos.titulo || `Rectificativa de ${original.numeroFormateado}`,
+      lineas: datos.lineas || [], tipoImpuesto: datos.tipoImpuesto || original.tipoImpuesto || '',
+      porcentajeImpuesto: datos.porcentajeImpuesto, baseImponible: datos.baseImponible, importeImpuesto: datos.importeImpuesto,
+      lineasFiscales: datos.lineasFiscales || [], importeTotal: datos.importeTotal,
+      naturaleza: 'rectificativa', facturaOriginalId: original.id, numeroFacturaOriginal: original.numeroFormateado,
+      motivoRectificacion: datos.motivoRectificacion,
+      creado: ahora, actualizado: ahora,
+    });
+    await EventoFacturaEmitidaModel.create({ id: randomUUID(), usuarioId, facturaEmitidaId: doc.id, tipo: 'rectificada', detalle: `Rectifica a ${original.numeroFormateado}`, creado: ahora });
+    return this.limpiarFacturaEmitida(doc.toObject());
+  }
+
+  async listarFacturasEmitidas(usuarioId: string, filtros?: { clienteId?: string; proyectoId?: string; estado?: string }): Promise<Record<string, unknown>[]> {
+    await conectar();
+    const consulta: Record<string, unknown> = { usuarioId };
+    if (filtros?.clienteId) consulta.clienteId = filtros.clienteId;
+    if (filtros?.proyectoId) consulta.proyectoId = filtros.proyectoId;
+    if (filtros?.estado) consulta.estado = filtros.estado;
+    const docs = await FacturaEmitidaModel.find(consulta).sort({ creado: -1 }).lean().exec() as any[];
+    return docs.map((d) => this.limpiarFacturaEmitida(d));
+  }
+
+  async obtenerFacturaEmitida(id: string, usuarioId: string): Promise<Record<string, unknown> | null> {
+    await conectar();
+    const doc = await FacturaEmitidaModel.findOne({ id, usuarioId }).lean().exec() as any;
+    return doc ? this.limpiarFacturaEmitida(doc) : null;
+  }
+
+  /** Genera el PDF legal de una factura emitida (con QR) — solo para facturas ya `emitida`/`anulada`, nunca para un borrador sin sellar. Ver `factura-emitida-pdf.service.ts`. */
+  async generarPdfFacturaEmitida(id: string, usuarioId: string): Promise<Buffer> {
+    await conectar();
+    const factura = await FacturaEmitidaModel.findOne({ id, usuarioId }).lean().exec() as any;
+    if (!factura) throw new ErrorDeNegocio('Factura no encontrada', 400);
+    if (factura.estado === 'borrador') throw new ErrorDeNegocio('Esta factura todavía no se ha emitido.', 400);
+    const empresa = await EmpresaModel.findOne({ usuarioId }).lean().exec() as any;
+    const cliente = await ClienteModel.findOne({ id: factura.clienteId, usuarioId }).select('nombre').lean().exec() as any;
+    return generarPdfFacturaEmitidaBytes(factura, empresa, cliente?.nombre || '');
   }
 
   /**

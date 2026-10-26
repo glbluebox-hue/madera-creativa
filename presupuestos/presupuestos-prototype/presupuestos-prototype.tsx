@@ -7,6 +7,7 @@ import { FichaCliente } from './ficha-cliente.js';
 import { FormularioCliente } from './formulario-cliente.js';
 import { AjustesEmpresa } from './ajustes-empresa.js';
 import { Facturas } from './facturas.js';
+import { FacturasEmitidasLista } from './facturas-emitidas-lista.js';
 import { SeccionPresupuestosContenedor } from './seccion-presupuestos-contenedor.js';
 import { InteligenciaPreciosVista } from './inteligencia-precios-vista.js';
 import { NotasVista } from './notas-vista.js';
@@ -48,12 +49,12 @@ import logoMadera from './assets/logo.png';
 import styles from './styles.module.css';
 
 /** Secciones principales de la app. */
-type Seccion = 'inicio' | 'clientes' | 'presupuestos' | 'inteligenciaPrecios' | 'facturas' | 'notas' | 'calendario' | 'proveedores' | 'dibujos' | 'codigosQR';
+type Seccion = 'inicio' | 'clientes' | 'presupuestos' | 'inteligenciaPrecios' | 'facturas' | 'facturasEmitidas' | 'notas' | 'calendario' | 'proveedores' | 'dibujos' | 'codigosQR';
 
 /** Nombre corto de cada sección para el botón "volver" de la barra móvil — a diferencia del título de esa misma barra (más ancho, admite el nombre completo), este botón es solo icono+palabra en el estilo iOS, así que usa una versión abreviada cuando el nombre completo no cabría bien. */
 const ETIQUETA_SECCION_CORTA: Record<Seccion, string> = {
   inicio: 'Inicio', clientes: 'Clientes', presupuestos: 'Presupuestos', inteligenciaPrecios: 'Precios',
-  facturas: 'Facturas', notas: 'Notas', calendario: 'Calendario', proveedores: 'Proveedores',
+  facturas: 'Facturas', facturasEmitidas: 'Fact. emitidas', notas: 'Notas', calendario: 'Calendario', proveedores: 'Proveedores',
   dibujos: 'Pizarra', codigosQR: 'Código QR',
 };
 
@@ -512,6 +513,15 @@ export function PresupuestosPrototype() {
               )}
             </button>
             <button
+              className={`${styles.sidebarNavItem} ${seccion === 'facturasEmitidas' ? styles.sidebarNavItemActivo : ''}`}
+              onClick={() => { cambiarSeccion('facturasEmitidas'); volverALista(); }}
+              data-tutorial-id="nav-facturas-emitidas"
+              title="Facturación propia con SIF — sin conexión con Hacienda"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 12l2 2 4-4" /><path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z" /></svg>
+              Facturas emitidas
+            </button>
+            <button
               className={`${styles.sidebarNavItem} ${seccion === 'proveedores' ? styles.sidebarNavItemActivo : ''}`}
               onClick={() => { cambiarSeccion('proveedores'); volverALista(); }}
               data-tutorial-id="nav-proveedores"
@@ -682,7 +692,7 @@ export function PresupuestosPrototype() {
         una ficha abierta porque FichaCliente ya pone su propia barra
         ("← Clientes") — mostrar las dos a la vez sería redundante.
       */}
-      {(['presupuestos', 'facturas', 'notas', 'calendario', 'proveedores', 'dibujos', 'codigosQR', 'clientes', 'inteligenciaPrecios'] as string[]).includes(seccion)
+      {(['presupuestos', 'facturas', 'facturasEmitidas', 'notas', 'calendario', 'proveedores', 'dibujos', 'codigosQR', 'clientes', 'inteligenciaPrecios'] as string[]).includes(seccion)
         && !(seccion === 'dibujos' && dibujoEditorAbierto)
         && !(seccion === 'clientes' && proyectoActual && clienteActualIdentidad) && (
         <div className={styles.barraVolver}>
@@ -694,7 +704,7 @@ export function PresupuestosPrototype() {
             {ETIQUETA_SECCION_CORTA[historialSecciones[historialSecciones.length - 1] ?? 'inicio']}
           </button>
           <p className={styles.barraVolverTitulo}>
-            {seccion === 'presupuestos' ? 'Presupuestos' : seccion === 'inteligenciaPrecios' ? 'Inteligencia de precios' : seccion === 'facturas' ? 'Facturas' : seccion === 'notas' ? 'Notas' : seccion === 'calendario' ? 'Calendario' : seccion === 'dibujos' ? 'Pizarra de medición' : seccion === 'codigosQR' ? 'Código QR' : seccion === 'clientes' ? 'Clientes' : 'Proveedores'}
+            {seccion === 'presupuestos' ? 'Presupuestos' : seccion === 'inteligenciaPrecios' ? 'Inteligencia de precios' : seccion === 'facturas' ? 'Facturas' : seccion === 'facturasEmitidas' ? 'Facturas emitidas' : seccion === 'notas' ? 'Notas' : seccion === 'calendario' ? 'Calendario' : seccion === 'dibujos' ? 'Pizarra de medición' : seccion === 'codigosQR' ? 'Código QR' : seccion === 'clientes' ? 'Clientes' : 'Proveedores'}
           </p>
           <div style={{ width: 56, flexShrink: 0 }} />
         </div>
@@ -712,7 +722,7 @@ export function PresupuestosPrototype() {
           cualquier pestaña, 31/08/2026). Mismo `.volver` que ya usan
           FichaCliente y la ficha de Proveedor para su "volver" local.
         */}
-        {(['presupuestos', 'facturas', 'notas', 'calendario', 'proveedores', 'dibujos', 'codigosQR', 'clientes', 'inteligenciaPrecios'] as string[]).includes(seccion)
+        {(['presupuestos', 'facturas', 'facturasEmitidas', 'notas', 'calendario', 'proveedores', 'dibujos', 'codigosQR', 'clientes', 'inteligenciaPrecios'] as string[]).includes(seccion)
           && !(seccion === 'dibujos' && dibujoEditorAbierto)
           && !(seccion === 'clientes' && proyectoActual && clienteActualIdentidad) && (
           <button className={styles.volver} onClick={volverSeccionAnterior}>
@@ -815,6 +825,11 @@ export function PresupuestosPrototype() {
             plan={sesion?.plan}
             esAdmin={sesion?.esAdmin}
           />
+        )}
+
+        {/* ── SECCIÓN FACTURAS EMITIDAS (SIF, Fase 1-5, 26/10/2026) ── */}
+        {seccion === 'facturasEmitidas' && (
+          <FacturasEmitidasLista clientes={nombresClientes} plan={sesion?.plan} esAdmin={sesion?.esAdmin} />
         )}
 
         {/* ── SECCIÓN CLIENTES ── */}
