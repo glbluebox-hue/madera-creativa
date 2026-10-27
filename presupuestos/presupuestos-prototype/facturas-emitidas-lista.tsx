@@ -62,34 +62,45 @@ function FilaLinea({ linea, quitable, onCambiar, onQuitar, onAnadir, esUltima }:
   onCambiar: (cambios: Partial<LineaFacturaEmitida>) => void; onQuitar: () => void; onAnadir: () => void;
 }) {
   const subtotal = (Number(linea.precio) || 0) * (linea.cantidad ?? 1);
+  // Grid, no flex — el fallo real del usuario (campo "fuera de la
+  // ventana" en móvil) era el gotcha clásico de flexbox: un <input> no se
+  // encoge por debajo de su ancho de contenido aunque el CSS le pida
+  // width:100%, así que una fila flexible con tres inputs puede
+  // desbordarse incluso con flex-wrap. Con grid y columnas en fracciones
+  // (`1fr`), cada campo se ajusta de verdad al ancho real disponible, sin
+  // salirse nunca de la pantalla por estrecha que sea.
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'flex-end', padding: '0.5rem', border: '1px solid var(--borde)', borderRadius: 6 }}>
-      <label style={{ flex: '1 1 160px', minWidth: 140, fontSize: '0.7rem', fontWeight: 700, color: 'var(--topo-claro)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0.6rem', border: '1px solid var(--borde)', borderRadius: 6, minWidth: 0 }}>
+      <label style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--topo-claro)', minWidth: 0 }}>
         Concepto
         <input
-          className={styles.input} placeholder="Ej. Cocina en L" value={linea.concepto} style={{ display: 'block', width: '100%', marginTop: '0.2rem' }}
+          className={styles.input} placeholder="Ej. Cocina en L" value={linea.concepto} style={{ display: 'block', width: '100%', minWidth: 0, boxSizing: 'border-box', marginTop: '0.2rem' }}
           onChange={(e) => onCambiar({ concepto: e.target.value })}
         />
       </label>
-      <label style={{ flex: '0 1 90px', minWidth: 80, fontSize: '0.7rem', fontWeight: 700, color: 'var(--topo-claro)' }}>
-        Cantidad (ud.)
-        <input
-          className={styles.input} type="number" value={linea.cantidad ?? 1} min={1} style={{ display: 'block', width: '100%', marginTop: '0.2rem' }}
-          onChange={(e) => onCambiar({ cantidad: Number(e.target.value) || 1 })}
-        />
-      </label>
-      <label style={{ flex: '0 1 120px', minWidth: 100, fontSize: '0.7rem', fontWeight: 700, color: 'var(--topo-claro)' }}>
-        Precio por unidad (€)
-        <input
-          className={styles.input} type="number" placeholder="0,00" value={linea.precio || ''} style={{ display: 'block', width: '100%', marginTop: '0.2rem' }}
-          onChange={(e) => onCambiar({ precio: Number(e.target.value) })}
-        />
-      </label>
-      <span style={{ flex: '0 0 auto', fontSize: '0.78rem', fontWeight: 700, alignSelf: 'center', whiteSpace: 'nowrap' }}>
-        = {formatoEuro(subtotal)}
-      </span>
-      {quitable && <button className={styles.btnIcono} onClick={onQuitar} title="Quitar línea">✕</button>}
-      {esUltima && <button className={styles.btnIcono} onClick={onAnadir} title="Añadir línea">+</button>}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem', minWidth: 0 }}>
+        <label style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--topo-claro)', minWidth: 0 }}>
+          Cantidad (ud.)
+          <input
+            className={styles.input} type="number" value={linea.cantidad ?? 1} min={1} style={{ display: 'block', width: '100%', minWidth: 0, boxSizing: 'border-box', marginTop: '0.2rem' }}
+            onChange={(e) => onCambiar({ cantidad: Number(e.target.value) || 1 })}
+          />
+        </label>
+        <label style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--topo-claro)', minWidth: 0 }}>
+          Precio por unidad (€)
+          <input
+            className={styles.input} type="number" placeholder="0,00" value={linea.precio || ''} style={{ display: 'block', width: '100%', minWidth: 0, boxSizing: 'border-box', marginTop: '0.2rem' }}
+            onChange={(e) => onCambiar({ precio: Number(e.target.value) })}
+          />
+        </label>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+        <span style={{ fontSize: '0.78rem', fontWeight: 700 }}>= {formatoEuro(subtotal)}</span>
+        <div style={{ display: 'flex', gap: '0.4rem' }}>
+          {quitable && <button className={styles.btnIcono} onClick={onQuitar} title="Quitar línea">✕</button>}
+          {esUltima && <button className={styles.btnIcono} onClick={onAnadir} title="Añadir línea">+</button>}
+        </div>
+      </div>
     </div>
   );
 }
