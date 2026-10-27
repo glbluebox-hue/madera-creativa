@@ -13,7 +13,7 @@ import styles from './styles.module.css';
  * varios proyectos en sitios distintos, así que no pueden compartir nombre
  * de campo ni destino al guardar.
  */
-type FormDatos = Pick<Cliente, 'nombre' | 'telefono' | 'email' | 'dni'> & { direccionCliente: string } &
+type FormDatos = Pick<Cliente, 'nombre' | 'telefono' | 'email' | 'dni'> & { direccionCliente: string; codigoPostalCliente: string; poblacionCliente: string } &
   Pick<Proyecto, 'proyecto' | 'direccion' | 'presupuesto' | 'tarifaHora' | 'whatsapp' | 'ubicacion' | 'codigoPuerta' | 'planta' | 'ascensor' | 'zonaCarga' | 'observacionesAcceso' | 'fechaMedicion' | 'fechaMontaje'>;
 
 /** Props del panel de datos del cliente/proyecto. */
@@ -38,7 +38,7 @@ export type TabDatosProps = {
 function formDesde(cliente: Cliente, proyecto: Proyecto): FormDatos {
   return {
     nombre: cliente.nombre, telefono: cliente.telefono, email: cliente.email, dni: cliente.dni ?? '',
-    direccionCliente: cliente.direccion ?? '',
+    direccionCliente: cliente.direccion ?? '', codigoPostalCliente: cliente.codigoPostal ?? '', poblacionCliente: cliente.poblacion ?? '',
     proyecto: proyecto.proyecto, direccion: proyecto.direccion, presupuesto: proyecto.presupuesto, tarifaHora: proyecto.tarifaHora,
     whatsapp: proyecto.whatsapp, ubicacion: proyecto.ubicacion, codigoPuerta: proyecto.codigoPuerta, planta: proyecto.planta,
     ascensor: proyecto.ascensor, zonaCarga: proyecto.zonaCarga, observacionesAcceso: proyecto.observacionesAcceso,
@@ -79,9 +79,13 @@ export function TabDatos({ cliente, proyecto, onActualizarCliente, onActualizarP
     }
     if (
       form.nombre !== cliente.nombre || form.telefono !== cliente.telefono || form.email !== cliente.email ||
-      form.dni !== (cliente.dni ?? '') || form.direccionCliente !== (cliente.direccion ?? '')
+      form.dni !== (cliente.dni ?? '') || form.direccionCliente !== (cliente.direccion ?? '') ||
+      form.codigoPostalCliente !== (cliente.codigoPostal ?? '') || form.poblacionCliente !== (cliente.poblacion ?? '')
     ) {
-      onActualizarCliente({ ...cliente, nombre: form.nombre, telefono: form.telefono, email: form.email, dni: form.dni, direccion: form.direccionCliente });
+      onActualizarCliente({
+        ...cliente, nombre: form.nombre, telefono: form.telefono, email: form.email, dni: form.dni,
+        direccion: form.direccionCliente, codigoPostal: form.codigoPostalCliente, poblacion: form.poblacionCliente,
+      });
     }
     onActualizarProyecto({
       ...proyecto,
@@ -100,6 +104,8 @@ export function TabDatos({ cliente, proyecto, onActualizarCliente, onActualizarP
       { label: 'Email', valor: cliente.email || '—' },
       { label: 'DNI/NIE', valor: cliente.dni || '—' },
       { label: 'Dirección del cliente', valor: cliente.direccion || '—' },
+      { label: 'Código postal', valor: cliente.codigoPostal || '—' },
+      { label: 'Población', valor: cliente.poblacion || '—' },
       { label: 'Dirección del trabajo', valor: proyecto.direccion || '—' },
       { label: 'Ubicación / Maps', valor: proyecto.ubicacion || '—' },
       { label: 'Código de puerta', valor: proyecto.codigoPuerta || '—' },
@@ -154,7 +160,9 @@ export function TabDatos({ cliente, proyecto, onActualizarCliente, onActualizarP
         <Campo label="WhatsApp" valor={form.whatsapp ?? ''} onChange={(v) => set('whatsapp', v)} />
         <Campo label="Email" valor={form.email} onChange={(v) => set('email', v)} />
         <Campo label="DNI/NIE" valor={form.dni ?? ''} onChange={(v) => set('dni', v)} />
-        <Campo label="Dirección del cliente" valor={form.direccionCliente} onChange={(v) => set('direccionCliente', v)} full />
+        <Campo label="Dirección del cliente (calle y número)" valor={form.direccionCliente} onChange={(v) => set('direccionCliente', v)} full />
+        <Campo label="Código postal" valor={form.codigoPostalCliente} onChange={(v) => set('codigoPostalCliente', v)} />
+        <Campo label="Población" valor={form.poblacionCliente} onChange={(v) => set('poblacionCliente', v)} />
         <Campo label="Dirección del trabajo" valor={form.direccion} onChange={(v) => set('direccion', v)} full />
         <Campo label="Ubicación / enlace Maps" valor={form.ubicacion ?? ''} onChange={(v) => set('ubicacion', v)} full />
         <Campo label="Código de puerta" valor={form.codigoPuerta ?? ''} onChange={(v) => set('codigoPuerta', v)} />

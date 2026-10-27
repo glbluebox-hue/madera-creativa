@@ -16,6 +16,8 @@ export const definicionesVariablesIniciales: DefinicionVariable[] = [
   { clave: 'cliente.email', fuente: 'cliente', etiqueta: 'Email del cliente', tipoDato: 'texto', resolver: (c) => c.cliente?.email },
   { clave: 'cliente.telefono', fuente: 'cliente', etiqueta: 'Teléfono del cliente', tipoDato: 'texto', resolver: (c) => c.cliente?.telefono },
   { clave: 'cliente.direccion', fuente: 'cliente', etiqueta: 'Dirección del cliente', tipoDato: 'texto', resolver: (c) => c.cliente?.direccion },
+  { clave: 'cliente.codigoPostal', fuente: 'cliente', etiqueta: 'Código postal del cliente', tipoDato: 'texto', resolver: (c) => c.cliente?.codigoPostal },
+  { clave: 'cliente.poblacion', fuente: 'cliente', etiqueta: 'Población del cliente', tipoDato: 'texto', resolver: (c) => c.cliente?.poblacion },
   { clave: 'cliente.dni', fuente: 'cliente', etiqueta: 'DNI/NIE del cliente', tipoDato: 'texto', resolver: (c) => c.cliente?.dni },
 
   { clave: 'empresa.nombre', fuente: 'empresa', etiqueta: 'Nombre de la empresa', tipoDato: 'texto', resolver: (c) => c.empresa?.nombre },

@@ -331,26 +331,30 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
    * Datos del cliente (24/08/2026): antes solo se pasaba el `nombre` (de
    * la lista ligera `clientes`, sin teléfono/DNI) a `resolverVariables`, y
    * ninguna plantilla tenía forma de mostrar esos datos igualmente — se
-   * pide aquí el cliente completo (`api.obtenerCliente`) y, si se eligió
-   * un proyecto en el selector, también su dirección (`api.obtenerProyecto`,
-   * la dirección vive en el Proyecto, no en el Cliente, desde el
-   * incremento "Cliente ≠ Proyecto").
+   * pide aquí el cliente completo (`api.obtenerCliente`).
+   *
+   * Dirección = la del cliente, no la del proyecto (corregido 27/10/2026):
+   * antes se usaba `proyecto.direccion` (la dirección de la obra) para
+   * rellenar `{{cliente.direccion}}`, lo que no coincidía con los mismos
+   * datos ya usados en Facturas Emitidas (dirección/CP/población/DNI de
+   * la ficha del cliente) — petición explícita del usuario de que el
+   * presupuesto muestre siempre los mismos datos de identidad que la
+   * factura.
    */
   const crearBorrador = async (clienteId: string, plantilla?: PlantillaMC) => {
     const ahora = new Date().toISOString();
     setCreandoBorrador(true);
     setError(null);
     try {
-      const [clienteCompleto, proyectoCompleto] = await Promise.all([
-        api.obtenerCliente(clienteId),
-        proyectoElegidoId ? api.obtenerProyecto(proyectoElegidoId) : Promise.resolve(null),
-      ]);
+      const clienteCompleto = await api.obtenerCliente(clienteId);
       const contexto = {
         cliente: {
           nombre: clienteCompleto.nombre,
           telefono: clienteCompleto.telefono,
           email: clienteCompleto.email,
-          direccion: proyectoCompleto?.direccion ?? '',
+          direccion: clienteCompleto.direccion ?? '',
+          codigoPostal: clienteCompleto.codigoPostal ?? '',
+          poblacion: clienteCompleto.poblacion ?? '',
           dni: clienteCompleto.dni ?? '',
         },
         empresa: { nombre: empresa.nombre, telefono: empresa.telefono, email: empresa.email, iban: empresa.iban },
@@ -358,7 +362,9 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
       const documentoResuelto = plantilla ? resolverVariables(plantilla.documentoBase, contexto) : crearDocumentoVacio(generarId);
       const datosAutoRelleno: DatosClienteAutoRelleno = {
         nombre: clienteCompleto.nombre,
-        direccion: proyectoCompleto?.direccion ?? '',
+        direccion: clienteCompleto.direccion ?? '',
+        codigoPostal: clienteCompleto.codigoPostal ?? '',
+        poblacion: clienteCompleto.poblacion ?? '',
         telefono: clienteCompleto.telefono,
         dni: clienteCompleto.dni ?? '',
         fecha: formatoFecha(new Date()),

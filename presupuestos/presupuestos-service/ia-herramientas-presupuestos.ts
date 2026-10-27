@@ -172,6 +172,9 @@ export const herramientaCrearPresupuestoDocumento: HerramientaIA<z.infer<typeof 
       email: (cliente as any).email,
       telefono: params.clienteTelefono || (cliente as any).telefono,
       direccion: params.clienteDireccion || (cliente as any).direccion,
+      codigoPostal: (cliente as any).codigoPostal,
+      poblacion: (cliente as any).poblacion,
+      dni: (cliente as any).dni,
     };
 
     let documento: DocumentoMC;

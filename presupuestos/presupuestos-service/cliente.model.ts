@@ -203,6 +203,10 @@ const ClienteSchema = new Schema({
    * sin perderse o mezclarse entre encargos.
    */
   direccion: { type: String, default: '' },
+  /** Código postal del domicilio del cliente — campo propio, separado de `direccion` (petición del usuario, 27/10/2026: la dirección de una factura necesita código postal y población identificables, no un único bloque de texto libre). */
+  codigoPostal: { type: String, default: '' },
+  /** Población/municipio del domicilio del cliente — mismo motivo que `codigoPostal`. */
+  poblacion: { type: String, default: '' },
   creado: { type: String, required: true },
 });
 

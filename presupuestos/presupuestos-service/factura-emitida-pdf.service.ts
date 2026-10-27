@@ -68,7 +68,7 @@ export type DatosFacturaEmitidaPdf = {
   leyendaFiscal?: string;
 };
 
-type DatosEmpresaPdf = { nombre?: string; titular?: string; nifCif?: string; direccion?: string; telefono?: string; email?: string; logo?: string; iban?: string };
+type DatosEmpresaPdf = { nombre?: string; titular?: string; nifCif?: string; direccion?: string; codigoPostal?: string; poblacion?: string; telefono?: string; email?: string; logo?: string; iban?: string };
 
 /**
  * Texto del "Método de pago" a imprimir — si es transferencia bancaria y
@@ -84,7 +84,24 @@ function textoMetodoPago(metodoPago: string | undefined, iban: string | undefine
   const esTransferencia = /transferencia/i.test(metodoPago);
   return esTransferencia && iban ? `${metodoPago} — IBAN: ${iban}` : metodoPago;
 }
-type DatosClientePdf = { nombre?: string; dni?: string; direccion?: string; telefono?: string };
+type DatosClientePdf = { nombre?: string; dni?: string; direccion?: string; codigoPostal?: string; poblacion?: string; telefono?: string };
+
+/**
+ * Líneas de dirección a imprimir — la calle/número (`direccion`, puede
+ * traer varias líneas propias) seguida de una línea final "CP Población"
+ * solo con las partes que de verdad estén rellenas (petición del usuario,
+ * 27/10/2026: la dirección de una factura necesita código postal y
+ * población identificables, no un único bloque de texto). Una única
+ * función para que la altura de la caja del cliente y lo que se dibuja
+ * realmente nunca puedan desincronizarse (mismo criterio ya aplicado al
+ * resto de este archivo).
+ */
+function lineasDireccion(direccion?: string, codigoPostal?: string, poblacion?: string): string[] {
+  const lineas = direccion ? direccion.split('\n') : [];
+  const ultima = [codigoPostal, poblacion].filter(Boolean).join(' ');
+  if (ultima) lineas.push(ultima);
+  return lineas;
+}
 
 /** `26/10/2026` — mismo formato que usa el resto de documentos cara al cliente (nunca `AAAA-MM-DD`). */
 function fechaEs(iso: string): string {
@@ -173,22 +190,26 @@ export async function generarPdfFacturaEmitidaBytes(
   let y = ALTO - MARGEN;
 
   // ── Cabecera: logo (izquierda) + "Factura" / número / fecha (derecha) ──
-  // Logo grande a propósito (petición del usuario, 27/10/2026) — antes se
-  // veía demasiado pequeño junto al bloque de texto de la derecha.
-  const ALTO_LOGO = 64;
+  // Grande pero equilibrado con el bloque de texto (petición del usuario,
+  // 27/10/2026, segunda vuelta): un poco más pequeño que el primer intento,
+  // con un margen superior propio (no pegado al borde) para quedar al
+  // mismo nivel visual que "Borrador de factura", y un pequeño hueco a la
+  // izquierda en vez de ir pegado al margen de la página.
+  const ALTO_LOGO = 54;
+  const Y_INICIO_LOGO = y - 4;
   const logo = await intentarEmbeberLogo(pdf, empresa?.logo);
   if (logo) {
     const anchoLogo = (logo.width / logo.height) * ALTO_LOGO;
-    pagina.drawImage(logo, { x: MARGEN, y: y - ALTO_LOGO, width: anchoLogo, height: ALTO_LOGO });
+    pagina.drawImage(logo, { x: MARGEN + 8, y: Y_INICIO_LOGO - ALTO_LOGO, width: anchoLogo, height: ALTO_LOGO });
   } else if (empresa?.nombre) {
-    escribir(empresa.nombre, MARGEN, y - 30, { size: 19, negrita: true });
+    escribir(empresa.nombre, MARGEN + 8, Y_INICIO_LOGO - 24, { size: 19, negrita: true });
   }
 
   const esBorrador = factura.estado === 'borrador';
   escribirDerecha(esBorrador ? 'Borrador de factura' : factura.naturaleza === 'rectificativa' ? 'Factura rectificativa' : 'Factura', ANCHO - MARGEN, y - 10, { size: 17, negrita: true });
   escribirDerecha(`Número: ${factura.numeroFormateado || 'sin emitir'}`, ANCHO - MARGEN, y - 30, { size: 9, color: COLOR_GRIS });
   escribirDerecha(`Fecha: ${factura.fechaEmision ? fechaEs(factura.fechaEmision) : '—'}`, ANCHO - MARGEN, y - 43, { size: 9, color: COLOR_GRIS });
-  y -= ALTO_LOGO + 16;
+  y -= Math.max(ALTO_LOGO + 4, 43) + 14;
 
   // ── Aviso de vista previa — un borrador nunca debe poder confundirse con
   // el documento legal final: ni tiene número real, ni huella, ni QR.
@@ -220,15 +241,13 @@ export async function generarPdfFacturaEmitidaBytes(
   escribir(empresa?.titular || empresa?.nombre || '—', xIzq, yIzq, { negrita: true, size: 11 });
   yIzq -= 15;
   if (empresa?.nifCif) { escribir(empresa.nifCif, xIzq, yIzq, { size: 9.5 }); yIzq -= 14; }
-  if (empresa?.direccion) {
-    for (const linea of empresa.direccion.split('\n')) { escribir(linea, xIzq, yIzq, { size: 9.5 }); yIzq -= 14; }
-  }
+  for (const linea of lineasDireccion(empresa?.direccion, empresa?.codigoPostal, empresa?.poblacion)) { escribir(linea, xIzq, yIzq, { size: 9.5 }); yIzq -= 14; }
   if (empresa?.telefono) { escribir(empresa.telefono, xIzq, yIzq, { size: 9.5 }); yIzq -= 14; }
 
   // Altura de la caja calculada ANTES de dibujar nada dentro — nunca se
   // dibuja dos veces el mismo texto (evita cualquier duda de orden de capas).
-  const lineasDireccionCliente = cliente?.direccion ? cliente.direccion.split('\n').length : 0;
-  const filasCliente = 1 + (cliente?.dni ? 1 : 0) + lineasDireccionCliente + (cliente?.telefono ? 1 : 0);
+  const lineasDireccionCliente = lineasDireccion(cliente?.direccion, cliente?.codigoPostal, cliente?.poblacion);
+  const filasCliente = 1 + (cliente?.dni ? 1 : 0) + lineasDireccionCliente.length + (cliente?.telefono ? 1 : 0);
   const altoCajaCliente = 15 + Math.max(0, filasCliente - 1) * 14 + 16;
   pagina.drawRectangle({ x: xDer, y: yColumnaInicio - altoCajaCliente + 16, width: anchoColumna, height: altoCajaCliente, color: COLOR_FONDO_CAJA });
 
@@ -236,22 +255,25 @@ export async function generarPdfFacturaEmitidaBytes(
   escribir(cliente?.nombre || '—', xDer + 12, yDer, { negrita: true, size: 11 });
   yDer -= 15;
   if (cliente?.dni) { escribir(cliente.dni, xDer + 12, yDer, { size: 9.5 }); yDer -= 14; }
-  if (cliente?.direccion) {
-    for (const linea of cliente.direccion.split('\n')) { escribir(linea, xDer + 12, yDer, { size: 9.5 }); yDer -= 14; }
-  }
+  for (const linea of lineasDireccionCliente) { escribir(linea, xDer + 12, yDer, { size: 9.5 }); yDer -= 14; }
   if (cliente?.telefono) { escribir(cliente.telefono, xDer + 12, yDer, { size: 9.5 }); yDer -= 14; }
 
   y = Math.min(yIzq, yDer) - 26;
 
   // ── Tabla: CONCEPTO / CANTIDAD / PRECIO S/I / IGIC·IVA / SUBTOTAL S/I ──
+  // Columnas numéricas SIEMPRE alineadas a la derecha (incluida Cantidad,
+  // antes a la izquierda) — es lo que de verdad evita el solape real que
+  // reportó el usuario: dos columnas alineadas a la izquierda y derecha
+  // respectivamente, una junto a la otra, se pisan en cuanto el texto es
+  // un poco más largo de lo esperado ("1 unidades" invadía el precio).
   const colConcepto = MARGEN;
-  const colCantidad = ANCHO - MARGEN - 260;
-  const colPrecio = ANCHO - MARGEN - 195;
-  const colImpuesto = ANCHO - MARGEN - 110;
   const colSubtotal = ANCHO - MARGEN;
+  const colImpuesto = colSubtotal - 95;
+  const colPrecio = colImpuesto - 95;
+  const colCantidad = colPrecio - 70;
 
   escribir('CONCEPTO', colConcepto, y, { size: 8, negrita: true, color: COLOR_GRIS });
-  escribir('CANTIDAD', colCantidad, y, { size: 8, negrita: true, color: COLOR_GRIS });
+  escribirDerecha('CANTIDAD', colCantidad, y, { size: 8, negrita: true, color: COLOR_GRIS });
   escribirDerecha('PRECIO S/I', colPrecio, y, { size: 8, negrita: true, color: COLOR_GRIS });
   escribirDerecha(etiquetaImpuesto(factura.tipoImpuesto), colImpuesto, y, { size: 8, negrita: true, color: COLOR_GRIS });
   escribirDerecha('SUBTOTAL S/I', colSubtotal, y, { size: 8, negrita: true, color: COLOR_GRIS });
@@ -263,7 +285,7 @@ export async function generarPdfFacturaEmitidaBytes(
   for (const linea of lineas) {
     const subtotal = linea.precio * linea.cantidad;
     escribir(linea.concepto, colConcepto, y, { size: 9.5 });
-    escribir(`${linea.cantidad} unidades`, colCantidad, y, { size: 9.5 });
+    escribirDerecha(`${linea.cantidad} ud.`, colCantidad, y, { size: 9.5 });
     escribirDerecha(formatoEuro(linea.precio), colPrecio, y, { size: 9.5 });
     escribirDerecha(porcentajeTexto, colImpuesto, y, { size: 9.5 });
     escribirDerecha(formatoEuro(subtotal), colSubtotal, y, { size: 9.5 });
@@ -334,29 +356,36 @@ export async function generarPdfFacturaEmitidaBytes(
     y -= 4;
   }
 
-  // ── QR — hueco reservado para VERI*FACTU (ver cabecera del archivo).
-  // Nunca en un borrador: todavía no hay número, fecha ni huella reales
-  // que codificar — un QR con datos provisionales sería engañoso. ──
-  const yQr = Math.min(y - 10, 118);
+  // ── QR + pie: FLUYE justo debajo del contenido real, nunca fijo cerca
+  // del borde inferior de la hoja (causa real del hueco en blanco enorme
+  // que reportó el usuario en una factura corta — antes `Math.min(y-10,
+  // 118)` empujaba el QR hacia abajo aposta cuanto menos contenido había,
+  // justo al revés de lo que hacía falta). Un único suelo mínimo (no un
+  // valor fijo) solo para no salirse de la página si hay muchas líneas.
+  // Nunca hay QR en un borrador: todavía no hay número, fecha ni huella
+  // reales que codificar — un QR con datos provisionales sería engañoso. ──
+  let yPie = Math.max(y - 14, esBorrador ? 40 : 140);
   if (!esBorrador && empresa?.nifCif) {
     try {
       const qrDataUrl = await QRCode.toDataURL(contenidoQr(empresa.nifCif, factura), { margin: 1, width: 220 });
       const base64 = qrDataUrl.split(',')[1] ?? '';
       const qrImagen = await pdf.embedPng(Buffer.from(base64, 'base64'));
       const tamanoQr = 70;
-      pagina.drawImage(qrImagen, { x: MARGEN, y: yQr - tamanoQr, width: tamanoQr, height: tamanoQr });
-      escribir('Registro de facturación conforme al RD 1007/2023 (SIF).', MARGEN + tamanoQr + 10, yQr - tamanoQr / 2 + 10, { size: 7, color: COLOR_GRIS });
-      escribir(`Sistema: ${factura.indicadorVerifactu} — formato del QR sin confirmar oficialmente.`, MARGEN + tamanoQr + 10, yQr - tamanoQr / 2 - 2, { size: 7, color: COLOR_GRIS });
-    } catch { /* un fallo al generar el QR no debe impedir descargar el resto del PDF */ }
+      pagina.drawImage(qrImagen, { x: MARGEN, y: yPie - tamanoQr, width: tamanoQr, height: tamanoQr });
+      escribir('Registro de facturación conforme al RD 1007/2023 (SIF).', MARGEN + tamanoQr + 10, yPie - tamanoQr / 2 + 10, { size: 7, color: COLOR_GRIS });
+      escribir(`Sistema: ${factura.indicadorVerifactu} — formato del QR sin confirmar oficialmente.`, MARGEN + tamanoQr + 10, yPie - tamanoQr / 2 - 2, { size: 7, color: COLOR_GRIS });
+      yPie -= tamanoQr + 18;
+    } catch { yPie -= 18; /* un fallo al generar el QR no debe impedir descargar el resto del PDF */ }
   }
 
-  // ── Pie: huella de integridad (solo si ya existe) + paginación ──
+  // ── Última línea: huella de integridad (solo si ya existe) + paginación — fluye justo debajo de lo anterior, nunca más abajo del margen de la página. ──
+  const yUltimaLinea = Math.max(yPie, 20);
   if (esBorrador) {
-    escribir('Sin número, huella ni QR — se generan al emitir.', MARGEN, 20, { size: 6.5, color: COLOR_GRIS });
+    escribir('Sin número, huella ni QR — se generan al emitir.', MARGEN, yUltimaLinea, { size: 6.5, color: COLOR_GRIS });
   } else {
-    escribir(`Huella: ${factura.hash.slice(0, 32)}…`, MARGEN, 20, { size: 6.5, color: COLOR_GRIS });
+    escribir(`Huella: ${factura.hash.slice(0, 32)}…`, MARGEN, yUltimaLinea, { size: 6.5, color: COLOR_GRIS });
   }
-  escribirDerecha('Página 1 de 1', ANCHO - MARGEN, 20, { size: 7, color: COLOR_GRIS });
+  escribirDerecha('Página 1 de 1', ANCHO - MARGEN, yUltimaLinea, { size: 7, color: COLOR_GRIS });
 
   const bytes = await pdf.save();
   return Buffer.from(bytes);

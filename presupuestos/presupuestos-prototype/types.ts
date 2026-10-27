@@ -486,6 +486,10 @@ export type Cliente = {
    * Opcional por el mismo motivo que `dni?` (ver arriba).
    */
   direccion?: string;
+  /** Código postal del domicilio del cliente — campo propio, separado de `direccion` (27/10/2026: la dirección de una factura necesita código postal y población identificables). */
+  codigoPostal?: string;
+  /** Población/municipio del domicilio del cliente — mismo motivo que `codigoPostal`. */
+  poblacion?: string;
   /** Fecha de alta en formato ISO. */
   creado: string;
 };

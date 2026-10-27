@@ -605,11 +605,12 @@ export class PresupuestosService {
    * que quede claro que aquí siempre se genera un id nuevo, nunca se
    * reutiliza uno existente (evita duplicar clientes por error).
    */
-  async crearCliente(datos: { nombre: string; telefono?: string; email?: string; dni?: string; direccion?: string }, usuarioId: string): Promise<ClienteDoc> {
+  async crearCliente(datos: { nombre: string; telefono?: string; email?: string; dni?: string; direccion?: string; codigoPostal?: string; poblacion?: string }, usuarioId: string): Promise<ClienteDoc> {
     await conectar();
     const doc = await ClienteModel.create({
       id: randomUUID(), usuarioId,
       nombre: datos.nombre, telefono: datos.telefono ?? '', email: datos.email ?? '', dni: datos.dni ?? '', direccion: datos.direccion ?? '',
+      codigoPostal: datos.codigoPostal ?? '', poblacion: datos.poblacion ?? '',
       creado: new Date().toISOString(),
     });
     busEventos.publicar({ nombre: 'cliente.creado', usuarioId, entidadId: doc.id, datos: { nombre: doc.nombre } });
@@ -617,11 +618,11 @@ export class PresupuestosService {
   }
 
   /** Edita los datos de identidad de un cliente ya existente (nombre/teléfono/email/DNI-NIE). */
-  async guardarCliente(cliente: { id: string; nombre: string; telefono?: string; email?: string; dni?: string; direccion?: string }, usuarioId: string): Promise<ClienteDoc> {
+  async guardarCliente(cliente: { id: string; nombre: string; telefono?: string; email?: string; dni?: string; direccion?: string; codigoPostal?: string; poblacion?: string }, usuarioId: string): Promise<ClienteDoc> {
     await conectar();
     const doc = await ClienteModel.findOneAndUpdate(
       { id: cliente.id, usuarioId },
-      { $set: { nombre: cliente.nombre, telefono: cliente.telefono ?? '', email: cliente.email ?? '', dni: cliente.dni ?? '', direccion: cliente.direccion ?? '' } },
+      { $set: { nombre: cliente.nombre, telefono: cliente.telefono ?? '', email: cliente.email ?? '', dni: cliente.dni ?? '', direccion: cliente.direccion ?? '', codigoPostal: cliente.codigoPostal ?? '', poblacion: cliente.poblacion ?? '' } },
       { new: true }
     ).lean().exec();
     if (!doc) throw new ErrorDeNegocio('Cliente no encontrado', 400);
@@ -3964,7 +3965,7 @@ export class PresupuestosService {
     const factura = await FacturaEmitidaModel.findOne({ id, usuarioId }).lean().exec() as any;
     if (!factura) throw new ErrorDeNegocio('Factura no encontrada', 400);
     const empresa = await EmpresaModel.findOne({ usuarioId }).lean().exec() as any;
-    const cliente = await ClienteModel.findOne({ id: factura.clienteId, usuarioId }).select('nombre dni direccion telefono').lean().exec() as any;
+    const cliente = await ClienteModel.findOne({ id: factura.clienteId, usuarioId }).select('nombre dni direccion codigoPostal poblacion telefono').lean().exec() as any;
     return generarPdfFacturaEmitidaBytes(factura, empresa, cliente);
   }
 

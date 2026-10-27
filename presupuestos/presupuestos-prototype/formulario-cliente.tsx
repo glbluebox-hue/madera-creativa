@@ -35,6 +35,8 @@ export function FormularioCliente({ onGuardar, onCerrar }: FormularioClienteProp
   const [email, setEmail] = useState('');
   const [dni, setDni] = useState('');
   const [direccionCliente, setDireccionCliente] = useState('');
+  const [codigoPostalCliente, setCodigoPostalCliente] = useState('');
+  const [poblacionCliente, setPoblacionCliente] = useState('');
   const [proyecto, setProyecto] = useState('');
   const [direccion, setDireccion] = useState('');
   const [presupuesto, setPresupuesto] = useState('');
@@ -51,7 +53,10 @@ export function FormularioCliente({ onGuardar, onCerrar }: FormularioClienteProp
     try {
       const clienteId = modo === 'existente'
         ? clienteExistenteId
-        : (await api.crearCliente({ nombre: nombre.trim(), telefono: telefono.trim(), email: email.trim(), dni: dni.trim(), direccion: direccionCliente.trim() })).id;
+        : (await api.crearCliente({
+            nombre: nombre.trim(), telefono: telefono.trim(), email: email.trim(), dni: dni.trim(),
+            direccion: direccionCliente.trim(), codigoPostal: codigoPostalCliente.trim(), poblacion: poblacionCliente.trim(),
+          })).id;
       const nuevoProyecto = await api.crearProyecto({
         clienteId,
         proyecto: proyecto.trim(),
@@ -108,8 +113,16 @@ export function FormularioCliente({ onGuardar, onCerrar }: FormularioClienteProp
                 <input className={styles.input} value={dni} onChange={(e) => setDni(e.target.value)} placeholder="12345678A" />
               </div>
               <div className={`${styles.campo} ${styles.full}`}>
-                <label className={styles.campoLabel}>Dirección del cliente</label>
-                <input className={styles.input} value={direccionCliente} onChange={(e) => setDireccionCliente(e.target.value)} placeholder="Calle, número, ciudad" />
+                <label className={styles.campoLabel}>Dirección del cliente (calle y número)</label>
+                <input className={styles.input} value={direccionCliente} onChange={(e) => setDireccionCliente(e.target.value)} placeholder="Calle El herrero, 6" />
+              </div>
+              <div className={styles.campo}>
+                <label className={styles.campoLabel}>Código postal</label>
+                <input className={styles.input} value={codigoPostalCliente} onChange={(e) => setCodigoPostalCliente(e.target.value)} placeholder="38677" />
+              </div>
+              <div className={styles.campo}>
+                <label className={styles.campoLabel}>Población</label>
+                <input className={styles.input} value={poblacionCliente} onChange={(e) => setPoblacionCliente(e.target.value)} placeholder="Tijoco Bajo" />
               </div>
             </>
           )}

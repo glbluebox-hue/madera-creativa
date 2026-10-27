@@ -47,7 +47,7 @@ const formatoFechaCorta = new Intl.DateTimeFormat('es-ES', { day: '2-digit', mon
 export type SeccionPresupuesto = { titulo: string; descripcion: string; precio: number };
 
 export type ContextoGeneracion = {
-  cliente: { nombre: string; email?: string; telefono?: string; direccion?: string };
+  cliente: { nombre: string; email?: string; telefono?: string; direccion?: string; codigoPostal?: string; poblacion?: string; dni?: string };
   empresa: { nombre: string; telefono?: string; email?: string; iban?: string; logo?: string | null };
   titulo: string;
   condicionesPago?: string;
@@ -142,7 +142,11 @@ function crearPaginaPortada(contexto: ContextoGeneracion): { pagina: PaginaMC; a
   const pagina = nuevaPagina(0, 'Portada');
   const anchoBloque = (ANCHO_UTIL - GAP_ENTRE_BLOQUES) / 2;
   const inicio = ALTURA_MEMBRETE + GAP_ENTRE_BLOQUES;
-  const textoCliente = bloqueDatos('CLIENTE', [contexto.cliente.nombre, contexto.cliente.direccion, contexto.cliente.telefono, contexto.cliente.email]);
+  const codigoPostalYPoblacion = [contexto.cliente.codigoPostal, contexto.cliente.poblacion].filter(Boolean).join(' ');
+  const textoCliente = bloqueDatos('CLIENTE', [
+    contexto.cliente.nombre, contexto.cliente.dni, contexto.cliente.direccion, codigoPostalYPoblacion,
+    contexto.cliente.telefono, contexto.cliente.email,
+  ]);
   const textoEmpresa = bloqueDatos(contexto.empresa.nombre, [contexto.empresa.telefono, contexto.empresa.email]);
   const altoBloqueDatos = Math.max(estimarAlturaTexto(textoCliente, anchoBloque, 12.5, 1.6), estimarAlturaTexto(textoEmpresa, anchoBloque, 12.5, 1.6));
   pagina.elementos = [

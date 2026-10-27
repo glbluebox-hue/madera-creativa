@@ -11,7 +11,7 @@ import { crearElementoBase, anadirElemento, recorrerElementos } from './document
  * lo que permite testearla sin arrastrar ese árbol de imports.
  */
 
-export type DatosClienteAutoRelleno = { nombre: string; direccion: string; telefono: string; dni: string; fecha: string };
+export type DatosClienteAutoRelleno = { nombre: string; direccion: string; codigoPostal: string; poblacion: string; telefono: string; dni: string; fecha: string };
 
 /**
  * Etiquetas típicas de un bloque "Cliente" en una plantilla ya diseñada
@@ -24,6 +24,8 @@ const ETIQUETAS_CLIENTE: { dato: keyof DatosClienteAutoRelleno; patron: RegExp }
   { dato: 'fecha', patron: /\bfecha\s*:/i },
   { dato: 'nombre', patron: /\bnombre\s*:/i },
   { dato: 'direccion', patron: /\bdirecci[oó]n\s*:/i },
+  { dato: 'codigoPostal', patron: /\bc[oó]digo\s*postal\s*:/i },
+  { dato: 'poblacion', patron: /\bpoblaci[oó]n\s*:/i },
   { dato: 'telefono', patron: /\btel[eé]fono\s*:/i },
   { dato: 'dni', patron: /\b(?:cif\s*\/\s*nif|dni\s*\/\s*nie|nif|dni|nie)\s*:/i },
 ];
@@ -101,6 +103,8 @@ export function rellenarEtiquetasCliente(documento: DocumentoMC, datos: DatosCli
 export function crearBloqueDatosCliente(datos: DatosClienteAutoRelleno): ElementoMC {
   const lineas = [datos.nombre];
   if (datos.direccion) lineas.push(datos.direccion);
+  const codigoPostalYPoblacion = [datos.codigoPostal, datos.poblacion].filter(Boolean).join(' ');
+  if (codigoPostalYPoblacion) lineas.push(codigoPostalYPoblacion);
   if (datos.telefono) lineas.push(`Tel: ${datos.telefono}`);
   if (datos.dni) lineas.push(`DNI/NIE: ${datos.dni}`);
   lineas.push(`Fecha: ${datos.fecha}`);

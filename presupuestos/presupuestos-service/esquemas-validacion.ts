@@ -483,6 +483,8 @@ export const esquemaCliente = z.object({
   dni: z.string().max(20).optional().default(''),
   /** Dirección del propio cliente (domicilio/sede) — distinta de la dirección del trabajo, que vive en cada `Proyecto` (29/08/2026). */
   direccion: z.string().max(300).optional().default(''),
+  codigoPostal: z.string().max(12).optional().default(''),
+  poblacion: z.string().max(150).optional().default(''),
   creado: z.string().min(1).max(64),
 });
 
@@ -493,6 +495,8 @@ export const esquemaClienteEntrada = z.object({
   email: z.string().max(254).optional().default(''),
   dni: z.string().max(20).optional().default(''),
   direccion: z.string().max(300).optional().default(''),
+  codigoPostal: z.string().max(12).optional().default(''),
+  poblacion: z.string().max(150).optional().default(''),
 });
 
 /**

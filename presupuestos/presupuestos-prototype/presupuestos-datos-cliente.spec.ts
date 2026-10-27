@@ -4,7 +4,8 @@ import { crearElementoBase, anadirElemento } from './documento-comandos.js';
 import type { DocumentoMC } from './documento-modelo.js';
 
 const DATOS: DatosClienteAutoRelleno = {
-  nombre: 'Walter Di Zio', direccion: 'Calle Falsa 123', telefono: '+34 642 02 14 68', dni: '12345678A', fecha: '24/08/2026',
+  nombre: 'Walter Di Zio', direccion: 'Calle Falsa 123', codigoPostal: '38677', poblacion: 'Tijoco Bajo',
+  telefono: '+34 642 02 14 68', dni: '12345678A', fecha: '24/08/2026',
 };
 
 function docConTexto(texto: string): DocumentoMC {
@@ -45,6 +46,11 @@ describe('rellenarLinea (corrección 24/08/2026 — rellenar etiquetas de una pl
 
   it('reconoce "Direccion" sin tilde', () => {
     expect(rellenarLinea('Direccion: ___', DATOS).huboRelleno).toBe(true);
+  });
+
+  it('rellena Código postal y Población', () => {
+    expect(rellenarLinea('Código postal: ___', DATOS).linea).toBe('Código postal: 38677');
+    expect(rellenarLinea('Población: ___', DATOS).linea).toBe('Población: Tijoco Bajo');
   });
 
   it('reconoce variantes del documento de identidad: NIF, DNI, NIE, DNI/NIE', () => {
