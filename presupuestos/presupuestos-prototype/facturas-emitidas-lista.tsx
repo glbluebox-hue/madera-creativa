@@ -14,7 +14,32 @@ const ETIQUETA_ESTADO: Record<string, string> = { borrador: 'Borrador', emitida:
 const COLOR_ESTADO: Record<string, string> = { borrador: 'var(--topo-claro)', emitida: 'var(--verde)', anulada: 'var(--rojo)' };
 
 function nuevaLinea(): LineaFacturaEmitida {
-  return { id: Math.random().toString(36).slice(2), concepto: '', precio: 0 };
+  return { id: Math.random().toString(36).slice(2), concepto: '', precio: 0, cantidad: 1 };
+}
+
+/** Fila de "Concepto / Cantidad / Precio" reutilizada en el formulario de borrador — mismo patrón en los dos sitios donde se edita una línea (crear y editar). */
+function FilaLinea({ linea, quitable, onCambiar, onQuitar, onAnadir, esUltima }: {
+  linea: LineaFacturaEmitida; quitable: boolean; esUltima: boolean;
+  onCambiar: (cambios: Partial<LineaFacturaEmitida>) => void; onQuitar: () => void; onAnadir: () => void;
+}) {
+  return (
+    <div style={{ display: 'flex', gap: '0.4rem' }}>
+      <input
+        className={styles.input} placeholder="Concepto" value={linea.concepto} style={{ flex: '1 1 auto' }}
+        onChange={(e) => onCambiar({ concepto: e.target.value })}
+      />
+      <input
+        className={styles.input} type="number" placeholder="Cantidad" value={linea.cantidad ?? 1} min={1} style={{ width: 80, flexShrink: 0 }}
+        onChange={(e) => onCambiar({ cantidad: Number(e.target.value) || 1 })}
+      />
+      <input
+        className={styles.input} type="number" placeholder="€/ud." value={linea.precio || ''} style={{ width: 110, flexShrink: 0 }}
+        onChange={(e) => onCambiar({ precio: Number(e.target.value) })}
+      />
+      {quitable && <button className={styles.btnIcono} onClick={onQuitar} title="Quitar línea">✕</button>}
+      {esUltima && <button className={styles.btnIcono} onClick={onAnadir} title="Añadir línea">+</button>}
+    </div>
+  );
 }
 
 /**
@@ -120,10 +145,14 @@ function FormularioNuevaFactura({ clientes, onCreada }: { clientes: { id: string
   const [clienteId, setClienteId] = useState('');
   const [titulo, setTitulo] = useState('');
   const [lineas, setLineas] = useState<LineaFacturaEmitida[]>([nuevaLinea()]);
+  const [vencimiento, setVencimiento] = useState('');
+  const [metodoPago, setMetodoPago] = useState('');
+  const [leyendaFiscal, setLeyendaFiscal] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const importeTotal = lineas.reduce((s, l) => s + (Number(l.precio) || 0), 0);
+  // Solo para mostrar en pantalla — el total "de verdad" lo calcula y guarda el servidor a partir de las líneas.
+  const importeTotal = lineas.reduce((s, l) => s + (Number(l.precio) || 0) * (l.cantidad ?? 1), 0);
 
   const crear = async () => {
     if (!clienteId) { setError('Elige un cliente.'); return; }
@@ -131,7 +160,8 @@ function FormularioNuevaFactura({ clientes, onCreada }: { clientes: { id: string
     setError(null);
     try {
       const creada = await api.crearFacturaEmitida({
-        clienteId, titulo, lineas: lineas.filter((l) => l.concepto.trim()), importeTotal,
+        clienteId, titulo, lineas: lineas.filter((l) => l.concepto.trim()),
+        vencimiento, metodoPago, leyendaFiscal,
       });
       onCreada(creada);
     } catch (e) {
@@ -151,33 +181,35 @@ function FormularioNuevaFactura({ clientes, onCreada }: { clientes: { id: string
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
         {lineas.map((l, i) => (
-          <div key={l.id} style={{ display: 'flex', gap: '0.4rem' }}>
-            <input
-              className={styles.input}
-              placeholder="Concepto"
-              value={l.concepto}
-              style={{ flex: '1 1 auto' }}
-              onChange={(e) => setLineas((prev) => prev.map((x) => (x.id === l.id ? { ...x, concepto: e.target.value } : x)))}
-            />
-            <input
-              className={styles.input}
-              type="number"
-              placeholder="€"
-              value={l.precio || ''}
-              style={{ width: 110, flexShrink: 0 }}
-              onChange={(e) => setLineas((prev) => prev.map((x) => (x.id === l.id ? { ...x, precio: Number(e.target.value) } : x)))}
-            />
-            {lineas.length > 1 && (
-              <button className={styles.btnIcono} onClick={() => setLineas((prev) => prev.filter((x) => x.id !== l.id))} title="Quitar línea">✕</button>
-            )}
-            {i === lineas.length - 1 && (
-              <button className={styles.btnIcono} onClick={() => setLineas((prev) => [...prev, nuevaLinea()])} title="Añadir línea">+</button>
-            )}
-          </div>
+          <FilaLinea
+            key={l.id} linea={l} quitable={lineas.length > 1} esUltima={i === lineas.length - 1}
+            onCambiar={(cambios) => setLineas((prev) => prev.map((x) => (x.id === l.id ? { ...x, ...cambios } : x)))}
+            onQuitar={() => setLineas((prev) => prev.filter((x) => x.id !== l.id))}
+            onAnadir={() => setLineas((prev) => [...prev, nuevaLinea()])}
+          />
         ))}
       </div>
 
       <p style={{ margin: 0, textAlign: 'right', fontWeight: 800 }}>Total: {formatoEuro(importeTotal)}</p>
+
+      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+        <label style={{ fontSize: '0.78rem', fontWeight: 700, flex: '1 1 160px' }}>
+          Vencimiento <span style={{ fontWeight: 400, color: 'var(--topo-claro)' }}>(opcional)</span>
+          <input className={styles.input} type="date" value={vencimiento} onChange={(e) => setVencimiento(e.target.value)} style={{ display: 'block', width: '100%', marginTop: '0.25rem' }} />
+        </label>
+        <label style={{ fontSize: '0.78rem', fontWeight: 700, flex: '1 1 160px' }}>
+          Método de pago <span style={{ fontWeight: 400, color: 'var(--topo-claro)' }}>(opcional)</span>
+          <input className={styles.input} placeholder="Transferencia bancaria" value={metodoPago} onChange={(e) => setMetodoPago(e.target.value)} style={{ display: 'block', width: '100%', marginTop: '0.25rem' }} />
+        </label>
+      </div>
+      <label style={{ fontSize: '0.78rem', fontWeight: 700 }}>
+        Nota legal / leyenda fiscal <span style={{ fontWeight: 400, color: 'var(--topo-claro)' }}>(opcional — ej. exención, inversión del sujeto pasivo…)</span>
+        <textarea
+          className={styles.input} rows={2} value={leyendaFiscal} onChange={(e) => setLeyendaFiscal(e.target.value)}
+          placeholder="Escribe aquí el texto legal exacto si aplica a este caso — tú eres responsable de que sea correcto, no se genera solo."
+          style={{ display: 'block', width: '100%', marginTop: '0.25rem', resize: 'vertical', fontFamily: 'inherit' }}
+        />
+      </label>
 
       {error && <p style={{ color: 'var(--rojo)', fontSize: '0.82rem', margin: 0 }}>{error}</p>}
 
@@ -193,6 +225,9 @@ function DetalleFacturaEmitida({ factura, clienteNombre, onVolver, onActualizar 
 }) {
   const [titulo, setTitulo] = useState(factura.titulo);
   const [lineas, setLineas] = useState<LineaFacturaEmitida[]>(factura.lineas.length ? factura.lineas : [nuevaLinea()]);
+  const [vencimiento, setVencimiento] = useState(factura.vencimiento || '');
+  const [metodoPago, setMetodoPago] = useState(factura.metodoPago || '');
+  const [leyendaFiscal, setLeyendaFiscal] = useState(factura.leyendaFiscal || '');
   const [guardando, setGuardando] = useState(false);
   const [emitiendo, setEmitiendo] = useState(false);
   const [confirmandoEmitir, setConfirmandoEmitir] = useState(false);
@@ -202,13 +237,15 @@ function DetalleFacturaEmitida({ factura, clienteNombre, onVolver, onActualizar 
   const [error, setError] = useState<string | null>(null);
 
   const esBorrador = factura.estado === 'borrador';
-  const importeTotal = lineas.reduce((s, l) => s + (Number(l.precio) || 0), 0);
+  // Solo para mostrar en pantalla — el total "de verdad" lo calcula y guarda el servidor a partir de las líneas.
+  const importeTotal = lineas.reduce((s, l) => s + (Number(l.precio) || 0) * (l.cantidad ?? 1), 0);
+  const cambiosBorrador = { titulo, lineas, vencimiento, metodoPago, leyendaFiscal };
 
   const guardar = async () => {
     setGuardando(true);
     setError(null);
     try {
-      const actualizada = await api.actualizarFacturaEmitidaBorrador(factura.id, { titulo, lineas, importeTotal });
+      const actualizada = await api.actualizarFacturaEmitidaBorrador(factura.id, cambiosBorrador);
       onActualizar(actualizada);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo guardar.');
@@ -221,7 +258,7 @@ function DetalleFacturaEmitida({ factura, clienteNombre, onVolver, onActualizar 
     setEmitiendo(true);
     setError(null);
     try {
-      await api.actualizarFacturaEmitidaBorrador(factura.id, { titulo, lineas, importeTotal }); // guarda los últimos cambios antes de sellar
+      await api.actualizarFacturaEmitidaBorrador(factura.id, cambiosBorrador); // guarda los últimos cambios antes de sellar
       const emitida = await api.emitirFacturaEmitida(factura.id);
       setConfirmandoEmitir(false);
       onActualizar(emitida);
@@ -275,20 +312,31 @@ function DetalleFacturaEmitida({ factura, clienteNombre, onVolver, onActualizar 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginBottom: '1.25rem' }}>
           <input className={styles.input} placeholder="Título" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
           {lineas.map((l, i) => (
-            <div key={l.id} style={{ display: 'flex', gap: '0.4rem' }}>
-              <input
-                className={styles.input} placeholder="Concepto" value={l.concepto} style={{ flex: '1 1 auto' }}
-                onChange={(e) => setLineas((prev) => prev.map((x) => (x.id === l.id ? { ...x, concepto: e.target.value } : x)))}
-              />
-              <input
-                className={styles.input} type="number" placeholder="€" value={l.precio || ''} style={{ width: 110, flexShrink: 0 }}
-                onChange={(e) => setLineas((prev) => prev.map((x) => (x.id === l.id ? { ...x, precio: Number(e.target.value) } : x)))}
-              />
-              {lineas.length > 1 && <button className={styles.btnIcono} onClick={() => setLineas((prev) => prev.filter((x) => x.id !== l.id))}>✕</button>}
-              {i === lineas.length - 1 && <button className={styles.btnIcono} onClick={() => setLineas((prev) => [...prev, nuevaLinea()])}>+</button>}
-            </div>
+            <FilaLinea
+              key={l.id} linea={l} quitable={lineas.length > 1} esUltima={i === lineas.length - 1}
+              onCambiar={(cambios) => setLineas((prev) => prev.map((x) => (x.id === l.id ? { ...x, ...cambios } : x)))}
+              onQuitar={() => setLineas((prev) => prev.filter((x) => x.id !== l.id))}
+              onAnadir={() => setLineas((prev) => [...prev, nuevaLinea()])}
+            />
           ))}
           <p style={{ margin: 0, textAlign: 'right', fontWeight: 800 }}>Total: {formatoEuro(importeTotal)}</p>
+          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+            <label style={{ fontSize: '0.78rem', fontWeight: 700, flex: '1 1 160px' }}>
+              Vencimiento <span style={{ fontWeight: 400, color: 'var(--topo-claro)' }}>(opcional)</span>
+              <input className={styles.input} type="date" value={vencimiento} onChange={(e) => setVencimiento(e.target.value)} style={{ display: 'block', width: '100%', marginTop: '0.25rem' }} />
+            </label>
+            <label style={{ fontSize: '0.78rem', fontWeight: 700, flex: '1 1 160px' }}>
+              Método de pago <span style={{ fontWeight: 400, color: 'var(--topo-claro)' }}>(opcional)</span>
+              <input className={styles.input} placeholder="Transferencia bancaria" value={metodoPago} onChange={(e) => setMetodoPago(e.target.value)} style={{ display: 'block', width: '100%', marginTop: '0.25rem' }} />
+            </label>
+          </div>
+          <label style={{ fontSize: '0.78rem', fontWeight: 700 }}>
+            Nota legal / leyenda fiscal <span style={{ fontWeight: 400, color: 'var(--topo-claro)' }}>(opcional — tú eres responsable de que sea correcta)</span>
+            <textarea
+              className={styles.input} rows={2} value={leyendaFiscal} onChange={(e) => setLeyendaFiscal(e.target.value)}
+              style={{ display: 'block', width: '100%', marginTop: '0.25rem', resize: 'vertical', fontFamily: 'inherit' }}
+            />
+          </label>
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
             <button className={styles.btn} onClick={guardar} disabled={guardando}>{guardando ? 'Guardando…' : 'Guardar'}</button>
             <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={() => setConfirmandoEmitir(true)}>Emitir</button>
@@ -299,9 +347,16 @@ function DetalleFacturaEmitida({ factura, clienteNombre, onVolver, onActualizar 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.25rem' }}>
           {factura.lineas.map((l) => (
             <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
-              <span>{l.concepto}</span><span style={{ fontWeight: 700 }}>{formatoEuro(l.precio)}</span>
+              <span>{l.concepto}{(l.cantidad ?? 1) !== 1 ? ` (${l.cantidad} ud. × ${formatoEuro(l.precio)})` : ''}</span>
+              <span style={{ fontWeight: 700 }}>{formatoEuro(l.precio * (l.cantidad ?? 1))}</span>
             </div>
           ))}
+          {(factura.vencimiento || factura.metodoPago) && (
+            <div style={{ display: 'flex', gap: '1.5rem', fontSize: '0.8rem', color: 'var(--topo-claro)', marginTop: '0.3rem' }}>
+              {factura.vencimiento && <span>Vencimiento: {formatoFecha(factura.vencimiento)}</span>}
+              {factura.metodoPago && <span>Pago: {factura.metodoPago}</span>}
+            </div>
+          )}
           <p style={{ margin: '0.4rem 0 0', textAlign: 'right', fontWeight: 800, fontSize: '1.05rem' }}>Total: {formatoEuro(factura.importeTotal)}</p>
           <p style={{ margin: '0.6rem 0 0', fontSize: '0.72rem', color: 'var(--topo-claro)' }}>
             Emitida {formatoFecha(factura.fechaEmision)} · Huella: <span style={{ fontFamily: 'monospace' }}>{factura.hash.slice(0, 16)}…</span>
@@ -371,7 +426,7 @@ function RectificarFacturaEmitida({ factura, onCerrar, onCreada }: { factura: Fa
     try {
       const rectificativa = await api.rectificarFacturaEmitida(factura.id, {
         motivoRectificacion: motivo, importeTotal: importe,
-        lineas: [{ id: Math.random().toString(36).slice(2), concepto: `Rectificación de ${factura.numeroFormateado}`, precio: importe }],
+        lineas: [{ id: Math.random().toString(36).slice(2), concepto: `Rectificación de ${factura.numeroFormateado}`, precio: importe, cantidad: 1 }],
       });
       await api.emitirFacturaEmitida(rectificativa.id);
       onCreada();

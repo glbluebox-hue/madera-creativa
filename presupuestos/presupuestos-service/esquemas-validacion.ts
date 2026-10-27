@@ -1207,6 +1207,7 @@ export const esquemaEmpresa = z.object({
   eslogan: z.string().max(300).optional().default(''),
   logo: z.string().optional().default(''),
   nifCif: z.string().max(20).optional().default(''),
+  direccion: z.string().max(300).optional().default(''),
   telefono: z.string().max(50).optional().default(''),
   email: z.string().max(254).optional().default(''),
   iban: z.string().max(34).optional().default(''),

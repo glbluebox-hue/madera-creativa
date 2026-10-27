@@ -372,6 +372,8 @@ export type EmpresaDoc = {
   logo: string;
   /** CIF/NIF de la propia empresa — para las facturas/presupuestos que ella emite. */
   nifCif: string;
+  /** Dirección postal — mostrada en la cabecera de Facturas emitidas (SIF). */
+  direccion: string;
   telefono: string;
   email: string;
   iban: string;
@@ -1197,6 +1199,7 @@ export class PresupuestosService {
       eslogan: (doc as any).eslogan || '',
       logo: (doc as any).logo || '',
       nifCif: (doc as any).nifCif || '',
+      direccion: (doc as any).direccion || '',
       telefono: (doc as any).telefono || '',
       email: (doc as any).email || '',
       iban: (doc as any).iban || '',
@@ -1240,6 +1243,7 @@ export class PresupuestosService {
       eslogan: (doc as any).eslogan || '',
       logo: (doc as any).logo || '',
       nifCif: (doc as any).nifCif || '',
+      direccion: (doc as any).direccion || '',
       telefono: (doc as any).telefono || '',
       email: (doc as any).email || '',
       iban: (doc as any).iban || '',
@@ -3737,40 +3741,72 @@ export class PresupuestosService {
     return resto;
   }
 
+  /**
+   * Recalcula `baseImponible`/`importeImpuesto`/`importeTotal` a partir de
+   * `precio * cantidad` de cada línea — nunca se confía en un total que
+   * mande el cliente sin que cuadre con sus propias líneas (mismo
+   * principio que el resto del motor fiscal). Si `tipoImpuesto` no es
+   * `'igic'`/`'iva'` con `porcentajeImpuesto` puesto, el impuesto es 0 y
+   * el total coincide con la base — el PDF decide él solo cómo redactar
+   * esa fila (ver `filaImpuesto` en `factura-emitida-pdf.service.ts`).
+   */
+  private calcularTotalesFacturaEmitida(lineas: { precio: number; cantidad?: number }[], tipoImpuesto?: string, porcentajeImpuesto?: number) {
+    const baseImponible = (lineas || []).reduce((suma, l) => suma + l.precio * (l.cantidad ?? 1), 0);
+    const importeImpuesto = (tipoImpuesto === 'igic' || tipoImpuesto === 'iva') && typeof porcentajeImpuesto === 'number'
+      ? Math.round(baseImponible * (porcentajeImpuesto / 100) * 100) / 100
+      : 0;
+    return { baseImponible: Math.round(baseImponible * 100) / 100, importeImpuesto, importeTotal: Math.round((baseImponible + importeImpuesto) * 100) / 100 };
+  }
+
   /** Crea un borrador — sin número, totalmente editable. El número y el sello legal solo llegan al emitir (`emitirFacturaEmitida`), nunca aquí. */
   async crearFacturaEmitidaBorrador(usuarioId: string, datos: {
     clienteId: string; proyectoId?: string; titulo?: string;
-    lineas?: { id: string; concepto: string; precio: number }[];
+    lineas?: { id: string; concepto: string; precio: number; cantidad?: number }[];
     tipoImpuesto?: 'igic' | 'iva' | 'exento' | 'sin_impuesto' | '';
-    porcentajeImpuesto?: number; baseImponible?: number; importeImpuesto?: number;
+    porcentajeImpuesto?: number;
     lineasFiscales?: { id: string; tipo: string; porcentaje: number; baseImponible: number; cuota: number }[];
-    importeTotal?: number;
+    vencimiento?: string; metodoPago?: string; leyendaFiscal?: string;
   }): Promise<Record<string, unknown>> {
     await conectar();
     const clienteExiste = await ClienteModel.exists({ id: datos.clienteId, usuarioId });
     if (!clienteExiste) throw new ErrorDeNegocio('Cliente no encontrado', 400);
     const ahora = new Date().toISOString();
+    const lineas = datos.lineas || [];
+    const totales = this.calcularTotalesFacturaEmitida(lineas, datos.tipoImpuesto, datos.porcentajeImpuesto);
     const doc = await FacturaEmitidaModel.create({
       id: randomUUID(), usuarioId, clienteId: datos.clienteId, proyectoId: datos.proyectoId || '',
-      estado: 'borrador', titulo: datos.titulo || '', lineas: datos.lineas || [],
+      estado: 'borrador', titulo: datos.titulo || '', lineas,
       tipoImpuesto: datos.tipoImpuesto || '', porcentajeImpuesto: datos.porcentajeImpuesto,
-      baseImponible: datos.baseImponible, importeImpuesto: datos.importeImpuesto,
-      lineasFiscales: datos.lineasFiscales || [], importeTotal: datos.importeTotal || 0,
+      lineasFiscales: datos.lineasFiscales || [], ...totales,
+      vencimiento: datos.vencimiento || '', metodoPago: datos.metodoPago || '', leyendaFiscal: datos.leyendaFiscal || '',
       creado: ahora, actualizado: ahora,
     });
     await EventoFacturaEmitidaModel.create({ id: randomUUID(), usuarioId, facturaEmitidaId: doc.id, tipo: 'creada', detalle: 'Borrador creado', creado: ahora });
     return this.limpiarFacturaEmitida(doc.toObject());
   }
 
-  /** Edita un borrador — rechaza si ya no está en `estado: 'borrador'`: una factura emitida o anulada es de solo lectura desde aquí, la única vía para "corregir" es `rectificarFacturaEmitida`. */
+  /**
+   * Edita un borrador — rechaza si ya no está en `estado: 'borrador'`: una
+   * factura emitida o anulada es de solo lectura desde aquí, la única vía
+   * para "corregir" es `rectificarFacturaEmitida`. Si cambian `lineas`,
+   * `tipoImpuesto` o `porcentajeImpuesto`, los totales se recalculan
+   * siempre a partir del estado FINAL del documento tras el cambio —
+   * nunca se deja un total desincronizado de sus propias líneas.
+   */
   async actualizarFacturaEmitidaBorrador(id: string, usuarioId: string, cambios: Record<string, unknown>): Promise<Record<string, unknown>> {
     await conectar();
     const actual = await FacturaEmitidaModel.findOne({ id, usuarioId }).lean().exec() as any;
     if (!actual) throw new ErrorDeNegocio('Factura no encontrada', 400);
     if (actual.estado !== 'borrador') throw new ErrorDeNegocio('Esta factura ya está emitida — no se puede editar, solo rectificar.', 409);
-    const permitidos = ['clienteId', 'proyectoId', 'titulo', 'lineas', 'tipoImpuesto', 'porcentajeImpuesto', 'baseImponible', 'importeImpuesto', 'lineasFiscales', 'importeTotal'];
+    const permitidos = ['clienteId', 'proyectoId', 'titulo', 'lineas', 'tipoImpuesto', 'porcentajeImpuesto', 'lineasFiscales', 'vencimiento', 'metodoPago', 'leyendaFiscal'];
     const cambiosLimpios: Record<string, unknown> = {};
     for (const campo of permitidos) if (campo in cambios) cambiosLimpios[campo] = cambios[campo];
+    if ('lineas' in cambiosLimpios || 'tipoImpuesto' in cambiosLimpios || 'porcentajeImpuesto' in cambiosLimpios) {
+      const lineasFinal = (cambiosLimpios.lineas as any[]) ?? actual.lineas ?? [];
+      const tipoFinal = (cambiosLimpios.tipoImpuesto as string | undefined) ?? actual.tipoImpuesto;
+      const porcentajeFinal = ('porcentajeImpuesto' in cambiosLimpios ? cambiosLimpios.porcentajeImpuesto : actual.porcentajeImpuesto) as number | undefined;
+      Object.assign(cambiosLimpios, this.calcularTotalesFacturaEmitida(lineasFinal, tipoFinal, porcentajeFinal));
+    }
     cambiosLimpios.actualizado = new Date().toISOString();
     const actualizado = await FacturaEmitidaModel.findOneAndUpdate({ id, usuarioId, estado: 'borrador' }, { $set: cambiosLimpios }, { new: true }).exec() as any;
     if (!actualizado) throw new ErrorDeNegocio('Esta factura ya está emitida — no se puede editar, solo rectificar.', 409);
@@ -3865,11 +3901,12 @@ export class PresupuestosService {
   async rectificarFacturaEmitida(id: string, usuarioId: string, datos: {
     motivoRectificacion: 'devolucion_mercancia' | 'error_facturacion' | 'descuento_posterior' | 'otro';
     titulo?: string;
-    lineas?: { id: string; concepto: string; precio: number }[];
+    lineas?: { id: string; concepto: string; precio: number; cantidad?: number }[];
     tipoImpuesto?: 'igic' | 'iva' | 'exento' | 'sin_impuesto' | '';
     porcentajeImpuesto?: number; baseImponible?: number; importeImpuesto?: number;
     lineasFiscales?: { id: string; tipo: string; porcentaje: number; baseImponible: number; cuota: number }[];
     importeTotal: number;
+    vencimiento?: string; metodoPago?: string; leyendaFiscal?: string;
   }): Promise<Record<string, unknown>> {
     await conectar();
     const original = await FacturaEmitidaModel.findOne({ id, usuarioId }).lean().exec() as any;
@@ -3880,11 +3917,17 @@ export class PresupuestosService {
     const doc = await FacturaEmitidaModel.create({
       id: randomUUID(), usuarioId, clienteId: original.clienteId, proyectoId: original.proyectoId || '',
       estado: 'borrador', titulo: datos.titulo || `Rectificativa de ${original.numeroFormateado}`,
+      // `importeTotal`/`baseImponible` aquí son el AJUSTE directo que escribe
+      // el profesional (normalmente negativo, una devolución) — a
+      // diferencia de `crear`/`actualizar`, deliberadamente NO se
+      // recalculan a partir de `lineas`: una rectificativa a menudo es un
+      // simple ajuste de importe sin desglosar artículo por artículo.
       lineas: datos.lineas || [], tipoImpuesto: datos.tipoImpuesto || original.tipoImpuesto || '',
       porcentajeImpuesto: datos.porcentajeImpuesto, baseImponible: datos.baseImponible, importeImpuesto: datos.importeImpuesto,
       lineasFiscales: datos.lineasFiscales || [], importeTotal: datos.importeTotal,
       naturaleza: 'rectificativa', facturaOriginalId: original.id, numeroFacturaOriginal: original.numeroFormateado,
       motivoRectificacion: datos.motivoRectificacion,
+      vencimiento: datos.vencimiento || '', metodoPago: datos.metodoPago || '', leyendaFiscal: datos.leyendaFiscal || original.leyendaFiscal || '',
       creado: ahora, actualizado: ahora,
     });
     await EventoFacturaEmitidaModel.create({ id: randomUUID(), usuarioId, facturaEmitidaId: doc.id, tipo: 'rectificada', detalle: `Rectifica a ${original.numeroFormateado}`, creado: ahora });
@@ -3914,8 +3957,8 @@ export class PresupuestosService {
     if (!factura) throw new ErrorDeNegocio('Factura no encontrada', 400);
     if (factura.estado === 'borrador') throw new ErrorDeNegocio('Esta factura todavía no se ha emitido.', 400);
     const empresa = await EmpresaModel.findOne({ usuarioId }).lean().exec() as any;
-    const cliente = await ClienteModel.findOne({ id: factura.clienteId, usuarioId }).select('nombre').lean().exec() as any;
-    return generarPdfFacturaEmitidaBytes(factura, empresa, cliente?.nombre || '');
+    const cliente = await ClienteModel.findOne({ id: factura.clienteId, usuarioId }).select('nombre dni direccion telefono').lean().exec() as any;
+    return generarPdfFacturaEmitidaBytes(factura, empresa, cliente);
   }
 
   /**

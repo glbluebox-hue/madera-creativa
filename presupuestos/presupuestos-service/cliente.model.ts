@@ -333,6 +333,8 @@ const EmpresaSchema = new Schema({
   logo: { type: String, default: '' },
   /** CIF/NIF de la propia empresa — para que aparezca en las facturas/presupuestos que ella misma emite. No confundir con el `cifNif` de cada Factura de gasto, que es del proveedor, no de esta empresa. */
   nifCif: { type: String, default: '' },
+  /** Dirección postal de la empresa — mostrada en la cabecera de Facturas emitidas (SIF). */
+  direccion: { type: String, default: '' },
   /** Datos de contacto mostrados en la cabecera de los presupuestos con plantilla (Fase 6). */
   telefono: { type: String, default: '' },
   email: { type: String, default: '' },

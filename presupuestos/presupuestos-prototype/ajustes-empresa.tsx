@@ -50,6 +50,8 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
   const [firmaEmpresa, setFirmaEmpresa] = useState<string | null>(empresa.firmaEmpresa);
   const [dibujandoFirma, setDibujandoFirma] = useState(false);
   const [nifCif, setNifCif] = useState(empresa.nifCif);
+  /** Dirección postal de la empresa — se muestra en la cabecera de Facturas emitidas (SIF). */
+  const [direccion, setDireccion] = useState(empresa.direccion);
   const [telefono, setTelefono] = useState(empresa.telefono);
   const [email, setEmail] = useState(empresa.email);
   const [iban, setIban] = useState(empresa.iban);
@@ -93,6 +95,7 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
       eslogan: eslogan.trim(),
       logo,
       nifCif: nifCif.trim(),
+      direccion: direccion.trim(),
       telefono: telefono.trim(),
       email: email.trim(),
       iban: iban.trim(),
@@ -206,6 +209,10 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
           <div className={`${styles.campo} ${styles.full}`}>
             <label className={styles.campoLabel}>Nombre y apellidos del titular</label>
             <input className={styles.input} value={titular} onChange={(e) => setTitular(e.target.value)} placeholder="Como aparece en tus facturas de ingreso, si eres autónomo" />
+          </div>
+          <div className={`${styles.campo} ${styles.full}`}>
+            <label className={styles.campoLabel}>Dirección (para Facturas emitidas)</label>
+            <input className={styles.input} value={direccion} onChange={(e) => setDireccion(e.target.value)} placeholder="Calle, código postal, municipio, provincia" />
           </div>
           <div className={styles.campo}>
             <label className={styles.campoLabel}>Teléfono</label>

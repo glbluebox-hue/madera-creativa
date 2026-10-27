@@ -26,7 +26,9 @@ const LineaFacturaEmitidaSchema = new Schema(
   {
     id: { type: String, required: true },
     concepto: { type: String, required: true },
+    /** Precio UNITARIO — el subtotal de la línea es `precio * cantidad`, nunca `precio` a secas. */
     precio: { type: Number, required: true },
+    cantidad: { type: Number, default: 1 },
   },
   { _id: false }
 );
@@ -78,6 +80,23 @@ const FacturaEmitidaSchema = new Schema({
 
   motivoAnulacion: { type: String, default: '' },
   anuladaEn: { type: String, default: '' },
+
+  // ── Campos del documento (diseño de PDF, 26/10/2026) ──
+  /** Fecha ISO (AAAA-MM-DD), opcional. */
+  vencimiento: { type: String, default: '' },
+  /** Texto libre, ej. "Transferencia bancaria" — opcional. */
+  metodoPago: { type: String, default: '' },
+  /**
+   * Texto libre que el PROFESIONAL escribe a mano para casos fiscales
+   * concretos (exención, no sujeción, inversión del sujeto pasivo,
+   * intracomunitario, exportación…) — nunca se genera automáticamente a
+   * partir de `tipoImpuesto`. La auditoría SIF ya señaló que hoy
+   * `tipoImpuesto` no distingue estos casos entre sí (todos caen en
+   * `'exento'`/`'sin_impuesto'`), así que afirmar un artículo legal
+   * concreto de forma automática podría ser incorrecto en algún caso real.
+   * Vacío = no se imprime ninguna leyenda en el PDF.
+   */
+  leyendaFiscal: { type: String, default: '' },
 
   // ── Cadena de integridad — solo se rellenan al emitir, ver cadena-facturas-emitidas.ts ──
   hash: { type: String, default: '' },

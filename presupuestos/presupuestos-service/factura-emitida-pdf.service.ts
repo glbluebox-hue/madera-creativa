@@ -3,24 +3,37 @@ import QRCode from 'qrcode';
 
 /**
  * PDF legal de una factura emitida, con QR embebido (SIF, Fase 1-5,
- * 26/10/2026) — construcción programática con `pdf-lib`, mismo patrón ya
- * usado en `documentos-factura.service.ts` para el informe del asesor
- * (nunca HTML impreso con `window.print()`, eso solo existe para el Motor
- * Documental y no es invocable desde el servidor).
+ * 26/10/2026 — rediseñado el mismo día sobre una referencia visual real
+ * que mandó el usuario, mismo nivel de detalle que una factura de un
+ * programa de facturación comercial: logo propio, direcciones completas,
+ * tabla con cantidad, caja de totales, vencimientos/método de pago y pie
+ * de protección de datos). Construcción programática con `pdf-lib`, mismo
+ * patrón ya usado en `documentos-factura.service.ts` (nunca HTML impreso
+ * con `window.print()`, eso solo existe para el Motor Documental y no es
+ * invocable desde el servidor).
  *
  * El PDF NO es el registro fiscal — es una representación derivada de los
  * datos ya sellados en `FacturaEmitidaModel` (número, hash, cadena). Se
  * puede regenerar tantas veces como haga falta sin que eso afecte a la
  * integridad del propio registro.
  *
- * IMPORTANTE — contenido del QR sin confirmar oficialmente: el contenido
- * exacto que exige la Orden HAC/1177/2024 (codificación interna, URL de
- * verificación de la AEAT en modo VERI*FACTU, etc.) no está confirmado con
- * precisión en esta fase. Aquí se usa un formato propio, simple y
- * documentado (texto plano `NIF|numero|fecha|importe`, separado por `|`)
- * — debe confirmarse contra la especificación técnica oficial antes de
- * poner el sistema en operación real. No se presenta como el formato ya
- * certificado.
+ * IMPORTANTE — contenido del QR sin confirmar oficialmente: el formato
+ * exacto que exige la Orden HAC/1177/2024 para VERI*FACTU (codificación
+ * interna, URL de verificación de la AEAT, etc.) no está confirmado con
+ * precisión en esta fase — ahora mismo NO hay ninguna conexión con
+ * Hacienda (Fase 6, fuera de alcance). El recuadro del QR de abajo es,
+ * literalmente, el hueco reservado en el diseño del documento para el día
+ * que se active esa fase: la posición/tamaño no debería tener que
+ * rediseñarse, solo sustituir qué contenido lleva dentro.
+ *
+ * IMPORTANTE — leyenda fiscal: nunca se genera un texto legal (artículo
+ * concreto, "no sujeto", "inversión del sujeto pasivo"…) a partir de
+ * `tipoImpuesto`. `tipoImpuesto` hoy es demasiado genérico (ver auditoría
+ * SIF: exento/no sujeto/intracomunitario/exportación caen todos en el
+ * mismo valor) — afirmar un artículo concreto por código podría ser
+ * incorrecto en algún caso real. Ese texto, si aplica, lo escribe el
+ * profesional a mano en `FacturaEmitida.leyendaFiscal` y aquí solo se
+ * imprime tal cual si no está vacío.
  */
 
 const ANCHO = 595; // A4 a 72dpi
@@ -29,8 +42,9 @@ const MARGEN = 50;
 const COLOR_TEXTO = rgb(0.13, 0.12, 0.11);
 const COLOR_GRIS = rgb(0.45, 0.42, 0.37);
 const COLOR_ACENTO = rgb(0.55, 0.42, 0.18);
+const COLOR_FONDO_CAJA = rgb(0.96, 0.955, 0.945);
 
-type LineaFacturaEmitida = { id: string; concepto: string; precio: number };
+type LineaFacturaEmitida = { id: string; concepto: string; precio: number; cantidad?: number };
 
 export type DatosFacturaEmitidaPdf = {
   numeroFormateado: string;
@@ -49,115 +63,282 @@ export type DatosFacturaEmitidaPdf = {
   motivoAnulacion?: string;
   indicadorVerifactu: string;
   hash: string;
+  vencimiento?: string;
+  metodoPago?: string;
+  leyendaFiscal?: string;
 };
 
-type DatosEmpresaPdf = { nombre?: string; nifCif?: string; repepActivo?: boolean };
+type DatosEmpresaPdf = { nombre?: string; titular?: string; nifCif?: string; direccion?: string; telefono?: string; email?: string; logo?: string };
+type DatosClientePdf = { nombre?: string; dni?: string; direccion?: string; telefono?: string };
 
-/**
- * Contenido del QR — formato propio sin confirmar oficialmente, ver
- * cabecera del archivo. `NIF|número+serie|fecha|importe total`.
- */
-function contenidoQr(nifEmisor: string, factura: DatosFacturaEmitidaPdf): string {
-  return [nifEmisor, factura.numeroFormateado, factura.fechaEmision.slice(0, 10), factura.importeTotal.toFixed(2)].join('|');
+/** `26/10/2026` — mismo formato que usa el resto de documentos cara al cliente (nunca `AAAA-MM-DD`). */
+function fechaEs(iso: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 }
 
 function formatoEuro(n: number): string {
   return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(n || 0);
 }
 
+/** Nombre del impuesto a mostrar — IGIC o IVA, según el tipo real de la factura (nunca inferido de la región de la empresa, mismo principio que el resto del motor fiscal). */
+function etiquetaImpuesto(tipoImpuesto: string): string {
+  return tipoImpuesto === 'iva' ? 'IVA' : 'IGIC';
+}
+
+/**
+ * Etiqueta + importe de la línea de impuesto en la caja de totales —
+ * depende de `tipoImpuesto`:
+ * - `igic`/`iva`: importe real calculado, con el porcentaje.
+ * - `exento`: 0€, "exento".
+ * - `sin_impuesto` (o vacío): 0€, "No sujeto (base imponible)" — igual que
+ *   la referencia real que mandó el usuario.
+ */
+function filaImpuesto(datos: DatosFacturaEmitidaPdf, baseImponible: number): { etiqueta: string; importe: number } {
+  const nombre = etiquetaImpuesto(datos.tipoImpuesto);
+  if (datos.tipoImpuesto === 'igic' || datos.tipoImpuesto === 'iva') {
+    return { etiqueta: `${nombre}${datos.porcentajeImpuesto ? ` (${datos.porcentajeImpuesto}%)` : ''}`, importe: datos.importeImpuesto || 0 };
+  }
+  if (datos.tipoImpuesto === 'exento') {
+    return { etiqueta: `${nombre} exento`, importe: 0 };
+  }
+  // 'sin_impuesto' o sin configurar — mismo redactado que la referencia: "IGIC No sujeto (2.260,00 €)".
+  return { etiqueta: `${nombre} No sujeto (${formatoEuro(baseImponible)})`, importe: 0 };
+}
+
+/** Contenido del QR — formato propio sin confirmar oficialmente, ver cabecera del archivo. `NIF|número+serie|fecha|importe total`. */
+function contenidoQr(nifEmisor: string, factura: DatosFacturaEmitidaPdf): string {
+  return [nifEmisor, factura.numeroFormateado, factura.fechaEmision.slice(0, 10), factura.importeTotal.toFixed(2)].join('|');
+}
+
+/** Descarga el logo de la empresa y lo embebe — tolerante a cualquier fallo (sin logo, URL caída, formato no soportado): nunca rompe la generación del resto del PDF, simplemente no dibuja nada. */
+async function intentarEmbeberLogo(pdf: PDFDocument, url: string | undefined) {
+  if (!url) return null;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const bytes = Buffer.from(await res.arrayBuffer());
+    try { return await pdf.embedPng(bytes); } catch { return await pdf.embedJpg(bytes); }
+  } catch {
+    return null;
+  }
+}
+
 export async function generarPdfFacturaEmitidaBytes(
   factura: DatosFacturaEmitidaPdf,
   empresa: DatosEmpresaPdf | null,
-  clienteNombre: string
+  cliente: DatosClientePdf | null
 ): Promise<Buffer> {
   const pdf = await PDFDocument.create();
   const fuente = await pdf.embedFont(StandardFonts.Helvetica);
   const fuenteNegrita = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const fuenteCursiva = await pdf.embedFont(StandardFonts.HelveticaOblique);
   const pagina = pdf.addPage([ANCHO, ALTO]);
-  let y = ALTO - MARGEN;
 
-  const escribir = (texto: string, opciones: { x?: number; size?: number; negrita?: boolean; color?: ReturnType<typeof rgb> } = {}) => {
+  const lineas = (factura.lineas || []).map((l) => ({ ...l, cantidad: l.cantidad ?? 1 }));
+  const baseImponible = typeof factura.baseImponible === 'number' ? factura.baseImponible : lineas.reduce((s, l) => s + l.precio * l.cantidad, 0);
+  const { etiqueta: etiquetaImp, importe: importeImp } = filaImpuesto(factura, baseImponible);
+
+  const escribir = (texto: string, x: number, y: number, opciones: { size?: number; negrita?: boolean; cursiva?: boolean; color?: ReturnType<typeof rgb> } = {}) => {
     pagina.drawText(texto, {
-      x: opciones.x ?? MARGEN, y, size: opciones.size ?? 10,
-      font: opciones.negrita ? fuenteNegrita : fuente, color: opciones.color ?? COLOR_TEXTO,
+      x, y, size: opciones.size ?? 10,
+      font: opciones.negrita ? fuenteNegrita : opciones.cursiva ? fuenteCursiva : fuente,
+      color: opciones.color ?? COLOR_TEXTO,
     });
   };
+  const escribirDerecha = (texto: string, xDerecha: number, y: number, opciones: { size?: number; negrita?: boolean; color?: ReturnType<typeof rgb> } = {}) => {
+    const f = opciones.negrita ? fuenteNegrita : fuente;
+    const size = opciones.size ?? 10;
+    const ancho = f.widthOfTextAtSize(texto, size);
+    pagina.drawText(texto, { x: xDerecha - ancho, y, size, font: f, color: opciones.color ?? COLOR_TEXTO });
+  };
 
-  // ── Cabecera ──
-  escribir(empresa?.nombre || 'Madera Creativa Estudio', { size: 15, negrita: true });
-  y -= 16;
-  if (empresa?.nifCif) { escribir(`NIF/CIF: ${empresa.nifCif}`, { size: 9, color: COLOR_GRIS }); y -= 22; } else { y -= 14; }
+  let y = ALTO - MARGEN;
 
-  escribir(factura.naturaleza === 'rectificativa' ? 'FACTURA RECTIFICATIVA' : 'FACTURA', { size: 13, negrita: true, color: COLOR_ACENTO });
-  y -= 16;
-  escribir(`Nº ${factura.numeroFormateado}`, { negrita: true });
-  y -= 14;
-  escribir(`Fecha de emisión: ${factura.fechaEmision.slice(0, 10)}`, { size: 9, color: COLOR_GRIS });
-  y -= 14;
-  escribir(`Cliente: ${clienteNombre || '—'}`, { size: 9, color: COLOR_GRIS });
-  y -= 22;
+  // ── Cabecera: logo (izquierda) + "Factura" / número / fecha (derecha) ──
+  const logo = await intentarEmbeberLogo(pdf, empresa?.logo);
+  if (logo) {
+    const altoLogo = 42;
+    const anchoLogo = (logo.width / logo.height) * altoLogo;
+    pagina.drawImage(logo, { x: MARGEN, y: y - altoLogo, width: anchoLogo, height: altoLogo });
+  } else if (empresa?.nombre) {
+    escribir(empresa.nombre, MARGEN, y - 20, { size: 15, negrita: true });
+  }
+
+  escribirDerecha(factura.naturaleza === 'rectificativa' ? 'Factura rectificativa' : 'Factura', ANCHO - MARGEN, y - 6, { size: 17, negrita: true });
+  escribirDerecha(`Número: ${factura.numeroFormateado}`, ANCHO - MARGEN, y - 24, { size: 9, color: COLOR_GRIS });
+  escribirDerecha(`Fecha: ${fechaEs(factura.fechaEmision)}`, ANCHO - MARGEN, y - 37, { size: 9, color: COLOR_GRIS });
+  y -= 58;
 
   if (factura.estado === 'anulada') {
-    escribir(`ANULADA${factura.motivoAnulacion ? ' — ' + factura.motivoAnulacion : ''}`, { negrita: true, color: rgb(0.6, 0.18, 0.18) });
-    y -= 20;
+    escribir(`ANULADA${factura.motivoAnulacion ? ' — ' + factura.motivoAnulacion : ''}`, MARGEN, y, { negrita: true, color: rgb(0.6, 0.18, 0.18) });
+    y -= 18;
   }
   if (factura.naturaleza === 'rectificativa') {
-    escribir(`Rectifica a la factura ${factura.numeroFacturaOriginal || '—'}${factura.motivoRectificacion ? ' — ' + factura.motivoRectificacion : ''}`, { size: 9, color: COLOR_GRIS });
-    y -= 20;
+    escribir(`Rectifica a la factura ${factura.numeroFacturaOriginal || '—'}${factura.motivoRectificacion ? ' — ' + factura.motivoRectificacion : ''}`, MARGEN, y, { size: 9, color: COLOR_GRIS });
+    y -= 18;
   }
 
-  // ── Líneas ──
-  escribir('CONCEPTO', { size: 8, negrita: true, color: COLOR_GRIS });
-  pagina.drawText('IMPORTE', { x: ANCHO - MARGEN - 70, y, size: 8, font: fuenteNegrita, color: COLOR_GRIS });
+  y -= 10;
+
+  // ── Dos columnas: emisor (izquierda, sin fondo) / cliente (derecha, caja gris) ──
+  const anchoColumna = (ANCHO - MARGEN * 2 - 24) / 2;
+  const xIzq = MARGEN;
+  const xDer = MARGEN + anchoColumna + 24;
+  const yColumnaInicio = y;
+
+  let yIzq = yColumnaInicio;
+  escribir(empresa?.titular || empresa?.nombre || '—', xIzq, yIzq, { negrita: true, size: 11 });
+  yIzq -= 15;
+  if (empresa?.nifCif) { escribir(empresa.nifCif, xIzq, yIzq, { size: 9.5 }); yIzq -= 14; }
+  if (empresa?.direccion) {
+    for (const linea of empresa.direccion.split('\n')) { escribir(linea, xIzq, yIzq, { size: 9.5 }); yIzq -= 14; }
+  }
+  if (empresa?.telefono) { escribir(empresa.telefono, xIzq, yIzq, { size: 9.5 }); yIzq -= 14; }
+
+  // Altura de la caja calculada ANTES de dibujar nada dentro — nunca se
+  // dibuja dos veces el mismo texto (evita cualquier duda de orden de capas).
+  const lineasDireccionCliente = cliente?.direccion ? cliente.direccion.split('\n').length : 0;
+  const filasCliente = 1 + (cliente?.dni ? 1 : 0) + lineasDireccionCliente + (cliente?.telefono ? 1 : 0);
+  const altoCajaCliente = 15 + Math.max(0, filasCliente - 1) * 14 + 16;
+  pagina.drawRectangle({ x: xDer, y: yColumnaInicio - altoCajaCliente + 16, width: anchoColumna, height: altoCajaCliente, color: COLOR_FONDO_CAJA });
+
+  let yDer = yColumnaInicio;
+  escribir(cliente?.nombre || '—', xDer + 12, yDer, { negrita: true, size: 11 });
+  yDer -= 15;
+  if (cliente?.dni) { escribir(cliente.dni, xDer + 12, yDer, { size: 9.5 }); yDer -= 14; }
+  if (cliente?.direccion) {
+    for (const linea of cliente.direccion.split('\n')) { escribir(linea, xDer + 12, yDer, { size: 9.5 }); yDer -= 14; }
+  }
+  if (cliente?.telefono) { escribir(cliente.telefono, xDer + 12, yDer, { size: 9.5 }); yDer -= 14; }
+
+  y = Math.min(yIzq, yDer) - 26;
+
+  // ── Tabla: CONCEPTO / CANTIDAD / PRECIO S/I / IGIC·IVA / SUBTOTAL S/I ──
+  const colConcepto = MARGEN;
+  const colCantidad = ANCHO - MARGEN - 260;
+  const colPrecio = ANCHO - MARGEN - 195;
+  const colImpuesto = ANCHO - MARGEN - 110;
+  const colSubtotal = ANCHO - MARGEN;
+
+  escribir('CONCEPTO', colConcepto, y, { size: 8, negrita: true, color: COLOR_GRIS });
+  escribir('CANTIDAD', colCantidad, y, { size: 8, negrita: true, color: COLOR_GRIS });
+  escribirDerecha('PRECIO S/I', colPrecio, y, { size: 8, negrita: true, color: COLOR_GRIS });
+  escribirDerecha(etiquetaImpuesto(factura.tipoImpuesto), colImpuesto, y, { size: 8, negrita: true, color: COLOR_GRIS });
+  escribirDerecha('SUBTOTAL S/I', colSubtotal, y, { size: 8, negrita: true, color: COLOR_GRIS });
+  y -= 10;
+  pagina.drawLine({ start: { x: MARGEN, y }, end: { x: ANCHO - MARGEN, y }, thickness: 0.5, color: COLOR_GRIS });
   y -= 14;
-  for (const linea of factura.lineas) {
-    escribir(linea.concepto, { size: 9.5 });
-    const importeTexto = formatoEuro(linea.precio);
-    const anchoImporte = fuente.widthOfTextAtSize(importeTexto, 9.5);
-    pagina.drawText(importeTexto, { x: ANCHO - MARGEN - anchoImporte, y, size: 9.5, font: fuente, color: COLOR_TEXTO });
-    y -= 15;
-  }
-  y -= 8;
 
-  // ── Fiscal ──
-  if (factura.tipoImpuesto && factura.tipoImpuesto !== 'sin_impuesto') {
-    if (typeof factura.baseImponible === 'number') { escribir(`Base imponible: ${formatoEuro(factura.baseImponible)}`, { size: 9, color: COLOR_GRIS }); y -= 13; }
-    if (typeof factura.importeImpuesto === 'number') {
-      const etiqueta = factura.tipoImpuesto === 'igic' ? 'IGIC' : factura.tipoImpuesto === 'iva' ? 'IVA' : 'Impuesto';
-      escribir(`${etiqueta}${factura.porcentajeImpuesto ? ` (${factura.porcentajeImpuesto}%)` : ''}: ${formatoEuro(factura.importeImpuesto)}`, { size: 9, color: COLOR_GRIS });
-      y -= 13;
+  const porcentajeTexto = factura.tipoImpuesto === 'igic' || factura.tipoImpuesto === 'iva' ? `${factura.porcentajeImpuesto ?? 0} %` : '0 %';
+  for (const linea of lineas) {
+    const subtotal = linea.precio * linea.cantidad;
+    escribir(linea.concepto, colConcepto, y, { size: 9.5 });
+    escribir(`${linea.cantidad} unidades`, colCantidad, y, { size: 9.5 });
+    escribirDerecha(formatoEuro(linea.precio), colPrecio, y, { size: 9.5 });
+    escribirDerecha(porcentajeTexto, colImpuesto, y, { size: 9.5 });
+    escribirDerecha(formatoEuro(subtotal), colSubtotal, y, { size: 9.5 });
+    y -= 16;
+  }
+  y -= 10;
+
+  // ── Caja de totales ──
+  const anchoCaja = 220;
+  const xCaja = ANCHO - MARGEN - anchoCaja;
+  const altoCaja = 58;
+  pagina.drawRectangle({ x: xCaja, y: y - altoCaja, width: anchoCaja, height: altoCaja, color: COLOR_FONDO_CAJA });
+  let yCaja = y - 16;
+  escribir('Base imponible', xCaja + 12, yCaja, { size: 9.5 });
+  escribirDerecha(formatoEuro(baseImponible), xCaja + anchoCaja - 12, yCaja, { size: 9.5 });
+  yCaja -= 16;
+  escribir(etiquetaImp, xCaja + 12, yCaja, { size: 9.5 });
+  escribirDerecha(formatoEuro(importeImp), xCaja + anchoCaja - 12, yCaja, { size: 9.5 });
+  yCaja -= 20;
+  escribir('TOTAL', xCaja + 12, yCaja, { size: 12, negrita: true });
+  escribirDerecha(formatoEuro(factura.importeTotal), xCaja + anchoCaja - 12, yCaja, { size: 12, negrita: true });
+  y -= altoCaja + 22;
+
+  // ── Leyenda fiscal (manual, solo si el profesional la ha escrito) ──
+  if (factura.leyendaFiscal && factura.leyendaFiscal.trim()) {
+    for (const linea of envolverTexto(factura.leyendaFiscal.trim(), fuenteCursiva, 8.5, ANCHO - MARGEN * 2)) {
+      escribir(linea, MARGEN, y, { size: 8.5, cursiva: true, color: COLOR_GRIS });
+      y -= 12;
     }
+    y -= 10;
   }
-  if (empresa?.repepActivo) { escribir('Exención franquicia fiscal', { size: 8.5, color: COLOR_GRIS }); y -= 13; }
-  y -= 6;
 
-  escribir('TOTAL', { negrita: true, size: 11 });
-  const totalTexto = formatoEuro(factura.importeTotal);
-  const anchoTotal = fuenteNegrita.widthOfTextAtSize(totalTexto, 11);
-  pagina.drawText(totalTexto, { x: ANCHO - MARGEN - anchoTotal, y, size: 11, font: fuenteNegrita, color: COLOR_TEXTO });
-  y -= 30;
+  // ── Vencimientos / Método de pago (solo si hay algo que mostrar) ──
+  if (factura.vencimiento || factura.metodoPago) {
+    pagina.drawLine({ start: { x: MARGEN, y }, end: { x: ANCHO - MARGEN, y }, thickness: 0.5, color: rgb(0.85, 0.82, 0.76) });
+    y -= 18;
+    const yFila = y;
+    if (factura.vencimiento) {
+      escribir('Vencimientos', MARGEN, yFila, { negrita: true, size: 9.5 });
+      escribir('Al contado', MARGEN, yFila - 15, { size: 9 });
+      escribir(fechaEs(factura.vencimiento), MARGEN, yFila - 29, { size: 9 });
+      escribirDerecha(formatoEuro(factura.importeTotal), MARGEN + anchoColumna, yFila - 29, { size: 9, negrita: true });
+    }
+    if (factura.metodoPago) {
+      escribir('Método de pago', xDer, yFila, { negrita: true, size: 9.5 });
+      escribir(factura.metodoPago, xDer, yFila - 15, { size: 9 });
+    }
+    y -= 48;
+  }
 
-  // ── Leyendas SIF ──
-  escribir(`Sistema: ${factura.indicadorVerifactu}`, { size: 7.5, color: COLOR_GRIS });
-  y -= 11;
-  escribir('Registro de facturación generado conforme al RD 1007/2023 — no verificable en tiempo real con la AEAT.', { size: 7.5, color: COLOR_GRIS });
-  y -= 18;
+  // ── Pie de protección de datos (RGPD) — boilerplate genérico, datos reales de cada cuenta ──
+  const titularDatos = empresa?.titular || empresa?.nombre || 'el titular de esta cuenta';
+  const parrafosRgpd = [
+    'Sus datos de carácter personal han sido recogidos de acuerdo con lo dispuesto en el Reglamento (UE) 2016/679 del Parlamento Europeo y del Consejo, de 27 de abril de 2016, relativo a la protección de las personas físicas en lo que respecta al tratamiento de datos personales y a la libre circulación de los mismos.',
+    `Le ponemos en conocimiento que estos datos se encuentran almacenados en un fichero propiedad de ${titularDatos}.`,
+    `De acuerdo con la Ley anterior, tiene derecho a ejercer los derechos de acceso, rectificación, cancelación, limitación, oposición y portabilidad de manera gratuita${empresa?.email ? ` mediante correo electrónico a: ${empresa.email}` : '.'}`,
+  ];
+  y -= 4;
+  for (const parrafo of parrafosRgpd) {
+    for (const linea of envolverTexto(parrafo, fuente, 7.3, ANCHO - MARGEN * 2)) {
+      escribir(linea, MARGEN, y, { size: 7.3, color: COLOR_GRIS });
+      y -= 10.5;
+    }
+    y -= 4;
+  }
 
-  // ── QR ──
+  // ── QR — hueco reservado para VERI*FACTU (ver cabecera del archivo) ──
+  const yQr = Math.min(y - 10, 118);
   if (empresa?.nifCif) {
     try {
-      const qrDataUrl = await QRCode.toDataURL(contenidoQr(empresa.nifCif, factura), { margin: 1, width: 240 });
+      const qrDataUrl = await QRCode.toDataURL(contenidoQr(empresa.nifCif, factura), { margin: 1, width: 220 });
       const base64 = qrDataUrl.split(',')[1] ?? '';
       const qrImagen = await pdf.embedPng(Buffer.from(base64, 'base64'));
-      const tamanoQr = 85;
-      pagina.drawImage(qrImagen, { x: MARGEN, y: y - tamanoQr, width: tamanoQr, height: tamanoQr });
-      pagina.drawText('Formato del QR sin confirmar oficialmente — ver nota técnica.', { x: MARGEN + tamanoQr + 10, y: y - tamanoQr / 2, size: 7, font: fuente, color: COLOR_GRIS });
+      const tamanoQr = 70;
+      pagina.drawImage(qrImagen, { x: MARGEN, y: yQr - tamanoQr, width: tamanoQr, height: tamanoQr });
+      escribir('Registro de facturación conforme al RD 1007/2023 (SIF).', MARGEN + tamanoQr + 10, yQr - tamanoQr / 2 + 10, { size: 7, color: COLOR_GRIS });
+      escribir(`Sistema: ${factura.indicadorVerifactu} — formato del QR sin confirmar oficialmente.`, MARGEN + tamanoQr + 10, yQr - tamanoQr / 2 - 2, { size: 7, color: COLOR_GRIS });
     } catch { /* un fallo al generar el QR no debe impedir descargar el resto del PDF */ }
   }
 
-  // ── Pie: huella de integridad ──
-  pagina.drawText(`Huella: ${factura.hash.slice(0, 32)}…`, { x: MARGEN, y: 30, size: 6.5, font: fuente, color: COLOR_GRIS });
+  // ── Pie: huella de integridad + paginación ──
+  escribir(`Huella: ${factura.hash.slice(0, 32)}…`, MARGEN, 20, { size: 6.5, color: COLOR_GRIS });
+  escribirDerecha('Página 1 de 1', ANCHO - MARGEN, 20, { size: 7, color: COLOR_GRIS });
 
   const bytes = await pdf.save();
   return Buffer.from(bytes);
+}
+
+/** Ajuste de línea básico por ancho real de texto (pdf-lib no envuelve texto solo) — sin romper palabras, igual que cualquier editor de texto sencillo. */
+function envolverTexto(texto: string, fuente: Awaited<ReturnType<PDFDocument['embedFont']>>, size: number, anchoMax: number): string[] {
+  const palabras = texto.split(/\s+/);
+  const lineas: string[] = [];
+  let actual = '';
+  for (const palabra of palabras) {
+    const candidata = actual ? `${actual} ${palabra}` : palabra;
+    if (fuente.widthOfTextAtSize(candidata, size) > anchoMax && actual) {
+      lineas.push(actual);
+      actual = palabra;
+    } else {
+      actual = candidata;
+    }
+  }
+  if (actual) lineas.push(actual);
+  return lineas;
 }

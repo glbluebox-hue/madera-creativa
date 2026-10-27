@@ -44,6 +44,11 @@ async function prepararCliente(usuarioId: string, clienteId = 'c-fe') {
   return clienteId;
 }
 
+/** Una única línea con el precio dado — `baseImponible`/`importeTotal` ya no se mandan directos a `crearFacturaEmitidaBorrador` (los calcula el servicio a partir de las líneas), así que los tests que solo necesitan "una factura de X euros" usan esto. */
+function lineaDe(precio: number) {
+  return [{ id: 'l1', concepto: 'Línea', precio }];
+}
+
 // ── Numeración legal: sin huecos, nunca se reutiliza ────────────────────
 describe('reclamarNumeroFacturaEmitida — numeración legal (sin reutilización de huecos)', () => {
   it('formato exacto FAC-0001/26', () => {
@@ -85,7 +90,7 @@ describe('Ciclo de vida de una factura emitida', () => {
 
   it('crea un borrador sin número ni hash', async () => {
     const clienteId = await prepararCliente(USUARIO, 'c-ciclo-1');
-    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, titulo: 'Trabajo', importeTotal: 500 });
+    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, titulo: 'Trabajo', lineas: lineaDe(500) });
     expect((borrador as any).estado).toBe('borrador');
     expect((borrador as any).numero).toBeNull();
     expect((borrador as any).numeroFormateado).toBe('');
@@ -93,13 +98,13 @@ describe('Ciclo de vida de una factura emitida', () => {
   });
 
   it('rechaza crear un borrador para un cliente que no existe (o no es de este usuario)', async () => {
-    await expect(svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId: 'no-existe', importeTotal: 100 })).rejects.toThrow();
+    await expect(svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId: 'no-existe', lineas: lineaDe(100) })).rejects.toThrow();
   });
 
-  it('un borrador se puede editar libremente', async () => {
+  it('un borrador se puede editar libremente — y el total se recalcula de sus líneas', async () => {
     const clienteId = await prepararCliente(USUARIO, 'c-ciclo-2');
-    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, titulo: 'v1', importeTotal: 100 });
-    const editado = await svc.actualizarFacturaEmitidaBorrador((borrador as any).id, USUARIO, { titulo: 'v2', importeTotal: 200 });
+    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, titulo: 'v1', lineas: lineaDe(100) });
+    const editado = await svc.actualizarFacturaEmitidaBorrador((borrador as any).id, USUARIO, { titulo: 'v2', lineas: lineaDe(200) });
     expect((editado as any).titulo).toBe('v2');
     expect((editado as any).importeTotal).toBe(200);
   });
@@ -107,7 +112,7 @@ describe('Ciclo de vida de una factura emitida', () => {
   it('emitir asigna número, serie, fecha y hash; a partir de ahí es de solo lectura', async () => {
     const clienteId = await prepararCliente(USUARIO, 'c-ciclo-3');
     await EmpresaModel.create({ usuarioId: USUARIO, nifCif: '12345678Z' });
-    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, titulo: 'Trabajo', importeTotal: 1000 });
+    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, titulo: 'Trabajo', lineas: lineaDe(1000) });
     const emitida = await svc.emitirFacturaEmitida((borrador as any).id, USUARIO);
     expect((emitida as any).estado).toBe('emitida');
     expect((emitida as any).numeroFormateado).toBe('FAC-0001/26');
@@ -121,7 +126,7 @@ describe('Ciclo de vida de una factura emitida', () => {
   it('no se puede emitir dos veces la misma factura', async () => {
     const clienteId = await prepararCliente(USUARIO, 'c-ciclo-4');
     await EmpresaModel.create({ usuarioId: USUARIO, nifCif: '12345678Z' });
-    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, importeTotal: 50 });
+    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, lineas: lineaDe(50) });
     await svc.emitirFacturaEmitida((borrador as any).id, USUARIO);
     await expect(svc.emitirFacturaEmitida((borrador as any).id, USUARIO)).rejects.toThrow();
   });
@@ -135,7 +140,7 @@ describe('Ciclo de vida de una factura emitida', () => {
   it('20 intentos de emisión concurrentes de la MISMA factura: solo uno gana, y solo se consume un número', async () => {
     const clienteId = await prepararCliente(USUARIO, 'c-ciclo-concurrencia');
     await EmpresaModel.create({ usuarioId: USUARIO, nifCif: '12345678Z' });
-    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, importeTotal: 300 });
+    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, lineas: lineaDe(300) });
     const resultados = await Promise.allSettled(Array.from({ length: 20 }, () => svc.emitirFacturaEmitida((borrador as any).id, USUARIO)));
     const exitos = resultados.filter((r) => r.status === 'fulfilled');
     expect(exitos.length).toBe(1); // solo una emisión real
@@ -147,7 +152,7 @@ describe('Ciclo de vida de una factura emitida', () => {
   it('anular solo funciona desde emitida, nunca borra el documento', async () => {
     const clienteId = await prepararCliente(USUARIO, 'c-ciclo-6');
     await EmpresaModel.create({ usuarioId: USUARIO, nifCif: '12345678Z' });
-    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, importeTotal: 80 });
+    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, lineas: lineaDe(80) });
     await expect(svc.anularFacturaEmitida((borrador as any).id, USUARIO, 'motivo')).rejects.toThrow(); // todavía borrador
     const emitida = await svc.emitirFacturaEmitida((borrador as any).id, USUARIO);
     const anulada = await svc.anularFacturaEmitida((emitida as any).id, USUARIO, 'Error de importe');
@@ -161,7 +166,7 @@ describe('Ciclo de vida de una factura emitida', () => {
   it('rectificar crea una factura NUEVA vinculada, nunca edita la original', async () => {
     const clienteId = await prepararCliente(USUARIO, 'c-ciclo-7');
     await EmpresaModel.create({ usuarioId: USUARIO, nifCif: '12345678Z' });
-    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, importeTotal: 1000 });
+    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, lineas: lineaDe(1000) });
     const original = await svc.emitirFacturaEmitida((borrador as any).id, USUARIO);
 
     const rectificativa = await svc.rectificarFacturaEmitida((original as any).id, USUARIO, {
@@ -182,7 +187,7 @@ describe('Ciclo de vida de una factura emitida', () => {
 
   it('rectificar solo funciona desde emitida', async () => {
     const clienteId = await prepararCliente(USUARIO, 'c-ciclo-8');
-    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, importeTotal: 100 });
+    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, lineas: lineaDe(100) });
     await expect(svc.rectificarFacturaEmitida((borrador as any).id, USUARIO, { motivoRectificacion: 'otro', importeTotal: -10 })).rejects.toThrow();
   });
 });
@@ -195,9 +200,9 @@ describe('Cadena de hash — enlace entre facturas y detección de manipulación
     const clienteId = await prepararCliente(USUARIO, 'c-cadena-1');
     await EmpresaModel.create({ usuarioId: USUARIO, nifCif: '12345678Z' });
 
-    const f1 = await svc.emitirFacturaEmitida((await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, importeTotal: 100 }) as any).id, USUARIO) as any;
-    const f2 = await svc.emitirFacturaEmitida((await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, importeTotal: 200 }) as any).id, USUARIO) as any;
-    const f3 = await svc.emitirFacturaEmitida((await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, importeTotal: 300 }) as any).id, USUARIO) as any;
+    const f1 = await svc.emitirFacturaEmitida((await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, lineas: lineaDe(100) }) as any).id, USUARIO) as any;
+    const f2 = await svc.emitirFacturaEmitida((await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, lineas: lineaDe(200) }) as any).id, USUARIO) as any;
+    const f3 = await svc.emitirFacturaEmitida((await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, lineas: lineaDe(300) }) as any).id, USUARIO) as any;
 
     expect(f1.hashAnterior).toBe(''); // raíz de la cadena
     expect(f2.hashAnterior).toBe(f1.hash);
@@ -219,9 +224,9 @@ describe('Cadena de hash — enlace entre facturas y detección de manipulación
     const clienteId = await prepararCliente(USUARIO, 'c-cadena-2');
     await EmpresaModel.create({ usuarioId: USUARIO, nifCif: '12345678Z' });
 
-    const f1 = await svc.emitirFacturaEmitida((await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, importeTotal: 100 }) as any).id, USUARIO) as any;
-    const f2 = await svc.emitirFacturaEmitida((await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, importeTotal: 200 }) as any).id, USUARIO) as any;
-    const f3 = await svc.emitirFacturaEmitida((await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, importeTotal: 300 }) as any).id, USUARIO) as any;
+    const f1 = await svc.emitirFacturaEmitida((await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, lineas: lineaDe(100) }) as any).id, USUARIO) as any;
+    const f2 = await svc.emitirFacturaEmitida((await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, lineas: lineaDe(200) }) as any).id, USUARIO) as any;
+    const f3 = await svc.emitirFacturaEmitida((await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, lineas: lineaDe(300) }) as any).id, USUARIO) as any;
 
     // Manipulación directa en Mongo (saltándose la aplicación) — cambia el importe de la Nº2 ya emitida.
     await FacturaEmitidaModel.updateOne({ id: f2.id }, { $set: { importeTotal: 999999 } });
@@ -263,7 +268,7 @@ describe('Registro de eventos — append-only', () => {
     const USUARIO = 'u-eventos';
     const clienteId = await prepararCliente(USUARIO, 'c-eventos');
     await EmpresaModel.create({ usuarioId: USUARIO, nifCif: '12345678Z' });
-    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, importeTotal: 100 }) as any;
+    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, lineas: lineaDe(100) }) as any;
     const emitida = await svc.emitirFacturaEmitida(borrador.id, USUARIO) as any;
     await svc.anularFacturaEmitida(emitida.id, USUARIO, 'motivo');
 
@@ -277,7 +282,7 @@ describe('Aislamiento por usuarioId — Madera Creativa Estudio es multiempresa'
   it('un usuario nunca puede ver, editar, emitir ni anular la factura de otro', async () => {
     const clienteA = await prepararCliente('u-aislado-a', 'c-aislado-a');
     await prepararCliente('u-aislado-b', 'c-aislado-b');
-    const borradorA = await svc.crearFacturaEmitidaBorrador('u-aislado-a', { clienteId: clienteA, importeTotal: 100 }) as any;
+    const borradorA = await svc.crearFacturaEmitidaBorrador('u-aislado-a', { clienteId: clienteA, lineas: lineaDe(100) }) as any;
 
     expect(await svc.obtenerFacturaEmitida(borradorA.id, 'u-aislado-b')).toBeNull();
     await expect(svc.actualizarFacturaEmitidaBorrador(borradorA.id, 'u-aislado-b', { titulo: 'intento ajeno' })).rejects.toThrow();
@@ -289,11 +294,90 @@ describe('Aislamiento por usuarioId — Madera Creativa Estudio es multiempresa'
     await prepararCliente('u-num-b', 'c-num-b');
     await EmpresaModel.create({ usuarioId: 'u-num-a', nifCif: 'A' });
     await EmpresaModel.create({ usuarioId: 'u-num-b', nifCif: 'B' });
-    const a1 = await svc.emitirFacturaEmitida((await svc.crearFacturaEmitidaBorrador('u-num-a', { clienteId: 'c-num-a', importeTotal: 10 }) as any).id, 'u-num-a') as any;
-    const b1 = await svc.emitirFacturaEmitida((await svc.crearFacturaEmitidaBorrador('u-num-b', { clienteId: 'c-num-b', importeTotal: 10 }) as any).id, 'u-num-b') as any;
+    const a1 = await svc.emitirFacturaEmitida((await svc.crearFacturaEmitidaBorrador('u-num-a', { clienteId: 'c-num-a', lineas: lineaDe(10) }) as any).id, 'u-num-a') as any;
+    const b1 = await svc.emitirFacturaEmitida((await svc.crearFacturaEmitidaBorrador('u-num-b', { clienteId: 'c-num-b', lineas: lineaDe(10) }) as any).id, 'u-num-b') as any;
     expect(a1.numeroFormateado).toBe('FAC-0001/26');
     expect(b1.numeroFormateado).toBe('FAC-0001/26'); // mismo número, cuentas distintas — correcto
     expect(a1.hashAnterior).toBe(''); // cada cadena es propia de su usuario, no se mezclan entre sí
     expect(b1.hashAnterior).toBe('');
+  });
+});
+
+// ── Totales a partir de precio*cantidad (rediseño del PDF, 26-27/10/2026) ──
+describe('Totales calculados a partir de las líneas (precio * cantidad)', () => {
+  const USUARIO = 'u-cantidad';
+
+  it('crear: la base imponible y el total suman precio*cantidad de cada línea, nunca un valor mandado a mano', async () => {
+    const clienteId = await prepararCliente(USUARIO, 'c-cantidad-1');
+    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, {
+      clienteId,
+      lineas: [
+        { id: 'l1', concepto: 'Puerta', precio: 150, cantidad: 2 }, // 300
+        { id: 'l2', concepto: 'Bisagra', precio: 5, cantidad: 10 }, // 50
+      ],
+    }) as any;
+    expect(borrador.baseImponible).toBe(350);
+    expect(borrador.importeTotal).toBe(350); // sin tipoImpuesto configurado, el impuesto es 0
+    expect(borrador.importeImpuesto).toBe(0);
+  });
+
+  it('crear: con IGIC al 7% configurado, el impuesto se calcula sobre la base real', async () => {
+    const clienteId = await prepararCliente(USUARIO, 'c-cantidad-2');
+    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, {
+      clienteId, lineas: [{ id: 'l1', concepto: 'Cocina', precio: 1000, cantidad: 1 }],
+      tipoImpuesto: 'igic', porcentajeImpuesto: 7,
+    }) as any;
+    expect(borrador.baseImponible).toBe(1000);
+    expect(borrador.importeImpuesto).toBe(70);
+    expect(borrador.importeTotal).toBe(1070);
+  });
+
+  it('una línea sin `cantidad` explícita cuenta como 1 unidad (valor por defecto del esquema)', async () => {
+    const clienteId = await prepararCliente(USUARIO, 'c-cantidad-3');
+    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, {
+      clienteId, lineas: [{ id: 'l1', concepto: 'Mesa', precio: 200 } as any],
+    }) as any;
+    expect(borrador.baseImponible).toBe(200);
+  });
+
+  it('actualizar: cambiar las líneas de un borrador recalcula el total, nunca deja uno desincronizado', async () => {
+    const clienteId = await prepararCliente(USUARIO, 'c-cantidad-4');
+    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, lineas: lineaDe(100) }) as any;
+    const actualizado = await svc.actualizarFacturaEmitidaBorrador(borrador.id, USUARIO, {
+      lineas: [{ id: 'l1', concepto: 'Nueva línea', precio: 40, cantidad: 3 }], // 120
+    }) as any;
+    expect(actualizado.baseImponible).toBe(120);
+    expect(actualizado.importeTotal).toBe(120);
+  });
+});
+
+// ── Generación del PDF — tolerante a logo ausente o inaccesible ─────────
+describe('generarPdfFacturaEmitidaBytes — no debe romperse por el logo', () => {
+  const USUARIO = 'u-pdf';
+
+  async function facturaEmitidaDeEjemplo() {
+    const clienteId = await prepararCliente(USUARIO, 'c-pdf');
+    await ClienteModel.updateOne({ id: clienteId, usuarioId: USUARIO }, { $set: { dni: 'Y2493073W', direccion: 'calle Bejeque 6\n38639 Amarilla Golf (Santa Cruz de Tenerife) España', telefono: '+34 642 02 14 68' } });
+    await EmpresaModel.create({ usuarioId: USUARIO, nifCif: 'Y3300948W', titular: 'Luca Randazzo', direccion: 'Calle El herrero\n38677 Tijoco bajo (Santa Cruz de Tenerife) España', telefono: '+34 671 73 76 63' });
+    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, {
+      clienteId, titulo: 'Cocina chio',
+      lineas: [{ id: 'l1', concepto: 'Cocina chio', precio: 2260, cantidad: 1 }],
+      tipoImpuesto: 'sin_impuesto',
+    }) as any;
+    return svc.emitirFacturaEmitida(borrador.id, USUARIO) as any;
+  }
+
+  it('genera bytes de PDF reales (cabecera %PDF) sin logo configurado en la empresa', async () => {
+    const emitida = await facturaEmitidaDeEjemplo();
+    const bytes = await svc.generarPdfFacturaEmitida(emitida.id, USUARIO);
+    expect(bytes.subarray(0, 4).toString()).toBe('%PDF');
+    expect(bytes.length).toBeGreaterThan(500);
+  });
+
+  it('con una URL de logo que no existe/falla al descargar, el PDF se genera igual (el logo simplemente no aparece)', async () => {
+    await EmpresaModel.updateOne({ usuarioId: USUARIO }, { $set: { logo: 'https://no-existe.invalid/logo.png' } });
+    const emitida = await facturaEmitidaDeEjemplo();
+    const bytes = await svc.generarPdfFacturaEmitida(emitida.id, USUARIO);
+    expect(bytes.subarray(0, 4).toString()).toBe('%PDF');
   });
 });

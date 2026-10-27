@@ -1567,7 +1567,8 @@ export async function enviarRespuestaSeguimientoPublico(token: string, respuesta
  * otro medio) — ver `factura-emitida.model.ts` en el backend. Solo SIF,
  * SIN VERI*FACTU: ninguna función de aquí abajo envía nada a AEAT. */
 
-export type LineaFacturaEmitida = { id: string; concepto: string; precio: number };
+/** Precio UNITARIO — el subtotal de la línea en el PDF es `precio * cantidad`, nunca `precio` a secas. */
+export type LineaFacturaEmitida = { id: string; concepto: string; precio: number; cantidad?: number };
 export type LineaFiscalFacturaEmitida = { id: string; tipo: 'igic' | 'iva' | 'exento' | 'sin_impuesto'; porcentaje: number; baseImponible: number; cuota: number };
 
 export type FacturaEmitida = {
@@ -1597,15 +1598,22 @@ export type FacturaEmitida = {
   hashAnterior: string;
   indicadorVerifactu: string;
   fechaEmision: string;
+  /** Fecha ISO (AAAA-MM-DD), opcional. */
+  vencimiento?: string;
+  /** Texto libre, ej. "Transferencia bancaria" — opcional. */
+  metodoPago?: string;
+  /** Texto que escribe el profesional a mano para casos fiscales concretos (exención, no sujeción, inversión del sujeto pasivo…) — nunca generado automáticamente. Vacío = no se imprime ninguna leyenda en el PDF. */
+  leyendaFiscal?: string;
   creado: string;
   actualizado: string;
 };
 
-/** Crea un borrador de factura emitida — sin número, totalmente editable. */
+/** Crea un borrador de factura emitida — sin número, totalmente editable. `baseImponible`/`importeImpuesto`/`importeTotal` los calcula el servidor a partir de `precio*cantidad` de cada línea, no hace falta (ni sirve de nada) mandarlos. */
 export async function crearFacturaEmitida(datos: {
   clienteId: string; proyectoId?: string; titulo?: string; lineas?: LineaFacturaEmitida[];
-  tipoImpuesto?: string; porcentajeImpuesto?: number; baseImponible?: number; importeImpuesto?: number;
-  lineasFiscales?: LineaFiscalFacturaEmitida[]; importeTotal?: number;
+  tipoImpuesto?: string; porcentajeImpuesto?: number;
+  lineasFiscales?: LineaFiscalFacturaEmitida[];
+  vencimiento?: string; metodoPago?: string; leyendaFiscal?: string;
 }): Promise<FacturaEmitida> {
   const res = await fetchConAuth('/facturas-emitidas', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos),
@@ -1669,6 +1677,7 @@ export async function rectificarFacturaEmitida(id: string, datos: {
   titulo?: string; lineas?: LineaFacturaEmitida[]; tipoImpuesto?: string;
   porcentajeImpuesto?: number; baseImponible?: number; importeImpuesto?: number;
   lineasFiscales?: LineaFiscalFacturaEmitida[]; importeTotal: number;
+  vencimiento?: string; metodoPago?: string; leyendaFiscal?: string;
 }): Promise<FacturaEmitida> {
   const res = await fetchConAuth(`/facturas-emitidas/${id}/rectificar`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos),
@@ -1840,6 +1849,7 @@ export async function obtenerEmpresa(): Promise<Empresa> {
     eslogan: data.eslogan,
     logo: data.logo || null,
     nifCif: data.nifCif || '',
+    direccion: data.direccion || '',
     telefono: data.telefono || '',
     email: data.email || '',
     iban: data.iban || '',
@@ -1884,6 +1894,7 @@ export async function guardarEmpresa(empresa: Partial<Empresa>): Promise<Empresa
     eslogan: data.eslogan,
     logo: data.logo || null,
     nifCif: data.nifCif || '',
+    direccion: data.direccion || '',
     telefono: data.telefono || '',
     email: data.email || '',
     iban: data.iban || '',
