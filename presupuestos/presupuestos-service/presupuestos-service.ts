@@ -3950,12 +3950,19 @@ export class PresupuestosService {
     return doc ? this.limpiarFacturaEmitida(doc) : null;
   }
 
-  /** Genera el PDF legal de una factura emitida (con QR) — solo para facturas ya `emitida`/`anulada`, nunca para un borrador sin sellar. Ver `factura-emitida-pdf.service.ts`. */
+  /**
+   * Genera el PDF de una factura — legal (con QR, número y huella) si ya
+   * está `emitida`/`anulada`; una VISTA PREVIA si sigue en `borrador`
+   * (petición del usuario, 27/10/2026: poder ver cómo quedaría antes de
+   * "Emitir", que consume un número real e irreversible). El propio
+   * generador (`factura-emitida-pdf.service.ts`) se encarga de marcar
+   * visiblemente el PDF como borrador sin validez legal cuando corresponda
+   * — nunca debe poder confundirse con el documento final.
+   */
   async generarPdfFacturaEmitida(id: string, usuarioId: string): Promise<Buffer> {
     await conectar();
     const factura = await FacturaEmitidaModel.findOne({ id, usuarioId }).lean().exec() as any;
     if (!factura) throw new ErrorDeNegocio('Factura no encontrada', 400);
-    if (factura.estado === 'borrador') throw new ErrorDeNegocio('Esta factura todavía no se ha emitido.', 400);
     const empresa = await EmpresaModel.findOne({ usuarioId }).lean().exec() as any;
     const cliente = await ClienteModel.findOne({ id: factura.clienteId, usuarioId }).select('nombre dni direccion telefono').lean().exec() as any;
     return generarPdfFacturaEmitidaBytes(factura, empresa, cliente);

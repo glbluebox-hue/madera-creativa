@@ -17,6 +17,45 @@ function nuevaLinea(): LineaFacturaEmitida {
   return { id: Math.random().toString(36).slice(2), concepto: '', precio: 0, cantidad: 1 };
 }
 
+const METODOS_PAGO = ['Efectivo', 'Transferencia bancaria', 'Tarjeta', 'Al contado'];
+
+/**
+ * Selector de método de pago (petición del usuario, 27/10/2026): una
+ * lista de opciones en vez de texto libre cada vez, con "Otro…" para un
+ * caso no previsto. Si eligen "Transferencia bancaria", el PDF añade solo
+ * el IBAN ya guardado en Ajustes de empresa — aquí solo se guarda la
+ * etiqueta, nunca el IBAN (ver `textoMetodoPago` en
+ * `factura-emitida-pdf.service.ts`).
+ */
+function SelectorMetodoPago({ valor, onCambiar }: { valor: string; onCambiar: (v: string) => void }) {
+  const [otro, setOtro] = useState(() => valor !== '' && !METODOS_PAGO.includes(valor));
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+      <select
+        className={styles.select}
+        value={otro ? '__otro__' : valor}
+        onChange={(e) => {
+          if (e.target.value === '__otro__') { setOtro(true); onCambiar(''); }
+          else { setOtro(false); onCambiar(e.target.value); }
+        }}
+        style={{ width: '100%' }}
+      >
+        <option value="">Selecciona…</option>
+        {METODOS_PAGO.map((m) => <option key={m} value={m}>{m}</option>)}
+        <option value="__otro__">Otro…</option>
+      </select>
+      {otro && (
+        <input className={styles.input} placeholder="Especifica el método de pago" value={valor} onChange={(e) => onCambiar(e.target.value)} />
+      )}
+      {valor === 'Transferencia bancaria' && (
+        <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--topo-claro)' }}>
+          Se añadirá tu IBAN guardado en Ajustes de empresa, automáticamente.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** Fila de "Concepto / Cantidad / Precio" reutilizada en el formulario de borrador — mismo patrón en los dos sitios donde se edita una línea (crear y editar). */
 function FilaLinea({ linea, quitable, onCambiar, onQuitar, onAnadir, esUltima }: {
   linea: LineaFacturaEmitida; quitable: boolean; esUltima: boolean;
@@ -154,7 +193,18 @@ function FormularioNuevaFactura({ clientes, onCreada }: { clientes: { id: string
   // Solo para mostrar en pantalla — el total "de verdad" lo calcula y guarda el servidor a partir de las líneas.
   const importeTotal = lineas.reduce((s, l) => s + (Number(l.precio) || 0) * (l.cantidad ?? 1), 0);
 
-  const crear = async () => {
+  /**
+   * "Vista previa" es el paso siguiente real tras rellenar el formulario
+   * (petición explícita del usuario, 27/10/2026: "cuando relleno los datos
+   * y voy al siguiente paso, tienes que mostrarme una vista previa...
+   * después decir guardar como borrador o emitir") — nunca se emite nada
+   * aquí, solo se guarda como borrador (editable, borrable) y se abre el
+   * PDF marcado como vista previa en una pestaña nueva. Desde la ficha del
+   * borrador que se abre después (`onCreada`) ya están "Guardar",
+   * "Vista previa" (para repetirla tras editar) y "Emitir" — ese último
+   * paso, el irreversible, es una decisión aparte del usuario.
+   */
+  const crearYPrevisualizar = async () => {
     if (!clienteId) { setError('Elige un cliente.'); return; }
     setGuardando(true);
     setError(null);
@@ -163,9 +213,10 @@ function FormularioNuevaFactura({ clientes, onCreada }: { clientes: { id: string
         clienteId, titulo, lineas: lineas.filter((l) => l.concepto.trim()),
         vencimiento, metodoPago, leyendaFiscal,
       });
+      await api.previsualizarPdfFacturaEmitida(creada.id);
       onCreada(creada);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'No se pudo crear la factura.');
+      setError(e instanceof Error ? e.message : 'No se pudo generar la vista previa.');
     } finally {
       setGuardando(false);
     }
@@ -199,7 +250,7 @@ function FormularioNuevaFactura({ clientes, onCreada }: { clientes: { id: string
         </label>
         <label style={{ fontSize: '0.78rem', fontWeight: 700, flex: '1 1 160px' }}>
           Método de pago <span style={{ fontWeight: 400, color: 'var(--topo-claro)' }}>(opcional)</span>
-          <input className={styles.input} placeholder="Transferencia bancaria" value={metodoPago} onChange={(e) => setMetodoPago(e.target.value)} style={{ display: 'block', width: '100%', marginTop: '0.25rem' }} />
+          <div style={{ marginTop: '0.25rem' }}><SelectorMetodoPago valor={metodoPago} onCambiar={setMetodoPago} /></div>
         </label>
       </div>
       <label style={{ fontSize: '0.78rem', fontWeight: 700 }}>
@@ -213,9 +264,12 @@ function FormularioNuevaFactura({ clientes, onCreada }: { clientes: { id: string
 
       {error && <p style={{ color: 'var(--rojo)', fontSize: '0.82rem', margin: 0 }}>{error}</p>}
 
-      <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={crear} disabled={guardando}>
-        {guardando ? 'Guardando…' : 'Guardar borrador'}
+      <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={crearYPrevisualizar} disabled={guardando}>
+        {guardando ? 'Generando vista previa…' : 'Vista previa →'}
       </button>
+      <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--topo-claro)' }}>
+        Se guarda como borrador (editable, se puede borrar) y se abre el PDF en una pestaña nueva — nada se emite todavía.
+      </p>
     </div>
   );
 }
@@ -229,6 +283,7 @@ function DetalleFacturaEmitida({ factura, clienteNombre, onVolver, onActualizar 
   const [metodoPago, setMetodoPago] = useState(factura.metodoPago || '');
   const [leyendaFiscal, setLeyendaFiscal] = useState(factura.leyendaFiscal || '');
   const [guardando, setGuardando] = useState(false);
+  const [previsualizando, setPrevisualizando] = useState(false);
   const [emitiendo, setEmitiendo] = useState(false);
   const [confirmandoEmitir, setConfirmandoEmitir] = useState(false);
   const [confirmandoAnular, setConfirmandoAnular] = useState(false);
@@ -284,6 +339,21 @@ function DetalleFacturaEmitida({ factura, clienteNombre, onVolver, onActualizar 
     api.descargarPdfFacturaEmitida(factura.id, factura.numeroFormateado).catch((e) => setError(e instanceof Error ? e.message : 'No se pudo descargar el PDF.'));
   };
 
+  /** Guarda lo que haya cambiado en el borrador y abre la vista previa actualizada — mismo paso que al crearlo, para poder repetirlo después de editar. */
+  const previsualizar = async () => {
+    setPrevisualizando(true);
+    setError(null);
+    try {
+      const actualizada = await api.actualizarFacturaEmitidaBorrador(factura.id, cambiosBorrador);
+      await api.previsualizarPdfFacturaEmitida(factura.id);
+      onActualizar(actualizada);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo generar la vista previa.');
+    } finally {
+      setPrevisualizando(false);
+    }
+  };
+
   return (
     <div>
       <button className={styles.volver} onClick={() => onVolver(false)} style={{ marginBottom: '1rem' }}>
@@ -327,7 +397,7 @@ function DetalleFacturaEmitida({ factura, clienteNombre, onVolver, onActualizar 
             </label>
             <label style={{ fontSize: '0.78rem', fontWeight: 700, flex: '1 1 160px' }}>
               Método de pago <span style={{ fontWeight: 400, color: 'var(--topo-claro)' }}>(opcional)</span>
-              <input className={styles.input} placeholder="Transferencia bancaria" value={metodoPago} onChange={(e) => setMetodoPago(e.target.value)} style={{ display: 'block', width: '100%', marginTop: '0.25rem' }} />
+              <div style={{ marginTop: '0.25rem' }}><SelectorMetodoPago valor={metodoPago} onCambiar={setMetodoPago} /></div>
             </label>
           </div>
           <label style={{ fontSize: '0.78rem', fontWeight: 700 }}>
@@ -339,6 +409,7 @@ function DetalleFacturaEmitida({ factura, clienteNombre, onVolver, onActualizar 
           </label>
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
             <button className={styles.btn} onClick={guardar} disabled={guardando}>{guardando ? 'Guardando…' : 'Guardar'}</button>
+            <button className={styles.btn} onClick={previsualizar} disabled={previsualizando}>{previsualizando ? 'Generando…' : 'Vista previa'}</button>
             <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={() => setConfirmandoEmitir(true)}>Emitir</button>
             <ConfirmarBorrado onConfirmar={async () => { await api.borrarFacturaEmitidaBorrador(factura.id); onVolver(true); }} titulo="Borrar este borrador" label="Borrar" />
           </div>
@@ -380,7 +451,7 @@ function DetalleFacturaEmitida({ factura, clienteNombre, onVolver, onActualizar 
         <div className={styles.overlay} onClick={() => setConfirmandoEmitir(false)}>
           <div className={styles.modal} style={{ maxWidth: 420, padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }} onClick={(e) => e.stopPropagation()}>
             <p style={{ margin: 0, fontWeight: 700 }}>¿Emitir esta factura?</p>
-            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--topo-claro)' }}>Esto numera y sella la factura — ya no se podrá editar, solo rectificar.</p>
+            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--topo-claro)' }}>Esto numera y sella la factura — ya no se podrá editar, solo rectificar. Si no la has revisado todavía, cierra esto y pulsa "Vista previa" primero.</p>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={emitir} disabled={emitiendo}>{emitiendo ? 'Emitiendo…' : 'Sí, emitir'}</button>
               <button className={styles.btn} onClick={() => setConfirmandoEmitir(false)}>Cancelar</button>

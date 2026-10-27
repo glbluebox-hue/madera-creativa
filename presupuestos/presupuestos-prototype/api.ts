@@ -1694,6 +1694,24 @@ export async function descargarPdfFacturaEmitida(id: string, numeroFormateado?: 
   descargarBlobDelNavegador(await res.blob(), nombreDesdeContentDisposition(res, nombrePorDefecto));
 }
 
+/**
+ * Abre la VISTA PREVIA del PDF en una pestaña nueva (el navegador la
+ * muestra directamente, sin forzar descarga) — a diferencia de
+ * `descargarPdfFacturaEmitida`, funciona también con un borrador (el
+ * backend genera el mismo documento marcado como "vista previa", sin
+ * número ni QR reales). Pensada para el paso "rellenar datos → ver cómo
+ * queda" antes de decidir guardar o emitir (petición del usuario,
+ * 27/10/2026). El object URL se libera tras un momento — el navegador ya
+ * ha cargado el PDF en la pestaña nueva para entonces.
+ */
+export async function previsualizarPdfFacturaEmitida(id: string): Promise<void> {
+  const res = await fetchConAuth(`/facturas-emitidas/${id}/pdf`);
+  await comprobarRespuesta(res, 'No se pudo generar la vista previa');
+  const url = URL.createObjectURL(await res.blob());
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
 /* ===== PLANTILLAS (Motor Documental, Incremento 4) ===== */
 
 /** Recupera todas las plantillas del usuario. */

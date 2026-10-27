@@ -59,7 +59,7 @@ export type DatosFacturaEmitidaPdf = {
   naturaleza: 'normal' | 'rectificativa';
   numeroFacturaOriginal?: string;
   motivoRectificacion?: string;
-  estado: 'emitida' | 'anulada';
+  estado: 'borrador' | 'emitida' | 'anulada';
   motivoAnulacion?: string;
   indicadorVerifactu: string;
   hash: string;
@@ -68,7 +68,22 @@ export type DatosFacturaEmitidaPdf = {
   leyendaFiscal?: string;
 };
 
-type DatosEmpresaPdf = { nombre?: string; titular?: string; nifCif?: string; direccion?: string; telefono?: string; email?: string; logo?: string };
+type DatosEmpresaPdf = { nombre?: string; titular?: string; nifCif?: string; direccion?: string; telefono?: string; email?: string; logo?: string; iban?: string };
+
+/**
+ * Texto del "Método de pago" a imprimir — si es transferencia bancaria y
+ * la empresa ya tiene un IBAN guardado (Ajustes de empresa), se añade
+ * automáticamente: el profesional nunca debería tener que volver a
+ * escribir su propio IBAN en cada factura (petición del usuario,
+ * 27/10/2026). Comparación flexible (`includes`, sin distinguir
+ * mayúsculas) porque `metodoPago` es texto elegido de una lista en el
+ * frontend, no un valor cerrado a nivel de esquema.
+ */
+function textoMetodoPago(metodoPago: string | undefined, iban: string | undefined): string {
+  if (!metodoPago) return '';
+  const esTransferencia = /transferencia/i.test(metodoPago);
+  return esTransferencia && iban ? `${metodoPago} — IBAN: ${iban}` : metodoPago;
+}
 type DatosClientePdf = { nombre?: string; dni?: string; direccion?: string; telefono?: string };
 
 /** `26/10/2026` — mismo formato que usa el resto de documentos cara al cliente (nunca `AAAA-MM-DD`). */
@@ -167,10 +182,20 @@ export async function generarPdfFacturaEmitidaBytes(
     escribir(empresa.nombre, MARGEN, y - 20, { size: 15, negrita: true });
   }
 
-  escribirDerecha(factura.naturaleza === 'rectificativa' ? 'Factura rectificativa' : 'Factura', ANCHO - MARGEN, y - 6, { size: 17, negrita: true });
-  escribirDerecha(`Número: ${factura.numeroFormateado}`, ANCHO - MARGEN, y - 24, { size: 9, color: COLOR_GRIS });
-  escribirDerecha(`Fecha: ${fechaEs(factura.fechaEmision)}`, ANCHO - MARGEN, y - 37, { size: 9, color: COLOR_GRIS });
+  const esBorrador = factura.estado === 'borrador';
+  escribirDerecha(esBorrador ? 'Borrador de factura' : factura.naturaleza === 'rectificativa' ? 'Factura rectificativa' : 'Factura', ANCHO - MARGEN, y - 6, { size: 17, negrita: true });
+  escribirDerecha(`Número: ${factura.numeroFormateado || 'sin emitir'}`, ANCHO - MARGEN, y - 24, { size: 9, color: COLOR_GRIS });
+  escribirDerecha(`Fecha: ${factura.fechaEmision ? fechaEs(factura.fechaEmision) : '—'}`, ANCHO - MARGEN, y - 37, { size: 9, color: COLOR_GRIS });
   y -= 58;
+
+  // ── Aviso de vista previa — un borrador nunca debe poder confundirse con
+  // el documento legal final: ni tiene número real, ni huella, ni QR.
+  if (esBorrador) {
+    const altoAviso = 22;
+    pagina.drawRectangle({ x: MARGEN, y: y - altoAviso + 6, width: ANCHO - MARGEN * 2, height: altoAviso, color: rgb(0.97, 0.91, 0.78) });
+    escribir('VISTA PREVIA — borrador sin numerar, sin validez legal. El documento final se genera al pulsar "Emitir".', MARGEN + 10, y - 9, { size: 8.5, negrita: true, color: rgb(0.55, 0.38, 0.1) });
+    y -= altoAviso + 14;
+  }
 
   if (factura.estado === 'anulada') {
     escribir(`ANULADA${factura.motivoAnulacion ? ' — ' + factura.motivoAnulacion : ''}`, MARGEN, y, { negrita: true, color: rgb(0.6, 0.18, 0.18) });
@@ -282,7 +307,11 @@ export async function generarPdfFacturaEmitidaBytes(
     }
     if (factura.metodoPago) {
       escribir('Método de pago', xDer, yFila, { negrita: true, size: 9.5 });
-      escribir(factura.metodoPago, xDer, yFila - 15, { size: 9 });
+      let yMetodo = yFila - 15;
+      for (const linea of envolverTexto(textoMetodoPago(factura.metodoPago, empresa?.iban), fuente, 9, anchoColumna)) {
+        escribir(linea, xDer, yMetodo, { size: 9 });
+        yMetodo -= 12;
+      }
     }
     y -= 48;
   }
@@ -303,9 +332,11 @@ export async function generarPdfFacturaEmitidaBytes(
     y -= 4;
   }
 
-  // ── QR — hueco reservado para VERI*FACTU (ver cabecera del archivo) ──
+  // ── QR — hueco reservado para VERI*FACTU (ver cabecera del archivo).
+  // Nunca en un borrador: todavía no hay número, fecha ni huella reales
+  // que codificar — un QR con datos provisionales sería engañoso. ──
   const yQr = Math.min(y - 10, 118);
-  if (empresa?.nifCif) {
+  if (!esBorrador && empresa?.nifCif) {
     try {
       const qrDataUrl = await QRCode.toDataURL(contenidoQr(empresa.nifCif, factura), { margin: 1, width: 220 });
       const base64 = qrDataUrl.split(',')[1] ?? '';
@@ -317,8 +348,12 @@ export async function generarPdfFacturaEmitidaBytes(
     } catch { /* un fallo al generar el QR no debe impedir descargar el resto del PDF */ }
   }
 
-  // ── Pie: huella de integridad + paginación ──
-  escribir(`Huella: ${factura.hash.slice(0, 32)}…`, MARGEN, 20, { size: 6.5, color: COLOR_GRIS });
+  // ── Pie: huella de integridad (solo si ya existe) + paginación ──
+  if (esBorrador) {
+    escribir('Sin número, huella ni QR — se generan al emitir.', MARGEN, 20, { size: 6.5, color: COLOR_GRIS });
+  } else {
+    escribir(`Huella: ${factura.hash.slice(0, 32)}…`, MARGEN, 20, { size: 6.5, color: COLOR_GRIS });
+  }
   escribirDerecha('Página 1 de 1', ANCHO - MARGEN, 20, { size: 7, color: COLOR_GRIS });
 
   const bytes = await pdf.save();
