@@ -173,20 +173,22 @@ export async function generarPdfFacturaEmitidaBytes(
   let y = ALTO - MARGEN;
 
   // ── Cabecera: logo (izquierda) + "Factura" / número / fecha (derecha) ──
+  // Logo grande a propósito (petición del usuario, 27/10/2026) — antes se
+  // veía demasiado pequeño junto al bloque de texto de la derecha.
+  const ALTO_LOGO = 64;
   const logo = await intentarEmbeberLogo(pdf, empresa?.logo);
   if (logo) {
-    const altoLogo = 42;
-    const anchoLogo = (logo.width / logo.height) * altoLogo;
-    pagina.drawImage(logo, { x: MARGEN, y: y - altoLogo, width: anchoLogo, height: altoLogo });
+    const anchoLogo = (logo.width / logo.height) * ALTO_LOGO;
+    pagina.drawImage(logo, { x: MARGEN, y: y - ALTO_LOGO, width: anchoLogo, height: ALTO_LOGO });
   } else if (empresa?.nombre) {
-    escribir(empresa.nombre, MARGEN, y - 20, { size: 15, negrita: true });
+    escribir(empresa.nombre, MARGEN, y - 30, { size: 19, negrita: true });
   }
 
   const esBorrador = factura.estado === 'borrador';
-  escribirDerecha(esBorrador ? 'Borrador de factura' : factura.naturaleza === 'rectificativa' ? 'Factura rectificativa' : 'Factura', ANCHO - MARGEN, y - 6, { size: 17, negrita: true });
-  escribirDerecha(`Número: ${factura.numeroFormateado || 'sin emitir'}`, ANCHO - MARGEN, y - 24, { size: 9, color: COLOR_GRIS });
-  escribirDerecha(`Fecha: ${factura.fechaEmision ? fechaEs(factura.fechaEmision) : '—'}`, ANCHO - MARGEN, y - 37, { size: 9, color: COLOR_GRIS });
-  y -= 58;
+  escribirDerecha(esBorrador ? 'Borrador de factura' : factura.naturaleza === 'rectificativa' ? 'Factura rectificativa' : 'Factura', ANCHO - MARGEN, y - 10, { size: 17, negrita: true });
+  escribirDerecha(`Número: ${factura.numeroFormateado || 'sin emitir'}`, ANCHO - MARGEN, y - 30, { size: 9, color: COLOR_GRIS });
+  escribirDerecha(`Fecha: ${factura.fechaEmision ? fechaEs(factura.fechaEmision) : '—'}`, ANCHO - MARGEN, y - 43, { size: 9, color: COLOR_GRIS });
+  y -= ALTO_LOGO + 16;
 
   // ── Aviso de vista previa — un borrador nunca debe poder confundirse con
   // el documento legal final: ni tiene número real, ni huella, ni QR.

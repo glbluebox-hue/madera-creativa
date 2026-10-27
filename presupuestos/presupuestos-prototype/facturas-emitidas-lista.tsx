@@ -61,20 +61,33 @@ function FilaLinea({ linea, quitable, onCambiar, onQuitar, onAnadir, esUltima }:
   linea: LineaFacturaEmitida; quitable: boolean; esUltima: boolean;
   onCambiar: (cambios: Partial<LineaFacturaEmitida>) => void; onQuitar: () => void; onAnadir: () => void;
 }) {
+  const subtotal = (Number(linea.precio) || 0) * (linea.cantidad ?? 1);
   return (
-    <div style={{ display: 'flex', gap: '0.4rem' }}>
-      <input
-        className={styles.input} placeholder="Concepto" value={linea.concepto} style={{ flex: '1 1 auto' }}
-        onChange={(e) => onCambiar({ concepto: e.target.value })}
-      />
-      <input
-        className={styles.input} type="number" placeholder="Cantidad" value={linea.cantidad ?? 1} min={1} style={{ width: 80, flexShrink: 0 }}
-        onChange={(e) => onCambiar({ cantidad: Number(e.target.value) || 1 })}
-      />
-      <input
-        className={styles.input} type="number" placeholder="€/ud." value={linea.precio || ''} style={{ width: 110, flexShrink: 0 }}
-        onChange={(e) => onCambiar({ precio: Number(e.target.value) })}
-      />
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'flex-end', padding: '0.5rem', border: '1px solid var(--borde)', borderRadius: 6 }}>
+      <label style={{ flex: '1 1 160px', minWidth: 140, fontSize: '0.7rem', fontWeight: 700, color: 'var(--topo-claro)' }}>
+        Concepto
+        <input
+          className={styles.input} placeholder="Ej. Cocina en L" value={linea.concepto} style={{ display: 'block', width: '100%', marginTop: '0.2rem' }}
+          onChange={(e) => onCambiar({ concepto: e.target.value })}
+        />
+      </label>
+      <label style={{ flex: '0 1 90px', minWidth: 80, fontSize: '0.7rem', fontWeight: 700, color: 'var(--topo-claro)' }}>
+        Cantidad (ud.)
+        <input
+          className={styles.input} type="number" value={linea.cantidad ?? 1} min={1} style={{ display: 'block', width: '100%', marginTop: '0.2rem' }}
+          onChange={(e) => onCambiar({ cantidad: Number(e.target.value) || 1 })}
+        />
+      </label>
+      <label style={{ flex: '0 1 120px', minWidth: 100, fontSize: '0.7rem', fontWeight: 700, color: 'var(--topo-claro)' }}>
+        Precio por unidad (€)
+        <input
+          className={styles.input} type="number" placeholder="0,00" value={linea.precio || ''} style={{ display: 'block', width: '100%', marginTop: '0.2rem' }}
+          onChange={(e) => onCambiar({ precio: Number(e.target.value) })}
+        />
+      </label>
+      <span style={{ flex: '0 0 auto', fontSize: '0.78rem', fontWeight: 700, alignSelf: 'center', whiteSpace: 'nowrap' }}>
+        = {formatoEuro(subtotal)}
+      </span>
       {quitable && <button className={styles.btnIcono} onClick={onQuitar} title="Quitar línea">✕</button>}
       {esUltima && <button className={styles.btnIcono} onClick={onAnadir} title="Añadir línea">+</button>}
     </div>
