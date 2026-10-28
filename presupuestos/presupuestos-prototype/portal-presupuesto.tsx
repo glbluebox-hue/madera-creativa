@@ -83,7 +83,11 @@ export function PortalPresupuesto() {
       // que en modo oscuro del dispositivo pintaría la página gris) — el
       // estilo en línea tiene más especificidad que la clase, así que
       // aquí se condiciona directamente en vez de fiarse de `.visorPresupuestoImpresion`.
-      style={{ minHeight: '100vh', background: modoImpresion ? '#fff' : 'var(--fondo)', display: 'flex', justifyContent: 'center', padding: '1.25rem 1rem 3rem' }}
+      // Sin relleno durante la impresión — el mismo motivo que ocultar la
+      // línea "Presupuesto para…" de arriba: cada píxel de más antes del
+      // documento es lo que acaba empujando la fila de firmas a una
+      // segunda hoja.
+      style={{ minHeight: '100vh', background: modoImpresion ? '#fff' : 'var(--fondo)', display: 'flex', justifyContent: 'center', padding: modoImpresion ? 0 : '1.25rem 1rem 3rem' }}
     >
       {/* Un documento del Motor Documental es una página A4 (794px de ancho
           natural) — el ancho de columna de texto de siempre (560px) lo
@@ -106,10 +110,18 @@ export function PortalPresupuesto() {
             {/* Sin el bloque de logo/nombre de aquí arriba a propósito: el
                 documento del Motor Documental ya trae su propio membrete
                 (encabezado de página) — repetirlo aquí sería una marca
-                duplicada. */}
-            <p style={{ textAlign: 'center', color: 'var(--topo-claro)', fontSize: '0.85rem', margin: '0 0 1rem' }}>
-              Presupuesto para {presupuesto.clienteNombre} · válido hasta el {formatoFecha(presupuesto.expiraEn)}
-            </p>
+                duplicada. Oculto durante la impresión (fallo real con
+                captura, 28/10/2026): esta línea no es parte del documento
+                en sí — es un añadido de esta página para verlo en pantalla
+                — pero al imprimirse empujaba hacia abajo el resto del
+                contenido justo lo suficiente para que la fila de firmas,
+                al final de una página A4 ya completa, se saliera sola a
+                una segunda hoja casi en blanco. */}
+            {!modoImpresion && (
+              <p style={{ textAlign: 'center', color: 'var(--topo-claro)', fontSize: '0.85rem', margin: '0 0 1rem' }}>
+                Presupuesto para {presupuesto.clienteNombre} · válido hasta el {formatoFecha(presupuesto.expiraEn)}
+              </p>
+            )}
             <div style={{ width: '100%', overflowX: 'auto' }}>
               <VisorDocumento
                 documento={presupuesto.contenidoDocumento as unknown as DocumentoMC}
