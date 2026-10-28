@@ -104,9 +104,39 @@ export function rellenarEtiquetasCliente(documento: DocumentoMC, datos: DatosCli
       return lineaNueva;
     });
     const textoNuevo = lineasNuevas.join('\n');
-    if (textoNuevo !== textoOriginal) reemplazar({ ...elemento, contenido: { ...elemento.contenido, texto: textoNuevo } });
+    if (textoNuevo !== textoOriginal) {
+      reemplazar({ ...elemento, contenido: { ...elemento.contenido, texto: textoNuevo }, tamano: tamanoParaTexto(elemento, textoNuevo) });
+    }
   }
   return { documento: copia, cubiertos };
+}
+
+/**
+ * Crece la caja de un elemento de texto, nunca la encoge, para que el
+ * valor que acabamos de rellenar nunca quede invisible — bug real
+ * reportado con captura, 28/10/2026: una etiqueta como "Nombre:" en una
+ * plantilla propia del usuario suele venir en una caja ajustada SOLO al
+ * ancho de la propia etiqueta; al escribir el valor detrás, el Motor
+ * Documental envuelve el texto sobrante a una segunda línea
+ * (`white-space: pre-wrap` en el render) que la caja original —
+ * pensada para una sola línea— recorta por completo (`overflow: hidden`),
+ * así que el dato parecía no haberse rellenado aunque sí estaba guardado.
+ * Ensancha lo justo para que la línea más larga quepa en una sola línea
+ * (evita el envuelto) y, si aun así el texto necesitara más líneas de las
+ * que ya caben, también crece el alto — mismo cálculo por caracteres que
+ * `estimarAlturaTexto` en `documento-generador-presupuesto.ts`.
+ */
+function tamanoParaTexto(elemento: ElementoMC, texto: string): ElementoMC['tamano'] {
+  const estilo = (elemento.estilo ?? {}) as { fontSize?: number; lineHeight?: number };
+  const fontSize = estilo.fontSize ?? 16;
+  const lineHeight = estilo.lineHeight ?? 1.2;
+  const lineas = texto.split('\n');
+  const anchoCaracter = fontSize * 0.55;
+  const anchoNecesario = Math.max(...lineas.map((l) => Math.ceil(l.length * anchoCaracter)));
+  const ancho = Math.max(elemento.tamano.ancho, anchoNecesario + 8);
+  const lineasQueCaben = Math.max(1, Math.floor(elemento.tamano.alto / (fontSize * lineHeight)));
+  const alto = lineas.length > lineasQueCaben ? Math.ceil(lineas.length * fontSize * lineHeight) : elemento.tamano.alto;
+  return { ancho, alto };
 }
 
 /**
@@ -115,9 +145,18 @@ export function rellenarEtiquetasCliente(documento: DocumentoMC, datos: DatosCli
  * `autoRellenarDatosCliente`) — nunca repite un dato que la propia
  * plantilla ya mostraba en su sitio. Elemento de texto normal, sin ningún
  * vínculo especial con el cliente tras crearse — el usuario puede
- * moverlo/editarlo/borrarlo como cualquier otro.
+ * moverlo/editarlo/borrarlo como cualquier otro. `posicion` la calcula
+ * `autoRellenarDatosCliente` a partir del propio documento (nunca una
+ * coordenada fija — bug real con captura, 28/10/2026: `{ x: 40, y: 90 }`
+ * caía justo encima del logo de la cabecera en la plantilla corporativa
+ * del usuario); el valor por defecto solo es para quien llame a esta
+ * función directamente (ej. los tests).
  */
-export function crearBloqueDatosCliente(datos: DatosClienteAutoRelleno, pendientes: Set<keyof DatosClienteAutoRelleno>): ElementoMC | null {
+export function crearBloqueDatosCliente(
+  datos: DatosClienteAutoRelleno,
+  pendientes: Set<keyof DatosClienteAutoRelleno>,
+  posicion: { x: number; y: number } = { x: 40, y: 90 }
+): ElementoMC | null {
   const lineas: string[] = [];
   if (pendientes.has('nombre') && datos.nombre) lineas.push(datos.nombre);
   if (pendientes.has('dni') && datos.dni) lineas.push(`DNI/NIE: ${datos.dni}`);
@@ -127,7 +166,7 @@ export function crearBloqueDatosCliente(datos: DatosClienteAutoRelleno, pendient
   if (pendientes.has('telefono') && datos.telefono) lineas.push(`Tel: ${datos.telefono}`);
   if (pendientes.has('fecha')) lineas.push(`Fecha: ${datos.fecha}`);
   if (lineas.length === 0) return null;
-  const base = crearElementoBase('texto', { x: 40, y: 90 }, { ancho: 260, alto: 20 * lineas.length + 20 });
+  const base = crearElementoBase('texto', posicion, { ancho: 260, alto: 20 * lineas.length + 20 });
   return { ...base, contenido: { texto: lineas.join('\n') }, estilo: { fontSize: 13, lineHeight: 1.4 } };
 }
 
@@ -149,9 +188,13 @@ export function autoRellenarDatosCliente(documento: DocumentoMC, datos: DatosCli
   const pendientes = new Set<keyof DatosClienteAutoRelleno>(
     (Object.keys(datos) as (keyof DatosClienteAutoRelleno)[]).filter((dato) => !cubiertos.has(dato))
   );
-  const bloque = crearBloqueDatosCliente(datos, pendientes);
-  if (!bloque) return documentoConEtiquetas;
   const primeraPagina = documentoConEtiquetas.paginas[0];
   if (!primeraPagina) return documentoConEtiquetas;
+  // Debajo de TODO lo que ya hay en la página (logo, membrete, tabla...),
+  // nunca en una coordenada fija — evita el solape real reportado (ver
+  // `crearBloqueDatosCliente`).
+  const yLibre = primeraPagina.elementos.reduce((max, el) => Math.max(max, el.posicion.y + el.tamano.alto), 0);
+  const bloque = crearBloqueDatosCliente(datos, pendientes, { x: 40, y: yLibre + 20 });
+  if (!bloque) return documentoConEtiquetas;
   return anadirElemento(documentoConEtiquetas, primeraPagina.id, bloque);
 }

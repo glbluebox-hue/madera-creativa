@@ -96,6 +96,26 @@ describe('rellenarEtiquetasCliente', () => {
     expect(texto).toContain('CIF/NIF: 12345678A');
   });
 
+  it('ensancha la caja de una etiqueta demasiado ajustada para que el valor rellenado no quede invisible (overflow:hidden) — fallo real con captura, 28/10/2026', () => {
+    // Caja ajustada SOLO al ancho de "Nombre:" (plantilla corporativa real del usuario).
+    const doc = docConTexto('Nombre:');
+    const { documento } = rellenarEtiquetasCliente(doc, DATOS);
+    const elemento = documento.paginas[0].elementos[0];
+    expect(elemento.contenido.texto).toBe('Nombre: Walter Di Zio');
+    expect(elemento.tamano.ancho).toBeGreaterThan(100); // la caja original (docConTexto) es de 100
+  });
+
+  it('nunca encoge una caja que ya era más grande de lo necesario', () => {
+    let id = 0;
+    const doc = crearDocumentoVacio(() => `id-${id++}`);
+    const el = crearElementoBase('texto', { x: 0, y: 0 }, { ancho: 500, alto: 200 });
+    const conTexto = anadirElemento(doc, doc.paginas[0].id, { ...el, contenido: { texto: 'Nombre:' } });
+    const { documento } = rellenarEtiquetasCliente(conTexto, DATOS);
+    const elemento = documento.paginas[0].elementos[0];
+    expect(elemento.tamano.ancho).toBe(500);
+    expect(elemento.tamano.alto).toBe(200);
+  });
+
   it('devuelve cubiertos vacío si no hay ninguna etiqueta reconocible en todo el documento', () => {
     const doc = docConTexto('Presupuesto sin ninguna etiqueta de cliente');
     const { cubiertos } = rellenarEtiquetasCliente(doc, DATOS);
