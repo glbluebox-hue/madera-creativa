@@ -82,11 +82,10 @@ export function PresupuestosVista({ clienteId, proyectoId, clienteNombre, empres
    * REVOCA el anterior (`crearEnlacePresupuesto`), así que recargar y
    * volver a pulsar rompía en silencio un enlace ya enviado a un cliente
    * real. `p.enlaceActivoExpiraEn` (servidor, sobrevive al refresco) es lo
-   * que ahora evita eso — ver `confirmandoRegenerarId` más abajo.
+   * que ahora avisa de eso (texto junto al botón, ver `accionEnlace`).
    */
   const [enlaces, setEnlaces] = useState<Record<string, string>>({});
   const [enlaceCopiadoId, setEnlaceCopiadoId] = useState<string | null>(null);
-  const [confirmandoRegenerarId, setConfirmandoRegenerarId] = useState<string | null>(null);
 
   const cargar = useCallback(() => {
     setCargando(true);
@@ -304,7 +303,11 @@ export function PresupuestosVista({ clienteId, proyectoId, clienteNombre, empres
     if (p.formato === 'lienzo') return null;
     const url = enlaces[p.id];
     if (!url) {
-      if (p.enlaceActivoExpiraEn && confirmandoRegenerarId !== p.id) {
+      // Antes pedía una confirmación aparte ("¿seguro?") antes de
+      // regenerar; a petición explícita del usuario (28/10/2026, "si
+      // quiero generarlo puedo generarlo pero no me lo pregunte") se
+      // quitó ese segundo paso — el aviso sigue ahí, pero ya no bloquea.
+      if (p.enlaceActivoExpiraEn) {
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '0.72rem', color: 'var(--topo-claro)' }}>
@@ -313,29 +316,11 @@ export function PresupuestosVista({ clienteId, proyectoId, clienteNombre, empres
             <button
               className={`${styles.btn} ${styles.btnSecundario}`}
               style={{ fontSize: '0.75rem' }}
-              onClick={() => setConfirmandoRegenerarId(p.id)}
-              title="El enlace ya generado no se puede volver a mostrar, pero sigue funcionando si lo tienes guardado"
+              onClick={() => generarEnlace(p.id)}
+              disabled={generandoEnlaceId === p.id}
+              title="Invalida el enlace anterior — si ya se lo enviaste a un cliente, dejará de funcionarle"
             >
-              Generar uno nuevo
-            </button>
-          </div>
-        );
-      }
-      if (confirmandoRegenerarId === p.id) {
-        return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '0.72rem', color: 'var(--rojo)', fontWeight: 600 }}>
-              Esto invalida el enlace anterior — si ya se lo enviaste a un cliente, dejará de funcionarle.
-            </span>
-            <button
-              className={`${styles.btn} ${styles.btnPeligro}`}
-              style={{ fontSize: '0.75rem' }}
-              onClick={() => { setConfirmandoRegenerarId(null); generarEnlace(p.id); }}
-            >
-              Generar de todas formas
-            </button>
-            <button className={`${styles.btn} ${styles.btnSecundario}`} style={{ fontSize: '0.75rem' }} onClick={() => setConfirmandoRegenerarId(null)}>
-              Cancelar
+              {generandoEnlaceId === p.id ? 'Generando…' : 'Generar uno nuevo'}
             </button>
           </div>
         );
