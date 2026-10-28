@@ -1,4 +1,4 @@
-import { rellenarLinea, rellenarEtiquetasCliente, autoRellenarDatosCliente, type DatosClienteAutoRelleno } from './presupuestos-datos-cliente.js';
+import { rellenarLinea, rellenarEtiquetasCliente, crearBloqueDatosCliente, autoRellenarDatosCliente, type DatosClienteAutoRelleno } from './presupuestos-datos-cliente.js';
 import { crearDocumentoVacio } from './documento-modelo.js';
 import { crearElementoBase, anadirElemento } from './documento-comandos.js';
 import type { DocumentoMC } from './documento-modelo.js';
@@ -17,15 +17,27 @@ function docConTexto(texto: string): DocumentoMC {
 
 describe('rellenarLinea (corrección 24/08/2026 — rellenar etiquetas de una plantilla ya diseñada)', () => {
   it('rellena una etiqueta sin nada detrás (Nombre: al final de la línea)', () => {
-    expect(rellenarLinea('Nombre:', DATOS)).toEqual({ linea: 'Nombre: Walter Di Zio', huboRelleno: true });
+    const r = rellenarLinea('Nombre:', DATOS);
+    expect(r.linea).toBe('Nombre: Walter Di Zio');
+    expect(r.huboRelleno).toBe(true);
+    expect(r.cubiertos).toEqual(new Set(['nombre']));
   });
 
   it('rellena una etiqueta con guiones bajos de relleno', () => {
-    expect(rellenarLinea('Dirección: ____________________', DATOS)).toEqual({ linea: 'Dirección: Calle Falsa 123', huboRelleno: true });
+    const r = rellenarLinea('Dirección: ____________________', DATOS);
+    expect(r.linea).toBe('Dirección: Calle Falsa 123');
+    expect(r.huboRelleno).toBe(true);
+    expect(r.cubiertos).toEqual(new Set(['direccion']));
   });
 
-  it('NUNCA toca una etiqueta que ya tiene algo escrito detrás', () => {
-    expect(rellenarLinea('Nombre: Otro cliente', DATOS)).toEqual({ linea: 'Nombre: Otro cliente', huboRelleno: false });
+  it('NUNCA toca una etiqueta que ya tiene algo escrito detrás, pero SÍ la cuenta como cubierta', () => {
+    const r = rellenarLinea('Nombre: Otro cliente', DATOS);
+    expect(r.linea).toBe('Nombre: Otro cliente');
+    expect(r.huboRelleno).toBe(false);
+    // Cubierta aunque no la hayamos rellenado nosotros — ya tiene un sitio
+    // propio (texto manual, o resuelto antes vía {{cliente.nombre}}), así
+    // que no debe duplicarse en el bloque de reserva.
+    expect(r.cubiertos).toEqual(new Set(['nombre']));
   });
 
   it('dos etiquetas en la misma línea se rellenan cada una de forma independiente', () => {
@@ -33,15 +45,22 @@ describe('rellenarLinea (corrección 24/08/2026 — rellenar etiquetas de una pl
     expect(resultado.huboRelleno).toBe(true);
     expect(resultado.linea).toContain('Teléfono: +34 642 02 14 68');
     expect(resultado.linea).toContain('CIF/NIF: 12345678A');
+    expect(resultado.cubiertos).toEqual(new Set(['telefono', 'dni']));
   });
 
-  it('si el dato no existe (ej. cliente sin DNI), el hueco se deja tal cual', () => {
+  it('si el dato no existe (ej. cliente sin DNI), el hueco se deja tal cual pero la etiqueta sigue contando como cubierta', () => {
     const sinDni: DatosClienteAutoRelleno = { ...DATOS, dni: '' };
-    expect(rellenarLinea('DNI/NIE: ____', sinDni)).toEqual({ linea: 'DNI/NIE: ____', huboRelleno: false });
+    const r = rellenarLinea('DNI/NIE: ____', sinDni);
+    expect(r.linea).toBe('DNI/NIE: ____');
+    expect(r.huboRelleno).toBe(false);
+    expect(r.cubiertos).toEqual(new Set(['dni']));
   });
 
   it('una línea sin ninguna etiqueta reconocible se devuelve intacta', () => {
-    expect(rellenarLinea('Condiciones de pago', DATOS)).toEqual({ linea: 'Condiciones de pago', huboRelleno: false });
+    const r = rellenarLinea('Condiciones de pago', DATOS);
+    expect(r.linea).toBe('Condiciones de pago');
+    expect(r.huboRelleno).toBe(false);
+    expect(r.cubiertos.size).toBe(0);
   });
 
   it('reconoce "Direccion" sin tilde', () => {
@@ -66,10 +85,10 @@ describe('rellenarLinea (corrección 24/08/2026 — rellenar etiquetas de una pl
 });
 
 describe('rellenarEtiquetasCliente', () => {
-  it('rellena las etiquetas dentro de un elemento de texto multilínea', () => {
+  it('rellena las etiquetas dentro de un elemento de texto multilínea y devuelve qué datos cubrió', () => {
     const doc = docConTexto('CLIENTE\nNombre:\nDirección: ________\nTeléfono: ________     CIF/NIF: ________');
-    const { documento, rellenoAlgo } = rellenarEtiquetasCliente(doc, DATOS);
-    expect(rellenoAlgo).toBe(true);
+    const { documento, cubiertos } = rellenarEtiquetasCliente(doc, DATOS);
+    expect(cubiertos).toEqual(new Set(['nombre', 'direccion', 'telefono', 'dni']));
     const texto = documento.paginas[0].elementos[0].contenido.texto as string;
     expect(texto).toContain('Nombre: Walter Di Zio');
     expect(texto).toContain('Dirección: Calle Falsa 123');
@@ -77,10 +96,10 @@ describe('rellenarEtiquetasCliente', () => {
     expect(texto).toContain('CIF/NIF: 12345678A');
   });
 
-  it('devuelve rellenoAlgo=false si no hay ninguna etiqueta reconocible en todo el documento', () => {
+  it('devuelve cubiertos vacío si no hay ninguna etiqueta reconocible en todo el documento', () => {
     const doc = docConTexto('Presupuesto sin ninguna etiqueta de cliente');
-    const { rellenoAlgo } = rellenarEtiquetasCliente(doc, DATOS);
-    expect(rellenoAlgo).toBe(false);
+    const { cubiertos } = rellenarEtiquetasCliente(doc, DATOS);
+    expect(cubiertos.size).toBe(0);
   });
 
   it('nunca muta el documento original', () => {
@@ -95,20 +114,63 @@ describe('rellenarEtiquetasCliente', () => {
     const base = crearDocumentoVacio(() => `id-${id++}`);
     const rect = crearElementoBase('rectangulo', { x: 0, y: 0 }, { ancho: 10, alto: 10 });
     const doc = anadirElemento(base, base.paginas[0].id, { ...rect, contenido: { texto: 'Nombre:' } as unknown as Record<string, unknown> });
-    const { rellenoAlgo } = rellenarEtiquetasCliente(doc, DATOS);
-    expect(rellenoAlgo).toBe(false);
+    const { cubiertos } = rellenarEtiquetasCliente(doc, DATOS);
+    expect(cubiertos.size).toBe(0);
+  });
+});
+
+describe('crearBloqueDatosCliente (corrección 28/10/2026 — solo los datos pendientes)', () => {
+  it('devuelve null si no hay ningún dato pendiente', () => {
+    expect(crearBloqueDatosCliente(DATOS, new Set())).toBeNull();
+  });
+
+  it('incluye solo los datos marcados como pendientes, nunca los ya cubiertos por la plantilla', () => {
+    const bloque = crearBloqueDatosCliente(DATOS, new Set(['codigoPostal', 'poblacion', 'fecha']));
+    const texto = bloque!.contenido.texto as string;
+    expect(texto).toContain('38677 Tijoco Bajo');
+    expect(texto).toContain('Fecha: 24/08/2026');
+    expect(texto).not.toContain('Walter Di Zio');
+    expect(texto).not.toContain('Calle Falsa 123');
   });
 });
 
 describe('autoRellenarDatosCliente', () => {
-  it('si encuentra etiquetas, las rellena y NO añade el bloque de reserva', () => {
-    const doc = docConTexto('Nombre:\nDirección: ___');
+  it('si la plantilla cubre TODOS los datos con valor real, no añade ningún bloque de reserva', () => {
+    const doc = docConTexto('Nombre:\nDirección: ___\nCódigo postal: ___\nPoblación: ___\nTeléfono: ___\nDNI: ___\nFecha: ___');
     const resultado = autoRellenarDatosCliente(doc, DATOS);
     expect(resultado.paginas[0].elementos).toHaveLength(1); // sigue habiendo solo el elemento original, ninguno nuevo
     expect(resultado.paginas[0].elementos[0].contenido.texto).toContain('Nombre: Walter Di Zio');
   });
 
-  it('si NO encuentra ninguna etiqueta, añade el bloque de reserva como elemento nuevo', () => {
+  it('si la plantilla solo cubre ALGUNOS datos, añade un bloque de reserva con SOLO los que faltan (fallo real, 28/10/2026)', () => {
+    // Plantilla propia del usuario: tiene Nombre/Dirección/Teléfono, pero nunca Código postal/Población/Fecha.
+    const doc = docConTexto('Nombre:\nDirección: ___\nTeléfono: ___');
+    const resultado = autoRellenarDatosCliente(doc, DATOS);
+    expect(resultado.paginas[0].elementos).toHaveLength(2); // el original + el bloque de reserva con lo pendiente
+    const original = resultado.paginas[0].elementos[0].contenido.texto as string;
+    const bloque = resultado.paginas[0].elementos[1].contenido.texto as string;
+    expect(original).toContain('Nombre: Walter Di Zio');
+    expect(original).toContain('Dirección: Calle Falsa 123');
+    expect(original).toContain('Teléfono: +34 642 02 14 68');
+    // Lo que la plantilla no cubría aparece en el bloque de reserva, sin repetir lo que ya estaba.
+    expect(bloque).toContain('38677 Tijoco Bajo');
+    expect(bloque).toContain('Fecha: 24/08/2026');
+    expect(bloque).not.toContain('Walter Di Zio');
+  });
+
+  it('una etiqueta ya resuelta vía {{variable}} (con contenido real, no un hueco) cuenta como cubierta y no se duplica', () => {
+    // Simula una plantilla con "Dirección: {{cliente.direccion}}" YA resuelto por resolverVariables
+    // antes de llegar aquí — la etiqueta existe pero su hueco ya no está vacío.
+    const doc = docConTexto('Nombre: Walter Di Zio\nDirección: Calle Falsa 123');
+    const resultado = autoRellenarDatosCliente(doc, DATOS);
+    expect(resultado.paginas[0].elementos).toHaveLength(2); // sigue faltando CP/población/telefono/dni/fecha
+    const bloque = resultado.paginas[0].elementos[1].contenido.texto as string;
+    expect(bloque).not.toContain('Walter Di Zio'); // nombre ya cubierto, no se repite
+    expect(bloque).not.toContain('Calle Falsa 123'); // dirección ya cubierta, no se repite
+    expect(bloque).toContain('38677 Tijoco Bajo');
+  });
+
+  it('si NO encuentra ninguna etiqueta, añade el bloque de reserva completo como elemento nuevo', () => {
     const doc = docConTexto('Presupuesto sin etiquetas de cliente');
     const resultado = autoRellenarDatosCliente(doc, DATOS);
     expect(resultado.paginas[0].elementos).toHaveLength(2); // el original + el bloque de reserva

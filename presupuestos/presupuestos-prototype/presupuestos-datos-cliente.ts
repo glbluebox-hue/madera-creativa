@@ -38,15 +38,30 @@ const ETIQUETAS_CLIENTE: { dato: keyof DatosClienteAutoRelleno; patron: RegExp }
  * rellenar). Varias etiquetas pueden compartir la misma línea (ej.
  * "Teléfono: ____  CIF/NIF: ____"); se procesan de derecha a izquierda
  * para que sustituir una no invalide la posición de las anteriores.
+ * Devuelve también QUÉ datos tienen ya una etiqueta propia en esta línea
+ * (`cubiertos`) — lo necesita `rellenarEtiquetasCliente` para saber qué
+ * datos han quedado SIN ningún sitio en toda la plantilla (petición real
+ * del usuario, 28/10/2026: una plantilla con "Dirección:"/"Teléfono:" ya
+ * puestos pero sin "Código postal:"/"Población:"/"Fecha:" se quedaba sin
+ * esos tres datos en ningún sitio — `autoRellenarDatosCliente` solo
+ * añadía el bloque de reserva completo cuando NINGÚN campo se había
+ * rellenado, nunca para completar los que faltaban junto a los que sí).
+ * Un dato cuenta como "cubierto" en cuanto su etiqueta EXISTE en la
+ * plantilla, tenga ya contenido (manual, o resuelto antes vía
+ * `{{variable}}`) o un hueco que esta función rellena ahora — en ambos
+ * casos ya tiene un sitio propio y no debe duplicarse en el bloque de
+ * reserva.
  */
-export function rellenarLinea(linea: string, datos: DatosClienteAutoRelleno): { linea: string; huboRelleno: boolean } {
+export function rellenarLinea(linea: string, datos: DatosClienteAutoRelleno): { linea: string; huboRelleno: boolean; cubiertos: Set<keyof DatosClienteAutoRelleno> } {
+  const cubiertos = new Set<keyof DatosClienteAutoRelleno>();
   const coincidencias: { finEtiqueta: number; inicio: number; dato: keyof DatosClienteAutoRelleno }[] = [];
   for (const { dato, patron } of ETIQUETAS_CLIENTE) {
     const global = new RegExp(patron.source, patron.flags.includes('g') ? patron.flags : `${patron.flags}g`);
     let m: RegExpExecArray | null;
     while ((m = global.exec(linea))) coincidencias.push({ inicio: m.index, finEtiqueta: m.index + m[0].length, dato });
   }
-  if (coincidencias.length === 0) return { linea, huboRelleno: false };
+  if (coincidencias.length === 0) return { linea, huboRelleno: false, cubiertos };
+  for (const c of coincidencias) cubiertos.add(c.dato);
   coincidencias.sort((a, b) => a.inicio - b.inicio);
   let resultado = linea;
   let huboRelleno = false;
@@ -60,7 +75,7 @@ export function rellenarLinea(linea: string, datos: DatosClienteAutoRelleno): { 
     resultado = `${resultado.slice(0, actual.finEtiqueta)} ${valor}${resultado.slice(siguienteInicio)}`;
     huboRelleno = true;
   }
-  return { linea: resultado, huboRelleno };
+  return { linea: resultado, huboRelleno, cubiertos };
 }
 
 /**
@@ -69,58 +84,74 @@ export function rellenarLinea(linea: string, datos: DatosClienteAutoRelleno): { 
  * de la plantilla en cuanto esta ya traía su propia sección "Cliente"
  * con estas mismas etiquetas en blanco. Ahora se busca y rellena ESA
  * sección existente en vez de añadir nada nuevo — recorre todos los
- * elementos de texto del documento, línea a línea. Devuelve también si
- * se rellenó algo, para decidir si aún hace falta el bloque de reserva
- * (`crearBloqueDatosCliente`, más abajo) en documentos sin ninguna
- * etiqueta reconocible (p. ej. uno en blanco, sin plantilla).
+ * elementos de texto del documento, línea a línea. Devuelve también QUÉ
+ * datos tienen ya una etiqueta propia en algún sitio del documento (unión
+ * de todas las líneas), para que `autoRellenarDatosCliente` sepa cuáles
+ * se han quedado sin ningún sitio en toda la plantilla y necesitan el
+ * bloque de reserva — antes solo se sabía SI se había rellenado algo,
+ * nunca el detalle por campo (ver `rellenarLinea`).
  */
-export function rellenarEtiquetasCliente(documento: DocumentoMC, datos: DatosClienteAutoRelleno): { documento: DocumentoMC; rellenoAlgo: boolean } {
+export function rellenarEtiquetasCliente(documento: DocumentoMC, datos: DatosClienteAutoRelleno): { documento: DocumentoMC; cubiertos: Set<keyof DatosClienteAutoRelleno> } {
   const copia = structuredClone(documento);
-  let rellenoAlgo = false;
+  const cubiertos = new Set<keyof DatosClienteAutoRelleno>();
   for (const { elemento, reemplazar } of recorrerElementos(copia)) {
     if (elemento.tipo !== 'texto') continue;
     const textoOriginal = (elemento.contenido as { texto?: unknown }).texto;
     if (typeof textoOriginal !== 'string') continue;
     const lineasNuevas = textoOriginal.split('\n').map((linea) => {
-      const { linea: lineaNueva, huboRelleno } = rellenarLinea(linea, datos);
-      if (huboRelleno) rellenoAlgo = true;
+      const { linea: lineaNueva, cubiertos: cubiertosLinea } = rellenarLinea(linea, datos);
+      for (const dato of cubiertosLinea) cubiertos.add(dato);
       return lineaNueva;
     });
     const textoNuevo = lineasNuevas.join('\n');
     if (textoNuevo !== textoOriginal) reemplazar({ ...elemento, contenido: { ...elemento.contenido, texto: textoNuevo } });
   }
-  return { documento: copia, rellenoAlgo };
+  return { documento: copia, cubiertos };
 }
 
 /**
- * Bloque de texto de reserva — solo se usa cuando `rellenarEtiquetasCliente`
- * no encontró ninguna etiqueta que rellenar en todo el documento (típicamente
- * un presupuesto en blanco, sin plantilla, donde no hay nada con lo que
- * pueda solaparse). Elemento de texto normal, sin ningún vínculo especial
- * con el cliente tras crearse — el usuario puede moverlo/editarlo/borrarlo
- * como cualquier otro.
+ * Bloque de texto de reserva con SOLO los datos que no encontraron ningún
+ * hueco de etiqueta en toda la plantilla (`pendientes` — ver
+ * `autoRellenarDatosCliente`) — nunca repite un dato que la propia
+ * plantilla ya mostraba en su sitio. Elemento de texto normal, sin ningún
+ * vínculo especial con el cliente tras crearse — el usuario puede
+ * moverlo/editarlo/borrarlo como cualquier otro.
  */
-export function crearBloqueDatosCliente(datos: DatosClienteAutoRelleno): ElementoMC {
-  const lineas = [datos.nombre];
-  if (datos.direccion) lineas.push(datos.direccion);
-  const codigoPostalYPoblacion = [datos.codigoPostal, datos.poblacion].filter(Boolean).join(' ');
+export function crearBloqueDatosCliente(datos: DatosClienteAutoRelleno, pendientes: Set<keyof DatosClienteAutoRelleno>): ElementoMC | null {
+  const lineas: string[] = [];
+  if (pendientes.has('nombre') && datos.nombre) lineas.push(datos.nombre);
+  if (pendientes.has('dni') && datos.dni) lineas.push(`DNI/NIE: ${datos.dni}`);
+  if (pendientes.has('direccion') && datos.direccion) lineas.push(datos.direccion);
+  const codigoPostalYPoblacion = [pendientes.has('codigoPostal') ? datos.codigoPostal : '', pendientes.has('poblacion') ? datos.poblacion : ''].filter(Boolean).join(' ');
   if (codigoPostalYPoblacion) lineas.push(codigoPostalYPoblacion);
-  if (datos.telefono) lineas.push(`Tel: ${datos.telefono}`);
-  if (datos.dni) lineas.push(`DNI/NIE: ${datos.dni}`);
-  lineas.push(`Fecha: ${datos.fecha}`);
+  if (pendientes.has('telefono') && datos.telefono) lineas.push(`Tel: ${datos.telefono}`);
+  if (pendientes.has('fecha')) lineas.push(`Fecha: ${datos.fecha}`);
+  if (lineas.length === 0) return null;
   const base = crearElementoBase('texto', { x: 40, y: 90 }, { ancho: 260, alto: 20 * lineas.length + 20 });
   return { ...base, contenido: { texto: lineas.join('\n') }, estilo: { fontSize: 13, lineHeight: 1.4 } };
 }
 
 /**
  * Aplica el auto-relleno completo a un documento recién resuelto (con o
- * sin plantilla): primero intenta rellenar etiquetas ya existentes; si no
- * encuentra ninguna, añade el bloque de reserva en la primera página.
+ * sin plantilla): primero rellena las etiquetas ya presentes en la propia
+ * plantilla, y para cualquier dato con valor real que no haya encontrado
+ * ningún hueco en NINGÚN sitio del documento (ej. una plantilla con
+ * "Dirección:"/"Teléfono:" pero sin "Código postal:"/"Fecha:"), añade un
+ * bloque de reserva pequeño SOLO con esos datos sueltos — nunca repite lo
+ * que la plantilla ya mostraba en su sitio, nunca omite un dato real solo
+ * porque otro campo sí encontró hueco (fallo real, 28/10/2026: con la
+ * plantilla propia del usuario, código postal/población/fecha
+ * desaparecían del todo porque nombre/dirección/teléfono ya habían
+ * encontrado hueco en otro lado).
  */
 export function autoRellenarDatosCliente(documento: DocumentoMC, datos: DatosClienteAutoRelleno): DocumentoMC {
-  const { documento: documentoConEtiquetas, rellenoAlgo } = rellenarEtiquetasCliente(documento, datos);
-  if (rellenoAlgo) return documentoConEtiquetas;
+  const { documento: documentoConEtiquetas, cubiertos } = rellenarEtiquetasCliente(documento, datos);
+  const pendientes = new Set<keyof DatosClienteAutoRelleno>(
+    (Object.keys(datos) as (keyof DatosClienteAutoRelleno)[]).filter((dato) => !cubiertos.has(dato))
+  );
+  const bloque = crearBloqueDatosCliente(datos, pendientes);
+  if (!bloque) return documentoConEtiquetas;
   const primeraPagina = documentoConEtiquetas.paginas[0];
   if (!primeraPagina) return documentoConEtiquetas;
-  return anadirElemento(documentoConEtiquetas, primeraPagina.id, crearBloqueDatosCliente(datos));
+  return anadirElemento(documentoConEtiquetas, primeraPagina.id, bloque);
 }

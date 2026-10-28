@@ -1155,11 +1155,20 @@ export class PresupuestosService {
 
   /**
    * Borra un proyecto (solo si pertenece al usuario) — borra también sus
-   * blobs (fotos/adjuntos) de almacenamiento externo. NO borra el
-   * cliente ni sus otros proyectos, ni las Facturas/Notas/Presupuestos/
-   * Contratos/Carpetas/Dibujos vinculados por `proyectoId` (quedan
-   * huérfanos de proyecto pero no se pierden — fuera de alcance de este
-   * incremento decidir su limpieza).
+   * blobs (fotos/adjuntos) de almacenamiento externo. NO borra las
+   * Facturas/Notas/Presupuestos/Contratos/Carpetas/Dibujos vinculados por
+   * `proyectoId` (quedan huérfanos de proyecto pero no se pierden — fuera
+   * de alcance de este incremento decidir su limpieza).
+   *
+   * Si este era el ÚLTIMO proyecto del cliente, borra también su ficha de
+   * identidad (petición real del usuario, 28/10/2026: "si elimino la
+   * ficha de cliente, también se tiene que borrar de ahí" — refiriéndose
+   * a que seguía apareciendo en los selectores de cliente al crear un
+   * presupuesto/factura). Antes la identidad quedaba huérfana a propósito
+   * (incremento "Cliente ≠ Proyecto") y nunca se limpiaba sola — un
+   * cliente sin ningún proyecto no tiene ninguna utilidad real en los
+   * selectores, así que desaparecer del todo es lo esperado, no una
+   * pérdida de datos relevante.
    * @param id Identificador del proyecto.
    * @param usuarioId Propietario de los datos.
    */
@@ -1179,6 +1188,10 @@ export class PresupuestosService {
       }
     }
     await ProyectoModel.deleteOne({ id, usuarioId }).exec();
+    if (doc?.clienteId) {
+      const leQuedanProyectos = await ProyectoModel.exists({ clienteId: doc.clienteId, usuarioId });
+      if (!leQuedanProyectos) await ClienteModel.deleteOne({ id: doc.clienteId, usuarioId }).exec();
+    }
   }
 
   /** Igual que `limpiar()`, pero tipada para `ProyectoDoc` — misma lógica (quita `_id`/`__v`/`claveAlmacenamiento`), campos distintos. */
