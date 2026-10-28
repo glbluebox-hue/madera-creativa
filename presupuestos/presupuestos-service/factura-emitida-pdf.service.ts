@@ -1,5 +1,6 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import QRCode from 'qrcode';
+import { logger } from './logger.service.js';
 
 /**
  * PDF legal de una factura emitida, con QR embebido (SIF, Fase 1-5,
@@ -381,7 +382,15 @@ export async function generarPdfFacturaEmitidaBytes(
       escribir('Registro de facturación conforme al RD 1007/2023 (SIF).', MARGEN + tamanoQr + 10, yPie - tamanoQr / 2 + 10, { size: 7, color: COLOR_GRIS });
       escribir(`Sistema: ${factura.indicadorVerifactu} — formato del QR sin confirmar oficialmente.`, MARGEN + tamanoQr + 10, yPie - tamanoQr / 2 - 2, { size: 7, color: COLOR_GRIS });
       yPie -= tamanoQr + 18;
-    } catch { yPie -= 18; /* un fallo al generar el QR no debe impedir descargar el resto del PDF */ }
+    } catch (err) {
+      // Un fallo al generar el QR no debe impedir descargar el resto del
+      // PDF — pero antes fallaba en silencio total, sin dejar ningún
+      // rastro de qué pasó (reporte real, 28/10/2026: "no sale el código
+      // QR" sin más pista). Se registra el error real para poder
+      // diagnosticarlo la próxima vez en vez de adivinar a ciegas.
+      logger.error({ err, numeroFormateado: factura.numeroFormateado }, 'No se pudo generar el QR de una factura emitida');
+      yPie -= 18;
+    }
   }
 
   // ── Última línea: huella de integridad (solo si ya existe) + paginación — fluye justo debajo de lo anterior, nunca más abajo del margen de la página. ──
