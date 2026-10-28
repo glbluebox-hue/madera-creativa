@@ -21,8 +21,11 @@ export type Empresa = {
   logo: string | null;
   /** CIF/NIF de la propia empresa, para las facturas/presupuestos que ella emite — no confundir con el CIF/NIF de cada factura de gasto, que es del proveedor. */
   nifCif: string;
-  /** Dirección postal — mostrada en la cabecera de Facturas emitidas (SIF). */
+  /** Dirección postal (calle y número) — mostrada en la cabecera de Facturas emitidas (SIF). */
   direccion: string;
+  /** Código postal y población — mismo criterio que `Cliente.codigoPostal/poblacion` (petición del usuario, 28/10/2026). */
+  codigoPostal: string;
+  poblacion: string;
   /** Teléfono mostrado en la cabecera de presupuestos con plantilla. */
   telefono: string;
   /** Email mostrado en la cabecera de presupuestos con plantilla. */
@@ -107,6 +110,8 @@ const EMPRESA_ADMIN: Empresa = {
   logo: logoMadera,
   nifCif: '',
   direccion: '',
+  codigoPostal: '',
+  poblacion: '',
   telefono: '671737663',
   email: 'Holamaderacreativa@gmail.com',
   iban: '',
@@ -142,6 +147,8 @@ const EMPRESA_USUARIO: Empresa = {
   logo: null,
   nifCif: '',
   direccion: '',
+  codigoPostal: '',
+  poblacion: '',
   telefono: '',
   email: '',
   iban: '',
@@ -223,6 +230,8 @@ export function useEmpresa(autenticado = false, esAdmin = false): {
           logo: datos.logo || inicial.logo,
           nifCif: datos.nifCif || inicial.nifCif,
           direccion: datos.direccion || inicial.direccion,
+          codigoPostal: datos.codigoPostal || inicial.codigoPostal,
+          poblacion: datos.poblacion || inicial.poblacion,
           telefono: datos.telefono || inicial.telefono,
           email: datos.email || inicial.email,
           iban: datos.iban || inicial.iban,

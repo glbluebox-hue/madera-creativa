@@ -52,6 +52,8 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
   const [nifCif, setNifCif] = useState(empresa.nifCif);
   /** Dirección postal de la empresa — se muestra en la cabecera de Facturas emitidas (SIF). */
   const [direccion, setDireccion] = useState(empresa.direccion);
+  const [codigoPostal, setCodigoPostal] = useState(empresa.codigoPostal);
+  const [poblacion, setPoblacion] = useState(empresa.poblacion);
   const [telefono, setTelefono] = useState(empresa.telefono);
   const [email, setEmail] = useState(empresa.email);
   const [iban, setIban] = useState(empresa.iban);
@@ -96,6 +98,8 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
       logo,
       nifCif: nifCif.trim(),
       direccion: direccion.trim(),
+      codigoPostal: codigoPostal.trim(),
+      poblacion: poblacion.trim(),
       telefono: telefono.trim(),
       email: email.trim(),
       iban: iban.trim(),
@@ -211,8 +215,16 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
             <input className={styles.input} value={titular} onChange={(e) => setTitular(e.target.value)} placeholder="Como aparece en tus facturas de ingreso, si eres autónomo" />
           </div>
           <div className={`${styles.campo} ${styles.full}`}>
-            <label className={styles.campoLabel}>Dirección (para Facturas emitidas)</label>
-            <input className={styles.input} value={direccion} onChange={(e) => setDireccion(e.target.value)} placeholder="Calle, código postal, municipio, provincia" />
+            <label className={styles.campoLabel}>Dirección (calle y número, para Facturas emitidas)</label>
+            <input className={styles.input} value={direccion} onChange={(e) => setDireccion(e.target.value)} placeholder="Calle El herrero, 6" />
+          </div>
+          <div className={styles.campo}>
+            <label className={styles.campoLabel}>Código postal</label>
+            <input className={styles.input} value={codigoPostal} onChange={(e) => setCodigoPostal(e.target.value)} placeholder="38677" />
+          </div>
+          <div className={styles.campo}>
+            <label className={styles.campoLabel}>Población</label>
+            <input className={styles.input} value={poblacion} onChange={(e) => setPoblacion(e.target.value)} placeholder="Tijoco Bajo" />
           </div>
           <div className={styles.campo}>
             <label className={styles.campoLabel}>Teléfono</label>

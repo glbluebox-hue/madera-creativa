@@ -374,6 +374,8 @@ export type EmpresaDoc = {
   nifCif: string;
   /** Dirección postal — mostrada en la cabecera de Facturas emitidas (SIF). */
   direccion: string;
+  codigoPostal: string;
+  poblacion: string;
   telefono: string;
   email: string;
   iban: string;
@@ -1201,6 +1203,8 @@ export class PresupuestosService {
       logo: (doc as any).logo || '',
       nifCif: (doc as any).nifCif || '',
       direccion: (doc as any).direccion || '',
+      codigoPostal: (doc as any).codigoPostal || '',
+      poblacion: (doc as any).poblacion || '',
       telefono: (doc as any).telefono || '',
       email: (doc as any).email || '',
       iban: (doc as any).iban || '',
@@ -1245,6 +1249,8 @@ export class PresupuestosService {
       logo: (doc as any).logo || '',
       nifCif: (doc as any).nifCif || '',
       direccion: (doc as any).direccion || '',
+      codigoPostal: (doc as any).codigoPostal || '',
+      poblacion: (doc as any).poblacion || '',
       telefono: (doc as any).telefono || '',
       email: (doc as any).email || '',
       iban: (doc as any).iban || '',

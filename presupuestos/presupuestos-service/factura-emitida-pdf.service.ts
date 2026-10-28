@@ -71,18 +71,21 @@ export type DatosFacturaEmitidaPdf = {
 type DatosEmpresaPdf = { nombre?: string; titular?: string; nifCif?: string; direccion?: string; codigoPostal?: string; poblacion?: string; telefono?: string; email?: string; logo?: string; iban?: string };
 
 /**
- * Texto del "Método de pago" a imprimir — si es transferencia bancaria y
- * la empresa ya tiene un IBAN guardado (Ajustes de empresa), se añade
- * automáticamente: el profesional nunca debería tener que volver a
- * escribir su propio IBAN en cada factura (petición del usuario,
- * 27/10/2026). Comparación flexible (`includes`, sin distinguir
- * mayúsculas) porque `metodoPago` es texto elegido de una lista en el
- * frontend, no un valor cerrado a nivel de esquema.
+ * IBAN a mostrar en una línea propia bajo el método de pago — si es
+ * transferencia bancaria y la empresa ya tiene un IBAN guardado (Ajustes
+ * de empresa), se añade automáticamente: el profesional nunca debería
+ * tener que volver a escribir su propio IBAN en cada factura (petición
+ * del usuario, 27/10/2026). Antes iba pegado al texto del método con un
+ * guion y se envolvía junto a él (`envolverTexto`), partiéndose de forma
+ * poco clara en dos líneas sin relación visual aparente — ahora es su
+ * propia línea con etiqueta, igual que pidió el usuario (28/10/2026).
+ * Comparación flexible (`includes`, sin distinguir mayúsculas) porque
+ * `metodoPago` es texto elegido de una lista en el frontend, no un valor
+ * cerrado a nivel de esquema.
  */
-function textoMetodoPago(metodoPago: string | undefined, iban: string | undefined): string {
-  if (!metodoPago) return '';
-  const esTransferencia = /transferencia/i.test(metodoPago);
-  return esTransferencia && iban ? `${metodoPago} — IBAN: ${iban}` : metodoPago;
+function lineaIban(metodoPago: string | undefined, iban: string | undefined): string | null {
+  if (!metodoPago || !iban) return null;
+  return /transferencia/i.test(metodoPago) ? `IBAN: ${iban}` : null;
 }
 type DatosClientePdf = { nombre?: string; dni?: string; direccion?: string; codigoPostal?: string; poblacion?: string; telefono?: string };
 
@@ -196,13 +199,14 @@ export async function generarPdfFacturaEmitidaBytes(
   // mismo nivel visual que "Borrador de factura", y un pequeño hueco a la
   // izquierda en vez de ir pegado al margen de la página.
   const ALTO_LOGO = 54;
-  const Y_INICIO_LOGO = y - 4;
+  const X_LOGO = MARGEN + 24;
+  const Y_INICIO_LOGO = y + 6;
   const logo = await intentarEmbeberLogo(pdf, empresa?.logo);
   if (logo) {
     const anchoLogo = (logo.width / logo.height) * ALTO_LOGO;
-    pagina.drawImage(logo, { x: MARGEN + 8, y: Y_INICIO_LOGO - ALTO_LOGO, width: anchoLogo, height: ALTO_LOGO });
+    pagina.drawImage(logo, { x: X_LOGO, y: Y_INICIO_LOGO - ALTO_LOGO, width: anchoLogo, height: ALTO_LOGO });
   } else if (empresa?.nombre) {
-    escribir(empresa.nombre, MARGEN + 8, Y_INICIO_LOGO - 24, { size: 19, negrita: true });
+    escribir(empresa.nombre, X_LOGO, Y_INICIO_LOGO - 24, { size: 19, negrita: true });
   }
 
   const esBorrador = factura.estado === 'borrador';
@@ -332,10 +336,12 @@ export async function generarPdfFacturaEmitidaBytes(
     if (factura.metodoPago) {
       escribir('Método de pago', xDer, yFila, { negrita: true, size: 9.5 });
       let yMetodo = yFila - 15;
-      for (const linea of envolverTexto(textoMetodoPago(factura.metodoPago, empresa?.iban), fuente, 9, anchoColumna)) {
+      for (const linea of envolverTexto(factura.metodoPago, fuente, 9, anchoColumna)) {
         escribir(linea, xDer, yMetodo, { size: 9 });
         yMetodo -= 12;
       }
+      const iban = lineaIban(factura.metodoPago, empresa?.iban);
+      if (iban) { escribir(iban, xDer, yMetodo, { size: 9 }); yMetodo -= 12; }
     }
     y -= 48;
   }
@@ -365,9 +371,9 @@ export async function generarPdfFacturaEmitidaBytes(
   // Nunca hay QR en un borrador: todavía no hay número, fecha ni huella
   // reales que codificar — un QR con datos provisionales sería engañoso. ──
   let yPie = Math.max(y - 14, esBorrador ? 40 : 140);
-  if (!esBorrador && empresa?.nifCif) {
+  if (!esBorrador) {
     try {
-      const qrDataUrl = await QRCode.toDataURL(contenidoQr(empresa.nifCif, factura), { margin: 1, width: 220 });
+      const qrDataUrl = await QRCode.toDataURL(contenidoQr(empresa?.nifCif || '', factura), { margin: 1, width: 220 });
       const base64 = qrDataUrl.split(',')[1] ?? '';
       const qrImagen = await pdf.embedPng(Buffer.from(base64, 'base64'));
       const tamanoQr = 70;

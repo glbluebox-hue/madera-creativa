@@ -339,6 +339,9 @@ const EmpresaSchema = new Schema({
   nifCif: { type: String, default: '' },
   /** Dirección postal de la empresa — mostrada en la cabecera de Facturas emitidas (SIF). */
   direccion: { type: String, default: '' },
+  /** Código postal y población de la empresa — mismo criterio que `ClienteSchema` (petición del usuario, 28/10/2026): una factura necesita el domicilio del emisor con CP/población identificables, no un único bloque de texto libre. */
+  codigoPostal: { type: String, default: '' },
+  poblacion: { type: String, default: '' },
   /** Datos de contacto mostrados en la cabecera de los presupuestos con plantilla (Fase 6). */
   telefono: { type: String, default: '' },
   email: { type: String, default: '' },
