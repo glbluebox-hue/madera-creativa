@@ -51,9 +51,13 @@ export type PresupuestosListaGlobalProps = {
  * antes de abrir el editor — desde la Fase A (autoguardado, 23/08/2026) ya
  * no basta con abrirlo solo en memoria, ver el comentario de `crearBorrador`.
  */
+/** Petición explícita del usuario, 28/10/2026: "más organización" — poder ver solo los aceptados, solo los pendientes, o todos. */
+type FiltroPresupuesto = 'todos' | 'aceptados' | 'no_aceptados';
+
 export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa, onAbrirCliente, onCrearProyecto, plan, esAdmin }: PresupuestosListaGlobalProps) {
   const tienePlanEnlace = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
   const [presupuestos, setPresupuestos] = useState<PresupuestoMC[]>([]);
+  const [filtro, setFiltro] = useState<FiltroPresupuesto>('todos');
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [creandoBorrador, setCreandoBorrador] = useState(false);
@@ -114,6 +118,12 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
   }, [clienteElegidoId]);
 
   const nombreDe = (clienteId: string) => clientes.find((c) => c.id === clienteId)?.nombre ?? 'Cliente';
+
+  const presupuestosVisibles = presupuestos.filter((p) => {
+    if (filtro === 'aceptados') return p.estado === 'aceptado';
+    if (filtro === 'no_aceptados') return p.estado !== 'aceptado';
+    return true;
+  });
 
   const guardarDocumentoAbierto = async (p: PresupuestoMC) => {
     const guardado = await api.guardarPresupuesto(p);
@@ -632,8 +642,19 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
           <p>Todavía no hay ningún presupuesto. Créalo con «+ Crear presupuesto» o desde la ficha de un cliente.</p>
         </div>
       ) : (
+        <>
+          <div className={styles.filtrosPill} style={{ marginBottom: '0.75rem' }}>
+            <button className={`${styles.filtroPill} ${filtro === 'todos' ? styles.filtroPillActivo : ''}`} onClick={() => setFiltro('todos')}>Todos</button>
+            <button className={`${styles.filtroPill} ${filtro === 'no_aceptados' ? styles.filtroPillActivo : ''}`} onClick={() => setFiltro('no_aceptados')}>No aceptados</button>
+            <button className={`${styles.filtroPill} ${filtro === 'aceptados' ? styles.filtroPillActivo : ''}`} onClick={() => setFiltro('aceptados')}>Aceptados</button>
+          </div>
+          {presupuestosVisibles.length === 0 ? (
+            <p style={{ textAlign: 'center', color: 'var(--topo-claro)', fontSize: '0.85rem', padding: '1.5rem 0' }}>
+              Ningún presupuesto {filtro === 'aceptados' ? 'aceptado' : 'pendiente de aceptar'} todavía.
+            </p>
+          ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          {presupuestos.map((p) => (
+          {presupuestosVisibles.map((p) => (
             <div
               key={p.id}
               className={`${styles.filaLista} ${styles.filaListaClic}`}
@@ -691,6 +712,8 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
             </div>
           ))}
         </div>
+          )}
+        </>
       )}
     </div>
   );
