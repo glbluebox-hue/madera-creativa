@@ -157,9 +157,13 @@ export function crearBloqueDatosCliente(
   pendientes: Set<keyof DatosClienteAutoRelleno>,
   posicion: { x: number; y: number } = { x: 40, y: 90 }
 ): ElementoMC | null {
+  // Sin DNI/NIE aquí a propósito (petición del usuario, 28/10/2026): un
+  // presupuesto, a diferencia de una factura, no lo necesita — si la
+  // plantilla ya tiene su propia etiqueta "DNI:"/"NIF:" se sigue
+  // rellenando en su sitio (ver `ETIQUETAS_CLIENTE`), pero nunca se añade
+  // aquí sin que el usuario lo haya puesto él mismo en el diseño.
   const lineas: string[] = [];
   if (pendientes.has('nombre') && datos.nombre) lineas.push(datos.nombre);
-  if (pendientes.has('dni') && datos.dni) lineas.push(`DNI/NIE: ${datos.dni}`);
   if (pendientes.has('direccion') && datos.direccion) lineas.push(datos.direccion);
   const codigoPostalYPoblacion = [pendientes.has('codigoPostal') ? datos.codigoPostal : '', pendientes.has('poblacion') ? datos.poblacion : ''].filter(Boolean).join(' ');
   if (codigoPostalYPoblacion) lineas.push(codigoPostalYPoblacion);
@@ -192,8 +196,15 @@ export function autoRellenarDatosCliente(documento: DocumentoMC, datos: DatosCli
   if (!primeraPagina) return documentoConEtiquetas;
   // Debajo de TODO lo que ya hay en la página (logo, membrete, tabla...),
   // nunca en una coordenada fija — evita el solape real reportado (ver
-  // `crearBloqueDatosCliente`).
-  const yLibre = primeraPagina.elementos.reduce((max, el) => Math.max(max, el.posicion.y + el.tamano.alto), 0);
+  // `crearBloqueDatosCliente`). El membrete (logo de cabecera) vive en
+  // `encabezadoPorDefecto`, FUERA de `pagina.elementos` — sin contarlo,
+  // un presupuesto recién creado (página casi vacía) calculaba yLibre≈0 y
+  // el bloque caía encima del logo (bug real con captura, 28/10/2026).
+  const alturaMembrete =
+    documentoConEtiquetas.encabezadoPorDefecto && documentoConEtiquetas.encabezadoPorDefecto !== 'ninguno'
+      ? documentoConEtiquetas.encabezadoPorDefecto.altura
+      : 0;
+  const yLibre = primeraPagina.elementos.reduce((max, el) => Math.max(max, el.posicion.y + el.tamano.alto), alturaMembrete);
   const bloque = crearBloqueDatosCliente(datos, pendientes, { x: 40, y: yLibre + 20 });
   if (!bloque) return documentoConEtiquetas;
   return anadirElemento(documentoConEtiquetas, primeraPagina.id, bloque);

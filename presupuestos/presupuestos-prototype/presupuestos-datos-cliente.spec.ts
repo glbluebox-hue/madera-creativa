@@ -197,4 +197,20 @@ describe('autoRellenarDatosCliente', () => {
     const bloque = resultado.paginas[0].elementos[1];
     expect(bloque.contenido.texto).toContain('Walter Di Zio');
   });
+
+  it('nunca repite el DNI en el bloque de reserva aunque esté pendiente (ya no hace falta en un presupuesto)', () => {
+    const doc = docConTexto('Presupuesto sin etiquetas de cliente');
+    const resultado = autoRellenarDatosCliente(doc, DATOS);
+    const bloque = resultado.paginas[0].elementos[1].contenido.texto as string;
+    expect(bloque).not.toContain(DATOS.dni);
+  });
+
+  it('el bloque de reserva nunca cae encima del membrete (logo de cabecera) — fallo real con captura, 28/10/2026', () => {
+    const doc = docConTexto('Presupuesto sin etiquetas de cliente');
+    // Membrete alto (logo + título), vive en encabezadoPorDefecto, FUERA de pagina.elementos.
+    const conMembrete: DocumentoMC = { ...doc, encabezadoPorDefecto: { altura: 150, elementos: [] } };
+    const resultado = autoRellenarDatosCliente(conMembrete, DATOS);
+    const bloque = resultado.paginas[0].elementos[1];
+    expect(bloque.posicion.y).toBeGreaterThanOrEqual(150);
+  });
 });
