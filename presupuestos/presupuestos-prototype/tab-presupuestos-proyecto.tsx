@@ -23,11 +23,22 @@ export type TabPresupuestosProyectoProps = {
 };
 
 /**
- * Lista de solo lectura (+ abrir) de los presupuestos de este proyecto,
- * dentro de la propia ficha del cliente — pedido real, 25/08/2026, tras
- * quitar la pestaña "Presupuestos IA": sin esto no había ninguna forma de
- * ver desde la ficha qué presupuestos tiene un cliente sin ir a la sección
- * global "Presupuestos" y buscar su nombre a mano.
+ * Lista de solo lectura (+ abrir) de los presupuestos de este CLIENTE,
+ * dentro de la propia ficha — pedido real, 25/08/2026, tras quitar la
+ * pestaña "Presupuestos IA": sin esto no había ninguna forma de ver desde
+ * la ficha qué presupuestos tiene un cliente sin ir a la sección global
+ * "Presupuestos" y buscar su nombre a mano.
+ *
+ * Corrección 28/10/2026 (fallo real reportado: "ningún presupuesto hecho
+ * va a la ficha del cliente"): esta pestaña pedía `api.obtenerPresupuestosDeProyecto(proyecto.id)`
+ * — pero un presupuesto creado desde la sección global "Presupuestos"
+ * (`presupuestos-lista-global.tsx`) casi nunca lleva `proyectoId` (ese
+ * selector es opcional, solo sirve para rellenar la dirección de la obra),
+ * así que nunca hacía match con el proyecto concreto de esta ficha y la
+ * lista salía vacía para prácticamente cualquier presupuesto real. Ahora
+ * se piden TODOS los presupuestos del cliente (`api.obtenerPresupuestos`,
+ * filtra por `clienteId` en el servidor) — un cliente con varios
+ * proyectos los ve todos juntos aquí, no solo los del proyecto abierto.
  *
  * A propósito NO reutiliza `PresupuestosVista` (la que usaba la pestaña
  * retirada) — esa vista trae su propio "+ Crear presupuesto" y su propio
@@ -45,11 +56,11 @@ export function TabPresupuestosProyecto({ cliente, proyecto, empresa, onActualiz
 
   const cargar = useCallback(() => {
     setCargando(true);
-    api.obtenerPresupuestosDeProyecto(proyecto.id)
+    api.obtenerPresupuestos(cliente.id)
       .then(setPresupuestos)
       .catch((e) => setError(String(e).replace(/^Error:\s*/, '')))
       .finally(() => setCargando(false));
-  }, [proyecto.id]);
+  }, [cliente.id]);
 
   useEffect(() => { cargar(); }, [cargar]);
 
@@ -100,7 +111,7 @@ export function TabPresupuestosProyecto({ cliente, proyecto, empresa, onActualiz
           <div className={styles.vacioIcono} style={{ display: 'flex', justifyContent: 'center' }}>
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
           </div>
-          <p>Este proyecto todavía no tiene ningún presupuesto. Créalo desde la sección "Presupuestos".</p>
+          <p>Este cliente todavía no tiene ningún presupuesto. Créalo desde la sección "Presupuestos".</p>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
