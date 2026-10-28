@@ -9,7 +9,7 @@ import styles from './styles.module.css';
 
 export type SeccionPresupuestosContenedorProps = {
   onAbrirCliente: (id: string) => void;
-  clientes: { id: string; nombre: string }[];
+  clientes: { id: string; nombre: string; tieneProyectos: boolean }[];
   empresa: Empresa;
   onActualizarEmpresa: (cambios: Partial<Empresa>) => void;
   /** Crea un cliente y su primer proyecto reales sin salir de esta sección — usado por "+ Nuevo cliente" dentro del selector de "+ Crear presupuesto". */

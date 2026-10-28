@@ -20,8 +20,8 @@ import { SolicitudSeguimiento } from './solicitud-seguimiento.js';
 import styles from './styles.module.css';
 
 export type PresupuestosListaGlobalProps = {
-  /** Lista ligera de clientes — para el nombre en cada tarjeta. */
-  clientes: { id: string; nombre: string }[];
+  /** Lista ligera de clientes — para el nombre en cada tarjeta y el selector "Elige el cliente" (este último solo muestra los que tienen algún proyecto, ver `tieneProyectos`). */
+  clientes: { id: string; nombre: string; tieneProyectos: boolean }[];
   empresa: Empresa;
   /** Persiste cambios de empresa — usado para el clic-en-el-logo del editor. */
   onActualizarEmpresa: (cambios: Partial<Empresa>) => void;
@@ -543,8 +543,9 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
                     + Nuevo cliente
                   </button>
                 )}
-                {clientes.length > 0 && <div style={{ borderTop: '1px solid var(--borde)', margin: '0.3rem 0' }} />}
-                {clientes.map((c) => (
+                {/* Solo clientes con algún proyecto — uno sin ninguno (ficha ya borrada) no tiene ninguna utilidad real aquí (bug real, 28/10/2026). */}
+                {clientes.some((c) => c.tieneProyectos) && <div style={{ borderTop: '1px solid var(--borde)', margin: '0.3rem 0' }} />}
+                {clientes.filter((c) => c.tieneProyectos).map((c) => (
                   <button key={c.id} className={styles.btn} style={{ textAlign: 'left', fontSize: '0.8rem' }} onClick={() => setClienteElegidoId(c.id)}>{c.nombre}</button>
                 ))}
               </>

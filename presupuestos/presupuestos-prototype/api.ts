@@ -724,11 +724,16 @@ export async function obtenerClientes(pagina = 1, limite = 30): Promise<Pagina<C
 }
 
 /**
- * Recupera solo `id`+`nombre` de todos los clientes, sin paginar — para
- * selectores (desplegable de cliente al crear una factura, selector
- * "cliente existente" al crear un proyecto nuevo).
+ * Recupera `id`+`nombre`+`tieneProyectos` de todos los clientes, sin
+ * paginar — para selectores (desplegable de cliente al crear una
+ * factura/presupuesto, selector "cliente existente" al crear un proyecto
+ * nuevo) y para resolver el nombre en listados ya existentes. Incluye
+ * TAMBIÉN los clientes sin proyecto (huérfanos) a propósito — filtrarlos
+ * aquí rompería la resolución de nombre de facturas/presupuestos antiguos
+ * que los referencian; cada selector de "elegir cliente para algo nuevo"
+ * debe filtrar por `tieneProyectos` él mismo.
  */
-export async function obtenerNombresClientes(): Promise<{ id: string; nombre: string }[]> {
+export async function obtenerNombresClientes(): Promise<{ id: string; nombre: string; tieneProyectos: boolean }[]> {
   const res = await fetchConAuth('/clientes/nombres');
   await comprobarRespuesta(res, 'No se pudieron cargar los nombres de clientes');
   return res.json();

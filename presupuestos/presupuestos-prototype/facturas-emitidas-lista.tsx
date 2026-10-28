@@ -6,8 +6,8 @@ import { ConfirmarBorrado } from './confirmar-borrado.js';
 import styles from './styles.module.css';
 
 export type FacturasEmitidasListaProps = {
-  /** Lista ligera de clientes — para el selector y el nombre en cada fila. */
-  clientes: { id: string; nombre: string }[];
+  /** Lista ligera de clientes — para el selector (solo los que tienen algún proyecto, ver `tieneProyectos`) y el nombre en cada fila (todos, incluidos los huérfanos, para no perder el nombre de facturas ya existentes). */
+  clientes: { id: string; nombre: string; tieneProyectos: boolean }[];
 };
 
 const ETIQUETA_ESTADO: Record<string, string> = { borrador: 'Borrador', emitida: 'Emitida', anulada: 'Anulada' };
@@ -204,7 +204,7 @@ export function FacturasEmitidasLista({ clientes }: FacturasEmitidasListaProps) 
   );
 }
 
-function FormularioNuevaFactura({ clientes, onCreada }: { clientes: { id: string; nombre: string }[]; onCreada: (f: FacturaEmitida) => void }) {
+function FormularioNuevaFactura({ clientes, onCreada }: { clientes: { id: string; nombre: string; tieneProyectos: boolean }[]; onCreada: (f: FacturaEmitida) => void }) {
   const [clienteId, setClienteId] = useState('');
   const [titulo, setTitulo] = useState('');
   const [lineas, setLineas] = useState<LineaFacturaEmitida[]>([nuevaLinea()]);
@@ -250,7 +250,7 @@ function FormularioNuevaFactura({ clientes, onCreada }: { clientes: { id: string
     <div style={{ border: '1px solid var(--borde)', borderRadius: 8, padding: '1rem', marginBottom: '1.25rem', background: 'var(--fondo-panel)', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
       <select className={styles.select} value={clienteId} onChange={(e) => setClienteId(e.target.value)}>
         <option value="">Selecciona un cliente…</option>
-        {clientes.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+        {clientes.filter((c) => c.tieneProyectos).map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
       </select>
       <input className={styles.input} placeholder="Título (p. ej. Reforma cocina)" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
 

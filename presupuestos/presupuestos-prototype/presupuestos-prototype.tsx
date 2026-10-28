@@ -95,7 +95,7 @@ export function PresupuestosPrototype() {
   } = useFacturas(listo);
   // Solo id+nombre de todos los clientes (no solo la página cargada) — para
   // resolver nombres y selectores (Incremento 1.5).
-  const [nombresClientes, setNombresClientes] = useState<{ id: string; nombre: string }[]>([]);
+  const [nombresClientes, setNombresClientes] = useState<{ id: string; nombre: string; tieneProyectos: boolean }[]>([]);
   useEffect(() => {
     if (!listo) return;
     api.obtenerNombresClientes().then(setNombresClientes).catch(() => setNombresClientes([]));

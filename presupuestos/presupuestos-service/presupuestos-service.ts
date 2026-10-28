@@ -590,15 +590,28 @@ export class PresupuestosService {
   }
 
   /**
-   * Devuelve únicamente `id` y `nombre` de todos los clientes del usuario,
-   * sin paginar — selectores/autocompletados (desplegable de cliente al
-   * crear una factura, selector "cliente existente" al crear un proyecto).
+   * Devuelve `id`+`nombre` de TODOS los clientes del usuario, más
+   * `tieneProyectos` — selectores/autocompletados (desplegable de cliente
+   * al crear una factura/presupuesto, selector "cliente existente" al
+   * crear un proyecto) Y resolución de nombre en listados ya existentes
+   * (ej. `nombreDe(clienteId)` en Facturas Emitidas). A propósito NO se
+   * excluye aquí a los que no tienen proyecto — un cliente que se quedó
+   * huérfano (bug real, 28/10/2026) sigue teniendo facturas/presupuestos
+   * antiguos que necesitan resolver su nombre; filtrar la lista entera
+   * rompería esos nombres (mostrarían "Cliente" a secas). En vez de eso,
+   * `tieneProyectos` deja que cada selector de "elegir cliente para algo
+   * nuevo" excluya los huérfanos por su cuenta, sin tocar la resolución
+   * de nombre de lo que ya existe.
    * @param usuarioId Propietario de los datos.
    */
-  async listarClientesNombres(usuarioId: string): Promise<{ id: string; nombre: string }[]> {
+  async listarClientesNombres(usuarioId: string): Promise<{ id: string; nombre: string; tieneProyectos: boolean }[]> {
     await conectar();
-    const docs = await ClienteModel.find({ usuarioId }).select('id nombre').lean().exec();
-    return (docs as any[]).map((d) => ({ id: d.id, nombre: d.nombre }));
+    const [docs, clienteIdsConProyecto] = await Promise.all([
+      ClienteModel.find({ usuarioId }).select('id nombre').lean().exec(),
+      ProyectoModel.distinct('clienteId', { usuarioId }),
+    ]);
+    const conProyecto = new Set(clienteIdsConProyecto as string[]);
+    return (docs as any[]).map((d) => ({ id: d.id, nombre: d.nombre, tieneProyectos: conProyecto.has(d.id) }));
   }
 
   /**

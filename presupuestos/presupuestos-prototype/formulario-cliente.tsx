@@ -24,9 +24,11 @@ export type FormularioClienteProps = {
  */
 export function FormularioCliente({ onGuardar, onCerrar }: FormularioClienteProps) {
   const [modo, setModo] = useState<'nuevo' | 'existente'>('nuevo');
-  const [clientesExistentes, setClientesExistentes] = useState<{ id: string; nombre: string }[]>([]);
+  const [clientesExistentes, setClientesExistentes] = useState<{ id: string; nombre: string; tieneProyectos: boolean }[]>([]);
   useEffect(() => {
-    api.obtenerNombresClientes().then(setClientesExistentes).catch(() => setClientesExistentes([]));
+    // Solo clientes con algún proyecto — uno sin ninguno es una ficha ya
+    // borrada (bug real, 28/10/2026: seguía apareciendo aquí para siempre).
+    api.obtenerNombresClientes().then((lista) => setClientesExistentes(lista.filter((c) => c.tieneProyectos))).catch(() => setClientesExistentes([]));
   }, []);
   const [clienteExistenteId, setClienteExistenteId] = useState('');
 
