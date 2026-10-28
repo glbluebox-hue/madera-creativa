@@ -72,6 +72,17 @@ describe('rellenarLinea (corrección 24/08/2026 — rellenar etiquetas de una pl
     expect(rellenarLinea('Población: ___', DATOS).linea).toBe('Población: Tijoco Bajo');
   });
 
+  it('reconoce sinónimos reales de "Población" (petición del usuario, 28/10/2026: su plantilla usa "Pueblo")', () => {
+    expect(rellenarLinea('Pueblo: ___', DATOS).linea).toBe('Pueblo: Tijoco Bajo');
+    expect(rellenarLinea('Localidad: ___', DATOS).linea).toBe('Localidad: Tijoco Bajo');
+    expect(rellenarLinea('Ciudad: ___', DATOS).linea).toBe('Ciudad: Tijoco Bajo');
+  });
+
+  it('reconoce "C.P." y "CP" como abreviaturas de Código postal', () => {
+    expect(rellenarLinea('C.P.: ___', DATOS).linea).toBe('C.P.: 38677');
+    expect(rellenarLinea('CP: ___', DATOS).linea).toBe('CP: 38677');
+  });
+
   it('reconoce variantes del documento de identidad: NIF, DNI, NIE, DNI/NIE', () => {
     expect(rellenarLinea('NIF: ___', DATOS).linea).toBe('NIF: 12345678A');
     expect(rellenarLinea('DNI: ___', DATOS).linea).toBe('DNI: 12345678A');
@@ -94,6 +105,17 @@ describe('rellenarEtiquetasCliente', () => {
     expect(texto).toContain('Dirección: Calle Falsa 123');
     expect(texto).toContain('Teléfono: +34 642 02 14 68');
     expect(texto).toContain('CIF/NIF: 12345678A');
+  });
+
+  it('actualiza también textoHtml si el elemento lo tiene — si no, el render lo usa en vez de texto y el relleno queda invisible (fallo real, 28/10/2026: "Fecha:" nunca se rellenaba)', () => {
+    let id = 0;
+    const base = crearDocumentoVacio(() => `id-${id++}`);
+    const el = crearElementoBase('texto', { x: 0, y: 0 }, { ancho: 100, alto: 20 });
+    const doc = anadirElemento(base, base.paginas[0].id, { ...el, contenido: { texto: 'Fecha:', textoHtml: 'Fecha:' } });
+    const { documento } = rellenarEtiquetasCliente(doc, DATOS);
+    const contenido = documento.paginas[0].elementos[0].contenido as { texto: string; textoHtml: string };
+    expect(contenido.texto).toBe('Fecha: 24/08/2026');
+    expect(contenido.textoHtml).toBe('Fecha: 24/08/2026');
   });
 
   it('ensancha la caja de una etiqueta demasiado ajustada para que el valor rellenado no quede invisible (overflow:hidden) — fallo real con captura, 28/10/2026', () => {

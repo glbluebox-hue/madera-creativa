@@ -24,8 +24,15 @@ const ETIQUETAS_CLIENTE: { dato: keyof DatosClienteAutoRelleno; patron: RegExp }
   { dato: 'fecha', patron: /\bfecha\s*:/i },
   { dato: 'nombre', patron: /\bnombre\s*:/i },
   { dato: 'direccion', patron: /\bdirecci[oó]n\s*:/i },
-  { dato: 'codigoPostal', patron: /\bc[oó]digo\s*postal\s*:/i },
-  { dato: 'poblacion', patron: /\bpoblaci[oó]n\s*:/i },
+  // "C.P."/"CP" van ANTES que "código postal" — el bucle de coincidencias
+  // (más abajo) ya evita contar dos veces la misma zona de texto porque
+  // ordena por posición, pero conviene que el patrón más específico (la
+  // palabra completa) se intente primero en la lista por claridad.
+  { dato: 'codigoPostal', patron: /\b(?:c[oó]digo\s*postal|c\.?\s*p\.?)\s*:/i },
+  // "Pueblo"/"Localidad"/"Ciudad" — sinónimos reales de "Población" que usa
+  // la gente al diseñar su propia plantilla (petición del usuario,
+  // 28/10/2026: "no tengo el nombre población, por eso no se rellena").
+  { dato: 'poblacion', patron: /\b(?:poblaci[oó]n|pueblo|localidad|ciudad)\s*:/i },
   { dato: 'telefono', patron: /\btel[eé]fono\s*:/i },
   { dato: 'dni', patron: /\b(?:cif\s*\/\s*nif|dni\s*\/\s*nie|nif|dni|nie)\s*:/i },
 ];
@@ -105,10 +112,25 @@ export function rellenarEtiquetasCliente(documento: DocumentoMC, datos: DatosCli
     });
     const textoNuevo = lineasNuevas.join('\n');
     if (textoNuevo !== textoOriginal) {
-      reemplazar({ ...elemento, contenido: { ...elemento.contenido, texto: textoNuevo }, tamano: tamanoParaTexto(elemento, textoNuevo) });
+      const contenidoNuevo: Record<string, unknown> = { ...elemento.contenido, texto: textoNuevo };
+      // Si el elemento guarda también `textoHtml` (formato enriquecido —
+      // el editor lo crea en cuanto se edita esa caja una vez, aunque sea
+      // texto plano sin negrita/cursiva), el render usa SIEMPRE ese campo
+      // y ni mira `texto` — rellenar solo `texto` dejaba el valor escrito
+      // en los datos pero invisible en pantalla (fallo real, 28/10/2026:
+      // "Fecha:" nunca se rellenaba pese a que nombre/dirección sí).
+      if (typeof (elemento.contenido as { textoHtml?: unknown }).textoHtml === 'string') {
+        contenidoNuevo.textoHtml = escaparHtmlBasico(textoNuevo);
+      }
+      reemplazar({ ...elemento, contenido: contenidoNuevo, tamano: tamanoParaTexto(elemento, textoNuevo) });
     }
   }
   return { documento: copia, cubiertos };
+}
+
+/** Escape mínimo de `< > &` — nunca interpreta el texto como marcado. Duplicado deliberadamente de `escaparHtmlPlano` (`documento-tipos-iniciales-render.tsx`, que usa `document.createElement` y no se puede importar aquí sin arrastrar DOM — ver la nota de módulo "puro" al principio del archivo). Las líneas que rellenamos son siempre texto llano (nombre, dirección, teléfono...), nunca necesitan más que esto. */
+function escaparHtmlBasico(texto: string): string {
+  return texto.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /**
