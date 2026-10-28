@@ -21,6 +21,25 @@ export function PortalPresupuesto() {
   const [presupuesto, setPresupuesto] = useState<PresupuestoPublico | null>(null);
   const [firmando, setFirmando] = useState(false);
   const [enviando, setEnviando] = useState(false);
+  const [modoImpresion, setModoImpresion] = useState(false);
+
+  // Mismo patrón que "Descargar PDF" en `visor-presupuesto-firmado.tsx` —
+  // impresión nativa del navegador sobre el DOM real, nunca un segundo
+  // motor de render en el servidor. Petición explícita del usuario,
+  // 28/10/2026: el cliente tiene que poder descargarse el presupuesto en
+  // PDF tanto ANTES de aceptarlo (para decidir con calma) como DESPUÉS de
+  // firmarlo (para quedarse con su copia ya firmada) — por eso el botón
+  // se ofrece en los dos estados, no solo cuando `estado === 'aceptado'`.
+  useEffect(() => {
+    const alTerminar = () => setModoImpresion(false);
+    window.addEventListener('afterprint', alTerminar);
+    return () => window.removeEventListener('afterprint', alTerminar);
+  }, []);
+
+  const imprimir = () => {
+    setModoImpresion(true);
+    requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
+  };
 
   const cargar = useCallback(() => {
     if (!token) return;
@@ -58,7 +77,14 @@ export function PortalPresupuesto() {
     // `data-theme` propio a propósito: esta página nunca tiene sesión ni
     // preferencia de tema guardada, así que sigue `prefers-color-scheme`
     // del dispositivo del cliente automáticamente.
-    <div className={styles.app} style={{ minHeight: '100vh', background: 'var(--fondo)', display: 'flex', justifyContent: 'center', padding: '1.25rem 1rem 3rem' }}>
+    <div
+      className={`${styles.app} ${modoImpresion ? styles.visorPresupuestoImpresion : ''}`}
+      // Fondo en blanco durante la impresión (en vez de `var(--fondo)`,
+      // que en modo oscuro del dispositivo pintaría la página gris) — el
+      // estilo en línea tiene más especificidad que la clase, así que
+      // aquí se condiciona directamente en vez de fiarse de `.visorPresupuestoImpresion`.
+      style={{ minHeight: '100vh', background: modoImpresion ? '#fff' : 'var(--fondo)', display: 'flex', justifyContent: 'center', padding: '1.25rem 1rem 3rem' }}
+    >
       {/* Un documento del Motor Documental es una página A4 (794px de ancho
           natural) — el ancho de columna de texto de siempre (560px) lo
           dejaría diminuto en pantallas grandes; el resto de pantallas
@@ -96,25 +122,36 @@ export function PortalPresupuesto() {
               />
             </div>
 
-            <div className={styles.panel} style={{ marginTop: '1.5rem', textAlign: 'center', maxWidth: '560px', marginLeft: 'auto', marginRight: 'auto' }}>
-              {presupuesto.estado === 'aceptado' ? (
-                // La firma en sí ya se ve dentro del propio documento, en el
-                // sitio exacto donde el carpintero puso el elemento "Firma
-                // del cliente" (petición explícita del usuario, 26/08/2026)
-                // — aquí solo queda la confirmación en texto, sin duplicar
-                // la imagen.
-                <p style={{ color: 'var(--verde)', fontWeight: 700, margin: 0 }}>
-                  ✓ Aceptado {presupuesto.firmaClienteFecha ? `el ${formatoFecha(presupuesto.firmaClienteFecha)}` : ''}
-                </p>
-              ) : firmando ? (
-                <FirmaCanvas onFirmar={firmar} onCancelar={() => setFirmando(false)} enviando={enviando} />
-              ) : (
-                <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={() => setFirmando(true)} style={{ width: '100%', fontSize: '1rem', padding: '0.85rem' }}>
-                  Aceptar presupuesto
-                </button>
-              )}
-              {error && estado === 'listo' && <p style={{ color: 'var(--rojo)', fontSize: '0.85rem', marginTop: '0.6rem' }}>{error}</p>}
-            </div>
+            {/* Oculto durante la impresión: cuando ya está aceptado la firma
+                se ve dentro del propio documento (ver comentario de abajo),
+                y "Aceptar"/"Descargar PDF" son controles, no contenido del
+                presupuesto en sí — no tiene sentido que salgan en el PDF. */}
+            {!modoImpresion && (
+              <div className={styles.panel} style={{ marginTop: '1.5rem', textAlign: 'center', maxWidth: '560px', marginLeft: 'auto', marginRight: 'auto' }}>
+                {presupuesto.estado === 'aceptado' ? (
+                  // La firma en sí ya se ve dentro del propio documento, en el
+                  // sitio exacto donde el carpintero puso el elemento "Firma
+                  // del cliente" (petición explícita del usuario, 26/08/2026)
+                  // — aquí solo queda la confirmación en texto, sin duplicar
+                  // la imagen.
+                  <p style={{ color: 'var(--verde)', fontWeight: 700, margin: 0 }}>
+                    ✓ Aceptado {presupuesto.firmaClienteFecha ? `el ${formatoFecha(presupuesto.firmaClienteFecha)}` : ''}
+                  </p>
+                ) : firmando ? (
+                  <FirmaCanvas onFirmar={firmar} onCancelar={() => setFirmando(false)} enviando={enviando} />
+                ) : (
+                  <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={() => setFirmando(true)} style={{ width: '100%', fontSize: '1rem', padding: '0.85rem' }}>
+                    Aceptar presupuesto
+                  </button>
+                )}
+                {error && estado === 'listo' && <p style={{ color: 'var(--rojo)', fontSize: '0.85rem', marginTop: '0.6rem' }}>{error}</p>}
+                {!firmando && (
+                  <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={imprimir} style={{ width: '100%', marginTop: '0.75rem' }}>
+                    🖨️ Descargar PDF
+                  </button>
+                )}
+              </div>
+            )}
           </>
         )}
 
@@ -182,14 +219,19 @@ export function PortalPresupuesto() {
                     <img src={presupuesto.firmaClienteUrl} alt="Firma" style={{ maxWidth: '260px', maxHeight: '120px', border: '1px solid var(--borde-fino)', borderRadius: '8px', background: 'var(--blanco)' }} />
                   )}
                 </>
-              ) : firmando ? (
+              ) : !modoImpresion && firmando ? (
                 <FirmaCanvas onFirmar={firmar} onCancelar={() => setFirmando(false)} enviando={enviando} />
-              ) : (
+              ) : !modoImpresion ? (
                 <button className={`${styles.btn} ${styles.btnPrimario}`} onClick={() => setFirmando(true)} style={{ width: '100%', fontSize: '1rem', padding: '0.85rem' }}>
                   Aceptar presupuesto
                 </button>
+              ) : null}
+              {!modoImpresion && error && estado === 'listo' && <p style={{ color: 'var(--rojo)', fontSize: '0.85rem', marginTop: '0.6rem' }}>{error}</p>}
+              {!modoImpresion && !firmando && (
+                <button className={`${styles.btn} ${styles.btnSecundario}`} onClick={imprimir} style={{ width: '100%', marginTop: '0.75rem' }}>
+                  🖨️ Descargar PDF
+                </button>
               )}
-              {error && estado === 'listo' && <p style={{ color: 'var(--rojo)', fontSize: '0.85rem', marginTop: '0.6rem' }}>{error}</p>}
             </div>
           </>
         )}
