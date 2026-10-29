@@ -165,6 +165,11 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
     try {
       const { token } = await api.generarEnlacePresupuesto(id);
       setEnlaces((prev) => ({ ...prev, [id]: `${window.location.origin}/portal/${token}` }));
+      // El servidor marca el presupuesto como 'enviado' al generar el
+      // enlace (ver generarEnlacePresupuesto) — sin esto, la copia en
+      // memoria se quedaba con el estado antiguo y el badge no cambiaba
+      // hasta recargar la página (fallo real reportado, 29/10/2026).
+      setPresupuestos((prev) => prev.map((p) => (p.id === id && p.estado === 'borrador' ? { ...p, estado: 'enviado' } : p)));
     } catch (e) {
       setError(String(e).replace(/^Error:\s*/, ''));
     } finally {
