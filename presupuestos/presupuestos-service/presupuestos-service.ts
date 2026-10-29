@@ -1056,7 +1056,18 @@ export class PresupuestosService {
     return this.limpiarProyecto(doc);
   }
 
-  /** Cambia el estado del proyecto a mano (presupuestado/en_curso/finalizado/rechazado — "finalizado" es lo que lo archiva). */
+  /**
+   * Cambia el estado del proyecto a mano (presupuestado/presupuesto_enviado/
+   * en_curso/finalizado/rechazado — "finalizado" es lo que lo archiva).
+   *
+   * Al marcar manualmente "presupuesto_enviado" (petición del usuario,
+   * 29/10/2026), también pasa a `estado:'enviado'` el presupuesto más
+   * reciente de este cliente que siga en 'borrador' (si hay alguno) — el
+   * mismo efecto que ya produce generar su enlace del Portal, para que el
+   * carpintero no tenga que acordarse de hacerlo por los dos sitios.
+   * Nunca toca un presupuesto ya 'enviado'/'aceptado'/'rechazado', y si no
+   * hay ninguno en borrador simplemente no cambia nada ahí.
+   */
   async cambiarEstadoProyecto(proyectoId: string, usuarioId: string, estado: string): Promise<ProyectoDoc> {
     await conectar();
     const doc = await ProyectoModel.findOneAndUpdate(
@@ -1065,6 +1076,11 @@ export class PresupuestosService {
       { new: true }
     ).lean().exec();
     if (!doc) throw new ErrorDeNegocio('Proyecto no encontrado', 400);
+    if (estado === 'presupuesto_enviado') {
+      const masReciente = await PresupuestoModel.findOne({ clienteId: (doc as any).clienteId, usuarioId, estado: 'borrador' })
+        .sort({ creado: -1 }).select('id').lean().exec() as any;
+      if (masReciente) await PresupuestoModel.updateOne({ id: masReciente.id, usuarioId }, { $set: { estado: 'enviado' } }).exec();
+    }
     return this.limpiarProyecto(doc);
   }
 
