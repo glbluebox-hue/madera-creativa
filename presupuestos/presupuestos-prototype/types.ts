@@ -516,8 +516,8 @@ export type Proyecto = {
   tarifaHora: number;
   /** Fecha de creación de la ficha en formato ISO. */
   creado: string;
-  /** Estado del proyecto. */
-  estado: 'presupuestado' | 'en_curso' | 'finalizado' | 'rechazado';
+  /** Estado del proyecto. `presupuesto_enviado` = ya se le mandó el presupuesto al cliente y se espera respuesta (petición del usuario, 29/10/2026) — distinto de `presupuestado`, que es el valor de partida de cualquier proyecto nuevo, tenga o no ya un presupuesto creado. */
+  estado: 'presupuestado' | 'presupuesto_enviado' | 'en_curso' | 'finalizado' | 'rechazado';
   /** WhatsApp de contacto. */
   whatsapp?: string;
   /** Enlace de Google Maps o dirección GPS. */

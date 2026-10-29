@@ -3490,6 +3490,13 @@ export class PresupuestosService {
       contenidoHash: hashContenidoPublico(presupuesto),
       validezDias: presupuesto.validezDias || 30,
     });
+    // Generar el enlace se da por enviado (petición del usuario,
+    // 29/10/2026) — nunca pisa 'aceptado'/'rechazado' (un enlace nuevo
+    // tras una rectificación no debe revertir una decisión ya tomada),
+    // solo avanza desde 'borrador'.
+    if (presupuesto.estado === 'borrador' || !presupuesto.estado) {
+      await PresupuestoModel.updateOne({ id, usuarioId }, { $set: { estado: 'enviado' } }).exec();
+    }
     return { token, expiraEn: expiraEn.toISOString() };
   }
 

@@ -426,7 +426,7 @@ export const esquemaTareasEntrada = z.object({
 
 /** Cuerpo de PUT /clientes/:id/estado — Hardening (Fase 2). */
 export const esquemaEstadoClienteEntrada = z.object({
-  estado: z.enum(['presupuestado', 'en_curso', 'finalizado', 'rechazado']),
+  estado: z.enum(['presupuestado', 'presupuesto_enviado', 'en_curso', 'finalizado', 'rechazado']),
 });
 
 /** Cuerpo de PUT /clientes/:id/presupuesto — Hardening (Fase 2). */
@@ -529,7 +529,7 @@ export const esquemaProyecto = z.object({
   presupuesto: numeroOpcional(0),
   tarifaHora: numeroOpcional(0),
   creado: z.string().min(1).max(64),
-  estado: z.enum(['presupuestado', 'en_curso', 'finalizado', 'rechazado']).nullish().transform((v) => v ?? 'presupuestado'),
+  estado: z.enum(['presupuestado', 'presupuesto_enviado', 'en_curso', 'finalizado', 'rechazado']).nullish().transform((v) => v ?? 'presupuestado'),
   whatsapp: textoOpcional(50),
   ubicacion: textoOpcional(500),
   codigoPuerta: textoOpcional(50),

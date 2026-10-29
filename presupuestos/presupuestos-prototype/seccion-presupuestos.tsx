@@ -28,7 +28,7 @@ const CARPETAS: { id: Carpeta; label: string; color: string; bg: string }[] = [
 /** Clasifica un cliente en su carpeta. */
 function carpetaDe(c: ProyectoResumen): Carpeta {
   if (c.estado === 'rechazado') return 'rechazados';
-  if (c.estado === 'presupuestado') return 'pendientes';
+  if (c.estado === 'presupuestado' || c.estado === 'presupuesto_enviado') return 'pendientes';
   return 'aceptados'; // en_curso | finalizado
 }
 

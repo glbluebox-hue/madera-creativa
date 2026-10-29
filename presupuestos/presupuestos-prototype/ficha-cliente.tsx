@@ -304,6 +304,7 @@ export function FichaCliente({ cliente, proyecto, clientes = [], proveedores = [
               title="Cambiar estado"
             >
               <option value="presupuestado">{etiquetaEstado.presupuestado}</option>
+              <option value="presupuesto_enviado">{etiquetaEstado.presupuesto_enviado}</option>
               <option value="en_curso">{etiquetaEstado.en_curso}</option>
               <option value="finalizado">{etiquetaEstado.finalizado}</option>
               <option value="rechazado">{etiquetaEstado.rechazado}</option>

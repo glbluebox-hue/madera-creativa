@@ -9,7 +9,7 @@ export type ProximoRecordatorio = {
 
 /** Indicadores agregados para el panel principal (Dirección Creativa). */
 export type MetricasDashboard = {
-  /** Nº de proyectos en estado presupuestado. */
+  /** Nº de proyectos en estado presupuestado o presupuesto enviado (a la espera de respuesta del cliente). */
   presupuestosPendientes: number;
   /** Nº de proyectos en curso. */
   enCurso: number;
@@ -43,7 +43,7 @@ export function calcularMetricas(proyectos: ProyectoResumen[]): MetricasDashboar
   proximos.sort((a, b) => a.fecha.localeCompare(b.fecha));
 
   return {
-    presupuestosPendientes: proyectos.filter((p) => p.estado === 'presupuestado').length,
+    presupuestosPendientes: proyectos.filter((p) => p.estado === 'presupuestado' || p.estado === 'presupuesto_enviado').length,
     enCurso: proyectos.filter((p) => p.estado === 'en_curso').length,
     finalizados: proyectos.filter((p) => p.estado === 'finalizado').length,
     proximos: proximos.slice(0, 4),

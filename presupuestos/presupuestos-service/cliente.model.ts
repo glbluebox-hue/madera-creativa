@@ -282,7 +282,7 @@ const ProyectoSchema = new Schema({
   creado: { type: String, required: true },
   estado: {
     type: String,
-    enum: ['presupuestado', 'en_curso', 'finalizado', 'rechazado'],
+    enum: ['presupuestado', 'presupuesto_enviado', 'en_curso', 'finalizado', 'rechazado'],
     default: 'presupuestado',
   },
   // Datos de acceso a la obra (pestaña "Datos").

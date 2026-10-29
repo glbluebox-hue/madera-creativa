@@ -675,6 +675,12 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
                     {p.titulo}
                     {p.estado === 'aceptado' ? (
                       <span style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--verde)', background: 'var(--verde-bg)', padding: '0.1rem 0.4rem', borderRadius: 'var(--radio-full, 999px)', whiteSpace: 'nowrap' }}>✓ Aceptado</span>
+                    ) : p.estado === 'enviado' ? (
+                      // Generar el enlace del Portal se da por enviado
+                      // (petición del usuario, 29/10/2026) — distinto de
+                      // "No aceptado" (que no se le ha mandado nada
+                      // todavía al cliente).
+                      <span style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--azul)', background: 'var(--azul-bg)', padding: '0.1rem 0.4rem', borderRadius: 'var(--radio-full, 999px)', whiteSpace: 'nowrap' }}>Enviado</span>
                     ) : (
                       // Petición explícita del usuario, 28/10/2026: antes un
                       // presupuesto sin aceptar no llevaba ninguna etiqueta
