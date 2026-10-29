@@ -65,6 +65,7 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
   const [provincia, setProvincia] = useState(empresa.provincia);
   const [isla, setIsla] = useState(empresa.isla);
   const [repepActivo, setRepepActivo] = useState(empresa.repepActivo);
+  const [exentoImpuestoIndirecto, setExentoImpuestoIndirecto] = useState(empresa.exentoImpuestoIndirecto);
   const [logoTamano, setLogoTamano] = useState(empresa.logoTamano || 187);
   const [tiempoInactividadMin, setTiempoInactividadMin] = useState<number | null>(empresa.tiempoInactividadMin);
   const [margenObjetivoPorcentaje, setMargenObjetivoPorcentaje] = useState<number | null>(empresa.margenObjetivoPorcentaje);
@@ -111,6 +112,7 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
       provincia,
       isla: esComunidadInsular(comunidadAutonoma) ? isla : '',
       repepActivo: regionFiscal === 'canarias' ? repepActivo : false,
+      exentoImpuestoIndirecto,
       logoTamano,
       enlaceResenaGoogle: enlaceResenaGoogle.trim(),
       imagenResena,
@@ -260,6 +262,15 @@ export function AjustesEmpresa({ empresa, onGuardar, onCerrar }: AjustesEmpresaP
                 Acogido al REPEP (exención de IGIC por facturación ≤50.000€/año)
               </label>
             )}
+          </div>
+          <div className={`${styles.campo} ${styles.full}`}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+              <input type="checkbox" checked={exentoImpuestoIndirecto} onChange={(e) => setExentoImpuestoIndirecto(e.target.checked)} />
+              Mis Facturas Emitidas están exentas de IGIC/IVA
+            </label>
+            <p style={{ margin: '0.3rem 0 0', fontSize: '0.78rem', color: 'var(--topo-claro)' }}>
+              Con esto activado, cada factura que emitas sale directamente como "exenta" — no hace falta elegirlo cada vez. En Canarias con REPEP activo ya se hace solo; marca esto solo si estás exento por otro motivo (por ejemplo en Península).
+            </p>
           </div>
           <div className={`${styles.campo} ${styles.full}`}>
             <label className={styles.campoLabel}>🧭 Ubicación del negocio — determina qué mercado local investiga el Consejero de Precios</label>

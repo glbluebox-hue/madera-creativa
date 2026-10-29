@@ -58,6 +58,8 @@ export type Empresa = {
   isla: string;
   /** REPEP activo (exención de IGIC por bajo volumen, solo relevante en Canarias) — decisión del usuario, nunca inferida. */
   repepActivo: boolean;
+  /** Exento del impuesto indirecto (IGIC/IVA) al emitir Facturas Emitidas — para Península, que no tiene un REPEP equivalente; en Canarias con `repepActivo` ya no hace falta marcar también este. Decisión del usuario, nunca inferida. */
+  exentoImpuestoIndirecto: boolean;
   /**
    * Saldo de partida del IRPF acumulado (auditoría Facturas/Trimestral,
    * 13/09/2026) — para un negocio que ya facturaba antes de empezar a usar
@@ -126,6 +128,7 @@ const EMPRESA_ADMIN: Empresa = {
   provincia: 'Santa Cruz de Tenerife',
   isla: 'Tenerife',
   repepActivo: true,
+  exentoImpuestoIndirecto: false,
   saldoInicialAnio: null,
   saldoInicialBeneficio: null,
   saldoInicialIrpf: null,
@@ -163,6 +166,7 @@ const EMPRESA_USUARIO: Empresa = {
   provincia: '',
   isla: '',
   repepActivo: false,
+  exentoImpuestoIndirecto: false,
   saldoInicialAnio: null,
   saldoInicialBeneficio: null,
   saldoInicialIrpf: null,
@@ -243,6 +247,7 @@ export function useEmpresa(autenticado = false, esAdmin = false): {
           provincia: datos.provincia || inicial.provincia,
           isla: datos.isla || inicial.isla,
           repepActivo: datos.repepActivo ?? inicial.repepActivo,
+          exentoImpuestoIndirecto: datos.exentoImpuestoIndirecto ?? inicial.exentoImpuestoIndirecto,
           saldoInicialAnio: datos.saldoInicialAnio ?? null,
           saldoInicialBeneficio: datos.saldoInicialBeneficio ?? null,
           saldoInicialIrpf: datos.saldoInicialIrpf ?? null,

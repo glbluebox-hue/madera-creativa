@@ -398,6 +398,8 @@ export type EmpresaDoc = {
   isla: string;
   /** REPEP activo (exención de IGIC por bajo volumen, solo Canarias) — decisión del usuario, nunca inferida. */
   repepActivo: boolean;
+  /** Exento del impuesto indirecto al emitir facturas propias (Península, o cualquier otro caso sin REPEP) — ver `EmpresaSchema.exentoImpuestoIndirecto`. */
+  exentoImpuestoIndirecto: boolean;
   /**
    * Saldo de partida del IRPF acumulado (auditoría Facturas/Trimestral,
    * 13/09/2026) — para un negocio que ya facturaba antes de empezar a usar
@@ -1242,6 +1244,7 @@ export class PresupuestosService {
       provincia: (doc as any).provincia || '',
       isla: (doc as any).isla || '',
       repepActivo: !!(doc as any).repepActivo,
+      exentoImpuestoIndirecto: !!(doc as any).exentoImpuestoIndirecto,
       saldoInicialAnio: (doc as any).saldoInicialAnio ?? null,
       saldoInicialBeneficio: (doc as any).saldoInicialBeneficio ?? null,
       saldoInicialIrpf: (doc as any).saldoInicialIrpf ?? null,
@@ -1288,6 +1291,7 @@ export class PresupuestosService {
       provincia: (doc as any).provincia || '',
       isla: (doc as any).isla || '',
       repepActivo: !!(doc as any).repepActivo,
+      exentoImpuestoIndirecto: !!(doc as any).exentoImpuestoIndirecto,
       saldoInicialAnio: (doc as any).saldoInicialAnio ?? null,
       saldoInicialBeneficio: (doc as any).saldoInicialBeneficio ?? null,
       saldoInicialIrpf: (doc as any).saldoInicialIrpf ?? null,
@@ -3805,11 +3809,37 @@ export class PresupuestosService {
     if (!clienteExiste) throw new ErrorDeNegocio('Cliente no encontrado', 400);
     const ahora = new Date().toISOString();
     const lineas = datos.lineas || [];
-    const totales = this.calcularTotalesFacturaEmitida(lineas, datos.tipoImpuesto, datos.porcentajeImpuesto);
+
+    // Impuesto por defecto a partir de la configuración fiscal de la
+    // empresa, nunca escrito a mano en cada factura (petición explícita
+    // del usuario, 28/10/2026) — pero SOLO cuando el llamante no ha
+    // indicado ya un tipoImpuesto (el frontend hoy nunca lo manda en la
+    // creación, así que esto aplica siempre en la práctica; se respeta
+    // igualmente un valor explícito si algún día lo hay, nunca se pisa).
+    // Canarias+REPEP y el interruptor genérico `exentoImpuestoIndirecto`
+    // (pensado para Península, donde no existe un REPEP equivalente)
+    // llevan a 'exento' por igual; fuera de esos casos, IGIC/IVA al tipo
+    // general de la región, nunca inventado si no hay región configurada.
+    let tipoImpuesto = datos.tipoImpuesto;
+    let porcentajeImpuesto = datos.porcentajeImpuesto;
+    if (!tipoImpuesto) {
+      const empresa = await EmpresaModel.findOne({ usuarioId }).select('regionFiscal repepActivo exentoImpuestoIndirecto').lean().exec() as any;
+      if ((empresa?.regionFiscal === 'canarias' && empresa?.repepActivo) || empresa?.exentoImpuestoIndirecto) {
+        tipoImpuesto = 'exento';
+      } else if (empresa?.regionFiscal === 'canarias') {
+        tipoImpuesto = 'igic';
+        porcentajeImpuesto = porcentajeImpuesto ?? 7;
+      } else if (empresa?.regionFiscal === 'peninsula') {
+        tipoImpuesto = 'iva';
+        porcentajeImpuesto = porcentajeImpuesto ?? 21;
+      }
+    }
+
+    const totales = this.calcularTotalesFacturaEmitida(lineas, tipoImpuesto, porcentajeImpuesto);
     const doc = await FacturaEmitidaModel.create({
       id: randomUUID(), usuarioId, clienteId: datos.clienteId, proyectoId: datos.proyectoId || '',
       estado: 'borrador', titulo: datos.titulo || '', lineas,
-      tipoImpuesto: datos.tipoImpuesto || '', porcentajeImpuesto: datos.porcentajeImpuesto,
+      tipoImpuesto: tipoImpuesto || '', porcentajeImpuesto,
       lineasFiscales: datos.lineasFiscales || [], ...totales,
       vencimiento: datos.vencimiento || '', metodoPago: datos.metodoPago || '', leyendaFiscal: datos.leyendaFiscal || '',
       creado: ahora, actualizado: ahora,

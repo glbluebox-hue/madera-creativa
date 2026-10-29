@@ -351,6 +351,70 @@ describe('Totales calculados a partir de las líneas (precio * cantidad)', () =>
   });
 });
 
+// ── Impuesto por defecto a partir de la configuración fiscal de la
+// empresa (petición real del usuario, 28/10/2026: "no lo quiero poner en
+// cada factura") — solo cuando el llamante no manda ya un tipoImpuesto. ──
+describe('crearFacturaEmitidaBorrador — tipoImpuesto por defecto según la empresa', () => {
+  it('Canarias + REPEP activo -> exento, sin que el llamante lo indique', async () => {
+    const USUARIO = 'u-repep-canarias';
+    const clienteId = await prepararCliente(USUARIO, 'c-repep-canarias');
+    await EmpresaModel.create({ usuarioId: USUARIO, nifCif: 'X', regionFiscal: 'canarias', repepActivo: true });
+    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, lineas: lineaDe(1000) }) as any;
+    expect(borrador.tipoImpuesto).toBe('exento');
+    expect(borrador.importeImpuesto).toBe(0);
+    expect(borrador.importeTotal).toBe(1000);
+  });
+
+  it('exentoImpuestoIndirecto activo (ej. Península) -> exento, sin que el llamante lo indique', async () => {
+    const USUARIO = 'u-exento-peninsula';
+    const clienteId = await prepararCliente(USUARIO, 'c-exento-peninsula');
+    await EmpresaModel.create({ usuarioId: USUARIO, nifCif: 'X', regionFiscal: 'peninsula', exentoImpuestoIndirecto: true });
+    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, lineas: lineaDe(1000) }) as any;
+    expect(borrador.tipoImpuesto).toBe('exento');
+    expect(borrador.importeImpuesto).toBe(0);
+  });
+
+  it('Canarias sin REPEP -> IGIC al 7% por defecto', async () => {
+    const USUARIO = 'u-canarias-sin-repep';
+    const clienteId = await prepararCliente(USUARIO, 'c-canarias-sin-repep');
+    await EmpresaModel.create({ usuarioId: USUARIO, nifCif: 'X', regionFiscal: 'canarias', repepActivo: false });
+    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, lineas: lineaDe(1000) }) as any;
+    expect(borrador.tipoImpuesto).toBe('igic');
+    expect(borrador.porcentajeImpuesto).toBe(7);
+    expect(borrador.importeImpuesto).toBe(70);
+  });
+
+  it('Península sin exención -> IVA al 21% por defecto', async () => {
+    const USUARIO = 'u-peninsula-sin-exencion';
+    const clienteId = await prepararCliente(USUARIO, 'c-peninsula-sin-exencion');
+    await EmpresaModel.create({ usuarioId: USUARIO, nifCif: 'X', regionFiscal: 'peninsula' });
+    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, lineas: lineaDe(1000) }) as any;
+    expect(borrador.tipoImpuesto).toBe('iva');
+    expect(borrador.porcentajeImpuesto).toBe(21);
+    expect(borrador.importeImpuesto).toBe(210);
+  });
+
+  it('un tipoImpuesto explícito del llamante nunca se pisa con el valor por defecto', async () => {
+    const USUARIO = 'u-tipo-explicito';
+    const clienteId = await prepararCliente(USUARIO, 'c-tipo-explicito');
+    await EmpresaModel.create({ usuarioId: USUARIO, nifCif: 'X', regionFiscal: 'canarias', repepActivo: true });
+    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, {
+      clienteId, lineas: lineaDe(1000), tipoImpuesto: 'igic', porcentajeImpuesto: 7,
+    }) as any;
+    expect(borrador.tipoImpuesto).toBe('igic'); // REPEP activo, pero el llamante ya decidió — no se sobrescribe
+    expect(borrador.importeImpuesto).toBe(70);
+  });
+
+  it('sin ninguna región fiscal configurada, no se inventa ningún tipoImpuesto (igual que antes)', async () => {
+    const USUARIO = 'u-sin-region';
+    const clienteId = await prepararCliente(USUARIO, 'c-sin-region');
+    await EmpresaModel.create({ usuarioId: USUARIO, nifCif: 'X' }); // regionFiscal: '' (default)
+    const borrador = await svc.crearFacturaEmitidaBorrador(USUARIO, { clienteId, lineas: lineaDe(1000) }) as any;
+    expect(borrador.tipoImpuesto).toBe('');
+    expect(borrador.importeImpuesto).toBe(0);
+  });
+});
+
 // ── Generación del PDF — tolerante a logo ausente o inaccesible ─────────
 describe('generarPdfFacturaEmitidaBytes — no debe romperse por el logo', () => {
   const USUARIO = 'u-pdf';

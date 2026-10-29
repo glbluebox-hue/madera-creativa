@@ -1226,6 +1226,8 @@ export const esquemaEmpresa = z.object({
   provincia: z.string().max(100).optional().default(''),
   isla: z.string().max(100).optional().default(''),
   repepActivo: z.boolean().optional().default(false),
+  /** Exento del impuesto indirecto al emitir facturas propias — ver `EmpresaSchema.exentoImpuestoIndirecto` en `cliente.model.ts`. */
+  exentoImpuestoIndirecto: z.boolean().optional().default(false),
   /** Saldo de partida del IRPF acumulado (auditoría Facturas/Trimestral, 13/09/2026) — ver `EmpresaSchema.saldoInicialAnio/Beneficio/Irpf` en `cliente.model.ts`. */
   saldoInicialAnio: z.number().int().min(2000).max(2100).nullable().optional().default(null),
   saldoInicialBeneficio: z.number().nullable().optional().default(null),

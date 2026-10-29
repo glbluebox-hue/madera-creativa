@@ -381,6 +381,17 @@ const EmpresaSchema = new Schema({
    */
   repepActivo: { type: Boolean, default: false },
   /**
+   * El negocio está exento del impuesto indirecto (IGIC/IVA) al emitir
+   * sus propias facturas (Facturas Emitidas, SIF) — petición explícita
+   * del usuario, 28/10/2026: "no lo quiero poner en cada factura, tiene
+   * que estar en el apartado de la empresa". Pensado para el caso
+   * Península (exención de IVA) que no tiene ningún campo equivalente a
+   * `repepActivo`; en Canarias con REPEP ya basta con `repepActivo`, no
+   * hace falta marcar también este — `crearFacturaEmitidaBorrador`
+   * combina los dos. Decisión del usuario, nunca inferida de la región.
+   */
+  exentoImpuestoIndirecto: { type: Boolean, default: false },
+  /**
    * Saldo de partida del IRPF acumulado (auditoría Facturas/Trimestral,
    * 13/09/2026) — para un negocio que ya facturaba antes de empezar a usar
    * Madera Creativa: el Trimestral calcula el IRPF sobre el beneficio
