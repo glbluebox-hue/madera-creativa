@@ -245,6 +245,16 @@ export async function generarResumenPdf(datos: {
   /** IVA/IGIC repercutido y soportado, clasificado por el `tipoImpuesto` real de cada factura — nunca por región (subfase "Agregación trimestral IVA/IGIC"). Opcional: ausente en PDFs de tipos de documento sin facturas de por medio. */
   impuestos?: ResumenImpuestosTrimestre;
   avisoFiscal: string[];
+  /**
+   * Gastos de un trimestre YA cerrado, añadidos al sistema durante ESTE
+   * trimestre (petición real del usuario, 29/10/2026) — su `fecha` real
+   * sigue perteneciendo al trimestre anterior (nunca se mueven, nunca
+   * entran en `gastos`/`impuestos` de arriba), pero el informe de aquel
+   * trimestre ya se generó y entregó antes de que existieran, así que
+   * aparecen aquí como anexo informativo para que el asesor no se los
+   * pierda. Opcional: ausente si no hay ninguno.
+   */
+  gastosTardios?: Record<string, unknown>[];
 }): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
   const fuente = await pdf.embedFont(StandardFonts.Helvetica);
@@ -360,10 +370,24 @@ export async function generarResumenPdf(datos: {
   escribir(`Ingresos: ${formatoEuro(totalIngresos)}  (${datos.ingresos.length} facturas)`, { color: [0.24, 0.48, 0.32] });
   escribir(`Gastos (facturas): ${formatoEuro(totalGastos)}  (${datos.gastos.length} facturas)`, { color: [0.61, 0.27, 0.21] });
   if (totalPeriodicos > 0) escribir(`Gastos periódicos/estimados: ${formatoEuro(totalPeriodicos)}`, { color: [0.61, 0.27, 0.21] });
+  if (datos.gastosTardios?.length) {
+    escribir(
+      `Aviso: hay ${datos.gastosTardios.length} gasto(s) de un trimestre anterior, añadido(s) al sistema durante este trimestre — ver anexo al final, no incluido(s) en los totales de aquí arriba.`,
+      { tam: 8.5, color: [0.61, 0.27, 0.21] }
+    );
+  }
   escribir(`Resultado: ${formatoEuro(beneficio)}`, { negrita: true, salto: 20 });
 
   tablaFacturas('INGRESOS', 'Cliente', datos.ingresos);
   tablaFacturas('GASTOS', 'Proveedor', datos.gastos);
+
+  if (datos.gastosTardios?.length) {
+    escribir(
+      'Pertenecen por su fecha a un trimestre YA CERRADO — el informe de aquel trimestre se generó antes de que existieran en el sistema. No están incluidos en el resumen ni en el IVA/IGIC de arriba; revisar con el asesor si procede deducirlos ahora o presentar una complementaria del trimestre original.',
+      { tam: 8, color: [0.45, 0.4, 0.35], salto: 14 }
+    );
+    tablaFacturas('GASTOS DE TRIMESTRES ANTERIORES — AÑADIDOS ESTE TRIMESTRE', 'Proveedor', datos.gastosTardios);
+  }
 
   if (datos.gastosPeriodicos?.length) {
     tablaFacturas(

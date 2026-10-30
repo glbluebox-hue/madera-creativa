@@ -65,3 +65,33 @@ describe('generarResumenPdf — regresión con rectificativas mezcladas', () => 
     expect(bytes.length).toBeGreaterThan(0);
   });
 });
+
+// ── Gastos de un trimestre ya cerrado, añadidos durante el actual (petición real del usuario, 29/10/2026) ──
+describe('generarResumenPdf — anexo de gastos de trimestres anteriores', () => {
+  it('genera un PDF válido con el anexo de gastos tardíos, sin romper nada aunque no haya ingresos/gastos del trimestre actual', async () => {
+    const bytes = await generarResumenPdf({
+      empresaNombre: 'Madera Creativa',
+      periodoLabel: '4.º trimestre 2026',
+      ingresos: [],
+      gastos: [],
+      gastosTardios: [
+        { fecha: '2026-07-15', numeroFactura: 'B-1', proveedor: 'Ferretería Tijoco', importe: 120 },
+      ],
+      avisoFiscal: [],
+    });
+    expect(bytes).toBeInstanceOf(Uint8Array);
+    expect(bytes.length).toBeGreaterThan(0);
+  });
+
+  it('sin gastosTardios (caso normal, de toda la vida) sigue generando el PDF igual que antes', async () => {
+    const bytes = await generarResumenPdf({
+      empresaNombre: 'Madera Creativa',
+      periodoLabel: '4.º trimestre 2026',
+      ingresos: [{ fecha: '2026-10-05', numeroFactura: 'F-1', cliente: 'Cliente de prueba', importe: 500 }],
+      gastos: [],
+      avisoFiscal: [],
+    });
+    expect(bytes).toBeInstanceOf(Uint8Array);
+    expect(bytes.length).toBeGreaterThan(0);
+  });
+});

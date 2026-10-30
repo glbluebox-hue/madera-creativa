@@ -2579,6 +2579,23 @@ export class PresupuestosService {
     // factura se genera descargando su imagen por URL.
     const facturas = await Promise.all(docs.map((d) => resolverUrlsFactura(this.limpiar(d as Record<string, unknown>))));
 
+    // Gastos de un trimestre YA cerrado, metidos en el sistema durante
+    // ESTE trimestre (petición real del usuario, 29/10/2026: "el asesor
+    // de alguna manera tiene que saber de esta factura"). Nunca se mueven
+    // de trimestre (su `fecha` real sigue siendo la que es, y el IVA/IGIC
+    // soportado se puede deducir hasta 4 años después — a diferencia de
+    // un ingreso, nunca se "pierden" fiscalmente) — el problema real era
+    // solo de VISIBILIDAD: el informe del trimestre al que pertenecen ya
+    // se generó y entregó antes de que existieran, así que el asesor
+    // nunca las veía en ningún PDF real. Aparecen aquí como anexo
+    // informativo, fuera de los totales de este trimestre.
+    const gastosTardiosDocs = await FacturaModel.find({
+      usuarioId, tipo: 'gasto',
+      fecha: { $lt: filtro.fecha.$gte },
+      creado: { $gte: `${filtro.fecha.$gte}T00:00:00.000Z`, $lte: `${filtro.fecha.$lte}T23:59:59.999Z` },
+    }).lean().exec();
+    const gastosTardios = gastosTardiosDocs.map((d) => this.limpiar(d as Record<string, unknown>));
+
     const [empresa, gastosPeriodicos] = await Promise.all([
       EmpresaModel.findOne({ usuarioId }).lean().exec() as Promise<any>,
       GastoPeriodicoModel.find({ usuarioId, activo: true }).lean().exec() as Promise<any[]>,
@@ -2614,6 +2631,7 @@ export class PresupuestosService {
       periodoLabel,
       ingresos, gastos, gastosPeriodicos: gastosPeriodicosDelTrimestre, avisoFiscal,
       impuestos: calcularImpuestosPorTipo(facturas as any[], igicDeclarable(empresa?.regionFiscal ?? '', !!empresa?.repepActivo)),
+      gastosTardios,
     });
     try {
       const facturasBytes = await generarPdfCombinadoFacturas([...ingresos, ...gastos]);
