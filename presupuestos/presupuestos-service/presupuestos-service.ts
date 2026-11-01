@@ -3548,8 +3548,39 @@ export class PresupuestosService {
     // solo avanza desde 'borrador'.
     if (presupuesto.estado === 'borrador' || !presupuesto.estado) {
       await PresupuestoModel.updateOne({ id, usuarioId }, { $set: { estado: 'enviado' } }).exec();
+      await this.marcarProyectoPresupuestoEnviado(presupuesto, usuarioId);
     }
     return { token, expiraEn: expiraEn.toISOString() };
+  }
+
+  /**
+   * Al dar un presupuesto por enviado (ver `generarEnlacePresupuesto`),
+   * refleja el mismo paso en la ficha del cliente: el proyecto asociado
+   * pasa a 'presupuesto_enviado' — mismo efecto, en sentido contrario, que
+   * ya hacía `cambiarEstadoProyecto` (marcar a mano "Presupuesto enviado"
+   * en el proyecto también marcaba el presupuesto). Petición real del
+   * usuario, 01/11/2026: "al generar el enlace también en la ficha de
+   * cliente tienes que pasar a presupuesto enviado". La mayoría de
+   * presupuestos (creados desde el flujo global) no llevan `proyectoId`
+   * (ver comentario de `PresupuestoSchema.proyectoId`) — en ese caso usa
+   * el mismo criterio de "más reciente" que la sincronización inversa: el
+   * proyecto en 'presupuestado' más reciente de ese cliente. Nunca pisa un
+   * proyecto que ya avanzó más (en_curso/finalizado/rechazado) ni uno que
+   * ya estaba en 'presupuesto_enviado'.
+   */
+  private async marcarProyectoPresupuestoEnviado(presupuesto: { clienteId: string; proyectoId?: string }, usuarioId: string): Promise<void> {
+    if (presupuesto.proyectoId) {
+      await ProyectoModel.updateOne(
+        { id: presupuesto.proyectoId, usuarioId, estado: 'presupuestado' },
+        { $set: { estado: 'presupuesto_enviado' } }
+      ).exec();
+      return;
+    }
+    const masReciente = await ProyectoModel.findOne({ clienteId: presupuesto.clienteId, usuarioId, estado: 'presupuestado' })
+      .sort({ creado: -1 }).select('id').lean().exec() as any;
+    if (masReciente) {
+      await ProyectoModel.updateOne({ id: masReciente.id, usuarioId }, { $set: { estado: 'presupuesto_enviado' } }).exec();
+    }
   }
 
   /**
