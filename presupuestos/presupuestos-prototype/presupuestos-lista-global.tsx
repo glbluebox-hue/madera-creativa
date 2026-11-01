@@ -51,8 +51,15 @@ export type PresupuestosListaGlobalProps = {
  * antes de abrir el editor — desde la Fase A (autoguardado, 23/08/2026) ya
  * no basta con abrirlo solo en memoria, ver el comentario de `crearBorrador`.
  */
-/** Petición explícita del usuario, 28/10/2026: "más organización" — poder ver solo los aceptados, solo los pendientes, o todos. */
-type FiltroPresupuesto = 'todos' | 'aceptados' | 'no_aceptados';
+/**
+ * Petición explícita del usuario, 28/10/2026: "más organización" — poder
+ * ver solo los aceptados, solo los pendientes, o todos. Ampliado
+ * 01/11/2026: "en espera" separa los ya enviados (esperando respuesta del
+ * cliente) de "no aceptados" (que antes los mezclaba con los que ni
+ * siquiera se habían enviado) — petición del propio usuario: "los enviado
+ * vayan a la carpeta en espera".
+ */
+type FiltroPresupuesto = 'todos' | 'aceptados' | 'en_espera' | 'no_aceptados';
 
 export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa, onAbrirCliente, onCrearProyecto, plan, esAdmin }: PresupuestosListaGlobalProps) {
   const tienePlanEnlace = puedeUsar(plan, PRO_O_SUPERIOR, esAdmin);
@@ -121,7 +128,8 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
 
   const presupuestosVisibles = presupuestos.filter((p) => {
     if (filtro === 'aceptados') return p.estado === 'aceptado';
-    if (filtro === 'no_aceptados') return p.estado !== 'aceptado';
+    if (filtro === 'en_espera') return p.estado === 'enviado';
+    if (filtro === 'no_aceptados') return p.estado !== 'aceptado' && p.estado !== 'enviado';
     return true;
   });
 
@@ -651,11 +659,12 @@ export function PresupuestosListaGlobal({ clientes, empresa, onActualizarEmpresa
           <div className={styles.filtrosPill} style={{ marginBottom: '0.75rem' }}>
             <button className={`${styles.filtroPill} ${filtro === 'todos' ? styles.filtroPillActivo : ''}`} onClick={() => setFiltro('todos')}>Todos</button>
             <button className={`${styles.filtroPill} ${filtro === 'no_aceptados' ? styles.filtroPillActivo : ''}`} onClick={() => setFiltro('no_aceptados')}>No aceptados</button>
+            <button className={`${styles.filtroPill} ${filtro === 'en_espera' ? styles.filtroPillActivo : ''}`} onClick={() => setFiltro('en_espera')}>En espera</button>
             <button className={`${styles.filtroPill} ${filtro === 'aceptados' ? styles.filtroPillActivo : ''}`} onClick={() => setFiltro('aceptados')}>Aceptados</button>
           </div>
           {presupuestosVisibles.length === 0 ? (
             <p style={{ textAlign: 'center', color: 'var(--topo-claro)', fontSize: '0.85rem', padding: '1.5rem 0' }}>
-              Ningún presupuesto {filtro === 'aceptados' ? 'aceptado' : 'pendiente de aceptar'} todavía.
+              Ningún presupuesto {filtro === 'aceptados' ? 'aceptado' : filtro === 'en_espera' ? 'en espera de respuesta' : 'pendiente de aceptar'} todavía.
             </p>
           ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
