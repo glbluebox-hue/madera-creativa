@@ -1638,6 +1638,7 @@ export function run() {
           cobrosPendientes: leerPreferenciaNotif(p, 'cobrosPendientes', 8),
           margenBajo: leerPreferenciaNotif(p, 'margenBajo', 8),
           briefingDiario: leerPreferenciaNotif(p, 'briefingDiario', 8),
+          calendario: leerPreferenciaNotif(p, 'calendario', 8),
           nuevoUsuario: p?.nuevoUsuario ?? true,
           mensajeSoporte: p?.mensajeSoporte ?? true,
         },

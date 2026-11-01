@@ -126,6 +126,8 @@ const PreferenciasNotificacionesSchema = new Schema(
     cobrosPendientes: { type: Schema.Types.Mixed, default: true },
     margenBajo: { type: Schema.Types.Mixed, default: true },
     briefingDiario: { type: Schema.Types.Mixed, default: true },
+    /** Recordatorios de montajes/mediciones y eventos del Calendario (01/11/2026) — ver `ejecutarAvisoCalendario`. */
+    calendario: { type: Schema.Types.Mixed, default: true },
   },
   { _id: false }
 );

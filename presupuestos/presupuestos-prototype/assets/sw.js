@@ -115,9 +115,17 @@ self.addEventListener('push', (event) => {
     datos = JSON.parse(event.data.text());
   } catch {}
 
+  // Recordatorios de calendario (montajes, mediciones, eventos) llevan su
+  // propia vibración y agrupación (tag) — pedido explícito del usuario
+  // (01/11/2026): "tiene que ser diferente, no puede ser la misma
+  // notificación de las horas de trabajo".
+  const esCalendario = datos.datos?.tipo === 'recordatorio-calendario';
+
   event.waitUntil(
     self.registration.showNotification(datos.titulo || 'Madera Creativa', {
       body: datos.cuerpo || '',
+      tag: esCalendario ? 'calendario' : undefined,
+      vibrate: esCalendario ? [200, 100, 200, 100, 200] : undefined,
       // `logo.png` es el rótulo horizontal de la marca (1540×554) — pensado
       // para la barra lateral, no para un icono. `icon-512` es el icono
       // grande a color que se ve dentro de la notificación ya desplegada.
@@ -153,13 +161,18 @@ self.addEventListener('notificationclick', (event) => {
   // segunda), así que se le manda un mensaje a la pestaña existente en vez
   // de navegarla directamente aquí.
   const irAClientes = event.notification.data?.tipo === 'recordatorio-horas';
+  // Un recordatorio de calendario sí tiene un destino concreto al que
+  // llevar: la propia página Calendario, mismo criterio que
+  // `irAClientes` de arriba.
+  const irACalendario = event.notification.data?.tipo === 'recordatorio-calendario';
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cs) => {
       if (cs.length > 0) {
         if (irAClientes) cs[0].postMessage({ tipo: 'ir-a-clientes' });
+        if (irACalendario) cs[0].postMessage({ tipo: 'ir-a-calendario' });
         cs[0].focus();
       } else {
-        clients.openWindow(irAClientes ? '/?accion=clientes' : '/');
+        clients.openWindow(irAClientes ? '/?accion=clientes' : irACalendario ? '/?accion=calendario' : '/');
       }
     })
   );

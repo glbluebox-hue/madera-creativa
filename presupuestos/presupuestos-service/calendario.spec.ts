@@ -199,4 +199,32 @@ describe('Evento/recordatorio del Calendario — CRUD', () => {
     const elementos = await svc.obtenerCalendario(USUARIO_A, '2026-09-01', '2026-09-30');
     expect(elementos).toHaveLength(1);
   });
+
+  /**
+   * `avisoVisperaEnviado`/`avisoMismoDiaEnviado` (01/11/2026) — guardas del
+   * aviso automático de `ejecutarAvisoCalendario`. Si se cambia la fecha/
+   * hora de un evento ya avisado, tienen que resetearse para que la nueva
+   * fecha vuelva a avisar; si se edita cualquier OTRO campo sin tocar
+   * fecha/hora, el aviso ya enviado no debe repetirse.
+   */
+  it('cambiar la fecha de un evento ya avisado resetea las guardas del aviso automático', async () => {
+    const doc = await svc.guardarEventoCalendario({ ...EVENTO_BASE, id: 'e1' }, USUARIO_A);
+    await EventoCalendarioModel.updateOne({ id: 'e1' }, { $set: { avisoVisperaEnviado: true, avisoMismoDiaEnviado: true } }).exec();
+
+    await svc.guardarEventoCalendario({ ...doc, fecha: '2026-09-20' } as any, USUARIO_A);
+
+    const actualizado = await EventoCalendarioModel.findOne({ id: 'e1' }).lean().exec() as any;
+    expect(actualizado.avisoVisperaEnviado).toBe(false);
+    expect(actualizado.avisoMismoDiaEnviado).toBe(false);
+  });
+
+  it('editar un evento SIN tocar fecha/hora conserva las guardas del aviso ya enviado', async () => {
+    const doc = await svc.guardarEventoCalendario({ ...EVENTO_BASE, id: 'e1' }, USUARIO_A);
+    await EventoCalendarioModel.updateOne({ id: 'e1' }, { $set: { avisoVisperaEnviado: true } }).exec();
+
+    await svc.guardarEventoCalendario({ ...doc, titulo: 'Visita a obra (confirmada)' } as any, USUARIO_A);
+
+    const actualizado = await EventoCalendarioModel.findOne({ id: 'e1' }).lean().exec() as any;
+    expect(actualizado.avisoVisperaEnviado).toBe(true);
+  });
 });

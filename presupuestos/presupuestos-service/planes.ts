@@ -223,6 +223,7 @@ export function limitarNotifPrefsPorPlan(notifPrefs: any): any {
     cobrosPendientes: forzarInactivo(notifPrefs?.cobrosPendientes),
     margenBajo: forzarInactivo(notifPrefs?.margenBajo),
     briefingDiario: forzarInactivo(notifPrefs?.briefingDiario),
+    calendario: forzarInactivo(notifPrefs?.calendario),
   };
 }
 

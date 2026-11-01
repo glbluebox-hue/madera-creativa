@@ -2921,12 +2921,30 @@ export class PresupuestosService {
     return elementos;
   }
 
-  /** Crea o actualiza un evento/recordatorio puntual del Calendario — el único tipo de elemento que vive en su propia colección (ver `evento-calendario.model.ts`). */
+  /**
+   * Crea o actualiza un evento/recordatorio puntual del Calendario — el
+   * único tipo de elemento que vive en su propia colección (ver
+   * `evento-calendario.model.ts`). Si `fecha` u `hora` cambian respecto al
+   * documento anterior (o es uno nuevo), resetea las guardas del aviso
+   * automático "un día antes"/"mismo día" (`avisoVisperaEnviado`/
+   * `avisoMismoDiaEnviado`, ver `ejecutarAvisoCalendario`) — si no se
+   * resetearan explícitamente aquí, un evento movido a otra fecha nunca
+   * volvería a avisar, al quedar marcado como "ya avisado" de la fecha
+   * vieja.
+   */
   async guardarEventoCalendario(evento: Record<string, unknown>, usuarioId: string): Promise<Record<string, unknown>> {
     await conectar();
+    const anterior = await EventoCalendarioModel.findOne({ id: evento.id, usuarioId })
+      .select('fecha hora avisoVisperaEnviado avisoMismoDiaEnviado').lean().exec() as any;
+    const fechaOHoraCambio = !anterior || anterior.fecha !== evento.fecha || (anterior.hora || '') !== ((evento as any).hora || '');
     const doc = await EventoCalendarioModel.findOneAndUpdate(
       { id: evento.id, usuarioId },
-      { ...evento, usuarioId },
+      {
+        ...evento,
+        usuarioId,
+        avisoVisperaEnviado: fechaOHoraCambio ? false : !!anterior?.avisoVisperaEnviado,
+        avisoMismoDiaEnviado: fechaOHoraCambio ? false : !!anterior?.avisoMismoDiaEnviado,
+      },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     ).lean().exec();
     return this.limpiar(doc as Record<string, unknown>);

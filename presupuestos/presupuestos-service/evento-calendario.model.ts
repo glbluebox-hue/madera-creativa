@@ -29,6 +29,19 @@ const EventoCalendarioSchema = new Schema({
   proyectoId: { type: String, default: '' },
   creado: { type: String, required: true },
   actualizado: { type: String, required: true },
+  /**
+   * Guardas del aviso automático "un día antes" / "la mañana del mismo
+   * día" (petición real del usuario, 01/11/2026: "me gustaría que me
+   * llegara un día antes y el mismo día por la mañana de esa tarea") — ver
+   * `ejecutarAvisoCalendario` en `notificaciones-programadas.service.ts`.
+   * Mismo patrón que `Proyecto.margenAvisado`: persistidas (no en memoria)
+   * para que sobrevivan a un reinicio del servidor sin repetir ni perder
+   * un aviso que solo se dispara una vez en la vida del evento. Si se
+   * cambia `fecha` o `hora` del evento, ambas se resetean a `false` (ver
+   * `guardarEventoCalendario`) para que el nuevo día/hora vuelva a avisar.
+   */
+  avisoVisperaEnviado: { type: Boolean, default: false },
+  avisoMismoDiaEnviado: { type: Boolean, default: false },
 });
 /** Consulta principal: elementos del usuario dentro de un rango de fechas (vista mensual/semanal/diaria). */
 EventoCalendarioSchema.index({ usuarioId: 1, fecha: 1 });

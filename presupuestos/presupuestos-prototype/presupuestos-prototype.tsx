@@ -118,6 +118,7 @@ export function PresupuestosPrototype() {
   const [seccion, setSeccion] = useState<Seccion>(() => {
     const abrirEn = new URLSearchParams(window.location.search).get('accion');
     if (abrirEn === 'clientes') return 'clientes';
+    if (abrirEn === 'calendario') return 'calendario';
     try {
       const guardada = JSON.parse(localStorage.getItem(`${storagePrefix}navegacion`) ?? 'null') as { seccion?: Seccion } | null;
       if (guardada?.seccion && guardada.seccion in ETIQUETA_SECCION_CORTA) return guardada.seccion;
@@ -162,6 +163,7 @@ export function PresupuestosPrototype() {
     // sw.js) para llevar igualmente a Clientes.
     const alRecibirMensaje = (e: MessageEvent) => {
       if (e.data?.tipo === 'ir-a-clientes') cambiarSeccion('clientes');
+      if (e.data?.tipo === 'ir-a-calendario') cambiarSeccion('calendario');
     };
     navigator.serviceWorker?.addEventListener('message', alRecibirMensaje);
     return () => navigator.serviceWorker?.removeEventListener('message', alRecibirMensaje);

@@ -33,6 +33,7 @@ const TIPOS: Array<{ clave: typeof TIPOS_CON_HORA[number]; titulo: string; descr
   { clave: 'cobrosPendientes', titulo: 'Cobros pendientes', descripcion: 'Resumen de los cobros de presupuestos aceptados que todavía no has marcado como recibidos.' },
   { clave: 'margenBajo', titulo: 'Margen bajo', descripcion: 'Aviso cuando el margen de un proyecto activo baja del 40%.' },
   { clave: 'briefingDiario', titulo: 'Briefing diario', descripcion: 'Un resumen corto: proyectos activos y cobros pendientes.' },
+  { clave: 'calendario', titulo: 'Recordatorios de calendario', descripcion: 'Un día antes y la misma mañana de cada montaje, medición o evento que apuntes en el Calendario.' },
 ];
 
 const PREFERENCIAS_POR_DEFECTO: NotifPrefs = {
@@ -40,12 +41,13 @@ const PREFERENCIAS_POR_DEFECTO: NotifPrefs = {
   cobrosPendientes: { activo: true, hora: 8, minuto: 0 },
   margenBajo: { activo: true, hora: 8, minuto: 0 },
   briefingDiario: { activo: true, hora: 8, minuto: 0 },
+  calendario: { activo: true, hora: 8, minuto: 0 },
   nuevoUsuario: true,
   mensajeSoporte: true,
 };
 
-/** Los únicos 4 tipos con hora propia — `nuevoUsuario` es un booleano suelto, sin hora, así que queda fuera de la conversión UTC↔local de abajo. */
-const TIPOS_CON_HORA = ['horas', 'cobrosPendientes', 'margenBajo', 'briefingDiario'] as const;
+/** Los únicos 5 tipos con hora propia — `nuevoUsuario` es un booleano suelto, sin hora, así que queda fuera de la conversión UTC↔local de abajo. */
+const TIPOS_CON_HORA = ['horas', 'cobrosPendientes', 'margenBajo', 'briefingDiario', 'calendario'] as const;
 
 /**
  * Los selectores de hora muestran y recogen la hora LOCAL del propio
@@ -126,6 +128,7 @@ export function PanelNotificaciones({ estadoPush, errorPush, onActivarPush, onCe
         const local: NotifPrefs = {
           horas: preferencias.horas, cobrosPendientes: preferencias.cobrosPendientes,
           margenBajo: preferencias.margenBajo, briefingDiario: preferencias.briefingDiario,
+          calendario: preferencias.calendario,
           nuevoUsuario: preferencias.nuevoUsuario, mensajeSoporte: preferencias.mensajeSoporte,
         };
         for (const clave of TIPOS_CON_HORA) {

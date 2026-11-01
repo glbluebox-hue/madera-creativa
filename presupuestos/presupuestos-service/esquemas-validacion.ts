@@ -929,6 +929,7 @@ export const esquemaNotifPrefs = z.object({
   cobrosPendientes: esquemaPreferenciaNotifTipo,
   margenBajo: esquemaPreferenciaNotifTipo,
   briefingDiario: esquemaPreferenciaNotifTipo,
+  calendario: esquemaPreferenciaNotifTipo,
   /**
    * Aviso push al admin cuando alguien nuevo se registra (25/08/2026,
    * reporte real: un usuario se registró y el admin no se enteró porque el
