@@ -635,6 +635,19 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
     setEscanerDocAbierto(false);
   };
 
+  /**
+   * Límite para un PDF subido directamente (a diferencia de una foto de
+   * cámara, que SIEMPRE se comprime vía `comprimirImagen` — ver más
+   * abajo). En base64 un archivo pesa ~37% más, y el límite real del
+   * servidor es 25 MB en total (`express.json`, `presupuestos-service.app-root.ts`)
+   * — 18 MB en crudo deja margen para el resto de la petición con una
+   * sola hoja. Petición real del usuario, 02/11/2026: un PDF demasiado
+   * grande se quedaba "colgado" al guardar en vez de avisar de inmediato;
+   * mejor cortarlo aquí, al añadir la hoja, que descubrirlo tras una
+   * subida larga que al final falla igual.
+   */
+  const LIMITE_PDF_BYTES = 18 * 1024 * 1024;
+
   /** Añade uno o más archivos (foto de cámara o subida) como páginas nuevas al final. Un PDF se conserva tal cual, nunca se intenta decodificar como imagen. */
   const agregarArchivos = async (files: FileList | null, origenCaptura: 'foto' | 'manual' = 'manual') => {
     if (!files || files.length === 0) return;
@@ -642,6 +655,10 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
     let huboPdf = false;
     for (const file of Array.from(files)) {
       if (file.type === 'application/pdf') {
+        if (file.size > LIMITE_PDF_BYTES) {
+          setErrorGuardado(`«${file.name}» pesa ${(file.size / (1024 * 1024)).toFixed(1)} MB — demasiado para subirlo directamente (máximo 18 MB). Prueba a escanearlo con "Escanear documento" o "Foto rápida" (se comprime automáticamente), o divide el PDF en menos páginas.`);
+          continue;
+        }
         const dataUrl = await leerArchivoComoBase64(file);
         nuevas.push({ id: uid(), dataUrl, nombre: file.name, tipo: 'pdf' });
         huboPdf = true;
@@ -822,9 +839,15 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
       // Sin `setGuardando(false)` aquí a propósito: en el camino feliz,
       // quien llama cierra este modal (`onCerrar`/desmontaje) en cuanto
       // `onGuardar` resuelve — no hay nada que reactivar.
-    } catch {
+    } catch (err) {
       setGuardando(false);
-      setErrorGuardado('No se pudo guardar la factura. Comprueba tu conexión e inténtalo de nuevo.');
+      // Petición real del usuario, 02/11/2026: antes se mostraba siempre
+      // este mismo texto genérico, aunque el servidor sí explicara el
+      // motivo real (p. ej. "El archivo es demasiado grande..." de un PDF
+      // sin comprimir) — el usuario nunca llegaba a verlo, solo "se queda
+      // ahí" sin entender por qué.
+      const mensaje = err instanceof Error && err.message ? err.message : '';
+      setErrorGuardado(mensaje || 'No se pudo guardar la factura. Comprueba tu conexión e inténtalo de nuevo.');
     }
   };
 

@@ -24,8 +24,24 @@ const { ejecutarAvisoCalendario } = await import('./notificaciones-programadas.s
 let mongod: MongoMemoryServer;
 const USUARIO = 'u-calendario-avisos';
 
-/** 8:00 UTC — misma hora por defecto que el resto de tipos de notificación (`leerPreferenciaNotif`, `horaDefecto: 8`). */
-const A_LAS_8_UTC = new Date('2026-11-01T08:00:00.000Z');
+/**
+ * 8:00 UTC del día real de HOY — misma hora por defecto que el resto de
+ * tipos de notificación (`leerPreferenciaNotif`, `horaDefecto: 8`).
+ * Deliberadamente NO una fecha fija: `hoyComoFecha()` (usada dentro de
+ * `ejecutarAvisoCalendario`) ignora el `ahora` que se le pasa y usa
+ * SIEMPRE el reloj real del sistema (mismo comportamiento ya existente en
+ * `recordatorio-horas.service.ts`, no algo nuevo de este archivo) — una
+ * fecha fija aquí dejaba de coincidir con "hoy" en cuanto cambiaba el día
+ * real (fallo real detectado: tests escritos el 01/11/2026 rotos el
+ * 02/11/2026). Solo la HORA/MINUTO de `ahora` importa para `esSuMomento`;
+ * el DÍA siempre lo decide el reloj real, así que se usa aquí también.
+ */
+function hoyALas8Utc(): Date {
+  const d = new Date();
+  d.setUTCHours(8, 0, 0, 0);
+  return d;
+}
+const A_LAS_8_UTC = hoyALas8Utc();
 
 function hoyISO(fecha: Date): string {
   return fecha.toISOString().slice(0, 10);

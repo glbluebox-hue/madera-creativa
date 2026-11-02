@@ -583,6 +583,30 @@ export function run() {
   }));
   app.use(limitadorGeneral);
   app.use(express.json({ limit: '25mb' }));
+  /**
+   * Petición real del usuario, 02/11/2026: "estoy teniendo problemas para
+   * subir las facturas... le doy a guardar, y el botón se queda ahí, no se
+   * cierra". Causa real: un PDF subido directamente (a diferencia de una
+   * foto de cámara, que SIEMPRE se comprime — ver `comprimirImagen` en
+   * `escaner-factura.tsx`) viaja tal cual en base64; un documento
+   * multipágina puede superar fácilmente el límite de `express.json` de
+   * arriba. Sin este manejador, `express.json` rechaza la petición con un
+   * `PayloadTooLargeError` que Express responde con HTML (no JSON) — el
+   * frontend (`comoErrorCuota` en `api.ts`) no puede parsear ese cuerpo y
+   * acaba mostrando "límite de almacenamiento de tu plan", un mensaje
+   * totalmente equivocado para lo que de verdad ha pasado. Con JSON real
+   * aquí, el frontend ya puede mostrar el motivo correcto.
+   */
+  app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err?.type === 'entity.too.large' || err?.status === 413 || err?.statusCode === 413) {
+      res.status(413).json({
+        error: 'archivo_demasiado_grande',
+        mensaje: 'El archivo es demasiado grande para subirlo (máximo 25 MB en total). Si es un PDF escaneado, prueba a escanearlo con la cámara dentro de la app (se comprime automáticamente) o súbelo con menos páginas.',
+      });
+      return;
+    }
+    next(err);
+  });
   app.use(cookieParser());
   // `limitadorAuth` (10 peticiones/15min) se aplica SOLO a `/auth/login` y
   // `/auth/registrar` — las únicas rutas donde tiene sentido frenar fuerza
