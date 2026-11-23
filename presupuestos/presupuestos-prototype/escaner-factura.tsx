@@ -1058,6 +1058,28 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
             </button>
           </div>
 
+          {/* Aviso de quién emite, ANTES de pedir el cliente (reporte repetido
+              del usuario, 10/09/2026 y de nuevo 23/11/2026 con capturas):
+              mostrarlo pequeño y DESPUÉS del campo Cliente no bastaba — lo
+              primero que veía era "Cliente: Michele" y le generaba la misma
+              duda cada vez ("¿esto no debería llevar mi NIF?"), aunque el
+              dato guardado ya fuera correcto (el campo de abajo guarda el
+              NIF del cliente, no el tuyo — el tuyo nunca se guarda por
+              factura, se lee en vivo de Ajustes de empresa). Mostrarlo
+              primero y como afirmación, no como nota al pie, deja clara la
+              relación antes de pedir nada más: esta factura la EMITES tú, lo
+              que sigue es a quién. */}
+          {tipo === 'ingreso' && (
+            <div style={{ background: 'var(--verde-bg, #e6f4ea)', border: '1px solid var(--verde, #2e7d32)', borderRadius: 8, padding: '0.6rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--verde, #2e7d32)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M20 6L9 17l-5-5" /></svg>
+              {empresa && (empresa.nombre || empresa.titular || empresa.nifCif) ? (
+                <span style={{ fontSize: '0.84rem', color: 'var(--verde, #2e7d32)' }}>Emites tú: <strong>{empresa.titular || empresa.nombre}</strong>{empresa.nifCif ? ` · ${empresa.nifCif}` : ''} — indica abajo a quién</span>
+              ) : (
+                <span style={{ fontSize: '0.84rem', color: 'var(--verde, #2e7d32)' }}>Emites tú. Completa tu nombre y NIF en <strong>Ajustes de empresa</strong> para que salgan en la documentación del asesor.</span>
+              )}
+            </div>
+          )}
+
           {/* Sugerencia automática de rectificativa (Fase interfaz, 25/09/2026) — solo
               sugiere, nunca marca nada por sí sola (ver `deteccion-rectificativa.ts`). */}
           {sugerenciaRectificativa?.sugerido && !sugerenciaDescartada && naturaleza !== 'rectificativa' && (
@@ -1199,9 +1221,11 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
            * documento es su CLIENTE, no un "proveedor/emisor" — ver que
            * ponía "Emisor: <nombre del cliente>" le hacía pensar que la IA
            * se había equivocado. El emisor en un ingreso es siempre Madera
-           * Creativa (se muestra debajo, en solo lectura, desde Ajustes de
-           * empresa). El dato que sí se guarda aquí es el del cliente,
-           * porque el libro de facturas emitidas y el asesor lo necesitan.
+           * Creativa (se muestra arriba, antes de este campo, en solo
+           * lectura desde Ajustes de empresa — ver el aviso verde tras los
+           * botones Ingreso/Gasto). El dato que sí se guarda aquí es el del
+           * cliente, porque el libro de facturas emitidas y el asesor lo
+           * necesitan.
            */}
           <label className={styles.label}>
             {tipo === 'ingreso' ? 'Cliente' : tipo === 'gasto' ? 'Proveedor' : 'Proveedor / Cliente'}
@@ -1271,19 +1295,6 @@ export function EscanerFactura({ clientes, proveedores = [], proyectoFijo, onGua
               )}
             </div>
           </label>
-
-          {/* En un ingreso, el emisor eres tú: se muestra en solo lectura
-              desde Ajustes de empresa, sin volver a pedirlo en cada factura. */}
-          {tipo === 'ingreso' && (
-            <p style={{ margin: '-0.35rem 0 0', fontSize: '0.76rem', color: 'var(--topo-claro)', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M20 6L9 17l-5-5" /></svg>
-              {empresa && (empresa.nombre || empresa.titular || empresa.nifCif) ? (
-                <span>Emisor: <strong>{empresa.titular || empresa.nombre}</strong>{empresa.nifCif ? ` · ${empresa.nifCif}` : ''}</span>
-              ) : (
-                <span>Emisor: tú. Completa tu nombre y NIF en <strong>Ajustes de empresa</strong> para que salgan en la documentación del asesor.</span>
-              )}
-            </p>
-          )}
 
           <label className={styles.label}>Concepto
             <input className={styles.input} type="text" placeholder="Descripción de la factura" value={concepto} onChange={(e) => setConcepto(e.target.value)} />
